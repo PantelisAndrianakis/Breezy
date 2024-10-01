@@ -1,0 +1,4 @@
+void main(int argc, string* argv[])
+{
+	Console.WriteLine("Argument 1: " + argv[0]);
+}
