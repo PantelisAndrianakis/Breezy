@@ -1,4 +1,4 @@
-<p align="center"> <img src="https://raw.githubusercontent.com/PantelisAndriankis/Breezy/master/logo.png"/></p>
+<p align="center"> <img src="https://github.com/PantelisAndrianakis/Breezy/blob/main/logo.png"/></p>
 
 ### What is Breezy?
 
