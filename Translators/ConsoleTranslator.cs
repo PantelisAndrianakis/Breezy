@@ -1,6 +1,7 @@
 ﻿// Author: Pantelis Andrianakis
 // Creation Date: October 1st 2024
 
+using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -26,8 +27,8 @@ namespace Breezy.Translators
 			{
 				foundWriteLine = true;
 				string content = match.Groups[1].Value;
-				// Handle string concatenation by replacing '+' with '<<'.
-				return $"ConsoleWriteLine({content.Replace("+", "<<")});";
+				// Handle string concatenation by calling the HandleConcatenation function.
+				return $"ConsoleWriteLine({HandleConcatenation(content)});";
 			});
 
 			// Then, replace Console.Write with ConsoleWrite and track if found.
@@ -35,8 +36,8 @@ namespace Breezy.Translators
 			{
 				foundWrite = true;
 				string content = match.Groups[1].Value;
-				// Handle string concatenation by replacing '+' with '<<'.
-				return $"ConsoleWrite({content.Replace("+", "<<")});";
+				// Handle string concatenation by calling the HandleConcatenation function.
+				return $"ConsoleWrite({HandleConcatenation(content)});";
 			});
 
 			// Replace Console.ReadLine with ConsoleReadLine and track if found.
@@ -101,6 +102,58 @@ namespace Breezy.Translators
 			cppCode = AddHeader(cppCode, cppHeader.ToString());
 
 			return cppCode;
+		}
+
+		private static string HandleConcatenation(string content)
+		{
+			// Protect string literals from being wrapped in std::to_string.
+			string stringLiteralPattern = "\"[^\"]*\"";
+			List<string> literals = new List<string>();
+			MatchCollection matches = Regex.Matches(content, stringLiteralPattern);
+
+			// Temporarily replace string literals with placeholders to avoid modifying them.
+			for (int i = 0; i < matches.Count; i++)
+			{
+				literals.Add(matches[i].Value);
+				content = content.Replace(matches[i].Value, $"__STR_LITERAL_{i}__");
+			}
+
+			// Handle numeric expressions like (i + 1) and wrap them in std::to_string if needed
+			// but not inside a parenthesis that includes both numeric and alphanumeric content.
+			string expressionPattern = @"(?<![\w\+\-])(\d+|i\s*\+\s*1)(?![\w])";
+			content = Regex.Replace(content, expressionPattern, match =>
+			{
+				string matchedValue = match.Groups[1].Value;
+				return $"std::to_string({matchedValue})";
+			});
+
+			// Avoid replacing '+' with '<<' inside parentheses containing both alphanumeric and numeric values.
+			string parenthesesPattern = @"\([\w\s\""\+\-]*\)";
+			MatchCollection parenthesesMatches = Regex.Matches(content, parenthesesPattern);
+			List<string> parenthesizedExpressions = new List<string>();
+
+			// Temporarily replace such expressions with placeholders.
+			for (int i = 0; i < parenthesesMatches.Count; i++)
+			{
+				parenthesizedExpressions.Add(parenthesesMatches[i].Value);
+				content = content.Replace(parenthesesMatches[i].Value, $"__PAREN_EXPR_{i}__");
+			}
+
+			// Now safely replace '+' with '<<' for the rest of the content.
+			content = content.Replace("+", "<<");
+
+			// Restore the parenthesized expressions and string literals.
+			for (int i = 0; i < parenthesizedExpressions.Count; i++)
+			{
+				content = content.Replace($"__PAREN_EXPR_{i}__", parenthesizedExpressions[i]);
+			}
+
+			for (int i = 0; i < literals.Count; i++)
+			{
+				content = content.Replace($"__STR_LITERAL_{i}__", literals[i]);
+			}
+
+			return content;
 		}
 	}
 }
