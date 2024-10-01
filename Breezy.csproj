@@ -46,6 +46,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Translators\BaseLibrary.cs" />
+    <Compile Include="Translators\CollectionTranslator.cs" />
     <Compile Include="Translators\ConsoleTranslator.cs" />
     <Compile Include="Translators\FileTranslator.cs" />
     <Compile Include="Translators\MainTranslator.cs" />

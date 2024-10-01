@@ -33,6 +33,7 @@ namespace Breezy
 					string source = File.ReadAllText(filePath);
 
 					// Do the translations.
+					source = CollectionTranslator.Translate(source);
 					source = StringTranslator.Translate(source);
 					source = MainTranslator.Translate(source);
 					source = ConsoleTranslator.Translate(source);

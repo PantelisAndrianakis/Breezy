@@ -109,7 +109,8 @@ namespace Breezy.Translators
 				header.AppendLine("\tstd::ifstream file(fileName);");
 				header.AppendLine("\tstd::vector<std::string> lines;");
 				header.AppendLine("\tstd::string line;");
-				header.AppendLine("\twhile (std::getline(file, line)) {");
+				header.AppendLine("\twhile (std::getline(file, line))");
+				header.AppendLine("\t{");
 				header.AppendLine("\t\tlines.push_back(line);");
 				header.AppendLine("\t}");
 				header.AppendLine("\treturn lines;");

@@ -1,0 +1,27 @@
+void main()
+{
+	// Create a List of strings.
+	List<string> fruits = {"apple", "banana", "cherry"};
+
+	// Print each fruit manually by using an index.
+	int index = 0;
+	while (index < fruits.size())
+	{
+		Console.WriteLine(fruits[index]);
+		index += 1;
+	}
+
+	// Create a Map with string keys and int values to represent stock count.
+	Map<string, int> stockCount;
+	stockCount["apple"] = 10;
+	stockCount["banana"] = 5;
+	stockCount["cherry"] = 12;
+
+	// Manually iterate through the Map using a traditional iterator.
+	Map<string, int>::iterator iterator = stockCount.begin();
+	while (iterator != stockCount.end())
+	{
+		Console.WriteLine(iterator->first + ": " + (iterator->second).toString());
+		iterator++;
+	}
+}
