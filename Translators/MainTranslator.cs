@@ -9,23 +9,36 @@ namespace Breezy.Translators
 	{
 		public static string Translate(string sourceCode)
 		{
-			// Use regex to find the full void main() method and replace it with int main().
-			string cppCode = Regex.Replace(sourceCode, @"void\s+main\s*\(\)", "int main()");
+			string cppCode = sourceCode;
 
-			// Modify the regex pattern to target only the main method and its closing brace.
-			cppCode = Regex.Replace(cppCode, @"(int\s+main\s*\(\)\s*\{[\s\S]*?)\}\s*$", "$1\treturn 0;\n}");
-
-			// Use regex to handle void main(int argc, string* argv[]) and replace it with int main(int argc, char* argv[]).
-			cppCode = Regex.Replace(cppCode, @"void\s+main\s*\(int\s+argc\s*,\s*string\*\s+argv\[\]\)", "int main(int argc, char* argv[])");
-
-			// Add a conversion from argv[] (char*) to args[] (std::string) inside main function.
-			cppCode = Regex.Replace(cppCode, @"int\s+main\s*\(int\s+argc,\s*char\*\s*argv\[\]\s*\)\s*\{", match =>
+			if (cppCode.Contains("void main()"))
 			{
-				return match.Value + "\n\tstd::string args[argc];\n\tfor(int i = 0; i < argc; ++i) args[i] = std::string(argv[i]);";
-			});
+				// Handle void main() and replace it with int main().
+				cppCode = Regex.Replace(cppCode, @"void\s+main\s*\(\)", "int main()");
 
-			// Modify the regex pattern to target the main method with arguments and ensure return 0; is added before the closing brace.
-			cppCode = Regex.Replace(cppCode, @"(int\s+main\s*\(int\s+argc,\s*char\*\s*argv\[\]\s*\{[\s\S]*?)\}\s*$", "$1\treturn 0;\n}");
+				// Insert the std::string args logic inside main() with arguments, if applicable.
+				cppCode = Regex.Replace(cppCode, @"int\s+main\s*\(int\s+argc,\s*char\*\s*argv\[\]\s*\)\s*\{", match =>
+				{
+					return match.Value + "\n\tstd::string args[argc];\n\tfor(int i = 0; i < argc; ++i) args[i] = std::string(argv[i]);";
+				});
+
+				// Final regex to ensure return 0; is added just before the final closing brace of main(), even with nested braces.
+				cppCode = Regex.Replace(cppCode, @"(int\s+main\s*\([\s\S]*?\{[\s\S]*?)(\n\})", "$1\treturn 0;\n}");
+			}
+			else if (cppCode.Contains("void main(int argc, string* argv[])"))
+			{
+				// Handle void main(int argc, string* argv[]) and replace it with int main(int argc, char* argv[]).
+				cppCode = Regex.Replace(cppCode, @"void\s+main\s*\(int\s+argc\s*,\s*string\*\s+argv\[\]\)", "int main(int argc, char* argv[])");
+
+				// Add a conversion from argv[] (char*) to args[] (std::string) inside main function with arguments.
+				cppCode = Regex.Replace(cppCode, @"int\s+main\s*\(int\s+argc,\s*char\*\s*argv\[\]\s*\)\s*\{", match =>
+				{
+					return match.Value + "\n\tstd::string args[argc];\n\tfor(int i = 0; i < argc; ++i) args[i] = std::string(argv[i]);";
+				});
+
+				// Final regex to ensure return 0; is added at the end of int main(int argc, char* argv[]), and handle braces correctly.
+				cppCode = Regex.Replace(cppCode, @"(int\s+main\s*\([\s\S]*?\{[\s\S]*?)(\n\})", "$1\treturn 0;\n}");
+			}
 
 			return cppCode;
 		}
