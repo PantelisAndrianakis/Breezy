@@ -98,7 +98,7 @@ namespace Breezy.Translators
 			}
 
 			// Parent class manages adding the header.
-			AddHeader(cppCode, cppHeader.ToString());
+			cppCode = AddHeader(cppCode, cppHeader.ToString());
 
 			return cppCode;
 		}
