@@ -14,7 +14,7 @@ The language is designed to ease the transition for developers familiar with Jav
 
 ### A Note on Breezy
 
-Think of Breezy as a language inspired by Java... but with the power of C++.
+Think of Breezy as a language inspired by Java... but with the power of C++.<br>
 It's like emulating Java, with the help of a language that emulates Java, in a language that inspired both.<br>
 No compromises—just pure efficiency, with a touch of familiarity for those who miss their semicolons.<br>
 Breezy was developed purely for fun, after losing my mind on attempting to build a complex transpiler.
