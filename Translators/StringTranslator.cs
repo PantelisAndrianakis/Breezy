@@ -8,7 +8,7 @@ namespace Breezy.Translators
 {
 	public class StringTranslator
 	{
-		public static string Translate(string source)
+		public static string Process(string source)
 		{
 			bool foundString = false;
 			bool foundVector = false;
@@ -24,8 +24,12 @@ namespace Breezy.Translators
 
 			// Replace occurrences of `std::vector<string>` with `std::vector<std::string>`.
 			string vectorStringPattern = @"std::vector<string>";
-			source = Regex.Replace(source, vectorStringPattern, "std::vector<std::string>");
-			foundVector = true;
+			source = Regex.Replace(source, vectorStringPattern, match =>
+			{
+				foundVector = true;
+				return "std::vector<std::string>";
+			});
+
 
 			// Replace occurrences of `std::unordered_map<string, T>` and `std::unordered_map<T, string>` with `std::unordered_map<std::string, T>`.
 			string mapStringPattern1 = @"std::unordered_map<string,\s*([^\>]+)>";
@@ -51,7 +55,7 @@ namespace Breezy.Translators
 			// Replace `std::unordered_map<string, string>` with `std::unordered_map<std::string, std::string>`.
 			source = Regex.Replace(source, mapStringPattern3, match =>
 			{
-				foundMap = true; // Set foundMap to true only when a match is found.
+				foundMap = true;
 				return "std::unordered_map<std::string, std::string>";
 			});
 

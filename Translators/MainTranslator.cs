@@ -7,7 +7,7 @@ namespace Breezy.Translators
 {
 	public class MainTranslator
 	{
-		public static string Translate(string source)
+		public static string Process(string source)
 		{
 			if (source.Contains("void main()"))
 			{

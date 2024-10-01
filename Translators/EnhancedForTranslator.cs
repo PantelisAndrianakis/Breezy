@@ -7,7 +7,7 @@ namespace Breezy.Translators
 {
 	public class EnhancedForTranslator : BaseLibrary
 	{
-		public static string Translate(string source)
+		public static string Process(string source)
 		{
 			// Define regex pattern to match Java-style enhanced for loops.
 			string foreachPattern = @"for\s*\(\s*([^\s]+)\s*:\s*([^\)]+)\s*\)";

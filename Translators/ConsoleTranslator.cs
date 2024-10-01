@@ -9,13 +9,13 @@ namespace Breezy.Translators
 {
 	public class ConsoleTranslator : BaseLibrary
 	{
-		public static string Translate(string source)
+		public static string Process(string source)
 		{
 			// Define the regex patterns to find Console.Write, Console.WriteLine, Console.Read, and Console.ReadLine.
-			string writePattern = @"Console\.Write\(([^;]+)\);";
-			string writeLinePattern = @"Console\.WriteLine\(([^;]+)\);";
-			string readPattern = @"Console\.Read\(\);";
-			string readLinePattern = @"Console\.ReadLine\(\);";
+			string writePattern = @"Console\.write\(([^;]+)\);";
+			string writeLinePattern = @"Console\.writeLine\(([^;]+)\);";
+			string readPattern = @"Console\.read\(\);";
+			string readLinePattern = @"Console\.readLine\(\);";
 
 			bool foundWrite = false;
 			bool foundWriteLine = false;
@@ -28,7 +28,7 @@ namespace Breezy.Translators
 				foundWriteLine = true;
 				string content = match.Groups[1].Value;
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"ConsoleWriteLine({HandleConcatenation(content)});";
+				return $"consoleWriteLine({HandleConcatenation(content)});";
 			});
 
 			// Then, replace Console.Write with ConsoleWrite and track if found.
@@ -37,21 +37,21 @@ namespace Breezy.Translators
 				foundWrite = true;
 				string content = match.Groups[1].Value;
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"ConsoleWrite({HandleConcatenation(content)});";
+				return $"consoleWrite({HandleConcatenation(content)});";
 			});
 
 			// Replace Console.ReadLine with ConsoleReadLine and track if found.
 			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
-				return "ConsoleReadLine();";
+				return "consoleReadLine();";
 			});
 
 			// Replace Console.Read with ConsoleRead and track if found.
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
-				return "ConsoleRead();";
+				return "consoleRead();";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -78,7 +78,7 @@ namespace Breezy.Translators
 			// Append ConsoleWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				header.AppendLine("void ConsoleWriteLine(const std::string& output)");
+				header.AppendLine("void consoleWriteLine(const std::string& output)");
 				header.AppendLine("{");
 				header.AppendLine("\tstd::cout << output << std::endl;");
 				header.AppendLine("}\n");
@@ -87,7 +87,7 @@ namespace Breezy.Translators
 			// Append ConsoleWrite method if it was found.
 			if (foundWrite)
 			{
-				header.AppendLine("void ConsoleWrite(const std::string& output)");
+				header.AppendLine("void consoleWrite(const std::string& output)");
 				header.AppendLine("{");
 				header.AppendLine("\tstd::cout << output;");
 				header.AppendLine("}\n");
@@ -96,7 +96,7 @@ namespace Breezy.Translators
 			// Append ConsoleReadLine method if it was found.
 			if (foundReadLine)
 			{
-				header.AppendLine("std::string ConsoleReadLine()");
+				header.AppendLine("std::string consoleReadLine()");
 				header.AppendLine("{");
 				header.AppendLine("\tstd::string input;");
 				header.AppendLine("\tstd::cin >> input;");
@@ -107,7 +107,7 @@ namespace Breezy.Translators
 			// Append ConsoleRead method if it was found.
 			if (foundRead)
 			{
-				header.AppendLine("std::string ConsoleRead()");
+				header.AppendLine("std::string consoleRead()");
 				header.AppendLine("{");
 				header.AppendLine("\tstd::string key;");
 				header.AppendLine("\tstd::getline(std::cin, key);");

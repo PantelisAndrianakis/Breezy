@@ -33,12 +33,12 @@ namespace Breezy
 					string source = File.ReadAllText(filePath);
 
 					// Do the translations.
-					source = CollectionTranslator.Translate(source);
-					source = StringTranslator.Translate(source);
-					source = MainTranslator.Translate(source);
-					source = ConsoleTranslator.Translate(source);
-					source = FileTranslator.Translate(source);
-					source = EnhancedForTranslator.Translate(source);
+					source = CollectionTranslator.Process(source);
+					source = StringTranslator.Process(source);
+					source = MainTranslator.Process(source);
+					source = ConsoleTranslator.Process(source);
+					source = FileTranslator.Process(source);
+					source = EnhancedForTranslator.Process(source);
 
 					// Write the translated code to a .cpp file.
 					string outputFile = Path.ChangeExtension(filePath, ".cpp");

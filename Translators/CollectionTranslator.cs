@@ -7,7 +7,7 @@ namespace Breezy.Translators
 {
 	public class CollectionTranslator : BaseLibrary
 	{
-		public static string Translate(string source)
+		public static string Process(string source)
 		{
 			bool foundVector = false;
 			bool foundMap = false;
