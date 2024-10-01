@@ -1,4 +1,11 @@
 void main(int argc, string* argv[])
 {
-	Console.WriteLine("Argument 1: " + argv[0]);
+	if (argc > 0)
+	{
+		Console.WriteLine("Argument 1: " + argv[0]);
+	}
+	else
+	{
+		Console.WriteLine("No arguments provided.");
+	}
 }

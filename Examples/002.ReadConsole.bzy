@@ -1,6 +1,6 @@
 void main()
 {
-	Console.WriteLine("Enter your name:");
+	Console.Write("Enter your name: ");
 	string name = Console.ReadLine();
 	Console.WriteLine("Hello, " + name + "!");
 }
