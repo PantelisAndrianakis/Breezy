@@ -38,6 +38,7 @@ namespace Breezy
 					source = MainTranslator.Translate(source);
 					source = ConsoleTranslator.Translate(source);
 					source = FileTranslator.Translate(source);
+					source = EnhancedForTranslator.Translate(source);
 
 					// Write the translated code to a .cpp file.
 					string outputFile = Path.ChangeExtension(filePath, ".cpp");

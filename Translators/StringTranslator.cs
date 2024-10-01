@@ -49,8 +49,11 @@ namespace Breezy.Translators
 			});
 
 			// Replace `std::unordered_map<string, string>` with `std::unordered_map<std::string, std::string>`.
-			source = Regex.Replace(source, mapStringPattern3, "std::unordered_map<std::string, std::string>");
-			foundMap = true;
+			source = Regex.Replace(source, mapStringPattern3, match =>
+			{
+				foundMap = true; // Set foundMap to true only when a match is found.
+				return "std::unordered_map<std::string, std::string>";
+			});
 
 			// Find and replace (XXXX).toString() with std::to_string(XXXX), ensuring correct parentheses matching.
 			string toStringPattern = @"\(([^()]+)\)\.toString\(\)";

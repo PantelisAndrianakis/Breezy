@@ -1,0 +1,9 @@
+void main()
+{
+	List<string> fruits = {"apple", "banana", "cherry"};
+
+	for (fruit : fruits)
+	{
+		Console.WriteLine(fruit);
+	}
+}

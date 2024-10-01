@@ -27,5 +27,7 @@ Breezy was developed purely for fun, after losing my mind on attempting to build
 - **Command-line Arguments**: Handles main method arguments for command-line parsing.
 - **Console Input/Output**: Provides simplified methods for console read and write.
 - **String Type Translation**: Converts string declarations into std::string, providing ease.
+- **String toString() Method**: Supported numeric and object types, will be replaced by std::to_string().
 - **File Operations**: Provides methods for reading, writing and deleting files.
 - **Collections**: Support for collections like List and Map.
+- **Enhanced For Loop**: Support for easy to write enhanced for loops.
