@@ -1,0 +1,19 @@
+void main()
+{
+	// Check if a file exists before writing to it.
+	if (File.Exists("output.txt"))
+	{
+		Console.WriteLine("File exists, proceeding to append data.");
+		File.Append("output.txt", "Appending some text.");
+	}
+	else
+	{
+		Console.WriteLine("File does not exist, creating a new one.");
+		File.Write("output.txt", "Creating a new file with this text.");
+	}
+
+	// Verify the content.
+	string content = File.Read("output.txt");
+	Console.WriteLine("File content:");
+	Console.WriteLine(content);
+}

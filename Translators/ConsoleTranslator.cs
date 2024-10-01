@@ -56,50 +56,67 @@ namespace Breezy.Translators
 
 			// Add the necessary C++ methods if they are used.
 			// We start with a blank C++ file.
-			StringBuilder cppHeader = new StringBuilder();
+			StringBuilder header = new StringBuilder();
+
+			// Check if we need to add <iostream> for input/output.
+			if (foundWrite || foundWriteLine || foundRead || foundReadLine)
+			{
+				if (!source.Contains("#include <iostream>"))
+				{
+					bool addEmptyLine = !source.StartsWith("#");
+					if (addEmptyLine)
+					{
+						source = "#include <iostream>\n\n" + source;
+					}
+					else
+					{
+						source = "#include <iostream>\n" + source;
+					}
+				}
+			}
 
 			// Append ConsoleWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				cppHeader.AppendLine("void ConsoleWriteLine(const std::string& output)");
-				cppHeader.AppendLine("{");
-				cppHeader.AppendLine("\tstd::cout << output << std::endl;");
-				cppHeader.AppendLine("}\n");
+				header.AppendLine("void ConsoleWriteLine(const std::string& output)");
+				header.AppendLine("{");
+				header.AppendLine("\tstd::cout << output << std::endl;");
+				header.AppendLine("}\n");
 			}
 
 			// Append ConsoleWrite method if it was found.
 			if (foundWrite)
 			{
-				cppHeader.AppendLine("void ConsoleWrite(const std::string& output)");
-				cppHeader.AppendLine("{");
-				cppHeader.AppendLine("\tstd::cout << output;");
-				cppHeader.AppendLine("}\n");
+				header.AppendLine("void ConsoleWrite(const std::string& output)");
+				header.AppendLine("{");
+				header.AppendLine("\tstd::cout << output;");
+				header.AppendLine("}\n");
 			}
 
 			// Append ConsoleReadLine method if it was found.
 			if (foundReadLine)
 			{
-				cppHeader.AppendLine("std::string ConsoleReadLine()");
-				cppHeader.AppendLine("{");
-				cppHeader.AppendLine("\tstd::string input;");
-				cppHeader.AppendLine("\tstd::cin >> input;");
-				cppHeader.AppendLine("\treturn input;");
-				cppHeader.AppendLine("}\n");
+				header.AppendLine("std::string ConsoleReadLine()");
+				header.AppendLine("{");
+				header.AppendLine("\tstd::string input;");
+				header.AppendLine("\tstd::cin >> input;");
+				header.AppendLine("\treturn input;");
+				header.AppendLine("}\n");
 			}
 
 			// Append ConsoleRead method if it was found.
 			if (foundRead)
 			{
-				cppHeader.AppendLine("std::string ConsoleRead()");
-				cppHeader.AppendLine("{");
-				cppHeader.AppendLine("\tstd::string key;");
-				cppHeader.AppendLine("\tstd::getline(std::cin, key);");
-				cppHeader.AppendLine("\treturn key;");
-				cppHeader.AppendLine("}\n");
+				header.AppendLine("std::string ConsoleRead()");
+				header.AppendLine("{");
+				header.AppendLine("\tstd::string key;");
+				header.AppendLine("\tstd::getline(std::cin, key);");
+				header.AppendLine("\treturn key;");
+				header.AppendLine("}\n");
 			}
 
 			// Parent class manages adding the header.
-			source = AddHeader(source, cppHeader.ToString());
+			source = AddHeader(source, header.ToString());
 
 			return source;
 		}

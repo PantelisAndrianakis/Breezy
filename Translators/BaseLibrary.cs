@@ -5,9 +5,9 @@ namespace Breezy.Translators
 {
 	public class BaseLibrary
 	{
-		public static string AddHeader(string source, string cppHeader)
+		public static string AddHeader(string source, string header)
 		{
-			if (cppHeader.Length > 0)
+			if (header.Length > 0)
 			{
 				// Find the last #include directive.
 				int includeEndIndex = source.LastIndexOf("#include");
@@ -36,13 +36,13 @@ namespace Breezy.Translators
 						}
 					}
 
-					// Insert the cppHeader after the last empty line.
-					source = source.Insert(lastEmptyLineIndex, cppHeader.ToString());
+					// Insert the header after the last empty line.
+					source = source.Insert(lastEmptyLineIndex, header.ToString());
 				}
 				else
 				{
 					// No #include statements found, just prepend the header and maintain line count.
-					source = cppHeader + source;
+					source = header + source;
 				}
 			}
 
