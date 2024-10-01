@@ -9,7 +9,7 @@ namespace Breezy.Translators
 {
 	public class ConsoleTranslator : BaseLibrary
 	{
-		public static string Translate(string sourceCode)
+		public static string Translate(string source)
 		{
 			// Define the regex patterns to find Console.Write, Console.WriteLine, Console.Read, and Console.ReadLine.
 			string writePattern = @"Console\.Write\(([^;]+)\);";
@@ -23,7 +23,7 @@ namespace Breezy.Translators
 			bool foundReadLine = false;
 
 			// First, replace Console.WriteLine with ConsoleWriteLine and track if found.
-			string cppCode = Regex.Replace(sourceCode, writeLinePattern, match =>
+			source = Regex.Replace(source, writeLinePattern, match =>
 			{
 				foundWriteLine = true;
 				string content = match.Groups[1].Value;
@@ -32,7 +32,7 @@ namespace Breezy.Translators
 			});
 
 			// Then, replace Console.Write with ConsoleWrite and track if found.
-			cppCode = Regex.Replace(cppCode, writePattern, match =>
+			source = Regex.Replace(source, writePattern, match =>
 			{
 				foundWrite = true;
 				string content = match.Groups[1].Value;
@@ -41,14 +41,14 @@ namespace Breezy.Translators
 			});
 
 			// Replace Console.ReadLine with ConsoleReadLine and track if found.
-			cppCode = Regex.Replace(cppCode, readLinePattern, match =>
+			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
 				return "ConsoleReadLine();";
 			});
 
 			// Replace Console.Read with ConsoleRead and track if found.
-			cppCode = Regex.Replace(cppCode, readPattern, match =>
+			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
 				return "ConsoleRead();";
@@ -99,9 +99,9 @@ namespace Breezy.Translators
 			}
 
 			// Parent class manages adding the header.
-			cppCode = AddHeader(cppCode, cppHeader.ToString());
+			source = AddHeader(source, cppHeader.ToString());
 
-			return cppCode;
+			return source;
 		}
 
 		private static string HandleConcatenation(string content)
