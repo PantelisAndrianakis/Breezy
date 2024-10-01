@@ -1,0 +1,10 @@
+void main()
+{
+	string input = "apple,banana,cherry";
+	List<string> parts = String.split(input, ",");
+
+	for (part : parts)
+	{
+		Console.writeLine(part);
+	}
+}
