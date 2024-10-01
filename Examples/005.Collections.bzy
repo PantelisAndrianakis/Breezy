@@ -7,7 +7,7 @@ void main()
 	int index = 0;
 	while (index < fruits.size())
 	{
-		Console.WriteLine(fruits[index]);
+		Console.writeLine(fruits[index]);
 		index += 1;
 	}
 
@@ -21,7 +21,7 @@ void main()
 	Map<string, int>::iterator iterator = stockCount.begin();
 	while (iterator != stockCount.end())
 	{
-		Console.WriteLine(iterator->first + ": " + (iterator->second).toString());
+		Console.writeLine(iterator->first + ": " + (iterator->second).toString());
 		iterator++;
 	}
 }

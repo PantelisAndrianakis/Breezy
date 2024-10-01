@@ -4,6 +4,6 @@ void main()
 
 	for (fruit : fruits)
 	{
-		Console.WriteLine(fruit);
+		Console.writeLine(fruit);
 	}
 }

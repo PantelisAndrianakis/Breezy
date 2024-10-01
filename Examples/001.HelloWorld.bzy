@@ -1,4 +1,4 @@
 void main()
 {
-	Console.WriteLine("Hello World!");
+	Console.writeLine("Hello World!");
 }
