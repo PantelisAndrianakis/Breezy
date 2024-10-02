@@ -1,0 +1,11 @@
+void main()
+{
+	string text = "Contact us at user@example.com for more info.";
+	string pattern = R"(\w+@\w+\.\w+)";
+
+	// Find the first match.
+	string firstMatch = Regex.match(text, pattern);
+
+	// Output the result.
+	Console.writeLine("First match: " + firstMatch);
+}

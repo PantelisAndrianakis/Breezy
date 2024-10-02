@@ -70,29 +70,13 @@ namespace Breezy.Translators
 			});
 
 			// Add necessary #include statements based on found elements.
-			if (foundVector && !source.Contains("#include <vector>"))
+			if (foundVector)
 			{
-				bool addEmptyLine = !source.StartsWith("#");
-				if (addEmptyLine)
-				{
-					source = "#include <vector>\n\n" + source;
-				}
-				else
-				{
-					source = "#include <vector>\n" + source;
-				}
+				source = AddInclude(source, "vector");
 			}
-			if (foundMap && !source.Contains("#include <unordered_map>"))
+			if (foundMap)
 			{
-				bool addEmptyLine = !source.StartsWith("#");
-				if (addEmptyLine)
-				{
-					source = "#include <unordered_map>\n\n" + source;
-				}
-				else
-				{
-					source = "#include <unordered_map>\n" + source;
-				}
+				source = AddInclude(source, "unordered_map");
 			}
 
 			// Return the modified source.

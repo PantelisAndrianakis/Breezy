@@ -17,7 +17,7 @@ The language is designed to ease developers familiar with Java, making programmi
 Think of Breezy as a language inspired by Java... but with the power of C++.<br>
 It's like emulating Java, with the help of a language that emulates Java, in a language that inspired both.<br>
 No compromises—just pure efficiency, with a touch of familiarity for those who miss their semicolons.<br>
-Breezy was developed purely for fun, after losing my mind on attempting to build a complex transpiler.
+Breezy was developed purely for fun, following the challenges of building a complex transpiler.
 
 ---
 
@@ -32,3 +32,4 @@ Breezy was developed purely for fun, after losing my mind on attempting to build
 - **File Operations**: Provides a range of methods for reading, writing, appending and deleting files.
 - **Collections**: Support for collections such as List and Map, mapped to std::vector and std::unordered_map.
 - **Enhanced For Loop**: Simple and intuitive enhanced for loops for more readable and concise iterations.
+- **Regex**: Provides methods for Regex first match, matches as string list and replacements.

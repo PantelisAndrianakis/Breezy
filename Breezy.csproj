@@ -51,6 +51,7 @@
     <Compile Include="Translators\EnhancedForTranslator.cs" />
     <Compile Include="Translators\FileTranslator.cs" />
     <Compile Include="Translators\MainTranslator.cs" />
+    <Compile Include="Translators\RegexTranslator.cs" />
     <Compile Include="Translators\StringTranslator.cs" />
   </ItemGroup>
   <ItemGroup>

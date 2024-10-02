@@ -1,0 +1,14 @@
+void main()
+{
+	string text = "Emails: user1@example.com, user2@test.org, admin@domain.net";
+	string pattern = R"(\w+@\w+\.\w+)";
+
+	// Find all matches.
+	List<string> allMatches = Regex.matches(text, pattern);
+
+	// Output each match.
+	for (match : allMatches)
+	{
+		Console.writeLine("Match: " + match);
+	}
+}

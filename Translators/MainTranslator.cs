@@ -37,8 +37,9 @@ namespace Breezy.Translators
 				return match.Value + "\n\tstd::string args[argc];\n\tfor(int i = 0; i < argc; ++i) args[i] = std::string(argv[i]);";
 			});
 
-			// Final regex to ensure return 0; is added just before the final closing brace of main(), even with nested braces.
-			source = Regex.Replace(source, @"(int\s+main\s*\([\s\S]*?\{[\s\S]*?)(\n\})", "$1\treturn 0;\n}");
+			// Final regex to ensure return 0; is added just before the last closing brace of main().
+			// This uses a negative lookahead to ensure it matches only the last closing brace.
+			source = Regex.Replace(source, @"(int\s+main\s*\([\s\S]*?\{[\s\S]*?)(\})\s*(?![\s\S]*\})", "$1\treturn 0;\n}");
 
 			return source;
 		}

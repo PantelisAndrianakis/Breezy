@@ -5,9 +5,29 @@ namespace Breezy.Translators
 {
 	class MethodLibrary
 	{
-		public static string AddHeader(string source, string header)
+		public static string AddInclude(string source, string include)
 		{
-			if (header.Length > 0)
+			include = "#include <" + include + ">";
+
+			if (!source.Contains(include))
+			{
+				bool addEmptyLine = !source.StartsWith("#");
+				if (addEmptyLine)
+				{
+					source = include + "\n\n" + source;
+				}
+				else
+				{
+					source = include + "\n" + source;
+				}
+			}
+
+			return source;
+		}
+
+		public static string AddMethods(string source, string methods)
+		{
+			if (methods.Length > 0)
 			{
 				// Find the last #include directive.
 				int includeEndIndex = source.LastIndexOf("#include");
@@ -37,12 +57,12 @@ namespace Breezy.Translators
 					}
 
 					// Insert the header after the last empty line.
-					source = source.Insert(lastEmptyLineIndex, header.ToString());
+					source = source.Insert(lastEmptyLineIndex, methods.ToString());
 				}
 				else
 				{
 					// No #include statements found, just prepend the header and maintain line count.
-					source = header + source;
+					source = methods + source;
 				}
 			}
 

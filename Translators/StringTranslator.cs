@@ -39,69 +39,39 @@ namespace Breezy.Translators
 			});
 
 			// Add necessary C++ methods if they are used.
-			StringBuilder header = new StringBuilder();
+			StringBuilder methods = new StringBuilder();
 
 			// Add the split method if found.
 			if (foundSplit)
 			{
-				if (!source.Contains("#include <sstream>"))
-				{
-					bool addEmptyLine = !source.StartsWith("#");
-					if (addEmptyLine)
-					{
-						source = "#include <sstream>\n\n" + source;
-					}
-					else
-					{
-						source = "#include <sstream>\n" + source;
-					}
-				}
+				// Add necessary #include statements.
+				source = AddInclude(source, "sstream");
+				source = AddInclude(source, "vector");
 
-				if (!source.Contains("#include <vector>"))
-				{
-					bool addEmptyLine = !source.StartsWith("#");
-					if (addEmptyLine)
-					{
-						source = "#include <vector>\n\n" + source;
-					}
-					else
-					{
-						source = "#include <vector>\n" + source;
-					}
-				}
-
-				header.AppendLine("std::vector<std::string> split(const std::string& str, const std::string& delimiter)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::vector<std::string> tokens;");
-				header.AppendLine("\tsize_t start = 0;");
-				header.AppendLine("\tsize_t end = str.find(delimiter);");
-				header.AppendLine("\twhile (end != std::string::npos)");
-				header.AppendLine("\t{");
-				header.AppendLine("\t\ttokens.push_back(str.substr(start, end - start));");
-				header.AppendLine("\t\tstart = end + delimiter.length();");
-				header.AppendLine("\t\tend = str.find(delimiter, start);");
-				header.AppendLine("\t}");
-				header.AppendLine("\ttokens.push_back(str.substr(start));");
-				header.AppendLine("\treturn tokens;");
-				header.AppendLine("}\n");
+				methods.AppendLine("std::vector<std::string> split(const std::string& str, const std::string& delimiter)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::vector<std::string> tokens;");
+				methods.AppendLine("\tsize_t start = 0;");
+				methods.AppendLine("\tsize_t end = str.find(delimiter);");
+				methods.AppendLine("\twhile (end != std::string::npos)");
+				methods.AppendLine("\t{");
+				methods.AppendLine("\t\ttokens.push_back(str.substr(start, end - start));");
+				methods.AppendLine("\t\tstart = end + delimiter.length();");
+				methods.AppendLine("\t\tend = str.find(delimiter, start);");
+				methods.AppendLine("\t}");
+				methods.AppendLine("\ttokens.push_back(str.substr(start));");
+				methods.AppendLine("\treturn tokens;");
+				methods.AppendLine("}\n");
 			}
 
-			// Add necessary #include statements based on found elements.
-			if (foundString && !source.Contains("#include <string>"))
+			// Check if we need to add the <string> import.
+			if (foundString)
 			{
-				bool addEmptyLine = !source.StartsWith("#");
-				if (addEmptyLine)
-				{
-					source = "#include <string>\n\n" + source;
-				}
-				else
-				{
-					source = "#include <string>\n" + source;
-				}
+				source = AddInclude(source, "string");
 			}
 
-			// Parent class manages adding the header.
-			source = AddHeader(source, header.ToString());
+			// Parent class manages adding the additional methods.
+			source = AddMethods(source, methods.ToString());
 
 			return source;
 		}

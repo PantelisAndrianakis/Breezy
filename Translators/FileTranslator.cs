@@ -1,7 +1,6 @@
 ﻿// Author: Pantelis Andrianakis
 // Creation Date: October 1st 2024
 
-using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -88,109 +87,90 @@ namespace Breezy.Translators
 			});
 
 			// Add the necessary C++ methods if they are used.
-			StringBuilder header = new StringBuilder();
+			StringBuilder methods = new StringBuilder();
 
 			// Append fileRead method if it was found.
 			if (foundRead)
 			{
-				header.AppendLine("std::string fileRead(const std::string& fileName)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::ifstream file(fileName);");
-				header.AppendLine("\tstd::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());");
-				header.AppendLine("\treturn content;");
-				header.AppendLine("}\n");
+				methods.AppendLine("std::string fileRead(const std::string& fileName)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::ifstream file(fileName);");
+				methods.AppendLine("\tstd::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());");
+				methods.AppendLine("\treturn content;");
+				methods.AppendLine("}\n");
 			}
 
 			// Append fileReadLines method if it was found.
 			if (foundReadLines)
 			{
-				header.AppendLine("std::vector<std::string> fileReadLines(const std::string& fileName)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::ifstream file(fileName);");
-				header.AppendLine("\tstd::vector<std::string> lines;");
-				header.AppendLine("\tstd::string line;");
-				header.AppendLine("\twhile (std::getline(file, line))");
-				header.AppendLine("\t{");
-				header.AppendLine("\t\tlines.push_back(line);");
-				header.AppendLine("\t}");
-				header.AppendLine("\treturn lines;");
-				header.AppendLine("}\n");
+				methods.AppendLine("std::vector<std::string> fileReadLines(const std::string& fileName)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::ifstream file(fileName);");
+				methods.AppendLine("\tstd::vector<std::string> lines;");
+				methods.AppendLine("\tstd::string line;");
+				methods.AppendLine("\twhile (std::getline(file, line))");
+				methods.AppendLine("\t{");
+				methods.AppendLine("\t\tlines.push_back(line);");
+				methods.AppendLine("\t}");
+				methods.AppendLine("\treturn lines;");
+				methods.AppendLine("}\n");
 			}
 
 			// Append fileWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				header.AppendLine("void fileWriteLine(const std::string& fileName, const std::string& text)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
-				header.AppendLine("\tfile << text << std::endl;");
-				header.AppendLine("}\n");
+				methods.AppendLine("void fileWriteLine(const std::string& fileName, const std::string& text)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
+				methods.AppendLine("\tfile << text << std::endl;");
+				methods.AppendLine("}\n");
 			}
 
 			// Append fileWrite method if it was found.
 			if (foundWrite)
 			{
-				header.AppendLine("void fileWrite(const std::string& fileName, const std::string& text)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::ofstream file(fileName);");
-				header.AppendLine("\tfile << text;");
-				header.AppendLine("}\n");
+				methods.AppendLine("void fileWrite(const std::string& fileName, const std::string& text)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::ofstream file(fileName);");
+				methods.AppendLine("\tfile << text;");
+				methods.AppendLine("}\n");
 			}
 
 			// Append fileAppend method if it was found.
 			if (foundAppend)
 			{
-				header.AppendLine("void fileAppend(const std::string& fileName, const std::string& text)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
-				header.AppendLine("\tfile << text;");
-				header.AppendLine("}\n");
+				methods.AppendLine("void fileAppend(const std::string& fileName, const std::string& text)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
+				methods.AppendLine("\tfile << text;");
+				methods.AppendLine("}\n");
 			}
 
 			// Append fileDelete method if it was found.
 			if (foundDelete)
 			{
-				if (!source.Contains("#include <cstdio>"))
-				{
-					bool addEmptyLine = !source.StartsWith("#");
-					if (addEmptyLine)
-					{
-						source = "#include <cstdio>\n\n" + source;
-					}
-					else
-					{
-						source = "#include <cstdio>\n" + source;
-					}
-				}
-				header.AppendLine("void fileDelete(const std::string& fileName)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::remove(fileName.c_str());");
-				header.AppendLine("}\n");
+				source = AddInclude(source, "cstdio");
+
+				methods.AppendLine("void fileDelete(const std::string& fileName)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::remove(fileName.c_str());");
+				methods.AppendLine("}\n");
 			}
 
 			// Append fileExists method if it was found.
 			if (foundExists)
 			{
-				if (!source.Contains("#include <fstream>"))
-				{
-					bool addEmptyLine = !source.StartsWith("#");
-					if (addEmptyLine)
-					{
-						source = "#include <fstream>\n\n" + source;
-					}
-					else
-					{
-						source = "#include <fstream>\n" + source;
-					}
-				}
-				header.AppendLine("bool fileExists(const std::string& fileName)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::ifstream file(fileName);");
-				header.AppendLine("\treturn file.good();");
-				header.AppendLine("}\n");
+				source = AddInclude(source, "fstream");
+
+				methods.AppendLine("bool fileExists(const std::string& fileName)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::ifstream file(fileName);");
+				methods.AppendLine("\treturn file.good();");
+				methods.AppendLine("}\n");
 			}
 
-			source = AddHeader(source, header.ToString());
+			// Parent class manages adding the additional methods.
+			source = AddMethods(source, methods.ToString());
 
 			return source;
 		}

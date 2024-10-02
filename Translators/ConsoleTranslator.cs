@@ -11,7 +11,7 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
-			// Define the regex patterns to find Console.Write, Console.WriteLine, Console.Read, and Console.ReadLine.
+			// Define the regex patterns to find Console.write, Console.writeLine, Console.read, and Console.readLine.
 			string writePattern = @"Console\.write\(([^;]+)\);";
 			string writeLinePattern = @"Console\.writeLine\(([^;]+)\);";
 			string readPattern = @"Console\.read\(\);";
@@ -22,7 +22,7 @@ namespace Breezy.Translators
 			bool foundRead = false;
 			bool foundReadLine = false;
 
-			// First, replace Console.WriteLine with ConsoleWriteLine and track if found.
+			// First, replace Console.writeLine with consoleWriteLine and track if found.
 			source = Regex.Replace(source, writeLinePattern, match =>
 			{
 				foundWriteLine = true;
@@ -31,7 +31,7 @@ namespace Breezy.Translators
 				return $"consoleWriteLine({HandleConcatenation(content)});";
 			});
 
-			// Then, replace Console.Write with ConsoleWrite and track if found.
+			// Then, replace Console.write with consoleWrite and track if found.
 			source = Regex.Replace(source, writePattern, match =>
 			{
 				foundWrite = true;
@@ -40,14 +40,14 @@ namespace Breezy.Translators
 				return $"consoleWrite({HandleConcatenation(content)});";
 			});
 
-			// Replace Console.ReadLine with ConsoleReadLine and track if found.
+			// Replace Console.readLine with consoleReadLine and track if found.
 			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
 				return "consoleReadLine();";
 			});
 
-			// Replace Console.Read with ConsoleRead and track if found.
+			// Replace Console.read with consoleRead and track if found.
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
@@ -55,68 +55,56 @@ namespace Breezy.Translators
 			});
 
 			// Add the necessary C++ methods if they are used.
-			// We start with a blank C++ file.
-			StringBuilder header = new StringBuilder();
+			StringBuilder methods = new StringBuilder();
 
-			// Check if we need to add <iostream> for input/output.
+			// Check if we need to add the <iostream> import.
 			if (foundWrite || foundWriteLine || foundRead || foundReadLine)
 			{
-				if (!source.Contains("#include <iostream>"))
-				{
-					bool addEmptyLine = !source.StartsWith("#");
-					if (addEmptyLine)
-					{
-						source = "#include <iostream>\n\n" + source;
-					}
-					else
-					{
-						source = "#include <iostream>\n" + source;
-					}
-				}
+				source = AddInclude(source, "iostream");
 			}
 
-			// Append ConsoleWriteLine method if it was found.
+			// Append consoleWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				header.AppendLine("void consoleWriteLine(const std::string& output)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::cout << output << std::endl;");
-				header.AppendLine("}\n");
+				methods.AppendLine("void consoleWriteLine(const std::string& output)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::cout << output << std::endl;");
+				methods.AppendLine("}\n");
 			}
 
-			// Append ConsoleWrite method if it was found.
+			// Append consoleWrite method if it was found.
 			if (foundWrite)
 			{
-				header.AppendLine("void consoleWrite(const std::string& output)");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::cout << output;");
-				header.AppendLine("}\n");
+				methods.AppendLine("void consoleWrite(const std::string& output)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::cout << output;");
+				methods.AppendLine("}\n");
 			}
 
-			// Append ConsoleReadLine method if it was found.
+			// Append consoleReadLine method if it was found.
 			if (foundReadLine)
 			{
-				header.AppendLine("std::string consoleReadLine()");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::string input;");
-				header.AppendLine("\tstd::getline(std::cin, key);");
-				header.AppendLine("\treturn input;");
-				header.AppendLine("}\n");
+				methods.AppendLine("std::string consoleReadLine()");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::string input;");
+				methods.AppendLine("\tstd::getline(std::cin, key);");
+				methods.AppendLine("\treturn input;");
+				methods.AppendLine("}\n");
 			}
 
-			// Append ConsoleRead method if it was found.
+			// Append consoleRead method if it was found.
 			if (foundRead)
 			{
-				header.AppendLine("std::string consoleRead()");
-				header.AppendLine("{");
-				header.AppendLine("\tstd::string key;");
-				header.AppendLine("\tstd::cin >> input;");
-				header.AppendLine("\treturn key;");
-				header.AppendLine("}\n");
+				methods.AppendLine("std::string consoleRead()");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::string key;");
+				methods.AppendLine("\tstd::cin >> input;");
+				methods.AppendLine("\treturn key;");
+				methods.AppendLine("}\n");
 			}
 
-			// Parent class manages adding the header.
-			source = AddHeader(source, header.ToString());
+			// Parent class manages adding the additional methods.
+			source = AddMethods(source, methods.ToString());
 
 			return source;
 		}

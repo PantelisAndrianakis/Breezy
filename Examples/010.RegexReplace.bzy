@@ -1,0 +1,12 @@
+void main()
+{
+	string text = "Emails: user1@example.com, user2@test.org, admin@domain.net";
+	string pattern = R"(\w+@\w+\.\w+)";
+	string replacement = "[redacted]";
+
+	// Perform the replacement.
+	string result = Regex.replace(text, pattern, replacement);
+
+	// Output the result.
+	Console.writeLine("Replaced text: " + result);
+}
