@@ -99,7 +99,7 @@ namespace Breezy.Translators
 				header.AppendLine("std::string consoleReadLine()");
 				header.AppendLine("{");
 				header.AppendLine("\tstd::string input;");
-				header.AppendLine("\tstd::cin >> input;");
+				header.AppendLine("\tstd::getline(std::cin, key);");
 				header.AppendLine("\treturn input;");
 				header.AppendLine("}\n");
 			}
@@ -110,7 +110,7 @@ namespace Breezy.Translators
 				header.AppendLine("std::string consoleRead()");
 				header.AppendLine("{");
 				header.AppendLine("\tstd::string key;");
-				header.AppendLine("\tstd::getline(std::cin, key);");
+				header.AppendLine("\tstd::cin >> input;");
 				header.AppendLine("\treturn key;");
 				header.AppendLine("}\n");
 			}
@@ -135,9 +135,8 @@ namespace Breezy.Translators
 				content = content.Replace(matches[i].Value, $"__STR_LITERAL_{i}__");
 			}
 
-			// Handle numeric expressions like (i + 1) and wrap them in std::to_string if needed
-			// but not inside a parenthesis that includes both numeric and alphanumeric content.
-			string expressionPattern = @"(?<![\w\+\-])(\d+|i\s*\+\s*1)(?![\w])";
+			// Handle numeric expressions like (i + 1) and wrap them in std::to_string if needed.
+			string expressionPattern = @"(?<![\w\+\-])(\d+|i\s*\+\s*\d+)(?![\w])";
 			content = Regex.Replace(content, expressionPattern, match =>
 			{
 				string matchedValue = match.Groups[1].Value;
@@ -157,7 +156,7 @@ namespace Breezy.Translators
 			}
 
 			// Now safely replace '+' with '<<' for the rest of the content.
-			content = content.Replace("+", "<<");
+			// content = content.Replace("+", "<<");
 
 			// Restore the parenthesized expressions and string literals.
 			for (int i = 0; i < parenthesizedExpressions.Count; i++)
