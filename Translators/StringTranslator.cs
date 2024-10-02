@@ -10,6 +10,9 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			// Support for random method names to avoid conflicts.
+			string random = GetRandomMethodIdentifier();
+
 			bool foundString = false;
 			bool foundSplit = false;
 
@@ -48,7 +51,7 @@ namespace Breezy.Translators
 				source = AddInclude(source, "sstream");
 				source = AddInclude(source, "vector");
 
-				methods.AppendLine("std::vector<std::string> stringSplit(const std::string& str, const std::string& delimiter)");
+				methods.AppendLine($"std::vector<std::string> stringSplit{random}(const std::string& str, const std::string& delimiter)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::vector<std::string> tokens;");
 				methods.AppendLine("\tsize_t start = 0;");

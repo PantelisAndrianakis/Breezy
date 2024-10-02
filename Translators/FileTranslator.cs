@@ -10,6 +10,9 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			// Support for random method names to avoid conflicts.
+			string random = GetRandomMethodIdentifier();
+
 			// Define regex patterns for File.Read, File.ReadLines, File.WriteLine, File.Write, File.Append, File.Delete, and File.Exists.
 			string readPattern = @"File\.read\(([^;]+)\);";
 			string readLinesPattern = @"File\.readLines\(([^;]+)\);";
@@ -32,7 +35,7 @@ namespace Breezy.Translators
 			{
 				foundRead = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileRead({fileName});";
+				return $"fileRead{random}({fileName});";
 			});
 
 			// Replace File.readLines and track if found.
@@ -40,7 +43,7 @@ namespace Breezy.Translators
 			{
 				foundReadLines = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileReadLines({fileName});";
+				return $"fileReadLines{random}({fileName});";
 			});
 
 			// Replace File.writeLine and track if found.
@@ -49,7 +52,7 @@ namespace Breezy.Translators
 				foundWriteLine = true;
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileWriteLine({fileName}, {text});";
+				return $"fileWriteLine{random}({fileName}, {text});";
 			});
 
 			// Replace File.write and track if found.
@@ -58,7 +61,7 @@ namespace Breezy.Translators
 				foundWrite = true;
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileWrite({fileName}, {text});";
+				return $"fileWrite{random}({fileName}, {text});";
 			});
 
 			// Replace File.append and track if found.
@@ -67,7 +70,7 @@ namespace Breezy.Translators
 				foundAppend = true;
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileAppend({fileName}, {text});";
+				return $"fileAppend{random}({fileName}, {text});";
 			});
 
 			// Replace File.delete and track if found.
@@ -75,7 +78,7 @@ namespace Breezy.Translators
 			{
 				foundDelete = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileDelete({fileName});";
+				return $"fileDelete{random}({fileName});";
 			});
 
 			// Replace File.exists and track if found.
@@ -83,7 +86,7 @@ namespace Breezy.Translators
 			{
 				foundExists = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileExists({fileName});";
+				return $"fileExists{random}({fileName});";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -92,7 +95,7 @@ namespace Breezy.Translators
 			// Append fileRead method if it was found.
 			if (foundRead)
 			{
-				methods.AppendLine("std::string fileRead(const std::string& fileName)");
+				methods.AppendLine($"std::string fileRead{random}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ifstream file(fileName);");
 				methods.AppendLine("\tstd::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());");
@@ -103,7 +106,7 @@ namespace Breezy.Translators
 			// Append fileReadLines method if it was found.
 			if (foundReadLines)
 			{
-				methods.AppendLine("std::vector<std::string> fileReadLines(const std::string& fileName)");
+				methods.AppendLine($"std::vector<std::string> fileReadLines{random}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ifstream file(fileName);");
 				methods.AppendLine("\tstd::vector<std::string> lines;");
@@ -119,7 +122,7 @@ namespace Breezy.Translators
 			// Append fileWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				methods.AppendLine("void fileWriteLine(const std::string& fileName, const std::string& text)");
+				methods.AppendLine($"void fileWriteLine{random}(const std::string& fileName, const std::string& text)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
 				methods.AppendLine("\tfile << text << std::endl;");
@@ -129,7 +132,7 @@ namespace Breezy.Translators
 			// Append fileWrite method if it was found.
 			if (foundWrite)
 			{
-				methods.AppendLine("void fileWrite(const std::string& fileName, const std::string& text)");
+				methods.AppendLine($"void fileWrite{random}(const std::string& fileName, const std::string& text)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ofstream file(fileName);");
 				methods.AppendLine("\tfile << text;");
@@ -139,7 +142,7 @@ namespace Breezy.Translators
 			// Append fileAppend method if it was found.
 			if (foundAppend)
 			{
-				methods.AppendLine("void fileAppend(const std::string& fileName, const std::string& text)");
+				methods.AppendLine($"void fileAppend{random}(const std::string& fileName, const std::string& text)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
 				methods.AppendLine("\tfile << text;");
@@ -151,7 +154,7 @@ namespace Breezy.Translators
 			{
 				source = AddInclude(source, "cstdio");
 
-				methods.AppendLine("void fileDelete(const std::string& fileName)");
+				methods.AppendLine($"void fileDelete{random}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::remove(fileName.c_str());");
 				methods.AppendLine("}\n");
@@ -162,7 +165,7 @@ namespace Breezy.Translators
 			{
 				source = AddInclude(source, "fstream");
 
-				methods.AppendLine("bool fileExists(const std::string& fileName)");
+				methods.AppendLine($"bool fileExists{random}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ifstream file(fileName);");
 				methods.AppendLine("\treturn file.good();");

@@ -11,6 +11,9 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			// Support for random method names to avoid conflicts.
+			string random = GetRandomMethodIdentifier();
+
 			// Define the regex patterns to find Console.write, Console.writeLine, Console.read, and Console.readLine.
 			string writePattern = @"Console\.write\(([^;]+)\);";
 			string writeLinePattern = @"Console\.writeLine\(([^;]+)\);";
@@ -28,7 +31,7 @@ namespace Breezy.Translators
 				foundWriteLine = true;
 				string content = match.Groups[1].Value;
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"consoleWriteLine({HandleConcatenation(content)});";
+				return $"consoleWriteLine{random}({HandleConcatenation(content)});";
 			});
 
 			// Then, replace Console.write with consoleWrite and track if found.
@@ -37,21 +40,21 @@ namespace Breezy.Translators
 				foundWrite = true;
 				string content = match.Groups[1].Value;
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"consoleWrite({HandleConcatenation(content)});";
+				return $"consoleWrite{random}({HandleConcatenation(content)});";
 			});
 
 			// Replace Console.readLine with consoleReadLine and track if found.
 			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
-				return "consoleReadLine();";
+				return $"consoleReadLine{random}();";
 			});
 
 			// Replace Console.read with consoleRead and track if found.
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
-				return "consoleRead();";
+				return $"consoleRead{random}();";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -66,7 +69,7 @@ namespace Breezy.Translators
 			// Append consoleWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				methods.AppendLine("void consoleWriteLine(const std::string& output)");
+				methods.AppendLine($"void consoleWriteLine{random}(const std::string& output)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::cout << output << std::endl;");
 				methods.AppendLine("}\n");
@@ -75,7 +78,7 @@ namespace Breezy.Translators
 			// Append consoleWrite method if it was found.
 			if (foundWrite)
 			{
-				methods.AppendLine("void consoleWrite(const std::string& output)");
+				methods.AppendLine($"void consoleWrite{random}(const std::string& output)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::cout << output;");
 				methods.AppendLine("}\n");
@@ -84,7 +87,7 @@ namespace Breezy.Translators
 			// Append consoleReadLine method if it was found.
 			if (foundReadLine)
 			{
-				methods.AppendLine("std::string consoleReadLine()");
+				methods.AppendLine($"std::string consoleReadLine{random}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::string input;");
 				methods.AppendLine("\tstd::getline(std::cin, key);");
@@ -95,7 +98,7 @@ namespace Breezy.Translators
 			// Append consoleRead method if it was found.
 			if (foundRead)
 			{
-				methods.AppendLine("std::string consoleRead()");
+				methods.AppendLine($"std::string consoleRead{random}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::string key;");
 				methods.AppendLine("\tstd::cin >> input;");

@@ -7,6 +7,9 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			// Support for random method names to avoid conflicts.
+			string random = GetRandomMethodIdentifier();
+
 			// Define the regex patterns to find Regex.regexMatch, Regex.regexMatches, and Regex.regexReplace.
 			string matchPattern = @"Regex\.match\(([^;]+),\s*([^;]+)\);";
 			string matchesPattern = @"Regex\.matches\(([^;]+),\s*([^;]+)\);";
@@ -22,7 +25,7 @@ namespace Breezy.Translators
 				foundMatch = true;
 				string text = match.Groups[1].Value;
 				string pattern = match.Groups[2].Value;
-				return $"regexMatch({text}, {pattern});";
+				return $"regexMatch{random}({text}, {pattern});";
 			});
 
 			// Replace Regex.matches with regexMatches and track if found.
@@ -31,7 +34,7 @@ namespace Breezy.Translators
 				foundMatches = true;
 				string text = match.Groups[1].Value;
 				string pattern = match.Groups[2].Value;
-				return $"regexMatches({text}, {pattern});";
+				return $"regexMatches{random}({text}, {pattern});";
 			});
 
 			// Replace Regex.replace with regexReplace and track if found.
@@ -41,7 +44,7 @@ namespace Breezy.Translators
 				string text = match.Groups[1].Value;
 				string pattern = match.Groups[2].Value;
 				string replacement = match.Groups[3].Value;
-				return $"regexReplace({text}, {pattern}, {replacement});";
+				return $"regexReplace{random}({text}, {pattern}, {replacement});";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -61,7 +64,7 @@ namespace Breezy.Translators
 			// Append regexMatch method if it was found.
 			if (foundMatch)
 			{
-				methods.AppendLine("std::string regexMatch(const std::string& text, const std::string& pattern)");
+				methods.AppendLine($"std::string regexMatch{random}(const std::string& text, const std::string& pattern)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::regex regexPattern(pattern);");
 				methods.AppendLine("\tstd::smatch match;");
@@ -76,7 +79,7 @@ namespace Breezy.Translators
 			// Append regexMatches method if it was found.
 			if (foundMatches)
 			{
-				methods.AppendLine("std::vector<std::string> regexMatches(const std::string& text, const std::string& pattern)");
+				methods.AppendLine($"std::vector<std::string> regexMatches{random}(const std::string& text, const std::string& pattern)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::regex regexPattern(pattern);");
 				methods.AppendLine("\tstd::sregex_iterator begin(text.begin(), text.end(), regexPattern);");
@@ -93,7 +96,7 @@ namespace Breezy.Translators
 			// Append regexReplace method if it was found.
 			if (foundReplace)
 			{
-				methods.AppendLine("std::string regexReplace(const std::string& text, const std::string& pattern, const std::string& replacement)");
+				methods.AppendLine($"std::string regexReplace{random}(const std::string& text, const std::string& pattern, const std::string& replacement)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::regex regexPattern(pattern);");
 				methods.AppendLine("\treturn std::regex_replace(text, regexPattern, replacement);");
