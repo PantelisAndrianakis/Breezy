@@ -38,7 +38,7 @@ namespace Breezy.Translators
 			string toStringPattern = @"\(([^()]+)\)\.(?i)toString\(\)";
 			source = Regex.Replace(source, toStringPattern, match =>
 			{
-				return "std::to_string(" + match.Groups[1].Value + ")";
+				return $"std::to_string({match.Groups[1].Value})";
 			});
 
 			// Add necessary C++ methods if they are used.

@@ -19,23 +19,23 @@ namespace Breezy.Translators
 			byte[] buffer = new byte[4]; // 4 bytes = 8 hexadecimal characters.
 			RANDOM.NextBytes(buffer);
 			string hexString = BitConverter.ToString(buffer).Replace("-", ""); // Convert to hexadecimal string without dashes.
-			return "_" + hexString;
+			return $"_{hexString}";
 		}
 
 		public static string AddInclude(string source, string include)
 		{
-			include = "#include <" + include + ">";
+			include = $"#include <{include}>";
 
 			if (!source.Contains(include))
 			{
 				bool addEmptyLine = !source.StartsWith("#");
 				if (addEmptyLine)
 				{
-					source = include + "\n\n" + source;
+					source = $"{include}\n\n{source}";
 				}
 				else
 				{
-					source = include + "\n" + source;
+					source = $"{include}\n{source}";
 				}
 			}
 
