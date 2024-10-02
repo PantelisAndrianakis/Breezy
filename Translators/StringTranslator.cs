@@ -25,7 +25,7 @@ namespace Breezy.Translators
 			});
 
 			// Replace String.split and track if found.
-			string splitPattern = @"String\.split\(\s*([^\s,]+)\s*,\s*([^\s\)]+)\s*\)";
+			string splitPattern = @"String\.(?i)split\(\s*([^\s,]+)\s*,\s*([^\s\)]+)\s*\)";
 			source = Regex.Replace(source, splitPattern, match =>
 			{
 				foundSplit = true;
@@ -35,7 +35,7 @@ namespace Breezy.Translators
 			});
 
 			// Find and replace (XXXX).toString() with std::to_string(XXXX), ensuring correct parentheses matching.
-			string toStringPattern = @"\(([^()]+)\)\.toString\(\)";
+			string toStringPattern = @"\(([^()]+)\)\.(?i)toString\(\)";
 			source = Regex.Replace(source, toStringPattern, match =>
 			{
 				return "std::to_string(" + match.Groups[1].Value + ")";

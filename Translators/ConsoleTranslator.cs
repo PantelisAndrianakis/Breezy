@@ -15,10 +15,10 @@ namespace Breezy.Translators
 			string random = GetRandomMethodIdentifier();
 
 			// Define the regex patterns to find Console.write, Console.writeLine, Console.read, and Console.readLine.
-			string writePattern = @"Console\.write\(([^;]+)\);";
-			string writeLinePattern = @"Console\.writeLine\(([^;]+)\);";
-			string readPattern = @"Console\.read\(\);";
-			string readLinePattern = @"Console\.readLine\(\);";
+			string writePattern = @"Console\.(?i)write\(([^;]+)\);";
+			string writeLinePattern = @"Console\.(?i)writeLine\(([^;]+)\);";
+			string readPattern = @"Console\.(?i)read\(\);";
+			string readLinePattern = @"Console\.(?i)readLine\(\);";
 
 			bool foundWrite = false;
 			bool foundWriteLine = false;

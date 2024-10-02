@@ -14,13 +14,13 @@ namespace Breezy.Translators
 			string random = GetRandomMethodIdentifier();
 
 			// Define regex patterns for File.Read, File.ReadLines, File.WriteLine, File.Write, File.Append, File.Delete, and File.Exists.
-			string readPattern = @"File\.read\(([^;]+)\);";
-			string readLinesPattern = @"File\.readLines\(([^;]+)\);";
-			string writeLinePattern = @"File\.writeLine\(([^;]+),\s*([^;]+)\);";
-			string writePattern = @"File\.write\(([^;]+),\s*([^;]+)\);";
-			string appendPattern = @"File\.append\(([^;]+),\s*([^;]+)\);";
-			string deletePattern = @"File\.delete\(([^;]+)\);";
-			string existsPattern = @"File\.exists\(([^;]+)\);";
+			string readPattern = @"File\.(?i)read\(([^;]+)\);";
+			string readLinesPattern = @"File\.(?i)readLines\(([^;]+)\);";
+			string writeLinePattern = @"File\.(?i)writeLine\(([^;]+),\s*([^;]+)\);";
+			string writePattern = @"File\.(?i)write\(([^;]+),\s*([^;]+)\);";
+			string appendPattern = @"File\.(?i)append\(([^;]+),\s*([^;]+)\);";
+			string deletePattern = @"File\.(?i)delete\(([^;]+)\);";
+			string existsPattern = @"File\.(?i)exists\(([^;]+)\);";
 
 			bool foundRead = false;
 			bool foundReadLines = false;

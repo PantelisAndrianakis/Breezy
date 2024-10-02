@@ -11,9 +11,9 @@ namespace Breezy.Translators
 			string random = GetRandomMethodIdentifier();
 
 			// Define the regex patterns to find Regex.regexMatch, Regex.regexMatches, and Regex.regexReplace.
-			string matchPattern = @"Regex\.match\(([^;]+),\s*([^;]+)\);";
-			string matchesPattern = @"Regex\.matches\(([^;]+),\s*([^;]+)\);";
-			string replacePattern = @"Regex\.replace\(([^;]+),\s*([^;]+),\s*([^;]+)\);";
+			string matchPattern = @"Regex\.(?i)match\(([^;]+),\s*([^;]+)\);";
+			string matchesPattern = @"Regex\.(?i)matches\(([^;]+),\s*([^;]+)\);";
+			string replacePattern = @"Regex\.(?i)replace\(([^;]+),\s*([^;]+),\s*([^;]+)\);";
 
 			bool foundMatch = false;
 			bool foundMatches = false;
