@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace Breezy.Translators
 {
-	public class ConsoleTranslator : BaseLibrary
+	class ConsoleTranslator : MethodLibrary
 	{
 		public static string Process(string source)
 		{

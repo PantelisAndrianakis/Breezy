@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Breezy.Translators
 {
-	public class StringTranslator : BaseLibrary
+	class StringTranslator : MethodLibrary
 	{
 		public static string Process(string source)
 		{

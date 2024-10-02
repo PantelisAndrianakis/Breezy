@@ -3,7 +3,7 @@
 
 namespace Breezy.Translators
 {
-	public class BaseLibrary
+	class MethodLibrary
 	{
 		public static string AddHeader(string source, string header)
 		{
