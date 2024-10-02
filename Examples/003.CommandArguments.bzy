@@ -1,10 +1,10 @@
-void main(int argc, string* argv[])
+void main(int argc, string argv[])
 {
-	if (argc > 0)
+	if (argc > 1) // argc > 1 because argv[0] is the program name.
 	{
-		for (int i = 0; i < argc; ++i)
+		for (int i = 1; i < argc; ++i) // Start from 1 to skip the program name.
 		{
-			Console.writeLine("Argument " + (i + 1) + ": " + argv[i]);
+			Console.writeLine("Argument " + (i).toString() + ": " + argv[i]);
 		}
 	}
 	else

@@ -17,10 +17,10 @@ namespace Breezy.Translators
 				// Apply argument handling and return logic inside main().
 				source = InsertArgsAndReturn(source);
 			}
-			else if (source.Contains("void main(int argc, string* argv[])"))
+			else if (source.Contains("void main(int argc, std::string argv[])"))
 			{
-				// Handle void main(int argc, string* argv[]) and replace it with int main(int argc, char* argv[]).
-				source = Regex.Replace(source, @"void\s+main\s*\(int\s+argc\s*,\s*string\*\s+argv\[\]\)", "int main(int argc, char* argv[])");
+				// Handle void main(int argc, std::string argv[]) and replace it with int main(int argc, char* argv[]).
+				source = Regex.Replace(source, @"void\s+main\s*\(int\s+argc\s*,\s*std::string\s+argv\[\]\)", "int main(int argc, char* argv[])");
 
 				// Apply argument handling and return logic inside main().
 				source = InsertArgsAndReturn(source);
