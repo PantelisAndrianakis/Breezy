@@ -21,14 +21,14 @@ namespace Breezy.Translators
 				return $"std::string {match.Groups[1].Value}";
 			});
 
-			// Handle String.split(text, delimiter) and translate it to C++.
+			// Replace String.split and track if found.
 			string splitPattern = @"String\.split\(\s*([^\s,]+)\s*,\s*([^\s\)]+)\s*\)";
 			source = Regex.Replace(source, splitPattern, match =>
 			{
 				foundSplit = true;
 				string text = match.Groups[1].Value;
 				string delimiter = match.Groups[2].Value;
-				return $"split({text}, {delimiter})";
+				return $"stringSplit({text}, {delimiter})";
 			});
 
 			// Find and replace (XXXX).toString() with std::to_string(XXXX), ensuring correct parentheses matching.
@@ -48,7 +48,7 @@ namespace Breezy.Translators
 				source = AddInclude(source, "sstream");
 				source = AddInclude(source, "vector");
 
-				methods.AppendLine("std::vector<std::string> split(const std::string& str, const std::string& delimiter)");
+				methods.AppendLine("std::vector<std::string> stringSplit(const std::string& str, const std::string& delimiter)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::vector<std::string> tokens;");
 				methods.AppendLine("\tsize_t start = 0;");
