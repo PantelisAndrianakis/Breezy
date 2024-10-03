@@ -10,67 +10,86 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
-			// Support for random method names to avoid conflicts.
-			string random = GetRandomMethodIdentifier();
-
-			// Define the regex patterns to find Time.current, Time.timeString, Time.dateString and Time.dateTimeString.
-			string currentPattern = @"Time\.(?i)current\(\)";
-			string timeStringPattern = @"Time\.(?i)timeString\(\)";
-			string dateStringPattern = @"Time\.(?i)dateString\(\)";
-			string dateTimeStringPattern = @"Time\.(?i)dateTimeString\(\)";
-
-			bool foundCurrent = false;
+			bool foundCurrentMillis = false;
 			bool foundTimeString = false;
 			bool foundDateString = false;
 			bool foundDateTimeString = false;
 
-			// Replace Time.current with timeCurrent and track if found.
-			source = Regex.Replace(source, currentPattern, match =>
+			// Support for random method names to avoid conflicts.
+			string timeCurrentMillisSuffix = "";
+			string timeTimeStringSuffix = "";
+			string timeDateStringSuffix = "";
+			string timeDateTimeStringSuffix = "";
+
+			// Define the regex patterns to find Time.currentMillis, Time.timeString, Time.dateString and Time.dateTimeString.
+			string currentMillisPattern = @"Time\.(?i)currentMillis\(\)";
+			string timeStringPattern = @"Time\.(?i)timeString\(\)";
+			string dateStringPattern = @"Time\.(?i)dateString\(\)";
+			string dateTimeStringPattern = @"Time\.(?i)dateTimeString\(\)";
+
+			// Replace Time.currentMillis with timeCurrentMillis and track if found.
+			source = Regex.Replace(source, currentMillisPattern, match =>
 			{
-				foundCurrent = true;
-				return $"timeCurrent{random}()";
+				foundCurrentMillis = true;
+				if (source.Contains("timeCurrentMillis()"))
+				{
+					timeCurrentMillisSuffix = GetRandomMethodIdentifier();
+				}
+				return $"timeCurrentMillis{timeCurrentMillisSuffix}()";
 			});
 
 			// Replace Time.timeString with timeTimeString and track if found.
 			source = Regex.Replace(source, timeStringPattern, match =>
 			{
 				foundTimeString = true;
-				return $"timeTimeString{random}()";
+				if (source.Contains("timeTimeString()"))
+				{
+					timeTimeStringSuffix = GetRandomMethodIdentifier();
+				}
+				return $"timeTimeString{timeTimeStringSuffix}()";
 			});
 
 			// Replace Time.dateString with timeDateString and track if found.
 			source = Regex.Replace(source, dateStringPattern, match =>
 			{
 				foundDateString = true;
-				return $"timeDateString{random}()";
+				if (source.Contains("timeDateString()"))
+				{
+					timeDateStringSuffix = GetRandomMethodIdentifier();
+				}
+				return $"timeDateString{timeDateStringSuffix}()";
 			});
 
 			// Replace Time.dateTimeString with timeDateTimeString and track if found.
 			source = Regex.Replace(source, dateTimeStringPattern, match =>
 			{
 				foundDateTimeString = true;
-				return $"timeDateTimeString{random}()";
+				if (source.Contains("timeDateTimeString()"))
+				{
+					timeDateTimeStringSuffix = GetRandomMethodIdentifier();
+				}
+				return $"timeDateTimeString{timeDateTimeStringSuffix}()";
 			});
 
 			// Add the necessary C++ methods if they are used.
 			StringBuilder methods = new StringBuilder();
 
 			// Check if we need to add the <regex> import.
-			if (foundCurrent || foundTimeString || foundDateString || foundDateTimeString)
+			if (foundCurrentMillis || foundTimeString || foundDateString || foundDateTimeString)
 			{
 				source = AddInclude(source, "chrono");
 				if (foundTimeString || foundDateString || foundDateTimeString)
 				{
 					source = AddInclude(source, "ctime");
-					source = AddInclude(source, "sstream");
 					source = AddInclude(source, "iomanip");
+					source = AddInclude(source, "sstream");
 				}
 			}
 
-			// Append timeCurrent method if it was found.
-			if (foundCurrent)
+			// Append timeCurrentMillis method if it was found.
+			if (foundCurrentMillis)
 			{
-				methods.AppendLine($"long timeCurrent{random}()");
+				methods.AppendLine($"long timeCurrentMillis{timeCurrentMillisSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tauto duration = now.time_since_epoch();");
@@ -81,7 +100,7 @@ namespace Breezy.Translators
 			// Append timeTimeString method if it was found.
 			if (foundTimeString)
 			{
-				methods.AppendLine($"std::string timeTimeString{random}()");
+				methods.AppendLine($"std::string timeTimeString{timeTimeStringSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -95,7 +114,7 @@ namespace Breezy.Translators
 			// Append timeDateString method if it was found.
 			if (foundDateString)
 			{
-				methods.AppendLine($"std::string timeDateString{random}()");
+				methods.AppendLine($"std::string timeDateString{timeDateStringSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -109,7 +128,7 @@ namespace Breezy.Translators
 			// Append timeDateTimeString method if it was found.
 			if (foundDateTimeString)
 			{
-				methods.AppendLine($"std::string timeDateTimeString{random}()");
+				methods.AppendLine($"std::string timeDateTimeString{timeDateTimeStringSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");

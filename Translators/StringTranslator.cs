@@ -70,11 +70,18 @@ namespace Breezy.Translators
 				return $"std::string {match.Groups[1].Value}";
 			});
 
-			// Replace String.split and track if found.
+			// Support for random method names to avoid conflicts.
+			string stringSplitSuffix ="";
+
+			// Replace String.split with stringSplit and track if found.
 			string splitPattern = @"String\.(?i)split\(\s*([^\s,]+)\s*,\s*([^\s\)]+)\s*\)";
 			source = Regex.Replace(source, splitPattern, match =>
 			{
 				foundSplit = true;
+				if (source.Contains("stringSplit("))
+				{
+					stringSplitSuffix = GetRandomMethodIdentifier();
+				}
 				string text = match.Groups[1].Value;
 				string delimiter = match.Groups[2].Value;
 				return $"stringSplit({text}, {delimiter})";
@@ -86,14 +93,11 @@ namespace Breezy.Translators
 			// Add the split method if found.
 			if (foundSplit)
 			{
-				// Support for random method names to avoid conflicts.
-				string random = GetRandomMethodIdentifier();
-
 				// Add necessary #include statements.
 				source = AddInclude(source, "sstream");
 				source = AddInclude(source, "vector");
 
-				methods.AppendLine($"std::vector<std::string> stringSplit{random}(const std::string& str, const std::string& delimiter)");
+				methods.AppendLine($"std::vector<std::string> stringSplit{stringSplitSuffix}(const std::string& str, const std::string& delimiter)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::vector<std::string> tokens;");
 				methods.AppendLine("\tsize_t start = 0;");

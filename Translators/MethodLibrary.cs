@@ -7,15 +7,10 @@ namespace Breezy.Translators
 {
 	class MethodLibrary
 	{
-		private static Random RANDOM = new Random();
+		private static readonly Random RANDOM = new Random();
 
 		public static string GetRandomMethodIdentifier()
 		{
-			if (!Config.RANDOM_METHOD_NAMES)
-			{
-				return "";
-			}
-
 			byte[] buffer = new byte[4]; // 4 bytes = 8 hexadecimal characters.
 			RANDOM.NextBytes(buffer);
 			string hexString = BitConverter.ToString(buffer).Replace("-", ""); // Convert to hexadecimal string without dashes.

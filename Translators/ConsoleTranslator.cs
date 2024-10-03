@@ -11,8 +11,16 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			bool foundWrite = false;
+			bool foundWriteLine = false;
+			bool foundRead = false;
+			bool foundReadLine = false;
+
 			// Support for random method names to avoid conflicts.
-			string random = GetRandomMethodIdentifier();
+			string consoleWriteLineSuffix = "";
+			string consoleWriteSuffix = "";
+			string consoleReadLineSuffix = "";
+			string consoleReadSuffix = "";
 
 			// Define the regex patterns to find Console.write, Console.writeLine, Console.read, and Console.readLine.
 			string writePattern = @"Console\.(?i)write\(([^;]+)\)";
@@ -20,41 +28,52 @@ namespace Breezy.Translators
 			string readPattern = @"Console\.(?i)read\(\)";
 			string readLinePattern = @"Console\.(?i)readLine\(\)";
 
-			bool foundWrite = false;
-			bool foundWriteLine = false;
-			bool foundRead = false;
-			bool foundReadLine = false;
-
 			// First, replace Console.writeLine with consoleWriteLine and track if found.
 			source = Regex.Replace(source, writeLinePattern, match =>
 			{
 				foundWriteLine = true;
-				string content = match.Groups[1].Value;
+				if (source.Contains("consoleWriteLine("))
+				{
+					consoleWriteLineSuffix = GetRandomMethodIdentifier();
+				}
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"consoleWriteLine{random}({HandleConcatenation(content)})";
+				string content = match.Groups[1].Value;
+				return $"consoleWriteLine{consoleWriteLineSuffix}({HandleConcatenation(content)})";
 			});
 
 			// Then, replace Console.write with consoleWrite and track if found.
 			source = Regex.Replace(source, writePattern, match =>
 			{
 				foundWrite = true;
-				string content = match.Groups[1].Value;
+				if (source.Contains("consoleWrite("))
+				{
+					consoleWriteSuffix = GetRandomMethodIdentifier();
+				}
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"consoleWrite{random}({HandleConcatenation(content)})";
+				string content = match.Groups[1].Value;
+				return $"consoleWrite{consoleWriteSuffix}({HandleConcatenation(content)})";
 			});
 
 			// Replace Console.readLine with consoleReadLine and track if found.
 			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
-				return $"consoleReadLine{random}()";
+				if (source.Contains("consoleReadLine()"))
+				{
+					consoleReadLineSuffix = GetRandomMethodIdentifier();
+				}
+				return $"consoleReadLine{consoleReadLineSuffix}()";
 			});
 
 			// Replace Console.read with consoleRead and track if found.
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
-				return $"consoleRead{random}()";
+				if (source.Contains("consoleRead()"))
+				{
+					consoleReadSuffix = GetRandomMethodIdentifier();
+				}
+				return $"consoleRead{consoleReadSuffix}()";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -69,7 +88,7 @@ namespace Breezy.Translators
 			// Append consoleWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				methods.AppendLine($"void consoleWriteLine{random}(const std::string& output)");
+				methods.AppendLine($"void consoleWriteLine{consoleWriteLineSuffix}(const std::string& output)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::cout << output << std::endl;");
 				methods.AppendLine("}\n");
@@ -78,7 +97,7 @@ namespace Breezy.Translators
 			// Append consoleWrite method if it was found.
 			if (foundWrite)
 			{
-				methods.AppendLine($"void consoleWrite{random}(const std::string& output)");
+				methods.AppendLine($"void consoleWrite{consoleWriteSuffix}(const std::string& output)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::cout << output;");
 				methods.AppendLine("}\n");
@@ -87,7 +106,7 @@ namespace Breezy.Translators
 			// Append consoleReadLine method if it was found.
 			if (foundReadLine)
 			{
-				methods.AppendLine($"std::string consoleReadLine{random}()");
+				methods.AppendLine($"std::string consoleReadLine{consoleReadLineSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::string input;");
 				methods.AppendLine("\tstd::getline(std::cin, key);");
@@ -98,7 +117,7 @@ namespace Breezy.Translators
 			// Append consoleRead method if it was found.
 			if (foundRead)
 			{
-				methods.AppendLine($"std::string consoleRead{random}()");
+				methods.AppendLine($"std::string consoleRead{consoleReadSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::string key;");
 				methods.AppendLine("\tstd::cin >> input;");

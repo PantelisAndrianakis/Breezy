@@ -10,8 +10,22 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			bool foundRead = false;
+			bool foundReadLines = false;
+			bool foundWriteLine = false;
+			bool foundWrite = false;
+			bool foundAppend = false;
+			bool foundDelete = false;
+			bool foundExists = false;
+
 			// Support for random method names to avoid conflicts.
-			string random = GetRandomMethodIdentifier();
+			string fileReadSuffix = "";
+			string fileReadLinesSuffix = "";
+			string fileWriteLineSuffix = "";
+			string fileWriteSuffix = "";
+			string fileAppendSuffix = "";
+			string fileDeleteSuffix = "";
+			string fileExistsSuffix = "";
 
 			// Define regex patterns for File.Read, File.ReadLines, File.WriteLine, File.Write, File.Append, File.Delete, and File.Exists.
 			string readPattern = @"File\.(?i)read\(([^;]+)\)";
@@ -22,71 +36,91 @@ namespace Breezy.Translators
 			string deletePattern = @"File\.(?i)delete\(([^;]+)\)";
 			string existsPattern = @"File\.(?i)exists\(([^;]+)\)";
 
-			bool foundRead = false;
-			bool foundReadLines = false;
-			bool foundWriteLine = false;
-			bool foundWrite = false;
-			bool foundAppend = false;
-			bool foundDelete = false;
-			bool foundExists = false;
-
-			// Replace File.read and track if found.
+			// Replace File.read with fileRead and track if found.
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
+				if (source.Contains("fileRead("))
+				{
+					fileReadSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
-				return $"fileRead{random}({fileName})";
+				return $"fileRead{fileReadSuffix}({fileName})";
 			});
 
-			// Replace File.readLines and track if found.
+			// Replace File.readLines with fileReadLines and track if found.
 			source = Regex.Replace(source, readLinesPattern, match =>
 			{
 				foundReadLines = true;
+				if (source.Contains("fileReadLines("))
+				{
+					fileReadLinesSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
-				return $"fileReadLines{random}({fileName})";
+				return $"fileReadLines{fileReadLinesSuffix}({fileName})";
 			});
 
-			// Replace File.writeLine and track if found.
+			// Replace File.writeLine with fileWriteLine and track if found.
 			source = Regex.Replace(source, writeLinePattern, match =>
 			{
 				foundWriteLine = true;
+				if (source.Contains("fileWriteLine("))
+				{
+					fileWriteLineSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileWriteLine{random}({fileName}, {text})";
+				return $"fileWriteLine{fileWriteLineSuffix}({fileName}, {text})";
 			});
 
-			// Replace File.write and track if found.
+			// Replace File.write with fileWrite and track if found.
 			source = Regex.Replace(source, writePattern, match =>
 			{
 				foundWrite = true;
+				if (source.Contains("fileWrite("))
+				{
+					fileWriteSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileWrite{random}({fileName}, {text})";
+				return $"fileWrite{fileWriteSuffix}({fileName}, {text})";
 			});
 
-			// Replace File.append and track if found.
+			// Replace File.append with fileAppend and track if found.
 			source = Regex.Replace(source, appendPattern, match =>
 			{
 				foundAppend = true;
+				if (source.Contains("fileAppend("))
+				{
+					fileAppendSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileAppend{random}({fileName}, {text})";
+				return $"fileAppend{fileAppendSuffix}({fileName}, {text})";
 			});
 
-			// Replace File.delete and track if found.
+			// Replace File.delete with fileDelete and track if found.
 			source = Regex.Replace(source, deletePattern, match =>
 			{
 				foundDelete = true;
+				if (source.Contains("fileDelete("))
+				{
+					fileDeleteSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
-				return $"fileDelete{random}({fileName})";
+				return $"fileDelete{fileDeleteSuffix}({fileName})";
 			});
 
-			// Replace File.exists and track if found.
+			// Replace File.exists with fileExists and track if found.
 			source = Regex.Replace(source, existsPattern, match =>
 			{
 				foundExists = true;
+				if (source.Contains("fileExists("))
+				{
+					fileExistsSuffix = GetRandomMethodIdentifier();
+				}
 				string fileName = match.Groups[1].Value;
-				return $"fileExists{random}({fileName})";
+				return $"fileExists{fileExistsSuffix}({fileName})";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -95,7 +129,7 @@ namespace Breezy.Translators
 			// Append fileRead method if it was found.
 			if (foundRead)
 			{
-				methods.AppendLine($"std::string fileRead{random}(const std::string& fileName)");
+				methods.AppendLine($"std::string fileRead{fileReadSuffix}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ifstream file(fileName);");
 				methods.AppendLine("\tstd::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());");
@@ -106,7 +140,7 @@ namespace Breezy.Translators
 			// Append fileReadLines method if it was found.
 			if (foundReadLines)
 			{
-				methods.AppendLine($"std::vector<std::string> fileReadLines{random}(const std::string& fileName)");
+				methods.AppendLine($"std::vector<std::string> fileReadLines{fileReadLinesSuffix}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ifstream file(fileName);");
 				methods.AppendLine("\tstd::vector<std::string> lines;");
@@ -122,7 +156,7 @@ namespace Breezy.Translators
 			// Append fileWriteLine method if it was found.
 			if (foundWriteLine)
 			{
-				methods.AppendLine($"void fileWriteLine{random}(const std::string& fileName, const std::string& text)");
+				methods.AppendLine($"void fileWriteLine{fileWriteLineSuffix}(const std::string& fileName, const std::string& text)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
 				methods.AppendLine("\tfile << text << std::endl;");
@@ -132,7 +166,7 @@ namespace Breezy.Translators
 			// Append fileWrite method if it was found.
 			if (foundWrite)
 			{
-				methods.AppendLine($"void fileWrite{random}(const std::string& fileName, const std::string& text)");
+				methods.AppendLine($"void fileWrite{fileWriteSuffix}(const std::string& fileName, const std::string& text)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ofstream file(fileName);");
 				methods.AppendLine("\tfile << text;");
@@ -142,7 +176,7 @@ namespace Breezy.Translators
 			// Append fileAppend method if it was found.
 			if (foundAppend)
 			{
-				methods.AppendLine($"void fileAppend{random}(const std::string& fileName, const std::string& text)");
+				methods.AppendLine($"void fileAppend{fileAppendSuffix}(const std::string& fileName, const std::string& text)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ofstream file(fileName, std::ios_base::app);");
 				methods.AppendLine("\tfile << text;");
@@ -154,7 +188,7 @@ namespace Breezy.Translators
 			{
 				source = AddInclude(source, "cstdio");
 
-				methods.AppendLine($"void fileDelete{random}(const std::string& fileName)");
+				methods.AppendLine($"void fileDelete{fileDeleteSuffix}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::remove(fileName.c_str());");
 				methods.AppendLine("}\n");
@@ -165,7 +199,7 @@ namespace Breezy.Translators
 			{
 				source = AddInclude(source, "fstream");
 
-				methods.AppendLine($"bool fileExists{random}(const std::string& fileName)");
+				methods.AppendLine($"bool fileExists{fileExistsSuffix}(const std::string& fileName)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tstd::ifstream file(fileName);");
 				methods.AppendLine("\treturn file.good();");
