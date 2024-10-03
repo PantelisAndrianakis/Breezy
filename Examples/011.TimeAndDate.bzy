@@ -1,0 +1,7 @@
+void main()
+{
+	Console.WriteLine("Current time in milliseconds: " + (Time.current()).toString());
+	Console.WriteLine("Current time string: " + Time.timeString());
+	Console.WriteLine("Current date string: " + Time.dateString());
+	Console.WriteLine("Current date and time string: " + Time.dateTimeString());
+}

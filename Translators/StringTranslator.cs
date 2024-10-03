@@ -10,8 +10,54 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
-			// Support for random method names to avoid conflicts.
-			string random = GetRandomMethodIdentifier();
+			// Find and replace (XXXX).toString() with std::to_string(XXXX), ensuring correct parentheses matching.
+			while (source.Contains(").toString()") || source.Contains(").ToString()"))
+			{
+				// Look for `.toString()` first, then `.ToString()`.
+				int index = source.IndexOf(".toString()");
+				if (index == -1)
+				{
+					index = source.IndexOf(".ToString()");
+				}
+
+				if (index != -1)
+				{
+					// Find the closest closing parenthesis `)` to the left of `.toString()`.
+					int closeParenIndex = index - 1;
+					if (closeParenIndex != -1 && source[closeParenIndex] == ')')
+					{
+						// We now need to backtrack to find the matching opening parenthesis `(`.
+						int openParenIndex = -1;
+						int parenCounter = 1;  // Start by counting the first `)` we found.
+						for (int i = closeParenIndex - 1; i >= 0; i--)
+						{
+							if (source[i] == ')')
+							{
+								parenCounter++;
+							}
+							else if (source[i] == '(')
+							{
+								parenCounter--;
+								if (parenCounter == 0)
+								{
+									openParenIndex = i;
+									break;
+								}
+							}
+						}
+
+						// If we found a matching opening parenthesis.
+						if (openParenIndex != -1)
+						{
+							// Extract the expression within the parentheses.
+							string expression = source.Substring(openParenIndex + 1, closeParenIndex - openParenIndex - 1);
+
+							// Replace the `.toString()` with `std::to_string()` and update the string.
+							source = source.Substring(0, openParenIndex) + "std::to_string(" + expression + ")" + source.Substring(index + 11);
+						}
+					}
+				}
+			}
 
 			bool foundString = false;
 			bool foundSplit = false;
@@ -34,19 +80,15 @@ namespace Breezy.Translators
 				return $"stringSplit({text}, {delimiter})";
 			});
 
-			// Find and replace (XXXX).toString() with std::to_string(XXXX), ensuring correct parentheses matching.
-			string toStringPattern = @"\(([^()]+)\)\.(?i)toString\(\)";
-			source = Regex.Replace(source, toStringPattern, match =>
-			{
-				return $"std::to_string({match.Groups[1].Value})";
-			});
-
 			// Add necessary C++ methods if they are used.
 			StringBuilder methods = new StringBuilder();
 
 			// Add the split method if found.
 			if (foundSplit)
 			{
+				// Support for random method names to avoid conflicts.
+				string random = GetRandomMethodIdentifier();
+
 				// Add necessary #include statements.
 				source = AddInclude(source, "sstream");
 				source = AddInclude(source, "vector");

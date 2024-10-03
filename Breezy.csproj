@@ -54,6 +54,7 @@
     <Compile Include="Translators\MainTranslator.cs" />
     <Compile Include="Translators\RegexTranslator.cs" />
     <Compile Include="Translators\StringTranslator.cs" />
+    <Compile Include="Translators\TimeTranslator.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

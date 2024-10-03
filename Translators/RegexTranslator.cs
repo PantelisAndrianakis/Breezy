@@ -1,4 +1,7 @@
-﻿using System.Text;
+﻿// Author: Pantelis Andrianakis
+// Creation Date: October 2nd 2024
+
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Breezy.Translators
@@ -11,9 +14,9 @@ namespace Breezy.Translators
 			string random = GetRandomMethodIdentifier();
 
 			// Define the regex patterns to find Regex.regexMatch, Regex.regexMatches, and Regex.regexReplace.
-			string matchPattern = @"Regex\.(?i)match\(([^;]+),\s*([^;]+)\);";
-			string matchesPattern = @"Regex\.(?i)matches\(([^;]+),\s*([^;]+)\);";
-			string replacePattern = @"Regex\.(?i)replace\(([^;]+),\s*([^;]+),\s*([^;]+)\);";
+			string matchPattern = @"Regex\.(?i)match\(([^;]+),\s*([^;]+)\)";
+			string matchesPattern = @"Regex\.(?i)matches\(([^;]+),\s*([^;]+)\)";
+			string replacePattern = @"Regex\.(?i)replace\(([^;]+),\s*([^;]+),\s*([^;]+)\)";
 
 			bool foundMatch = false;
 			bool foundMatches = false;
@@ -25,7 +28,7 @@ namespace Breezy.Translators
 				foundMatch = true;
 				string text = match.Groups[1].Value;
 				string pattern = match.Groups[2].Value;
-				return $"regexMatch{random}({text}, {pattern});";
+				return $"regexMatch{random}({text}, {pattern})";
 			});
 
 			// Replace Regex.matches with regexMatches and track if found.
@@ -34,7 +37,7 @@ namespace Breezy.Translators
 				foundMatches = true;
 				string text = match.Groups[1].Value;
 				string pattern = match.Groups[2].Value;
-				return $"regexMatches{random}({text}, {pattern});";
+				return $"regexMatches{random}({text}, {pattern})";
 			});
 
 			// Replace Regex.replace with regexReplace and track if found.
@@ -44,7 +47,7 @@ namespace Breezy.Translators
 				string text = match.Groups[1].Value;
 				string pattern = match.Groups[2].Value;
 				string replacement = match.Groups[3].Value;
-				return $"regexReplace{random}({text}, {pattern}, {replacement});";
+				return $"regexReplace{random}({text}, {pattern}, {replacement})";
 			});
 
 			// Add the necessary C++ methods if they are used.

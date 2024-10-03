@@ -15,10 +15,10 @@ namespace Breezy.Translators
 			string random = GetRandomMethodIdentifier();
 
 			// Define the regex patterns to find Console.write, Console.writeLine, Console.read, and Console.readLine.
-			string writePattern = @"Console\.(?i)write\(([^;]+)\);";
-			string writeLinePattern = @"Console\.(?i)writeLine\(([^;]+)\);";
-			string readPattern = @"Console\.(?i)read\(\);";
-			string readLinePattern = @"Console\.(?i)readLine\(\);";
+			string writePattern = @"Console\.(?i)write\(([^;]+)\)";
+			string writeLinePattern = @"Console\.(?i)writeLine\(([^;]+)\)";
+			string readPattern = @"Console\.(?i)read\(\)";
+			string readLinePattern = @"Console\.(?i)readLine\(\)";
 
 			bool foundWrite = false;
 			bool foundWriteLine = false;
@@ -31,7 +31,7 @@ namespace Breezy.Translators
 				foundWriteLine = true;
 				string content = match.Groups[1].Value;
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"consoleWriteLine{random}({HandleConcatenation(content)});";
+				return $"consoleWriteLine{random}({HandleConcatenation(content)})";
 			});
 
 			// Then, replace Console.write with consoleWrite and track if found.
@@ -40,21 +40,21 @@ namespace Breezy.Translators
 				foundWrite = true;
 				string content = match.Groups[1].Value;
 				// Handle string concatenation by calling the HandleConcatenation function.
-				return $"consoleWrite{random}({HandleConcatenation(content)});";
+				return $"consoleWrite{random}({HandleConcatenation(content)})";
 			});
 
 			// Replace Console.readLine with consoleReadLine and track if found.
 			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
-				return $"consoleReadLine{random}();";
+				return $"consoleReadLine{random}()";
 			});
 
 			// Replace Console.read with consoleRead and track if found.
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
-				return $"consoleRead{random}();";
+				return $"consoleRead{random}()";
 			});
 
 			// Add the necessary C++ methods if they are used.

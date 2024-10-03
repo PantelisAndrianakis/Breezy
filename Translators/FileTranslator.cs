@@ -14,13 +14,13 @@ namespace Breezy.Translators
 			string random = GetRandomMethodIdentifier();
 
 			// Define regex patterns for File.Read, File.ReadLines, File.WriteLine, File.Write, File.Append, File.Delete, and File.Exists.
-			string readPattern = @"File\.(?i)read\(([^;]+)\);";
-			string readLinesPattern = @"File\.(?i)readLines\(([^;]+)\);";
-			string writeLinePattern = @"File\.(?i)writeLine\(([^;]+),\s*([^;]+)\);";
-			string writePattern = @"File\.(?i)write\(([^;]+),\s*([^;]+)\);";
-			string appendPattern = @"File\.(?i)append\(([^;]+),\s*([^;]+)\);";
-			string deletePattern = @"File\.(?i)delete\(([^;]+)\);";
-			string existsPattern = @"File\.(?i)exists\(([^;]+)\);";
+			string readPattern = @"File\.(?i)read\(([^;]+)\)";
+			string readLinesPattern = @"File\.(?i)readLines\(([^;]+)\)";
+			string writeLinePattern = @"File\.(?i)writeLine\(([^;]+),\s*([^;]+)\)";
+			string writePattern = @"File\.(?i)write\(([^;]+),\s*([^;]+)\)";
+			string appendPattern = @"File\.(?i)append\(([^;]+),\s*([^;]+)\)";
+			string deletePattern = @"File\.(?i)delete\(([^;]+)\)";
+			string existsPattern = @"File\.(?i)exists\(([^;]+)\)";
 
 			bool foundRead = false;
 			bool foundReadLines = false;
@@ -35,7 +35,7 @@ namespace Breezy.Translators
 			{
 				foundRead = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileRead{random}({fileName});";
+				return $"fileRead{random}({fileName})";
 			});
 
 			// Replace File.readLines and track if found.
@@ -43,7 +43,7 @@ namespace Breezy.Translators
 			{
 				foundReadLines = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileReadLines{random}({fileName});";
+				return $"fileReadLines{random}({fileName})";
 			});
 
 			// Replace File.writeLine and track if found.
@@ -52,7 +52,7 @@ namespace Breezy.Translators
 				foundWriteLine = true;
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileWriteLine{random}({fileName}, {text});";
+				return $"fileWriteLine{random}({fileName}, {text})";
 			});
 
 			// Replace File.write and track if found.
@@ -61,7 +61,7 @@ namespace Breezy.Translators
 				foundWrite = true;
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileWrite{random}({fileName}, {text});";
+				return $"fileWrite{random}({fileName}, {text})";
 			});
 
 			// Replace File.append and track if found.
@@ -70,7 +70,7 @@ namespace Breezy.Translators
 				foundAppend = true;
 				string fileName = match.Groups[1].Value;
 				string text = match.Groups[2].Value;
-				return $"fileAppend{random}({fileName}, {text});";
+				return $"fileAppend{random}({fileName}, {text})";
 			});
 
 			// Replace File.delete and track if found.
@@ -78,7 +78,7 @@ namespace Breezy.Translators
 			{
 				foundDelete = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileDelete{random}({fileName});";
+				return $"fileDelete{random}({fileName})";
 			});
 
 			// Replace File.exists and track if found.
@@ -86,7 +86,7 @@ namespace Breezy.Translators
 			{
 				foundExists = true;
 				string fileName = match.Groups[1].Value;
-				return $"fileExists{random}({fileName});";
+				return $"fileExists{random}({fileName})";
 			});
 
 			// Add the necessary C++ methods if they are used.

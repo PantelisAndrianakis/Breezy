@@ -2,11 +2,11 @@
 
 ### What is Breezy?
 
-Breezy is a programming language that blends Java-inspired syntax with full C++ code generation.<br>
-The language is designed to ease developers familiar with Java, making programming more intuitive.
+**Breezy** is a programming language that combines Java-inspired syntax with full C++ code generation.<br>
+It simplifies C++ development for developers familiar with Java, making programming more intuitive.
 
 ### Key Characteristics
-- **Java-inspired syntax**: Familiar for developers who want a streamlined experience while still targeting C++.
+- **Java-like Syntax**: Familiar and intuitive for Java developers, with no steep learning curve.
 - **Full C++ Support**: Generates clean and efficient C++ code without any reliance on other intermediaries.
 - **Memory Management**: Breezy generates pure C++ code, giving you control over memory management.
 
@@ -21,15 +21,17 @@ Breezy was developed purely for fun, following the challenges of building a comp
 
 ---
 
-### Features List
-- **Multiple Source Files**: Supports complex projects with multiple source files.
-- **Main Method Handling**: Visually friendly main method that does not intimidates beginners.
-- **Command-line Arguments**: Handling command-line arguments in the main method for easier input processing.
+### Feature List
+
+- **Multiple Source Files**: Easily handles large, multi-file projects.
+- **Main Method Handling**: Beginner-friendly `main()` method for seamless entry point handling.
+- **Command-line Arguments**: Simple command-line argument processing within the `main()` method.
 - **Console Input/Output**: Reading and writing to the console with simplified methods for user interaction.
 - **String Type Translation**: Automatically converts string declarations into std::string for easier use.
-- **String toString() Method**: Supports conversion of numeric and object types, replacing with std::to_string().
-- **String split Method**: Separate a string into a list of substrings based on a given delimiter.
-- **File Operations**: Provides a range of methods for reading, writing, appending and deleting files.
+- **String toString() Method**: Converts numeric and object types to strings using `std::to_string()`.
+- **String Split Method**: Splits strings into a list of substrings based on a given delimiter.
+- **File Operations**: Provides a range of file operations for reading, writing, appending and deleting.
 - **Collections**: Support for collections such as List and Map, mapped to std::vector and std::unordered_map.
 - **Enhanced For Loop**: Simple and intuitive enhanced for loops for more readable and concise iterations.
-- **Regex**: Provides methods for Regex first match, matches as string list and replacements.
+- **Regex Support**: Methods for regex matching, extracting matches as a list, and performing replacements.
+- **Time and Date**: Methods to get the current time in milliseconds and formatted time or date as strings.
