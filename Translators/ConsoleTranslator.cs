@@ -32,7 +32,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, writeLinePattern, match =>
 			{
 				foundWriteLine = true;
-				if (source.Contains("consoleWriteLine("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("consoleWriteLine("))
 				{
 					consoleWriteLineSuffix = GetRandomMethodIdentifier();
 				}
@@ -45,7 +45,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, writePattern, match =>
 			{
 				foundWrite = true;
-				if (source.Contains("consoleWrite("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("consoleWrite("))
 				{
 					consoleWriteSuffix = GetRandomMethodIdentifier();
 				}
@@ -58,7 +58,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, readLinePattern, match =>
 			{
 				foundReadLine = true;
-				if (source.Contains("consoleReadLine()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("consoleReadLine()"))
 				{
 					consoleReadLineSuffix = GetRandomMethodIdentifier();
 				}
@@ -69,7 +69,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
-				if (source.Contains("consoleRead()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("consoleRead()"))
 				{
 					consoleReadSuffix = GetRandomMethodIdentifier();
 				}

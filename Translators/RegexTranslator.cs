@@ -28,7 +28,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, matchPattern, match =>
 			{
 				foundMatch = true;
-				if (source.Contains("regexMatch("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("regexMatch("))
 				{
 					regexMatchSuffix = GetRandomMethodIdentifier();
 				}
@@ -41,7 +41,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, matchesPattern, match =>
 			{
 				foundMatches = true;
-				if (source.Contains("regexMatches("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("regexMatches("))
 				{
 					regexMatchesSuffix = GetRandomMethodIdentifier();
 				}
@@ -54,7 +54,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, replacePattern, match =>
 			{
 				foundReplace = true;
-				if (source.Contains("regexReplace("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("regexReplace("))
 				{
 					regexReplaceSuffix = GetRandomMethodIdentifier();
 				}

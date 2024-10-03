@@ -40,7 +40,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, currentMillisPattern, match =>
 			{
 				foundCurrentMillis = true;
-				if (source.Contains("timeCurrentMillis()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeCurrentMillis()"))
 				{
 					timeCurrentMillisSuffix = GetRandomMethodIdentifier();
 				}
@@ -51,7 +51,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, timeStringPattern, match =>
 			{
 				foundTimeString = true;
-				if (source.Contains("timeTimeString()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeTimeString()"))
 				{
 					timeTimeStringSuffix = GetRandomMethodIdentifier();
 				}
@@ -62,7 +62,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, dateStringPattern, match =>
 			{
 				foundDateString = true;
-				if (source.Contains("timeDateString()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateString()"))
 				{
 					timeDateStringSuffix = GetRandomMethodIdentifier();
 				}
@@ -73,7 +73,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, dateTimeStringPattern, match =>
 			{
 				foundDateTimeString = true;
-				if (source.Contains("timeDateTimeString()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateTimeString()"))
 				{
 					timeDateTimeStringSuffix = GetRandomMethodIdentifier();
 				}
@@ -84,7 +84,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, timeStringWithFormatPattern, match =>
 			{
 				foundTimeStringWithFormat = true;
-				if (source.Contains("timeTimeStringWithFormat("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeTimeStringWithFormat("))
 				{
 					timeTimeStringWithFormatSuffix = GetRandomMethodIdentifier();
 				}
@@ -96,7 +96,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, dateStringWithFormatPattern, match =>
 			{
 				foundDateStringWithFormat = true;
-				if (source.Contains("timeDateStringWithFormat("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateStringWithFormat("))
 				{
 					timeDateStringWithFormatSuffix = GetRandomMethodIdentifier();
 				}
@@ -108,7 +108,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, dateTimeStringWithFormatPattern, match =>
 			{
 				foundDateTimeStringWithFormat = true;
-				if (source.Contains("timeDateStringWithFormat("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateStringWithFormat("))
 				{
 					timeDateTimeStringWithFormatSuffix = GetRandomMethodIdentifier();
 				}

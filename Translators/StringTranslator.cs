@@ -78,7 +78,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, splitPattern, match =>
 			{
 				foundSplit = true;
-				if (source.Contains("stringSplit("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("stringSplit("))
 				{
 					stringSplitSuffix = GetRandomMethodIdentifier();
 				}

@@ -40,7 +40,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, readPattern, match =>
 			{
 				foundRead = true;
-				if (source.Contains("fileRead("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileRead("))
 				{
 					fileReadSuffix = GetRandomMethodIdentifier();
 				}
@@ -52,7 +52,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, readLinesPattern, match =>
 			{
 				foundReadLines = true;
-				if (source.Contains("fileReadLines("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileReadLines("))
 				{
 					fileReadLinesSuffix = GetRandomMethodIdentifier();
 				}
@@ -64,7 +64,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, writeLinePattern, match =>
 			{
 				foundWriteLine = true;
-				if (source.Contains("fileWriteLine("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileWriteLine("))
 				{
 					fileWriteLineSuffix = GetRandomMethodIdentifier();
 				}
@@ -77,7 +77,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, writePattern, match =>
 			{
 				foundWrite = true;
-				if (source.Contains("fileWrite("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileWrite("))
 				{
 					fileWriteSuffix = GetRandomMethodIdentifier();
 				}
@@ -90,7 +90,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, appendPattern, match =>
 			{
 				foundAppend = true;
-				if (source.Contains("fileAppend("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileAppend("))
 				{
 					fileAppendSuffix = GetRandomMethodIdentifier();
 				}
@@ -103,7 +103,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, deletePattern, match =>
 			{
 				foundDelete = true;
-				if (source.Contains("fileDelete("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileDelete("))
 				{
 					fileDeleteSuffix = GetRandomMethodIdentifier();
 				}
@@ -115,7 +115,7 @@ namespace Breezy.Translators
 			source = Regex.Replace(source, existsPattern, match =>
 			{
 				foundExists = true;
-				if (source.Contains("fileExists("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("fileExists("))
 				{
 					fileExistsSuffix = GetRandomMethodIdentifier();
 				}
