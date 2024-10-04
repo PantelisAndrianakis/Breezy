@@ -19,101 +19,101 @@ namespace Breezy.Translators
 			bool foundDateTimeStringWithFormat = false;
 
 			// Support for random method names to avoid conflicts.
-			string timeCurrentMillisSuffix = "";
-			string timeTimeStringSuffix = "";
-			string timeDateStringSuffix = "";
-			string timeDateTimeStringSuffix = "";
-			string timeTimeStringWithFormatSuffix = "";
-			string timeDateStringWithFormatSuffix = "";
-			string timeDateTimeStringWithFormatSuffix = "";
+			string getCurrentMillisSuffix = "";
+			string getTimeStringSuffix = "";
+			string getDateStringSuffix = "";
+			string getDateTimeStringSuffix = "";
+			string getTimeStringWithFormatSuffix = "";
+			string getDateStringWithFormatSuffix = "";
+			string getDateTimeStringWithFormatSuffix = "";
 
-			// Define the regex patterns to find Time.currentMillis, Time.timeString, Time.dateString and Time.dateTimeString.
-			string currentMillisPattern = @"Time\.(?i)currentMillis\(\)";
-			string timeStringPattern = @"Time\.(?i)timeString\(\)";
-			string dateStringPattern = @"Time\.(?i)dateString\(\)";
-			string dateTimeStringPattern = @"Time\.(?i)dateTimeString\(\)";
-			string timeStringWithFormatPattern = @"Time\.(?i)timeString\(""(?<format>[^""]+)""\)";
-			string dateStringWithFormatPattern = @"Time\.(?i)dateString\(""(?<format>[^""]+)""\)";
-			string dateTimeStringWithFormatPattern = @"Time\.(?i)dateTimeString\(""(?<format>[^""]+)""\)";
+			// Define the regex patterns to find Time.getCurrentMillis, Time.getTimeString, Time.getDateString and Time.getDateTimeString.
+			string getCurrentMillisPattern = @"Time\.(?i)getCurrentMillis\(\)";
+			string getTimeStringPattern = @"Time\.(?i)getTimeString\(\)";
+			string getDateStringPattern = @"Time\.(?i)getDateString\(\)";
+			string getDateTimeStringPattern = @"Time\.(?i)getDateTimeString\(\)";
+			string getTimeStringWithFormatPattern = @"Time\.(?i)getTimeString\(""(?<format>[^""]+)""\)";
+			string getDateStringWithFormatPattern = @"Time\.(?i)getDateString\(""(?<format>[^""]+)""\)";
+			string getDateTimeStringWithFormatPattern = @"Time\.(?i)getDateTimeString\(""(?<format>[^""]+)""\)";
 
-			// Replace Time.currentMillis with timeCurrentMillis and track if found.
-			source = Regex.Replace(source, currentMillisPattern, match =>
+			// Replace Time.getCurrentMillis with getCurrentMillis and track if found.
+			source = Regex.Replace(source, getCurrentMillisPattern, match =>
 			{
 				foundCurrentMillis = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeCurrentMillis()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getCurrentMillis()"))
 				{
-					timeCurrentMillisSuffix = GetRandomMethodIdentifier();
+					getCurrentMillisSuffix = GetRandomMethodIdentifier();
 				}
-				return $"timeCurrentMillis{timeCurrentMillisSuffix}()";
+				return $"getCurrentMillis{getCurrentMillisSuffix}()";
 			});
 
-			// Replace Time.timeString with timeTimeString and track if found.
-			source = Regex.Replace(source, timeStringPattern, match =>
+			// Replace Time.getTimeString with getTimeString and track if found.
+			source = Regex.Replace(source, getTimeStringPattern, match =>
 			{
 				foundTimeString = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeTimeString()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getTimeString()"))
 				{
-					timeTimeStringSuffix = GetRandomMethodIdentifier();
+					getTimeStringSuffix = GetRandomMethodIdentifier();
 				}
-				return $"timeTimeString{timeTimeStringSuffix}()";
+				return $"getTimeString{getTimeStringSuffix}()";
 			});
 
-			// Replace Time.dateString with timeDateString and track if found.
-			source = Regex.Replace(source, dateStringPattern, match =>
+			// Replace Time.getDateString with getDateString and track if found.
+			source = Regex.Replace(source, getDateStringPattern, match =>
 			{
 				foundDateString = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateString()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getDateString()"))
 				{
-					timeDateStringSuffix = GetRandomMethodIdentifier();
+					getDateStringSuffix = GetRandomMethodIdentifier();
 				}
-				return $"timeDateString{timeDateStringSuffix}()";
+				return $"getDateString{getDateStringSuffix}()";
 			});
 
-			// Replace Time.dateTimeString with timeDateTimeString and track if found.
-			source = Regex.Replace(source, dateTimeStringPattern, match =>
+			// Replace Time.getDateTimeString with getDateTimeString and track if found.
+			source = Regex.Replace(source, getDateTimeStringPattern, match =>
 			{
 				foundDateTimeString = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateTimeString()"))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getDateTimeString()"))
 				{
-					timeDateTimeStringSuffix = GetRandomMethodIdentifier();
+					getDateTimeStringSuffix = GetRandomMethodIdentifier();
 				}
-				return $"timeDateTimeString{timeDateTimeStringSuffix}()";
+				return $"getDateTimeString{getDateTimeStringSuffix}()";
 			});
 
-			// Replace Time.timeString with timeTimeStringWithFormat and track if found.
-			source = Regex.Replace(source, timeStringWithFormatPattern, match =>
+			// Replace Time.getTimeString with getTimeStringWithFormat and track if found.
+			source = Regex.Replace(source, getTimeStringWithFormatPattern, match =>
 			{
 				foundTimeStringWithFormat = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeTimeStringWithFormat("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getTimeStringWithFormat("))
 				{
-					timeTimeStringWithFormatSuffix = GetRandomMethodIdentifier();
+					getTimeStringWithFormatSuffix = GetRandomMethodIdentifier();
 				}
 				string format = match.Groups["format"].Value;
-				return $"timeTimeStringWithFormat{timeTimeStringWithFormatSuffix}(\"{format}\")";
+				return $"getTimeStringWithFormat{getTimeStringWithFormatSuffix}(\"{format}\")";
 			});
 
-			// Replace Time.dateString with timeDateStringWithFormat and track if found.
-			source = Regex.Replace(source, dateStringWithFormatPattern, match =>
+			// Replace Time.getDateString with getDateStringWithFormat and track if found.
+			source = Regex.Replace(source, getDateStringWithFormatPattern, match =>
 			{
 				foundDateStringWithFormat = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateStringWithFormat("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getDateStringWithFormat("))
 				{
-					timeDateStringWithFormatSuffix = GetRandomMethodIdentifier();
+					getDateStringWithFormatSuffix = GetRandomMethodIdentifier();
 				}
 				string format = match.Groups["format"].Value;
-				return $"timeDateStringWithFormat{timeDateStringWithFormatSuffix}(\"{format}\")";
+				return $"getDateStringWithFormat{getDateStringWithFormatSuffix}(\"{format}\")";
 			});
 
-			// Replace Time.dateTimeString with timeDateTimeStringWithFormat and track if found.
-			source = Regex.Replace(source, dateTimeStringWithFormatPattern, match =>
+			// Replace Time.getDateTimeString with getDateTimeStringWithFormat and track if found.
+			source = Regex.Replace(source, getDateTimeStringWithFormatPattern, match =>
 			{
 				foundDateTimeStringWithFormat = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("timeDateStringWithFormat("))
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("getDateTimeStringWithFormat("))
 				{
-					timeDateTimeStringWithFormatSuffix = GetRandomMethodIdentifier();
+					getDateTimeStringWithFormatSuffix = GetRandomMethodIdentifier();
 				}
 				string format = match.Groups["format"].Value;
-				return $"timeDateTimeStringWithFormat{timeDateTimeStringWithFormatSuffix}(\"{format}\")";
+				return $"getDateTimeStringWithFormat{getDateTimeStringWithFormatSuffix}(\"{format}\")";
 			});
 
 			// Add the necessary C++ methods if they are used.
@@ -131,10 +131,10 @@ namespace Breezy.Translators
 				}
 			}
 
-			// Append timeCurrentMillis method if it was found.
+			// Append getCurrentMillis method if it was found.
 			if (foundCurrentMillis)
 			{
-				methods.AppendLine($"long timeCurrentMillis{timeCurrentMillisSuffix}()");
+				methods.AppendLine($"long getCurrentMillis{getCurrentMillisSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tauto duration = now.time_since_epoch();");
@@ -142,10 +142,10 @@ namespace Breezy.Translators
 				methods.AppendLine("}\n");
 			}
 
-			// Append timeTimeString method if it was found.
+			// Append getTimeString method if it was found.
 			if (foundTimeString)
 			{
-				methods.AppendLine($"std::string timeTimeString{timeTimeStringSuffix}()");
+				methods.AppendLine($"std::string getTimeString{getTimeStringSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -156,10 +156,10 @@ namespace Breezy.Translators
 				methods.AppendLine("}\n");
 			}
 
-			// Append timeDateString method if it was found.
+			// Append getDateString method if it was found.
 			if (foundDateString)
 			{
-				methods.AppendLine($"std::string timeDateString{timeDateStringSuffix}()");
+				methods.AppendLine($"std::string getDateString{getDateStringSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -170,10 +170,10 @@ namespace Breezy.Translators
 				methods.AppendLine("}\n");
 			}
 
-			// Append timeDateTimeString method if it was found.
+			// Append getDateTimeString method if it was found.
 			if (foundDateTimeString)
 			{
-				methods.AppendLine($"std::string timeDateTimeString{timeDateTimeStringSuffix}()");
+				methods.AppendLine($"std::string getDateTimeString{getDateTimeStringSuffix}()");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -184,10 +184,10 @@ namespace Breezy.Translators
 				methods.AppendLine("}\n");
 			}
 
-			// Append timeTimeStringWithFormat method if it was found.
+			// Append getTimeStringWithFormat method if it was found.
 			if (foundTimeStringWithFormat)
 			{
-				methods.AppendLine($"std::string timeTimeStringWithFormat{timeTimeStringWithFormatSuffix}(const std::string& format)");
+				methods.AppendLine($"std::string getTimeStringWithFormat{getTimeStringWithFormatSuffix}(const std::string& format)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -198,10 +198,10 @@ namespace Breezy.Translators
 				methods.AppendLine("}\n");
 			}
 
-			// Append timeDateStringWithFormat method if it was found.
+			// Append getDateStringWithFormat method if it was found.
 			if (foundDateStringWithFormat)
 			{
-				methods.AppendLine($"std::string timeDateStringWithFormat{timeDateStringWithFormatSuffix}(const std::string& format)");
+				methods.AppendLine($"std::string getDateStringWithFormat{getDateStringWithFormatSuffix}(const std::string& format)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
@@ -212,10 +212,10 @@ namespace Breezy.Translators
 				methods.AppendLine("}\n");
 			}
 
-			// Append timeDateTimeStringWithFormat method if it was found.
+			// Append getDateTimeStringWithFormat method if it was found.
 			if (foundDateTimeStringWithFormat)
 			{
-				methods.AppendLine($"std::string timeDateTimeStringWithFormat{timeDateTimeStringWithFormatSuffix}(const std::string& format)");
+				methods.AppendLine($"std::string getDateTimeStringWithFormat{getDateTimeStringWithFormatSuffix}(const std::string& format)");
 				methods.AppendLine("{");
 				methods.AppendLine("\tauto now = std::chrono::system_clock::now();");
 				methods.AppendLine("\tstd::time_t currentTime = std::chrono::system_clock::to_time_t(now);");
