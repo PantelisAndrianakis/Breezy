@@ -10,85 +10,37 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
-			bool foundGetInt = false;
-			bool foundGetLong = false;
-			bool foundGetFloat = false;
-			bool foundGetDouble = false;
 			bool foundGetIntMinMax = false;
 			bool foundGetLongMinMax = false;
 			bool foundGetFloatMinMax = false;
 			bool foundGetDoubleMinMax = false;
+			bool foundGetInt = false;
+			bool foundGetLong = false;
+			bool foundGetFloat = false;
+			bool foundGetDouble = false;
 			bool foundFillBytes = false;
 
 			// Support for random method names to avoid conflicts.
-			string randomGetIntSuffix = "";
-			string randomGetLongSuffix = "";
-			string randomGetFloatSuffix = "";
-			string randomGetDoubleSuffix = "";
 			string randomGetIntMinMaxSuffix = "";
 			string randomGetLongMinMaxSuffix = "";
 			string randomGetFloatMinMaxSuffix = "";
 			string randomGetDoubleMinMaxSuffix = "";
+			string randomGetIntSuffix = "";
+			string randomGetLongSuffix = "";
+			string randomGetFloatSuffix = "";
+			string randomGetDoubleSuffix = "";
 			string randomFillBytesSuffix = "";
 
 			// Define the regex patterns to find Random.getInt, Random.getLong, Random.getFloat, Random.getDouble and Random.fillBytes.
-			string getIntPattern = @"Random\.(?i)getInt\(([^;]+)\)";
-			string getLongPattern = @"Random\.(?i)getLong\(([^;]+)\)";
-			string getFloatPattern = @"Random\.(?i)getFloat\(([^;]+)\)";
-			string getDoublePattern = @"Random\.(?i)getDouble\(([^;]+)\)";
 			string getIntMinMaxPattern = @"Random\.(?i)getInt\(([^;]+),\s*([^;]+)\)";
 			string getLongMinMaxPattern = @"Random\.(?i)getLong\(([^;]+),\s*([^;]+)\)";
 			string getFloatMinMaxPattern = @"Random\.(?i)getFloat\(([^;]+),\s*([^;]+)\)";
 			string getDoubleMinMaxPattern = @"Random\.(?i)getDouble\(([^;]+),\s*([^;]+)\)";
+			string getIntPattern = @"Random\.(?i)getInt\(([^;]+)\)";
+			string getLongPattern = @"Random\.(?i)getLong\(([^;]+)\)";
+			string getFloatPattern = @"Random\.(?i)getFloat\(([^;]+)\)";
+			string getDoublePattern = @"Random\.(?i)getDouble\(([^;]+)\)";
 			string fillBytesPattern = @"Random\.(?i)fillBytes\(([^;]+)\)";
-
-			// Replace Random.getInt with randomGetInt and track if found.
-			source = Regex.Replace(source, getIntPattern, match =>
-			{
-				foundGetInt = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetInt("))
-				{
-					randomGetIntSuffix = GetRandomMethodIdentifier();
-				}
-				string parameter = match.Groups[1].Value;
-				return $"randomGetInt{randomGetIntSuffix}({parameter})";
-			});
-
-			// Replace Random.getLong with randomGetLong and track if found.
-			source = Regex.Replace(source, getLongPattern, match =>
-			{
-				foundGetLong = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetLong("))
-				{
-					randomGetLongSuffix = GetRandomMethodIdentifier();
-				}
-				string parameter = match.Groups[1].Value;
-				return $"randomGetLong{randomGetLongSuffix}({parameter})";
-			});
-
-			// Replace Random.getFloat with randomGetFloat and track if found.
-			source = Regex.Replace(source, getFloatPattern, match =>
-			{
-				foundGetFloat = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetFloat("))
-				{
-					randomGetFloatSuffix = GetRandomMethodIdentifier();
-				}
-				string parameter = match.Groups[1].Value;
-				return $"randomGetFloat{randomGetFloatSuffix}({parameter})";
-			});
-
-			// Replace Random.getDouble with randomGetDouble and track if found.
-			source = Regex.Replace(source, getDoublePattern, match =>
-			{
-				foundGetDouble = true;
-				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetDouble("))
-				{
-					randomGetDoubleSuffix = GetRandomMethodIdentifier();
-				}
-				string parameter = match.Groups[1].Value;
-				return $"randomGetDouble{randomGetDoubleSuffix}({parameter})";
-			});
 
 			// Replace Random.getInt with randomGetIntMinMax and track if found.
 			source = Regex.Replace(source, getIntMinMaxPattern, match =>
@@ -142,6 +94,54 @@ namespace Breezy.Translators
 				return $"randomGetDoubleMinMax{randomGetDoubleMinMaxSuffix}({minParam}, {maxParam})";
 			});
 
+			// Replace Random.getInt with randomGetInt and track if found.
+			source = Regex.Replace(source, getIntPattern, match =>
+			{
+				foundGetInt = true;
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetInt("))
+				{
+					randomGetIntSuffix = GetRandomMethodIdentifier();
+				}
+				string parameter = match.Groups[1].Value;
+				return $"randomGetInt{randomGetIntSuffix}({parameter})";
+			});
+
+			// Replace Random.getLong with randomGetLong and track if found.
+			source = Regex.Replace(source, getLongPattern, match =>
+			{
+				foundGetLong = true;
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetLong("))
+				{
+					randomGetLongSuffix = GetRandomMethodIdentifier();
+				}
+				string parameter = match.Groups[1].Value;
+				return $"randomGetLong{randomGetLongSuffix}({parameter})";
+			});
+
+			// Replace Random.getFloat with randomGetFloat and track if found.
+			source = Regex.Replace(source, getFloatPattern, match =>
+			{
+				foundGetFloat = true;
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetFloat("))
+				{
+					randomGetFloatSuffix = GetRandomMethodIdentifier();
+				}
+				string parameter = match.Groups[1].Value;
+				return $"randomGetFloat{randomGetFloatSuffix}({parameter})";
+			});
+
+			// Replace Random.getDouble with randomGetDouble and track if found.
+			source = Regex.Replace(source, getDoublePattern, match =>
+			{
+				foundGetDouble = true;
+				if (Config.RANDOM_METHOD_PREFIX || source.Contains("randomGetDouble("))
+				{
+					randomGetDoubleSuffix = GetRandomMethodIdentifier();
+				}
+				string parameter = match.Groups[1].Value;
+				return $"randomGetDouble{randomGetDoubleSuffix}({parameter})";
+			});
+
 			// Replace Random.fillBytes with randomFillBytes and track if found.
 			source = Regex.Replace(source, fillBytesPattern, match =>
 			{
@@ -157,64 +157,20 @@ namespace Breezy.Translators
 			// Add the necessary C++ methods if they are used.
 			StringBuilder methods = new StringBuilder();
 
-			// Check if we need to add the <regex> import.
-			if (foundGetInt || foundGetLong || foundGetFloat || foundGetDouble || foundGetIntMinMax || foundGetLongMinMax || foundGetFloatMinMax || foundGetDoubleMinMax || foundFillBytes)
+			// Check if we need to add the <random> import.
+			if (foundGetIntMinMax || foundGetLongMinMax || foundGetFloatMinMax || foundGetDoubleMinMax || foundGetInt || foundGetLong || foundGetFloat || foundGetDouble || foundFillBytes)
 			{
 				source = AddInclude(source, "random");
+				if (foundGetFloat || foundGetDouble)
+				{
+					source = AddInclude(source, "limits");
+				}
 				if (foundFillBytes)
 				{
 					source = AddInclude(source, "vector");
 				}
 
 				// TODO: Store random locally.
-			}
-
-			// Append randomGetInt method if it was found.
-			if (foundGetInt)
-			{
-				methods.AppendLine($"static int randomGetInt{randomGetIntSuffix}(int exclusiveMax)");
-				methods.AppendLine("{");
-				methods.AppendLine("\tstd::random_device rd;");
-				methods.AppendLine("\tstd::mt19937 gen(rd());");
-				methods.AppendLine("\tstd::uniform_int_distribution<int> dist(0, exclusiveMax - 1);");
-				methods.AppendLine("\treturn dist(gen);");
-				methods.AppendLine("}\n");
-			}
-
-			// Append randomGetLong method if it was found.
-			if (foundGetLong)
-			{
-				methods.AppendLine($"static long randomGetLong{randomGetLongSuffix}(long exclusiveMax)");
-				methods.AppendLine("{");
-				methods.AppendLine("\tstd::random_device rd;");
-				methods.AppendLine("\tstd::mt19937 gen(rd());");
-				methods.AppendLine("\tstd::uniform_int_distribution<long> dist(0, exclusiveMax - 1);");
-				methods.AppendLine("\treturn dist(gen);");
-				methods.AppendLine("}\n");
-			}
-
-			// Append randomGetFloat method if it was found.
-			if (foundGetFloat)
-			{
-				methods.AppendLine($"static float randomGetFloat{randomGetFloatSuffix}(float exclusiveMax)");
-				methods.AppendLine("{");
-				methods.AppendLine("\tstd::random_device rd;");
-				methods.AppendLine("\tstd::mt19937 gen(rd());");
-				methods.AppendLine("\tstd::uniform_real_distribution<float> dist(0.0f, exclusiveMax);");
-				methods.AppendLine("\treturn dist(gen);");
-				methods.AppendLine("}\n");
-			}
-
-			// Append randomGetDouble method if it was found.
-			if (foundGetDouble)
-			{
-				methods.AppendLine($"static double randomGetDouble{randomGetDoubleSuffix}(double exclusiveMax)");
-				methods.AppendLine("{");
-				methods.AppendLine("\tstd::random_device rd;");
-				methods.AppendLine("\tstd::mt19937 gen(rd());");
-				methods.AppendLine("\tstd::uniform_real_distribution<double> dist(0.0, exclusiveMax);");
-				methods.AppendLine("\treturn dist(gen);");
-				methods.AppendLine("}\n");
 			}
 
 			// Append randomGetIntMinMax method if it was found.
@@ -261,6 +217,54 @@ namespace Breezy.Translators
 				methods.AppendLine("\tstd::random_device rd;");
 				methods.AppendLine("\tstd::mt19937 gen(rd());");
 				methods.AppendLine("\tstd::uniform_real_distribution<double> dist(min, max);");
+				methods.AppendLine("\treturn dist(gen);");
+				methods.AppendLine("}\n");
+			}
+
+			// Append randomGetInt method if it was found.
+			if (foundGetInt)
+			{
+				methods.AppendLine($"static int randomGetInt{randomGetIntSuffix}(int exclusiveMax)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::random_device rd;");
+				methods.AppendLine("\tstd::mt19937 gen(rd());");
+				methods.AppendLine("\tstd::uniform_int_distribution<int> dist(0, exclusiveMax - 1);");
+				methods.AppendLine("\treturn dist(gen);");
+				methods.AppendLine("}\n");
+			}
+
+			// Append randomGetLong method if it was found.
+			if (foundGetLong)
+			{
+				methods.AppendLine($"static long randomGetLong{randomGetLongSuffix}(long exclusiveMax)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::random_device rd;");
+				methods.AppendLine("\tstd::mt19937 gen(rd());");
+				methods.AppendLine("\tstd::uniform_int_distribution<long> dist(0, exclusiveMax - 1);");
+				methods.AppendLine("\treturn dist(gen);");
+				methods.AppendLine("}\n");
+			}
+
+			// Append randomGetFloat method if it was found.
+			if (foundGetFloat)
+			{
+				methods.AppendLine($"static float randomGetFloat{randomGetFloatSuffix}(float exclusiveMax)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::random_device rd;");
+				methods.AppendLine("\tstd::mt19937 gen(rd());");
+				methods.AppendLine("\tsstd::uniform_real_distribution<float> dist(0.0f, exclusiveMax - std::numeric_limits<float>::epsilon());");
+				methods.AppendLine("\treturn dist(gen);");
+				methods.AppendLine("}\n");
+			}
+
+			// Append randomGetDouble method if it was found.
+			if (foundGetDouble)
+			{
+				methods.AppendLine($"static double randomGetDouble{randomGetDoubleSuffix}(double exclusiveMax)");
+				methods.AppendLine("{");
+				methods.AppendLine("\tstd::random_device rd;");
+				methods.AppendLine("\tstd::mt19937 gen(rd());");
+				methods.AppendLine("\tstd::uniform_real_distribution<double> dist(0.0, exclusiveMax - std::numeric_limits<double>::epsilon());");
 				methods.AppendLine("\treturn dist(gen);");
 				methods.AppendLine("}\n");
 			}
