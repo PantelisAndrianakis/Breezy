@@ -22,6 +22,10 @@ namespace Breezy.Translators
 			string consoleReadLineSuffix = "";
 			string consoleReadSuffix = "";
 
+			// Support for empty parameters.
+			source = source.Replace("Console.WriteLine()", "Console.WriteLine(\"\")");
+			source = source.Replace("Console.Write()", "Console.Write(\"\")");
+
 			// Define the regex patterns to find Console.write, Console.writeLine, Console.read, and Console.readLine.
 			string writePattern = @"Console\.(?i)write\(([^;]+)\)";
 			string writeLinePattern = @"Console\.(?i)writeLine\(([^;]+)\)";
@@ -83,6 +87,7 @@ namespace Breezy.Translators
 			if (foundWrite || foundWriteLine || foundRead || foundReadLine)
 			{
 				source = AddInclude(source, "iostream");
+				source = AddInclude(source, "string");
 			}
 
 			// Append consoleWriteLine method if it was found.

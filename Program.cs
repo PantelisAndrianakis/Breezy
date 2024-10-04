@@ -41,6 +41,7 @@ namespace Breezy
 					source = EnhancedForTranslator.Process(source);
 					source = RegexTranslator.Process(source);
 					source = TimeTranslator.Process(source);
+					source = RandomTranslator.Process(source);
 
 					// Write the translated code to a .cpp file.
 					string outputFile = Path.ChangeExtension(filePath, ".cpp");

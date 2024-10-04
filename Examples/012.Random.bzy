@@ -1,0 +1,25 @@
+void main()
+{
+	// Generate random numbers.
+	Console.WriteLine("Random int (0 to 99): " + (Random.getInt(100)).toString());
+	Console.WriteLine("Random long (0 to 9999): " + (Random.getLong(10000)).toString());
+	Console.WriteLine("Random float (0.0 to 1.0): " + (Random.getFloat(1.0)).toString());
+	Console.WriteLine("Random double (0.0 to 100.0): " + (Random.getDouble(100.0)).toString());
+
+	// Generate random numbers within a specific range.
+	Console.WriteLine("Random int (10 to 50): " + (Random.getInt(10, 50)).toString());
+	Console.WriteLine("Random long (1000 to 5000): " + (Random.getLong(1000, 5000)).toString());
+	Console.WriteLine("Random float (0.5 to 2.5): " + (Random.getFloat(0.5, 2.5)).toString());
+	Console.WriteLine("Random double (50.0 to 75.0): " + (Random.getDouble(50.0, 75.0)).toString());
+
+	// Fill a byte list with random values.
+	List<uint8_t> bytes(10);
+	Random.fillBytes(bytes);
+
+	Console.WriteLine("Random bytes:");
+	for (byteValue : bytes)
+	{
+		Console.Write(" " + (byteValue).toString());
+	}
+	Console.WriteLine(); // For a newline after the byte values.
+}

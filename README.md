@@ -35,3 +35,4 @@ Breezy was developed purely for fun, following the challenges of building a comp
 - **Enhanced For Loop**: Simple and intuitive enhanced for loops for more readable and concise iterations.
 - **Regex Support**: Methods for regex matching, extracting matches as a list, and performing replacements.
 - **Time and Date**: Methods to get the current time in milliseconds and formatted time or date as strings.
+- **Random**: Easily generate random numbers with support for range-based random values.

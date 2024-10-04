@@ -10,9 +10,14 @@ namespace Breezy.Translators
 	{
 		public static string Process(string source)
 		{
+			bool foundString = false;
+			bool foundSplit = false;
+
 			// Find and replace (XXXX).toString() with std::to_string(XXXX), ensuring correct parentheses matching.
 			while (source.Contains(").toString()") || source.Contains(").ToString()"))
 			{
+				foundString = true;
+
 				// Look for `.toString()` first, then `.ToString()`.
 				int index = source.IndexOf(".toString()");
 				if (index == -1)
@@ -58,9 +63,6 @@ namespace Breezy.Translators
 					}
 				}
 			}
-
-			bool foundString = false;
-			bool foundSplit = false;
 
 			// Use regex to replace "string" as a type declaration with "std::string".
 			string stringDeclarationPattern = @"\bstring\b\s+([a-zA-Z_][a-zA-Z0-9_]*(\s*(?:[=,*&]\s*)?[a-zA-Z_][a-zA-Z0-9_]*|\s*\[\d*\])*)\b";
