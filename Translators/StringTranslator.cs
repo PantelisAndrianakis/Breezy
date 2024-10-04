@@ -19,46 +19,33 @@ namespace Breezy.Translators
 				foundString = true;
 
 				// Look for `.toString()` first, then `.ToString()`.
-				int index = source.IndexOf(".toString()");
+				int index = source.IndexOf(").toString()");
 				if (index == -1)
 				{
-					index = source.IndexOf(".ToString()");
+					index = source.IndexOf(").ToString()");
 				}
 
+				// Iterate backwards from the position of ").toString()" to find "(".
 				if (index != -1)
 				{
-					// Find the closest closing parenthesis `)` to the left of `.toString()`.
-					int closeParenIndex = index - 1;
-					if (closeParenIndex != -1 && source[closeParenIndex] == ')')
+					int parenCloseCount = 1;
+					int parenOpenCount = 0;
+					for (int i = index - 1; i >= 0; i--)
 					{
-						// We now need to backtrack to find the matching opening parenthesis `(`.
-						int openParenIndex = -1;
-						int parenCounter = 1;  // Start by counting the first `)` we found.
-						for (int i = closeParenIndex - 1; i >= 0; i--)
+						if (source[i] == ')')
 						{
-							if (source[i] == ')')
-							{
-								parenCounter++;
-							}
-							else if (source[i] == '(')
-							{
-								parenCounter--;
-								if (parenCounter == 0)
-								{
-									openParenIndex = i;
-									break;
-								}
-							}
+							parenCloseCount++;
+						}
+						else if (source[i] == '(')
+						{
+							parenOpenCount++;
 						}
 
-						// If we found a matching opening parenthesis.
-						if (openParenIndex != -1)
+						if (parenOpenCount == parenCloseCount)
 						{
-							// Extract the expression within the parentheses.
-							string expression = source.Substring(openParenIndex + 1, closeParenIndex - openParenIndex - 1);
-
-							// Replace the `.toString()` with `std::to_string()` and update the string.
-							source = source.Substring(0, openParenIndex) + "std::to_string(" + expression + ")" + source.Substring(index + 11);
+							source = source.Remove(index, 11);
+							source = source.Insert(i, "std::to_string");
+							break;
 						}
 					}
 				}
@@ -73,7 +60,7 @@ namespace Breezy.Translators
 			});
 
 			// Support for random method names to avoid conflicts.
-			string stringSplitSuffix ="";
+			string stringSplitSuffix = "";
 
 			// Replace String.split with stringSplit and track if found.
 			string splitPattern = @"String\.(?i)split\(\s*([^\s,]+)\s*,\s*([^\s\)]+)\s*\)";
