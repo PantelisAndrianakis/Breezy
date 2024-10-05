@@ -38,6 +38,7 @@ namespace Breezy
 					source = MainTranslator.Process(source);
 					source = ConsoleTranslator.Process(source);
 					source = FileTranslator.Process(source);
+					source = HttpTranslator.Process(source);
 					source = EnhancedForTranslator.Process(source);
 					source = RegexTranslator.Process(source);
 					source = TimeTranslator.Process(source);

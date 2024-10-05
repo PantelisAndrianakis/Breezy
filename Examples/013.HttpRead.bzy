@@ -1,0 +1,38 @@
+void main()
+{
+	// Define the URL to download the file from.
+	string url = "http://example.com/sample.txt";
+
+	// Download the file as a string.
+	Console.writeLine("Downloading file as string from: " + url);
+	string content = Http.readString(url);
+
+	if (!content.empty())
+	{
+		Console.writeLine("Download successful! Saving content to 'downloaded_string.txt'.");
+		File.write("downloaded_string.txt", content);
+	}
+	else
+	{
+		Console.writeLine("Failed to download file as string.");
+	}
+
+	// Download the file as binary.
+	Console.writeLine("Downloading file as binary from: " + url);
+	List<char> binaryContent = Http.readBinary(url);
+
+	if (!binaryContent.empty())
+	{
+		Console.writeLine("Download successful! Saving binary content to 'downloaded_binary.txt'.");
+		File.writeBinary("downloaded_binary.txt", binaryContent);
+	}
+	else
+	{
+		Console.writeLine("Failed to download file as binary.");
+	}
+
+	// Verify the downloaded string content by reading from the saved file.
+	string savedContent = File.read("downloaded_string.txt");
+	Console.writeLine("Downloaded file content:");
+	Console.writeLine(savedContent);
+}
