@@ -79,7 +79,7 @@ namespace Breezy.Translators
 				methods.AppendLine("\t\t}");
 				methods.AppendLine("\t}");
 				methods.AppendLine("\treturn response;");
-				methods.AppendLine("}");
+				methods.AppendLine("}\n");
 			}
 
 			// Append httpReadBinary method if it was found.
@@ -113,7 +113,7 @@ namespace Breezy.Translators
 				methods.AppendLine("\t\t}");
 				methods.AppendLine("\t}");
 				methods.AppendLine("\treturn buffer;");
-				methods.AppendLine("}");
+				methods.AppendLine("}\n");
 			}
 
 			// Parent class manages adding the additional methods.
