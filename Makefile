@@ -1,5 +1,8 @@
 CC      = gcc
-CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc
+# The TypeTable is ~8 MB and is declared as a stack local in the driver and
+# tests, which overflows Windows' default ~1 MB main-thread stack. Reserve a
+# 64 MB stack at link time so those binaries run.
+CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc -Wl,--stack,0x4000000
 
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c
