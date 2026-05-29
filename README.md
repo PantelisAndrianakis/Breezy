@@ -409,12 +409,13 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch - nothing below is complete yet.
+The language design is settled. The compiler and runtime are being built from scratch. The compiler core (Part 1) is complete: Breezy `.bz` source compiles to native Windows executables today.
 
 **Compiler core**
-- [ ] Lexer, parser, typed AST
-- [ ] Type table: classes, inheritance, virtual dispatch
-- [ ] x86-64 codegen (Linux ELF64 + Windows PE64)
+- [x] Lexer, parser, typed AST
+- [x] Type table: classes, inheritance, virtual dispatch
+- [x] x86-64 codegen (Windows PE64)
+- [ ] x86-64 codegen (Linux ELF64)
 
 **Memory**
 - [ ] Escape analysis → stack allocation
