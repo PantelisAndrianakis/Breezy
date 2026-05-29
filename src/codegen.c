@@ -196,6 +196,83 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+static void cg_block(Codegen *cg, TypeTable *tt, Block *b, int in_main);
+
+static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
+{
+	if (target->kind==EX_IDENT)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
+	}
+	else     /* EX_FIELD */
+	{
+		cg_emit(cg,"    push rax");
+		cg_expr(cg,tt,target->lhs);
+		cg_emit(cg,"    mov rbx, rax");
+		cg_emit(cg,"    pop rax");
+		cg_emit(cg,"    mov [rbx + %d], rax", target->anno_int);
+	}
+}
+static void cg_stmt(Codegen *cg, TypeTable *tt, Stmt *s, int in_main)
+{
+	switch (s->kind)
+	{
+	case ST_VARDECL:
+		if (s->decl_init)
+		{
+			cg_expr(cg,tt,s->decl_init);
+			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+		}
+		break;
+	case ST_ASSIGN:
+		cg_expr(cg,tt,s->value);
+		cg_store(cg,tt,s->target);
+		break;
+	case ST_EXPR:
+		cg_expr(cg,tt,s->expr);
+		break;
+	case ST_RETURN:
+		if (s->ret_val) cg_expr(cg,tt,s->ret_val);
+		if (in_main) cg_emit(cg,"    xor eax, eax");
+		cg_emit(cg,"    mov rsp, rbp");
+		cg_emit(cg,"    pop rbp");
+		cg_emit(cg,"    ret");
+		break;
+	case ST_IF:
+	{
+		int else_l=cg_label(cg), end_l=cg_label(cg);
+		cg_expr(cg,tt,s->cond);
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    je .L%d", s->else_blk?else_l:end_l);
+		cg_block(cg,tt,s->then_blk,in_main);
+		if (s->else_blk)
+		{
+			cg_emit(cg,"    jmp .L%d",end_l);
+			cg_emit(cg,".L%d:",else_l);
+			cg_block(cg,tt,s->else_blk,in_main);
+		}
+		cg_emit(cg,".L%d:",end_l);
+		break;
+	}
+	case ST_WHILE:
+	{
+		int top=cg_label(cg), end=cg_label(cg);
+		cg_emit(cg,".L%d:",top);
+		cg_expr(cg,tt,s->cond);
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    je .L%d",end);
+		cg_block(cg,tt,s->then_blk,in_main);
+		cg_emit(cg,"    jmp .L%d",top);
+		cg_emit(cg,".L%d:",end);
+		break;
+	}
+	}
+}
+static void cg_block(Codegen *cg, TypeTable *tt, Block *b, int in_main)
+{
+	for (int i=0; i<b->count; i++) cg_stmt(cg,tt,b->stmts[i],in_main);
+}
+
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 {
 	(void)cg;    /* replaced in Task 12 */
