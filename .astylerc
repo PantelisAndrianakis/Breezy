@@ -1,0 +1,3 @@
+# Breezy C source formatting. Allman braces, tab indentation.
+--style=allman
+--indent=tab=4

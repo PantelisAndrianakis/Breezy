@@ -1,0 +1,21 @@
+# Build outputs
+breezy
+breezy.exe
+out.asm
+out.obj
+out.exe
+
+# Unit test binaries
+test_lexer
+test_ast
+test_parser
+test_types
+test_resolve
+*.exe
+
+# Object files and formatter backups
+*.o
+*.orig
+
+# Editor / local tooling
+.claude/
