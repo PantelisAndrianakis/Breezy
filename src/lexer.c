@@ -1,1 +1,228 @@
-/* Lexer. */
+#include "lexer.h"
+#include <ctype.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static const struct
+{
+	const char *kw;
+	TokenType tt;
+} KEYWORDS[] =
+{
+	{"void",TOKEN_VOID},{"int",TOKEN_INT},{"if",TOKEN_IF},{"else",TOKEN_ELSE},
+	{"while",TOKEN_WHILE},{"return",TOKEN_RETURN},{"class",TOKEN_CLASS},
+	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},{NULL,0}
+};
+
+void lexer_init(Lexer *l, const char *src)
+{
+	l->src = src;
+	l->pos = 0;
+	l->line = 1;
+}
+
+static char peek_ch(Lexer *l)
+{
+	return l->src[l->pos];
+}
+static char next_ch(Lexer *l)
+{
+	char c = l->src[l->pos++];
+	if (c == '\n') l->line++;
+	return c;
+}
+
+Token lexer_next(Lexer *l)
+{
+	Token t;
+	t.text[0] = '\0';
+	for (;;)
+	{
+		while (peek_ch(l) && isspace((unsigned char)peek_ch(l))) next_ch(l);
+		if (peek_ch(l) == '/' && l->src[l->pos+1] == '/')
+			while (peek_ch(l) && peek_ch(l) != '\n') next_ch(l);
+		else break;
+	}
+	t.line = l->line;
+	char c = peek_ch(l);
+	if (!c)
+	{
+		t.type = TOKEN_EOF;
+		return t;
+	}
+
+	if (isalpha((unsigned char)c) || c == '_')
+	{
+		int i = 0;
+		while ((isalnum((unsigned char)peek_ch(l)) || peek_ch(l) == '_') && i < 255)
+			t.text[i++] = next_ch(l);
+		t.text[i] = '\0';
+		t.type = TOKEN_IDENT;
+		for (int k = 0; KEYWORDS[k].kw; k++)
+			if (strcmp(t.text, KEYWORDS[k].kw) == 0)
+			{
+				t.type = KEYWORDS[k].tt;
+				break;
+			}
+		return t;
+	}
+	if (isdigit((unsigned char)c))
+	{
+		int i = 0;
+		while (isdigit((unsigned char)peek_ch(l)) && i < 255) t.text[i++] = next_ch(l);
+		t.text[i] = '\0';
+		t.type = TOKEN_INT_LIT;
+		return t;
+	}
+
+	next_ch(l);
+	t.text[0] = c;
+	t.text[1] = '\0';
+	switch (c)
+	{
+	case '+':
+		t.type = TOKEN_PLUS;
+		return t;
+	case '-':
+		t.type = TOKEN_MINUS;
+		return t;
+	case '*':
+		t.type = TOKEN_STAR;
+		return t;
+	case '/':
+		t.type = TOKEN_SLASH;
+		return t;
+	case '(':
+		t.type = TOKEN_LPAREN;
+		return t;
+	case ')':
+		t.type = TOKEN_RPAREN;
+		return t;
+	case '{':
+		t.type = TOKEN_LBRACE;
+		return t;
+	case '}':
+		t.type = TOKEN_RBRACE;
+		return t;
+	case ';':
+		t.type = TOKEN_SEMICOLON;
+		return t;
+	case ',':
+		t.type = TOKEN_COMMA;
+		return t;
+	case '.':
+		t.type = TOKEN_DOT;
+		return t;
+	case '<':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_LTE;
+		}
+		else t.type=TOKEN_LT;
+		return t;
+	case '>':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_GTE;
+		}
+		else t.type=TOKEN_GT;
+		return t;
+	case '=':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_EQ;
+		}
+		else t.type=TOKEN_ASSIGN;
+		return t;
+	case '!':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_NEQ;
+		}
+		else
+		{
+			fprintf(stderr,"line %d: unexpected '!'\n",l->line);
+			exit(1);
+		}
+		return t;
+	default:
+		fprintf(stderr,"line %d: unexpected char '%c'\n",l->line,c);
+		exit(1);
+	}
+}
+
+const char *token_type_name(TokenType t)
+{
+	switch (t)
+	{
+	case TOKEN_EOF:
+		return "EOF";
+	case TOKEN_IDENT:
+		return "IDENT";
+	case TOKEN_INT_LIT:
+		return "INT_LIT";
+	case TOKEN_VOID:
+		return "void";
+	case TOKEN_INT:
+		return "int";
+	case TOKEN_IF:
+		return "if";
+	case TOKEN_ELSE:
+		return "else";
+	case TOKEN_WHILE:
+		return "while";
+	case TOKEN_RETURN:
+		return "return";
+	case TOKEN_CLASS:
+		return "class";
+	case TOKEN_EXTENDS:
+		return "extends";
+	case TOKEN_NEW:
+		return "new";
+	case TOKEN_THIS:
+		return "this";
+	case TOKEN_PLUS:
+		return "+";
+	case TOKEN_MINUS:
+		return "-";
+	case TOKEN_STAR:
+		return "*";
+	case TOKEN_SLASH:
+		return "/";
+	case TOKEN_ASSIGN:
+		return "=";
+	case TOKEN_EQ:
+		return "==";
+	case TOKEN_NEQ:
+		return "!=";
+	case TOKEN_LT:
+		return "<";
+	case TOKEN_GT:
+		return ">";
+	case TOKEN_LTE:
+		return "<=";
+	case TOKEN_GTE:
+		return ">=";
+	case TOKEN_LPAREN:
+		return "(";
+	case TOKEN_RPAREN:
+		return ")";
+	case TOKEN_LBRACE:
+		return "{";
+	case TOKEN_RBRACE:
+		return "}";
+	case TOKEN_SEMICOLON:
+		return ";";
+	case TOKEN_COMMA:
+		return ",";
+	case TOKEN_DOT:
+		return ".";
+	default:
+		return "UNKNOWN";
+	}
+}
