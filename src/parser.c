@@ -209,3 +209,241 @@ static Expr *parse_primary(Parser *p)
 	fprintf(stderr,"line %d: unexpected token '%s'\n", line, token_type_name(p->cur.type));
 	exit(1);
 }
+
+static Block *parse_block(Parser *p);
+static Stmt  *parse_statement(Parser *p);
+
+static int parse_type(Parser *p, TypeRef *out)
+{
+	if (check(p,TOKEN_INT))
+	{
+		out->kind=TY_INT;
+		out->class_name[0]='\0';
+		advance(p);
+		return 1;
+	}
+	if (check(p,TOKEN_VOID))
+	{
+		out->kind=TY_VOID;
+		out->class_name[0]='\0';
+		advance(p);
+		return 1;
+	}
+	if (check(p,TOKEN_IDENT))
+	{
+		out->kind=TY_OBJECT;
+		strcpy(out->class_name,p->cur.text);
+		advance(p);
+		return 1;
+	}
+	return 0;
+}
+static int starts_vardecl(Parser *p)
+{
+	if (check(p,TOKEN_INT)) return 1;
+	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_IDENT) return 1;
+	return 0;
+}
+static Stmt *parse_vardecl(Parser *p)
+{
+	int line=p->cur.line;
+	Stmt *s=stmt_new(ST_VARDECL,line);
+	parse_type(p,&s->decl_type);
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(s->decl_name,name.text);
+	if (match(p,TOKEN_ASSIGN)) s->decl_init=parse_expr(p);
+	expect(p,TOKEN_SEMICOLON);
+	return s;
+}
+static Stmt *parse_if(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);
+	Stmt *s=stmt_new(ST_IF,line);
+	expect(p,TOKEN_LPAREN);
+	s->cond=parse_expr(p);
+	expect(p,TOKEN_RPAREN);
+	s->then_blk=parse_block(p);
+	if (match(p,TOKEN_ELSE)) s->else_blk=parse_block(p);
+	return s;
+}
+static Stmt *parse_while(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);
+	Stmt *s=stmt_new(ST_WHILE,line);
+	expect(p,TOKEN_LPAREN);
+	s->cond=parse_expr(p);
+	expect(p,TOKEN_RPAREN);
+	s->then_blk=parse_block(p);
+	return s;
+}
+static Stmt *parse_return(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);
+	Stmt *s=stmt_new(ST_RETURN,line);
+	if (!check(p,TOKEN_SEMICOLON)) s->ret_val=parse_expr(p);
+	expect(p,TOKEN_SEMICOLON);
+	return s;
+}
+static Stmt *parse_assign_or_expr(Parser *p)
+{
+	int line=p->cur.line;
+	Expr *first=parse_expr(p);
+	if (match(p,TOKEN_ASSIGN))
+	{
+		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD)
+		{
+			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			exit(1);
+		}
+		Stmt *s=stmt_new(ST_ASSIGN,line);
+		s->target=first;
+		s->value=parse_expr(p);
+		expect(p,TOKEN_SEMICOLON);
+		return s;
+	}
+	Stmt *s=stmt_new(ST_EXPR,line);
+	s->expr=first;
+	expect(p,TOKEN_SEMICOLON);
+	return s;
+}
+static Stmt *parse_statement(Parser *p)
+{
+	if (starts_vardecl(p))     return parse_vardecl(p);
+	if (check(p,TOKEN_IF))     return parse_if(p);
+	if (check(p,TOKEN_WHILE))  return parse_while(p);
+	if (check(p,TOKEN_RETURN)) return parse_return(p);
+	return parse_assign_or_expr(p);
+}
+static Block *parse_block(Parser *p)
+{
+	expect(p,TOKEN_LBRACE);
+	Block *b=block_new();
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF)) block_push(b, parse_statement(p));
+	expect(p,TOKEN_RBRACE);
+	return b;
+}
+static Func *parse_function(Parser *p)
+{
+	Func *f=func_new();
+	parse_type(p,&f->ret_type);
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(f->name,name.text);
+	expect(p,TOKEN_LPAREN);
+	if (!check(p,TOKEN_RPAREN))
+	{
+		do
+		{
+			if (f->param_count>=8)
+			{
+				fprintf(stderr,"too many params\n");
+				exit(1);
+			}
+			Param *pm=&f->params[f->param_count++];
+			parse_type(p,&pm->type);
+			Token pn=expect(p,TOKEN_IDENT);
+			strcpy(pm->name,pn.text);
+		}
+		while (match(p,TOKEN_COMMA));
+	}
+	expect(p,TOKEN_RPAREN);
+	f->body=parse_block(p);
+	return f;
+}
+static ClassDecl *parse_class(Parser *p)
+{
+	advance(p);
+	ClassDecl *c=class_new();
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(c->name,name.text);
+	if (match(p,TOKEN_EXTENDS))
+	{
+		Token par=expect(p,TOKEN_IDENT);
+		strcpy(c->parent_name,par.text);
+		c->has_parent=1;
+	}
+	expect(p,TOKEN_LBRACE);
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		TypeRef ty;
+		if (!parse_type(p,&ty))
+		{
+			fprintf(stderr,"line %d: expected member type\n",p->cur.line);
+			exit(1);
+		}
+		Token mname=expect(p,TOKEN_IDENT);
+		if (check(p,TOKEN_LPAREN))
+		{
+			Func *f=func_new();
+			f->ret_type=ty;
+			strcpy(f->name,mname.text);
+			advance(p);
+			if (!check(p,TOKEN_RPAREN))
+			{
+				do
+				{
+					if (f->param_count>=8)
+					{
+						fprintf(stderr,"too many params\n");
+						exit(1);
+					}
+					Param *pm=&f->params[f->param_count++];
+					parse_type(p,&pm->type);
+					Token pn=expect(p,TOKEN_IDENT);
+					strcpy(pm->name,pn.text);
+				}
+				while (match(p,TOKEN_COMMA));
+			}
+			expect(p,TOKEN_RPAREN);
+			f->body=parse_block(p);
+			if (c->method_count>=32)
+			{
+				fprintf(stderr,"too many methods\n");
+				exit(1);
+			}
+			c->methods[c->method_count++]=f;
+		}
+		else
+		{
+			expect(p,TOKEN_SEMICOLON);
+			if (c->field_count>=32)
+			{
+				fprintf(stderr,"too many fields\n");
+				exit(1);
+			}
+			c->fields[c->field_count].type=ty;
+			strcpy(c->fields[c->field_count].name,mname.text);
+			c->field_count++;
+		}
+	}
+	expect(p,TOKEN_RBRACE);
+	return c;
+}
+Unit *parse_unit(Parser *p)
+{
+	Unit *u=unit_new();
+	while (!check(p,TOKEN_EOF))
+	{
+		if (check(p,TOKEN_CLASS))
+		{
+			if (u->klass)
+			{
+				fprintf(stderr,"line %d: only one class per file\n",p->cur.line);
+				exit(1);
+			}
+			u->klass=parse_class(p);
+		}
+		else
+		{
+			if (u->func_count>=8)
+			{
+				fprintf(stderr,"too many top-level functions\n");
+				exit(1);
+			}
+			u->funcs[u->func_count++]=parse_function(p);
+		}
+	}
+	return u;
+}
