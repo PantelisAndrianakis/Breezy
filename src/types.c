@@ -79,7 +79,7 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		fi->ret_type=f->ret_type;
 		fi->param_count=f->param_count;
 		for (int k=0; k<f->param_count; k++) fi->param_types[k]=f->params[k].type;
-		snprintf(fi->asm_label,sizeof(fi->asm_label),"bz_%s",f->name);
+		snprintf(fi->asm_label,sizeof(fi->asm_label),"bzy_%s",f->name);
 	}
 	if (!u->klass) return;
 	ClassDecl *d=u->klass;

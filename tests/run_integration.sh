@@ -10,10 +10,10 @@ check() {
     else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
 }
 echo "Integration tests"
-check minimal     tests/samples/minimal.bz    "0"
-check arith       tests/samples/arith.bz      "14"
-check if_else     tests/samples/if_else.bz    "1"
-check while       tests/samples/while.bz      "10"
-check multi_fn    tests/samples/multi_fn.bz   "42"
+check minimal     tests/samples/minimal.bzy    "0"
+check arith       tests/samples/arith.bzy      "14"
+check if_else     tests/samples/if_else.bzy    "1"
+check while       tests/samples/while.bzy      "10"
+check multi_fn    tests/samples/multi_fn.bzy   "42"
 check inheritance tests/samples/proj_inherit  "2"
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

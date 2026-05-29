@@ -135,19 +135,19 @@ void main()
 
 ### One Class Per File - No Headers, Ever
 
-Breezy takes the Java/C# approach to project structure, and pushes it further: **one class per `.bz` file**, where the file name matches the class (`Client.bz` → `class Client`). There are **no header files, no forward declarations, no `#include`, and no hand-written imports.** You write logic, not boilerplate.
+Breezy takes the Java/C# approach to project structure, and pushes it further: **one class per `.bzy` file**, where the file name matches the class (`Client.bzy` → `class Client`). There are **no header files, no forward declarations, no `#include`, and no hand-written imports.** You write logic, not boilerplate.
 
 ```
 src/
-├── Client.bz     // Class Client.
-├── Zone.bz       // Class Zone.
-└── Main.bz       // The entry point: void main().
+├── Client.bzy     // Class Client.
+├── Zone.bzy       // Class Zone.
+└── Main.bzy       // The entry point: void main().
 ```
 
-The compiler scans every `.bz` file in your project and gathers **all** class, field, and method signatures *before* it generates a single instruction. So `Client.bz` can freely reference `Zone` even if `Zone.bz` is compiled later - order never matters, and you never declare anything twice.
+The compiler scans every `.bzy` file in your project and gathers **all** class, field, and method signatures *before* it generates a single instruction. So `Client.bzy` can freely reference `Zone` even if `Zone.bzy` is compiled later - order never matters, and you never declare anything twice.
 
 ```breezy
-// Client.bz - no imports, no headers; Zone is just visible.
+// Client.bzy - no imports, no headers; Zone is just visible.
 class Client
 {
     string name;
@@ -363,7 +363,7 @@ int twice()
 ## Compilation Pipeline
 
 ```
-source.bz → Breezy compiler → output.asm → NASM → output.o ──┐
+source.bzy → Breezy compiler → output.asm → NASM → output.o ──┐
                                                              ├─ GCC ─→ native binary
                               Breezy runtime (libbreezy.a) ──┘
 ```
@@ -372,13 +372,13 @@ The Breezy compiler is written in C99 with no external dependencies. It parses t
 
 **Linux (ELF64):**
 ```sh
-breezy app.bz
+breezy app.bzy
 ./app
 ```
 
 **Windows (PE64):**
 ```sh
-breezy app.bz --target windows
+breezy app.bzy --target windows
 app.exe
 ```
 
@@ -409,7 +409,7 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. The compiler core (Part 1) is complete: Breezy `.bz` source compiles to native Windows executables today.
+The language design is settled. The compiler and runtime are being built from scratch. The compiler core (Part 1) is complete: Breezy `.bzy` source compiles to native Windows executables today.
 
 **Compiler core**
 - [x] Lexer, parser, typed AST

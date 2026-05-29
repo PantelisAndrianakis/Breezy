@@ -48,7 +48,7 @@ static int collect_files(const char *path, char paths[][512])
 	struct dirent *e;
 	while ((e=readdir(d))!=NULL)
 	{
-		if (has_suffix(e->d_name,".bz"))
+		if (has_suffix(e->d_name,".bzy"))
 		{
 			if (n>=MAX_FILES)
 			{
@@ -62,7 +62,7 @@ static int collect_files(const char *path, char paths[][512])
 	closedir(d);
 	if (n==0)
 	{
-		fprintf(stderr,"no .bz files in %s\n",path);
+		fprintf(stderr,"no .bzy files in %s\n",path);
 		exit(1);
 	}
 	return n;
@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
 {
 	if (argc<2)
 	{
-		fprintf(stderr,"Usage: breezy <project-dir-or-file.bz>\n");
+		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy>\n");
 		return 1;
 	}
 	static char paths[MAX_FILES][512];
