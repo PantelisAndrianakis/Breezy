@@ -273,10 +273,91 @@ static void cg_block(Codegen *cg, TypeTable *tt, Block *b, int in_main)
 	for (int i=0; i<b->count; i++) cg_stmt(cg,tt,b->stmts[i],in_main);
 }
 
+static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
+{
+	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
+	int frame = f->frame_size;
+	if (frame < 16) frame = 16;
+
+	cg_emit(cg,"global %s", label);
+	cg_emit(cg,"%s:", label);
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, %d", frame);
+
+	/* spill incoming args: this at [rbp-8], then params at [rbp-16],[rbp-24],... */
+	int reg = 0;
+	if (this_class)
+	{
+		cg_emit(cg,"    mov [rbp - 8], %s", ARG_REG[reg]);
+		reg++;
+	}
+	for (int i=0; i<f->param_count; i++)
+	{
+		int slot = this_class ? (16 + i*8) : (8 + i*8);
+		cg_emit(cg,"    mov [rbp - %d], %s", slot, ARG_REG[reg]);
+		reg++;
+	}
+
+	cg_block(cg, tt, f->body, is_main);
+
+	if (is_main) cg_emit(cg,"    xor eax, eax");
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
+}
+static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
+{
+	cg_emit(cg,"__vtable_%s:", c->name);
+	for (int slot=0; slot<c->vtable_size; slot++)
+		for (int i=0; i<c->method_count; i++)
+			if (c->methods[i].vtable_slot==slot)
+			{
+				cg_emit(cg,"    dq %s", c->methods[i].asm_label);
+				break;
+			}
+}
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 {
-	(void)cg;    /* replaced in Task 12 */
-	(void)tt;
-	(void)units;
-	(void)unit_count;
+	cg_emit(cg,"bits 64");
+	cg_emit(cg,"default rel");
+	cg_emit(cg,"extern malloc");
+	cg_emit(cg,"extern printf");
+	cg_emit(cg,"section .text");
+
+	for (int i=0; i<unit_count; i++)
+	{
+		Unit *u=units[i];
+		for (int k=0; k<u->func_count; k++)
+		{
+			Func *f=u->funcs[k];
+			char buf[160];
+			const char *label;
+			if (strcmp(f->name,"main")==0) label="main";
+			else
+			{
+				FuncInfo *fi=types_find_func(tt,f->name);
+				strcpy(buf,fi->asm_label);
+				label=buf;
+			}
+			cg_emit_func(cg,tt,label,f,NULL);
+		}
+	}
+	for (int i=0; i<unit_count; i++)
+	{
+		Unit *u=units[i];
+		if (!u->klass) continue;
+		ClassInfo *c=types_find_class(tt,u->klass->name);
+		for (int k=0; k<u->klass->method_count; k++)
+		{
+			Func *m=u->klass->methods[k];
+			MethodInfo *mi=types_find_method(c,m->name);
+			cg_emit_func(cg,tt,mi->asm_label,m,c->name);
+		}
+	}
+
+	cg_emit(cg,"");
+	cg_emit(cg,"section .data");
+	for (int i=0; i<tt->class_count; i++) cg_emit_vtable(cg,&tt->classes[i]);
+	cg_emit(cg,"__fmt_int: db \"%%lld\", 10, 0");
 }
