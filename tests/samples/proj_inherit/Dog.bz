@@ -1,0 +1,7 @@
+class Dog extends Animal
+{
+	void speak()
+	{
+		print(2);
+	}
+}

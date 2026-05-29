@@ -1,0 +1,6 @@
+void main()
+{
+	Animal a;
+	a = new Dog();
+	a.speak();
+}
