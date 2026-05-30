@@ -8,6 +8,9 @@ typedef struct
 {
 	FILE *out;
 	int label_count;
+	int sp_save;       /* The rbp offset holding the saved rsp across a runtime call. */
+	int val_save;      /* The rbp offset that preserves an object value across a call. */
+	int argtmp_base;   /* The rbp offset of ARGTMP[0]; ARGTMP[i] is argtmp_base + i*8. */
 } Codegen;
 
 void cg_init(Codegen *cg, FILE *out);

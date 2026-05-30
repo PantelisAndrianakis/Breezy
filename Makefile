@@ -14,7 +14,7 @@ RT_HDR  = runtime/breezy.h
 
 all: breezy
 
-breezy: src/main.c $(OBJS)
+breezy: src/main.c $(OBJS) lib_breezy.a
 	$(CC) $(CFLAGS) -o breezy src/main.c $(OBJS)
 
 test_lexer: tests/test_lexer.c src/lexer.c
@@ -48,7 +48,7 @@ test: test_lexer test_ast test_parser test_types test_resolve test_runtime breez
 	./test_runtime
 	bash tests/run_integration.sh
 
-integration: breezy
+integration: breezy lib_breezy.a
 	bash tests/run_integration.sh
 
 clean:

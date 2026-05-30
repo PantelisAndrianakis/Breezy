@@ -137,12 +137,14 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	ClassInfo *c=types_find_class(tt,e->name);
 	cg_emit(cg,"    mov rcx, %d", c->object_size);
+	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
+	cg_emit(cg,"    and rsp, -16");
 	cg_emit(cg,"    sub rsp, 32");
-	cg_emit(cg,"    call malloc");
-	cg_emit(cg,"    add rsp, 32");
+	cg_emit(cg,"    call bzy_alloc");
+	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 	cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
 	cg_emit(cg,"    mov [rax], rbx");
-	for (int off=8; off<c->object_size; off+=8) cg_emit(cg,"    mov qword [rax + %d], 0", off);
+	/* The refcount and fields are zeroed by bzy_alloc, so rax holds an owned reference. */
 }
 
 static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
@@ -276,8 +278,12 @@ static void cg_block(Codegen *cg, TypeTable *tt, Block *b, int in_main)
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
-	int frame = f->frame_size;
-	if (frame < 16) frame = 16;
+	int locals = f->frame_size;
+	if (locals < 16) locals = 16;
+	cg->sp_save     = locals + 8;
+	cg->val_save    = locals + 16;
+	cg->argtmp_base = locals + 24;
+	int frame = locals + 48;        /* Reserve scratch above locals: sp_save, val_save, and four argument temporaries. */
 
 	cg_emit(cg,"global %s", label);
 	cg_emit(cg,"%s:", label);
@@ -308,6 +314,14 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 }
 static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 {
+	cg_emit(cg,"__typeinfo_%s:", c->name);
+	int nobj=0;
+	for (int i=0;i<c->field_count;i++) if (c->fields[i].type.kind==TY_OBJECT) nobj++;
+	cg_emit(cg,"    dq %d", nobj);
+	for (int i=0;i<c->field_count;i++)
+		if (c->fields[i].type.kind==TY_OBJECT)
+			cg_emit(cg,"    dq %d", c->fields[i].offset);
+	cg_emit(cg,"    dq __typeinfo_%s", c->name);   /* This word lands at the vtable label minus eight. */
 	cg_emit(cg,"__vtable_%s:", c->name);
 	for (int slot=0; slot<c->vtable_size; slot++)
 		for (int i=0; i<c->method_count; i++)
@@ -323,6 +337,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"default rel");
 	cg_emit(cg,"extern malloc");
 	cg_emit(cg,"extern printf");
+	cg_emit(cg,"extern bzy_alloc");
+	cg_emit(cg,"extern bzy_retain");
+	cg_emit(cg,"extern bzy_release");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

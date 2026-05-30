@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"nasm failed\n");
 		return 1;
 	}
-	if (system("gcc out.obj -o out.exe")!=0)
+	if (system("gcc out.obj -L. -l_breezy -o out.exe")!=0)
 	{
 		fprintf(stderr,"gcc link failed\n");
 		return 1;
