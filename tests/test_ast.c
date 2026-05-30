@@ -12,7 +12,10 @@ static void test_expr_int(void)
 static void test_block_push_grows(void)
 {
 	Block *b = block_new();
-	for (int i = 0; i < 50; i++) block_push(b, stmt_new(ST_EXPR, i));
+	for (int i = 0; i < 50; i++)
+	{
+		block_push(b, stmt_new(ST_EXPR, i));
+	}
 	ASSERT_INT(b->count, 50);
 	ASSERT_INT(b->stmts[49]->line, 49);
 }

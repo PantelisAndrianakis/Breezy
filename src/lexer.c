@@ -4,11 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static const struct
-{
-	const char *kw;
-	TokenType tt;
-} KEYWORDS[] =
+static const struct { const char *kw; TokenType tt; } KEYWORDS[] =
 {
 	{"void",TOKEN_VOID},{"int",TOKEN_INT},{"if",TOKEN_IF},{"else",TOKEN_ELSE},
 	{"while",TOKEN_WHILE},{"return",TOKEN_RETURN},{"class",TOKEN_CLASS},
@@ -26,10 +22,15 @@ static char peek_ch(Lexer *l)
 {
 	return l->src[l->pos];
 }
+
 static char next_ch(Lexer *l)
 {
 	char c = l->src[l->pos++];
-	if (c == '\n') l->line++;
+	if (c == '\n')
+	{
+		l->line++;
+	}
+
 	return c;
 }
 
@@ -39,11 +40,24 @@ Token lexer_next(Lexer *l)
 	t.text[0] = '\0';
 	for (;;)
 	{
-		while (peek_ch(l) && isspace((unsigned char)peek_ch(l))) next_ch(l);
+		while (peek_ch(l) && isspace((unsigned char)peek_ch(l)))
+		{
+			next_ch(l);
+		}
+
 		if (peek_ch(l) == '/' && l->src[l->pos+1] == '/')
-			while (peek_ch(l) && peek_ch(l) != '\n') next_ch(l);
-		else break;
+		{
+			while (peek_ch(l) && peek_ch(l) != '\n')
+			{
+				next_ch(l);
+			}
+		}
+		else
+		{
+			break;
+		}
 	}
+
 	t.line = l->line;
 	char c = peek_ch(l);
 	if (!c)
@@ -56,21 +70,32 @@ Token lexer_next(Lexer *l)
 	{
 		int i = 0;
 		while ((isalnum((unsigned char)peek_ch(l)) || peek_ch(l) == '_') && i < 255)
+		{
 			t.text[i++] = next_ch(l);
+		}
+
 		t.text[i] = '\0';
 		t.type = TOKEN_IDENT;
 		for (int k = 0; KEYWORDS[k].kw; k++)
+		{
 			if (strcmp(t.text, KEYWORDS[k].kw) == 0)
 			{
 				t.type = KEYWORDS[k].tt;
 				break;
 			}
+		}
+
 		return t;
 	}
+
 	if (isdigit((unsigned char)c))
 	{
 		int i = 0;
-		while (isdigit((unsigned char)peek_ch(l)) && i < 255) t.text[i++] = next_ch(l);
+		while (isdigit((unsigned char)peek_ch(l)) && i < 255)
+		{
+			t.text[i++] = next_ch(l);
+		}
+
 		t.text[i] = '\0';
 		t.type = TOKEN_INT_LIT;
 		return t;
@@ -120,7 +145,11 @@ Token lexer_next(Lexer *l)
 			next_ch(l);
 			t.type=TOKEN_LTE;
 		}
-		else t.type=TOKEN_LT;
+		else
+		{
+			t.type=TOKEN_LT;
+		}
+
 		return t;
 	case '>':
 		if (peek_ch(l)=='=')
@@ -128,7 +157,11 @@ Token lexer_next(Lexer *l)
 			next_ch(l);
 			t.type=TOKEN_GTE;
 		}
-		else t.type=TOKEN_GT;
+		else
+		{
+			t.type=TOKEN_GT;
+		}
+
 		return t;
 	case '=':
 		if (peek_ch(l)=='=')
@@ -136,7 +169,11 @@ Token lexer_next(Lexer *l)
 			next_ch(l);
 			t.type=TOKEN_EQ;
 		}
-		else t.type=TOKEN_ASSIGN;
+		else
+		{
+			t.type=TOKEN_ASSIGN;
+		}
+
 		return t;
 	case '!':
 		if (peek_ch(l)=='=')
@@ -149,6 +186,7 @@ Token lexer_next(Lexer *l)
 			fprintf(stderr,"line %d: unexpected '!'\n",l->line);
 			exit(1);
 		}
+
 		return t;
 	default:
 		fprintf(stderr,"line %d: unexpected char '%c'\n",l->line,c);

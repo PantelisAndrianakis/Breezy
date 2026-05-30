@@ -11,6 +11,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->out=out;
 	cg->label_count=0;
 }
+
 void cg_emit(Codegen *cg, const char *fmt, ...)
 {
 	va_list ap;
@@ -19,6 +20,7 @@ void cg_emit(Codegen *cg, const char *fmt, ...)
 	va_end(ap);
 	fputc('\n',cg->out);
 }
+
 int  cg_label(Codegen *cg)
 {
 	return cg->label_count++;
@@ -37,11 +39,13 @@ static void cg_aligned_call(Codegen *cg, const char *fn)
 	cg_emit(cg,"    call %s", fn);
 	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 }
+
 /* Release the object pointer currently in rcx; rax is clobbered. */
 static void cg_release_rcx(Codegen *cg)
 {
 	cg_aligned_call(cg,"bzy_release");
 }
+
 /* Release every object-typed local of the function, optionally skipping one
    slot so a returned local can transfer ownership; pass except_off = -1 for none. */
 static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
@@ -49,7 +53,11 @@ static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
 	for (int i=0; i<f->obj_local_count; i++)
 	{
 		int off = f->obj_local_offsets[i];
-		if (off == except_off) continue;
+		if (off == except_off)
+		{
+			continue;
+		}
+
 		cg_emit(cg,"    mov rcx, [rbp - %d]", off);
 		cg_release_rcx(cg);
 	}
@@ -106,6 +114,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			set="setge";
 			break;
 		}
+
 		cg_emit(cg,"    cmp rax, rbx");
 		cg_emit(cg,"    %s al", set);
 		cg_emit(cg,"    movzx rax, al");
@@ -126,18 +135,29 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		fprintf(stderr,"codegen: >4 args unsupported in core plan\n");
 		exit(1);
 	}
-	if (indirect) cg_emit(cg,"    push rax");          /* callee addr */
+
+	if (indirect)
+	{
+		cg_emit(cg,"    push rax");          /* Callee address. */
+	}
+
 	if (self)
 	{
 		cg_expr(cg,tt,self);
 		cg_emit(cg,"    push rax");
 	}
+
 	for (int i=0; i<argc; i++)
 	{
 		cg_expr(cg,tt,args[i]);
 		cg_emit(cg,"    push rax");
 	}
-	for (int i=total-1; i>=0; i--) cg_emit(cg,"    pop %s", ARG_REG[i]);
+
+	for (int i=total-1; i>=0; i--)
+	{
+		cg_emit(cg,"    pop %s", ARG_REG[i]);
+	}
+
 	if (indirect)
 	{
 		cg_emit(cg,"    pop rax");
@@ -155,8 +175,8 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 
 static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	cg_expr(cg,tt,e->lhs);                       /* receiver ptr in rax */
-	cg_emit(cg,"    mov rax, [rax]");             /* vtable ptr */
+	cg_expr(cg,tt,e->lhs);                       /* Receiver pointer in rax. */
+	cg_emit(cg,"    mov rax, [rax]");             /* Vtable pointer. */
 	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);
 	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1);
 }
@@ -216,12 +236,16 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_method_call(cg,tt,e);
 		break;
 	case EX_CALL:
-		if (strcmp(e->name,"print")==0) cg_print(cg,tt,e);
+		if (strcmp(e->name,"print")==0)
+		{
+			cg_print(cg,tt,e);
+		}
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
 			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0);
 		}
+
 		break;
 	}
 }
@@ -243,6 +267,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		cg_emit(cg,"    mov [rbx + %d], rax", target->anno_int);
 	}
 }
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -253,6 +278,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			cg_expr(cg,tt,s->decl_init);
 			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
 		}
+
 		break;
 	case ST_ASSIGN:
 		cg_expr(cg,tt,s->value);
@@ -262,13 +288,27 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_expr(cg,tt,s->expr);
 		break;
 	case ST_RETURN:
-		if (s->ret_val) cg_expr(cg,tt,s->ret_val);
+		if (s->ret_val)
+		{
+			cg_expr(cg,tt,s->ret_val);
+		}
+
 		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
+		{
 			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		}
+
 		cg_release_object_locals(cg, f, -1);
 		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
+		{
 			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
-		if (in_main) cg_emit(cg,"    xor eax, eax");
+		}
+
+		if (in_main)
+		{
+			cg_emit(cg,"    xor eax, eax");
+		}
+
 		cg_emit(cg,"    mov rsp, rbp");
 		cg_emit(cg,"    pop rbp");
 		cg_emit(cg,"    ret");
@@ -286,6 +326,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			cg_emit(cg,".L%d:",else_l);
 			cg_block(cg,tt,f,s->else_blk,in_main);
 		}
+
 		cg_emit(cg,".L%d:",end_l);
 		break;
 	}
@@ -303,16 +344,24 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	}
 	}
 }
+
 static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 {
-	for (int i=0; i<b->count; i++) cg_stmt(cg,tt,f,b->stmts[i],in_main);
+	for (int i=0; i<b->count; i++)
+	{
+		cg_stmt(cg,tt,f,b->stmts[i],in_main);
+	}
 }
 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
 	int locals = f->frame_size;
-	if (locals < 16) locals = 16;
+	if (locals < 16)
+	{
+		locals = 16;
+	}
+
 	cg->sp_save     = locals + 8;
 	cg->val_save    = locals + 16;
 	cg->argtmp_base = locals + 24;
@@ -331,6 +380,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		cg_emit(cg,"    mov [rbp - 8], %s", ARG_REG[reg]);
 		reg++;
 	}
+
 	for (int i=0; i<f->param_count; i++)
 	{
 		int slot = this_class ? (16 + i*8) : (8 + i*8);
@@ -341,35 +391,59 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	/* Object locals must be NULL before any release; bzy_alloc only zeroes heap
 	   objects, not stack slots. */
 	for (int i=0; i<f->obj_local_count; i++)
+	{
 		cg_emit(cg,"    mov qword [rbp - %d], 0", f->obj_local_offsets[i]);
+	}
 
 	cg_block(cg, tt, f, f->body, is_main);
 
 	cg_release_object_locals(cg, f, -1);
-	if (is_main) cg_emit(cg,"    xor eax, eax");
+	if (is_main)
+	{
+		cg_emit(cg,"    xor eax, eax");
+	}
+
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");
 }
+
 static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 {
 	cg_emit(cg,"__typeinfo_%s:", c->name);
 	int nobj=0;
-	for (int i=0;i<c->field_count;i++) if (c->fields[i].type.kind==TY_OBJECT) nobj++;
-	cg_emit(cg,"    dq %d", nobj);
-	for (int i=0;i<c->field_count;i++)
+	for (int i=0; i<c->field_count; i++)
+	{
 		if (c->fields[i].type.kind==TY_OBJECT)
+		{
+			nobj++;
+		}
+	}
+
+	cg_emit(cg,"    dq %d", nobj);
+	for (int i=0; i<c->field_count; i++)
+	{
+		if (c->fields[i].type.kind==TY_OBJECT)
+		{
 			cg_emit(cg,"    dq %d", c->fields[i].offset);
+		}
+	}
+
 	cg_emit(cg,"    dq __typeinfo_%s", c->name);   /* This word lands at the vtable label minus eight. */
 	cg_emit(cg,"__vtable_%s:", c->name);
 	for (int slot=0; slot<c->vtable_size; slot++)
+	{
 		for (int i=0; i<c->method_count; i++)
+		{
 			if (c->methods[i].vtable_slot==slot)
 			{
 				cg_emit(cg,"    dq %s", c->methods[i].asm_label);
 				break;
 			}
+		}
+	}
 }
+
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 {
 	cg_emit(cg,"bits 64");
@@ -389,20 +463,29 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			Func *f=u->funcs[k];
 			char buf[160];
 			const char *label;
-			if (strcmp(f->name,"main")==0) label="main";
+			if (strcmp(f->name,"main")==0)
+			{
+				label="main";
+			}
 			else
 			{
 				FuncInfo *fi=types_find_func(tt,f->name);
 				strcpy(buf,fi->asm_label);
 				label=buf;
 			}
+
 			cg_emit_func(cg,tt,label,f,NULL);
 		}
 	}
+
 	for (int i=0; i<unit_count; i++)
 	{
 		Unit *u=units[i];
-		if (!u->klass) continue;
+		if (!u->klass)
+		{
+			continue;
+		}
+
 		ClassInfo *c=types_find_class(tt,u->klass->name);
 		for (int k=0; k<u->klass->method_count; k++)
 		{
@@ -414,6 +497,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 
 	cg_emit(cg,"");
 	cg_emit(cg,"section .data");
-	for (int i=0; i<tt->class_count; i++) cg_emit_vtable(cg,&tt->classes[i]);
+	for (int i=0; i<tt->class_count; i++)
+	{
+		cg_emit_vtable(cg,&tt->classes[i]);
+	}
+
 	cg_emit(cg,"__fmt_int: db \"%%lld\", 10, 0");
 }

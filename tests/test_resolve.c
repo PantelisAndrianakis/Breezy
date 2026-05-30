@@ -38,16 +38,22 @@ static void test_method_call_slot_and_class(void)
 	static Parser ps[2];
 	static Unit *units[2];
 	const char *s[]= {"class Animal { void speak() { } }",
-	                  "class Dog extends Animal { void speak() { } void go() { this.speak(); } }"
-	                 };
+					  "class Dog extends Animal { void speak() { } void go() { this.speak(); } }"
+					 };
 	types_init(&g_tt);
 	for (int i=0; i<2; i++)
 	{
 		parser_init(&ps[i],s[i]);
 		units[i]=parse_unit(&ps[i]);
 	}
-	for (int i=0; i<2; i++) types_register_unit_names(&g_tt,units[i]);
-	for (int i=0; i<2; i++) types_register_unit_members(&g_tt,units[i]);
+	for (int i=0; i<2; i++)
+	{
+		types_register_unit_names(&g_tt,units[i]);
+	}
+	for (int i=0; i<2; i++)
+	{
+		types_register_unit_members(&g_tt,units[i]);
+	}
 	resolve_program(&g_tt,units,2);
 	Func *go=units[1]->klass->methods[1];
 	Stmt *call=go->body->stmts[0];

@@ -7,8 +7,8 @@ static void test_keywords(void)
 	Token t;
 	lexer_init(&l, "void int if else while return class extends new this");
 	TokenType e[] = {TOKEN_VOID,TOKEN_INT,TOKEN_IF,TOKEN_ELSE,TOKEN_WHILE,
-	                 TOKEN_RETURN,TOKEN_CLASS,TOKEN_EXTENDS,TOKEN_NEW,TOKEN_THIS,TOKEN_EOF
-	                };
+					 TOKEN_RETURN,TOKEN_CLASS,TOKEN_EXTENDS,TOKEN_NEW,TOKEN_THIS,TOKEN_EOF
+					};
 	for (int i = 0; i < 11; i++)
 	{
 		t = lexer_next(&l);
@@ -47,10 +47,10 @@ static void test_operators(void)
 	Token t;
 	lexer_init(&l, "+ - * / = == != < > <= >= . , ; ( ) { }");
 	TokenType e[] = {TOKEN_PLUS,TOKEN_MINUS,TOKEN_STAR,TOKEN_SLASH,TOKEN_ASSIGN,
-	                 TOKEN_EQ,TOKEN_NEQ,TOKEN_LT,TOKEN_GT,TOKEN_LTE,TOKEN_GTE,
-	                 TOKEN_DOT,TOKEN_COMMA,TOKEN_SEMICOLON,
-	                 TOKEN_LPAREN,TOKEN_RPAREN,TOKEN_LBRACE,TOKEN_RBRACE,TOKEN_EOF
-	                };
+					 TOKEN_EQ,TOKEN_NEQ,TOKEN_LT,TOKEN_GT,TOKEN_LTE,TOKEN_GTE,
+					 TOKEN_DOT,TOKEN_COMMA,TOKEN_SEMICOLON,
+					 TOKEN_LPAREN,TOKEN_RPAREN,TOKEN_LBRACE,TOKEN_RBRACE,TOKEN_EOF
+					};
 	for (int i = 0; i < 19; i++)
 	{
 		t = lexer_next(&l);

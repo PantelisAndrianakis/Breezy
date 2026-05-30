@@ -11,8 +11,14 @@ static void build(TypeTable *tt, Unit **units, const char **srcs, int n)
 		parser_init(&ps[i],srcs[i]);
 		units[i]=parse_unit(&ps[i]);
 	}
-	for (int i=0; i<n; i++) types_register_unit_names(tt, units[i]);
-	for (int i=0; i<n; i++) types_register_unit_members(tt, units[i]);
+	for (int i=0; i<n; i++)
+	{
+		types_register_unit_names(tt, units[i]);
+	}
+	for (int i=0; i<n; i++)
+	{
+		types_register_unit_members(tt, units[i]);
+	}
 }
 static void test_field_offsets_and_size(void)
 {
@@ -42,8 +48,8 @@ static void test_override_reuses_slot(void)
 	TypeTable tt;
 	Unit *u[2];
 	const char *s[]= {"class Animal { void speak() { } }",
-	                  "class Dog extends Animal { void speak() { } }"
-	                 };
+					  "class Dog extends Animal { void speak() { } }"
+					 };
 	build(&tt,u,s,2);
 	ClassInfo *dog=types_find_class(&tt,"Dog");
 	MethodInfo *m=types_find_method(dog,"speak");

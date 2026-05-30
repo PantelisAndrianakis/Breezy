@@ -1,5 +1,5 @@
 # Breezy C source formatting. Allman braces, tab indentation.
 # --add-braces also wraps single-line if/for/while bodies in Allman braces.
 --style=allman
---indent=tab=4
+--indent=force-tab=4
 --add-braces

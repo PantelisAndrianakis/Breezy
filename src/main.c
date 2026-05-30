@@ -88,8 +88,14 @@ int main(int argc, char *argv[])
 
 	TypeTable tt;
 	types_init(&tt);
-	for (int i=0; i<nfiles; i++) types_register_unit_names(&tt,units[i]);
-	for (int i=0; i<nfiles; i++) types_register_unit_members(&tt,units[i]);
+	for (int i=0; i<nfiles; i++)
+	{
+		types_register_unit_names(&tt,units[i]);
+	}
+	for (int i=0; i<nfiles; i++)
+	{
+		types_register_unit_members(&tt,units[i]);
+	}
 	resolve_program(&tt,units,nfiles);
 
 	FILE *out=fopen("out.asm","w");

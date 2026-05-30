@@ -25,7 +25,10 @@ static void *track(void *p)
 
 void ast_free_all(void)
 {
-	for (int i=0; i<g_node_count; i++) free(g_nodes[i]);
+	for (int i=0; i<g_node_count; i++)
+	{
+		free(g_nodes[i]);
+	}
 	g_node_count = 0;
 }
 

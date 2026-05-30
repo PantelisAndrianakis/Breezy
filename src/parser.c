@@ -8,22 +8,28 @@ static void advance(Parser *p)
 	p->cur = p->peek;
 	p->peek = lexer_next(&p->lex);
 }
+
 static int  check(Parser *p, TokenType tt)
 {
 	return p->cur.type == tt;
 }
+
 static int  match(Parser *p, TokenType tt)
 {
-	if (!check(p,tt)) return 0;
+	if (!check(p,tt))
+	{
+		return 0;
+	}
 	advance(p);
 	return 1;
 }
+
 static Token expect(Parser *p, TokenType tt)
 {
 	if (p->cur.type != tt)
 	{
 		fprintf(stderr, "line %d: expected '%s', got '%s'\n",
-		        p->cur.line, token_type_name(tt), token_type_name(p->cur.type));
+				p->cur.line, token_type_name(tt), token_type_name(p->cur.type));
 		exit(1);
 	}
 	Token t = p->cur;
@@ -71,6 +77,7 @@ static Expr *parse_comparison(Parser *p)
 	}
 	return left;
 }
+
 static Expr *parse_additive(Parser *p)
 {
 	Expr *left = parse_multiplicative(p);
@@ -86,6 +93,7 @@ static Expr *parse_additive(Parser *p)
 	}
 	return left;
 }
+
 static Expr *parse_multiplicative(Parser *p)
 {
 	Expr *left = parse_unary(p);
@@ -101,6 +109,7 @@ static Expr *parse_multiplicative(Parser *p)
 	}
 	return left;
 }
+
 static Expr *parse_unary(Parser *p)
 {
 	if (check(p,TOKEN_MINUS))
@@ -114,6 +123,7 @@ static Expr *parse_unary(Parser *p)
 	}
 	return parse_postfix(p);
 }
+
 static Expr *parse_postfix(Parser *p)
 {
 	Expr *e = parse_primary(p);
@@ -142,10 +152,14 @@ static Expr *parse_postfix(Parser *p)
 	}
 	return e;
 }
+
 static int parse_args(Parser *p, Expr **out)
 {
 	int n = 0;
-	if (check(p,TOKEN_RPAREN)) return 0;
+	if (check(p,TOKEN_RPAREN))
+	{
+		return 0;
+	}
 	do
 	{
 		if (n >= 8)
@@ -158,6 +172,7 @@ static int parse_args(Parser *p, Expr **out)
 	while (match(p,TOKEN_COMMA));
 	return n;
 }
+
 static Expr *parse_primary(Parser *p)
 {
 	int line = p->cur.line;
@@ -238,12 +253,20 @@ static int parse_type(Parser *p, TypeRef *out)
 	}
 	return 0;
 }
+
 static int starts_vardecl(Parser *p)
 {
-	if (check(p,TOKEN_INT)) return 1;
-	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_IDENT) return 1;
+	if (check(p,TOKEN_INT))
+	{
+		return 1;
+	}
+	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_IDENT)
+	{
+		return 1;
+	}
 	return 0;
 }
+
 static Stmt *parse_vardecl(Parser *p)
 {
 	int line=p->cur.line;
@@ -251,10 +274,14 @@ static Stmt *parse_vardecl(Parser *p)
 	parse_type(p,&s->decl_type);
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(s->decl_name,name.text);
-	if (match(p,TOKEN_ASSIGN)) s->decl_init=parse_expr(p);
+	if (match(p,TOKEN_ASSIGN))
+	{
+		s->decl_init=parse_expr(p);
+	}
 	expect(p,TOKEN_SEMICOLON);
 	return s;
 }
+
 static Stmt *parse_if(Parser *p)
 {
 	int line=p->cur.line;
@@ -264,9 +291,13 @@ static Stmt *parse_if(Parser *p)
 	s->cond=parse_expr(p);
 	expect(p,TOKEN_RPAREN);
 	s->then_blk=parse_block(p);
-	if (match(p,TOKEN_ELSE)) s->else_blk=parse_block(p);
+	if (match(p,TOKEN_ELSE))
+	{
+		s->else_blk=parse_block(p);
+	}
 	return s;
 }
+
 static Stmt *parse_while(Parser *p)
 {
 	int line=p->cur.line;
@@ -278,15 +309,20 @@ static Stmt *parse_while(Parser *p)
 	s->then_blk=parse_block(p);
 	return s;
 }
+
 static Stmt *parse_return(Parser *p)
 {
 	int line=p->cur.line;
 	advance(p);
 	Stmt *s=stmt_new(ST_RETURN,line);
-	if (!check(p,TOKEN_SEMICOLON)) s->ret_val=parse_expr(p);
+	if (!check(p,TOKEN_SEMICOLON))
+	{
+		s->ret_val=parse_expr(p);
+	}
 	expect(p,TOKEN_SEMICOLON);
 	return s;
 }
+
 static Stmt *parse_assign_or_expr(Parser *p)
 {
 	int line=p->cur.line;
@@ -309,22 +345,40 @@ static Stmt *parse_assign_or_expr(Parser *p)
 	expect(p,TOKEN_SEMICOLON);
 	return s;
 }
+
 static Stmt *parse_statement(Parser *p)
 {
-	if (starts_vardecl(p))     return parse_vardecl(p);
-	if (check(p,TOKEN_IF))     return parse_if(p);
-	if (check(p,TOKEN_WHILE))  return parse_while(p);
-	if (check(p,TOKEN_RETURN)) return parse_return(p);
+	if (starts_vardecl(p))
+	{
+		return parse_vardecl(p);
+	}
+	if (check(p,TOKEN_IF))
+	{
+		return parse_if(p);
+	}
+	if (check(p,TOKEN_WHILE))
+	{
+		return parse_while(p);
+	}
+	if (check(p,TOKEN_RETURN))
+	{
+		return parse_return(p);
+	}
 	return parse_assign_or_expr(p);
 }
+
 static Block *parse_block(Parser *p)
 {
 	expect(p,TOKEN_LBRACE);
 	Block *b=block_new();
-	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF)) block_push(b, parse_statement(p));
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		block_push(b, parse_statement(p));
+	}
 	expect(p,TOKEN_RBRACE);
 	return b;
 }
+
 static Func *parse_function(Parser *p)
 {
 	Func *f=func_new();
@@ -352,6 +406,7 @@ static Func *parse_function(Parser *p)
 	f->body=parse_block(p);
 	return f;
 }
+
 static ClassDecl *parse_class(Parser *p)
 {
 	advance(p);
@@ -421,6 +476,7 @@ static ClassDecl *parse_class(Parser *p)
 	expect(p,TOKEN_RBRACE);
 	return c;
 }
+
 Unit *parse_unit(Parser *p)
 {
 	Unit *u=unit_new();
