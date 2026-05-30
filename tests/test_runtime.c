@@ -63,6 +63,27 @@ static void test_release_frees_owned_field(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_loop_reuse_is_bounded(void)
+{
+	/* Simulate `c = new Cell()` in a loop: each store retains the new object and
+	   releases the previous occupant, so only one object stays alive. */
+	int64_t before = bzy_live_count();
+	void *slot = NULL;
+	for (int i=0; i<1000; i++)
+	{
+		void *o = bzy_alloc(16);
+		*(void**)o = vtable_no_field();
+		bzy_retain(o);       /* The slot takes ownership. */
+		bzy_release(slot);   /* Release the previous occupant. */
+		slot = o;
+		bzy_release(o);      /* Drop the allocation's initial reference. */
+	}
+
+	ASSERT_INT(bzy_live_count(), before + 1);
+	bzy_release(slot);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -70,6 +91,7 @@ int main(void)
 	RUN(test_retain_release_balance);
 	RUN(test_null_is_safe);
 	RUN(test_release_frees_owned_field);
+	RUN(test_loop_reuse_is_bounded);
 	SUMMARY();
 	return 0;
 }

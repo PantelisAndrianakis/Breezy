@@ -1,0 +1,13 @@
+void main()
+{
+	int i;
+	Cell c;
+	i = 0;
+	while (i < 1000)
+	{
+		c = new Cell();
+		i = i + 1;
+	}
+
+	print(liveCount());
+}
