@@ -12,7 +12,6 @@ static void walk_stmt(Func *f, Stmt *s)
 		{
 			f->obj_local_offsets[f->obj_local_count++] = s->decl_offset;
 		}
-
 		break;
 	case ST_IF:
 		walk_block(f, s->then_blk);
@@ -20,7 +19,6 @@ static void walk_stmt(Func *f, Stmt *s)
 		{
 			walk_block(f, s->else_blk);
 		}
-
 		break;
 	case ST_WHILE:
 		walk_block(f, s->then_blk);

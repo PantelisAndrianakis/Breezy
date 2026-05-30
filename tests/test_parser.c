@@ -70,6 +70,7 @@ static void test_parse_function_with_vardecl(void)
 	ASSERT_STR(f->body->stmts[0]->decl_name, "x");
 	ASSERT_INT(f->body->stmts[1]->kind, ST_ASSIGN);
 }
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -80,6 +81,7 @@ static void test_parse_if_else(void)
 	ASSERT(s->else_blk != NULL);
 	ASSERT_INT(s->else_blk->count, 1);
 }
+
 static void test_parse_class_with_inheritance(void)
 {
 	Unit *u = parse_unit_str("class Dog extends Animal { int age; void speak() { age = 1; } }");
@@ -93,6 +95,7 @@ static void test_parse_class_with_inheritance(void)
 	ASSERT_INT(c->method_count, 1);
 	ASSERT_STR(c->methods[0]->name, "speak");
 }
+
 static void test_parse_method_with_param(void)
 {
 	Unit *u = parse_unit_str("class A { void init(int a) { } }");

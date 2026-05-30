@@ -9,6 +9,7 @@ static void test_expr_int(void)
 	ASSERT_INT(e->line, 5);
 	ASSERT_INT(e->int_val, 42);
 }
+
 static void test_block_push_grows(void)
 {
 	Block *b = block_new();
@@ -19,6 +20,7 @@ static void test_block_push_grows(void)
 	ASSERT_INT(b->count, 50);
 	ASSERT_INT(b->stmts[49]->line, 49);
 }
+
 static void test_class_holds_methods(void)
 {
 	ClassDecl *c = class_new();
@@ -28,6 +30,7 @@ static void test_class_holds_methods(void)
 	ASSERT_STR(c->name, "Dog");
 	ASSERT_STR(c->methods[0]->name, "speak");
 }
+
 int main(void)
 {
 	printf("AST tests\n");

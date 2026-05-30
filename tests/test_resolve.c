@@ -16,6 +16,7 @@ static Unit *build1(const char *s)
 	resolve_program(&g_tt,&u,1);
 	return u;
 }
+
 static void test_local_int_offset(void)
 {
 	Func *f=build1("void main() { int x; x = 5; }")->funcs[0];
@@ -25,6 +26,7 @@ static void test_local_int_offset(void)
 	ASSERT_INT(assign->target->anno_int, 8);
 	ASSERT(f->frame_size >= 8);
 }
+
 static void test_field_resolves_offset(void)
 {
 	Func *m=build1("class A { int age; void set() { this.age = 3; } }")->klass->methods[0];
@@ -33,6 +35,7 @@ static void test_field_resolves_offset(void)
 	ASSERT_INT(assign->target->anno_int, 16);
 	ASSERT_INT(assign->target->type.kind, TY_INT);
 }
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -62,6 +65,7 @@ static void test_method_call_slot_and_class(void)
 	ASSERT_INT(call->expr->anno_int, 0);
 	ASSERT_STR(call->expr->anno_str, "Dog");
 }
+
 int main(void)
 {
 	printf("Resolver tests\n");

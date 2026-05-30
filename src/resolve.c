@@ -168,7 +168,6 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		{
 			resolve_block(st,s->else_blk,tc);
 		}
-
 		break;
 	case ST_WHILE:
 		resolve_expr(st,s->cond,tc);
@@ -179,7 +178,6 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		{
 			resolve_expr(st,s->ret_val,tc);
 		}
-
 		break;
 	case ST_EXPR:
 		resolve_expr(st,s->expr,tc);

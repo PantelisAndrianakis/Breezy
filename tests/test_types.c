@@ -20,6 +20,7 @@ static void build(TypeTable *tt, Unit **units, const char **srcs, int n)
 		types_register_unit_members(tt, units[i]);
 	}
 }
+
 static void test_field_offsets_and_size(void)
 {
 	TypeTable tt;
@@ -32,6 +33,7 @@ static void test_field_offsets_and_size(void)
 	ASSERT_INT(types_find_field(c,"y")->offset, 24);
 	ASSERT_INT(c->object_size, 32);
 }
+
 static void test_method_slot(void)
 {
 	TypeTable tt;
@@ -43,6 +45,7 @@ static void test_method_slot(void)
 	ASSERT_INT(m->vtable_slot, 0);
 	ASSERT_STR(m->asm_label, "Animal__speak");
 }
+
 static void test_override_reuses_slot(void)
 {
 	TypeTable tt;
@@ -57,6 +60,7 @@ static void test_override_reuses_slot(void)
 	ASSERT_STR(m->asm_label, "Dog__speak");
 	ASSERT_STR(m->owner_class, "Dog");
 }
+
 static void test_inherited_field_offset(void)
 {
 	TypeTable tt;
@@ -68,6 +72,7 @@ static void test_inherited_field_offset(void)
 	ASSERT_INT(types_find_field(dog,"breed")->offset, 24);
 	ASSERT_INT(dog->object_size, 32);
 }
+
 int main(void)
 {
 	printf("Type table tests\n");

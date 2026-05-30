@@ -63,6 +63,37 @@ static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
 	}
 }
 
+/* True if evaluating e leaves an owned (+1) object in rax: new, or a call or
+   method call returning an object. Other object reads are borrowed (+0). */
+static int expr_is_owned(Expr *e)
+{
+	if (e->type.kind != TY_OBJECT)
+	{
+		return 0;
+	}
+
+	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL;
+}
+
+/* Retain the object pointer currently in rax; rax is preserved. */
+static void cg_retain_rax(Codegen *cg)
+{
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+	cg_emit(cg,"    mov rcx, rax");
+	cg_aligned_call(cg,"bzy_retain");
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
+/* Evaluate e leaving a +1 owned object in rax, retaining borrowed reads. */
+static void cg_expr_owned(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	cg_expr(cg,tt,e);
+	if (!expr_is_owned(e))
+	{
+		cg_retain_rax(cg);
+	}
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->lhs);
@@ -127,7 +158,8 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 }
 
 static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
-                              Expr *self, Expr **args, int argc, int indirect)
+                              Expr *self, Expr **args, int argc, int indirect,
+                              int result_is_object)
 {
 	int total = (self?1:0) + argc;
 	if (total > 4)
@@ -136,21 +168,39 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		exit(1);
 	}
 
+	int owned_tmp[4];
+	int owned_n = 0;
+
 	if (indirect)
 	{
 		cg_emit(cg,"    push rax");          /* Callee address. */
 	}
 
+	int slot_index = 0;
 	if (self)
 	{
 		cg_expr(cg,tt,self);
+		if (expr_is_owned(self))
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->argtmp_base + slot_index*8);
+			owned_tmp[owned_n++] = slot_index;
+		}
+
 		cg_emit(cg,"    push rax");
+		slot_index++;
 	}
 
 	for (int i=0; i<argc; i++)
 	{
 		cg_expr(cg,tt,args[i]);
+		if (expr_is_owned(args[i]))
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->argtmp_base + slot_index*8);
+			owned_tmp[owned_n++] = slot_index;
+		}
+
 		cg_emit(cg,"    push rax");
+		slot_index++;
 	}
 
 	for (int i=total-1; i>=0; i--)
@@ -171,6 +221,25 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		cg_emit(cg,"    call %s", target);
 		cg_emit(cg,"    add rsp, 32");
 	}
+
+	if (owned_n > 0)
+	{
+		if (result_is_object)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		}
+
+		for (int i=0; i<owned_n; i++)
+		{
+			cg_emit(cg,"    mov rcx, [rbp - %d]", cg->argtmp_base + owned_tmp[i]*8);
+			cg_release_rcx(cg);
+		}
+
+		if (result_is_object)
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
 }
 
 static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
@@ -178,7 +247,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_expr(cg,tt,e->lhs);                       /* Receiver pointer in rax. */
 	cg_emit(cg,"    mov rax, [rax]");             /* Vtable pointer. */
 	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);
-	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1);
+	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, e->type.kind==TY_OBJECT);
 }
 
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
@@ -243,9 +312,8 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
-			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0);
+			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, e->type.kind==TY_OBJECT);
 		}
-
 		break;
 	}
 }
@@ -268,6 +336,37 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	}
 }
 
+/* Store a +1 object into an object-typed target, releasing the previous occupant
+   and any owned receiver temporary. */
+static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
+{
+	if (target->kind==EX_IDENT)
+	{
+		cg_expr_owned(cg,tt,value);
+		cg_emit(cg,"    mov rbx, [rbp - %d]", target->anno_int);
+		cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
+		cg_emit(cg,"    mov rcx, rbx");
+		cg_release_rcx(cg);
+	}
+	else
+	{
+		cg_expr_owned(cg,tt,value);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);
+		cg_expr(cg,tt,target->lhs);
+		cg_emit(cg,"    mov rbx, rax");
+		cg_emit(cg,"    mov rdx, [rbx + %d]", target->anno_int);
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->assign_save);
+		cg_emit(cg,"    mov [rbx + %d], rax", target->anno_int);
+		cg_emit(cg,"    mov rcx, rdx");
+		cg_release_rcx(cg);
+		if (expr_is_owned(target->lhs))
+		{
+			cg_emit(cg,"    mov rcx, rbx");
+			cg_release_rcx(cg);
+		}
+	}
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -275,33 +374,64 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_VARDECL:
 		if (s->decl_init)
 		{
-			cg_expr(cg,tt,s->decl_init);
+			if (s->decl_type.kind==TY_OBJECT)
+			{
+				cg_expr_owned(cg,tt,s->decl_init);
+			}
+			else
+			{
+				cg_expr(cg,tt,s->decl_init);
+			}
+
 			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
 		}
-
 		break;
 	case ST_ASSIGN:
-		cg_expr(cg,tt,s->value);
-		cg_store(cg,tt,s->target);
+		if (s->target->type.kind==TY_OBJECT)
+		{
+			cg_assign_object(cg,tt,s->target,s->value);
+		}
+		else
+		{
+			cg_expr(cg,tt,s->value);
+			cg_store(cg,tt,s->target);
+		}
 		break;
 	case ST_EXPR:
 		cg_expr(cg,tt,s->expr);
+		if (s->expr->type.kind==TY_OBJECT && expr_is_owned(s->expr))
+		{
+			cg_emit(cg,"    mov rcx, rax");
+			cg_release_rcx(cg);
+		}
 		break;
 	case ST_RETURN:
-		if (s->ret_val)
-		{
-			cg_expr(cg,tt,s->ret_val);
-		}
-
 		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
 		{
-			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+			if (s->ret_val->kind==EX_IDENT)
+			{
+				/* Transfer the returned local's reference out; release the rest. */
+				cg_expr(cg,tt,s->ret_val);
+				cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+				cg_release_object_locals(cg, f, s->ret_val->anno_int);
+				cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+			}
+			else
+			{
+				cg_expr_owned(cg,tt,s->ret_val);
+				cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+				cg_release_object_locals(cg, f, -1);
+				cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+			}
 		}
-
-		cg_release_object_locals(cg, f, -1);
-		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
+		else
 		{
-			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+			if (s->ret_val)
+			{
+				cg_expr(cg,tt,s->ret_val);
+			}
+
+			cg_release_object_locals(cg, f, -1);
 		}
 
 		if (in_main)
@@ -365,7 +495,8 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->sp_save     = locals + 8;
 	cg->val_save    = locals + 16;
 	cg->argtmp_base = locals + 24;
-	int frame = locals + 48;        /* Reserve scratch above locals: sp_save, val_save, and four argument temporaries. */
+	cg->assign_save = locals + 56;
+	int frame = locals + 64;        /* Reserve scratch above locals: sp_save, val_save, four arg temps, and assign_save. */
 
 	cg_emit(cg,"global %s", label);
 	cg_emit(cg,"%s:", label);
