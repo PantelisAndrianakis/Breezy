@@ -4,6 +4,7 @@ breezy.exe
 out.asm
 out.obj
 out.exe
+lib_breezy.a
 
 # Unit test binaries
 test_lexer
