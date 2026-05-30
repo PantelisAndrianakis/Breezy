@@ -29,9 +29,9 @@ static void test_field_offsets_and_size(void)
 	build(&tt,u,s,1);
 	ClassInfo *c=types_find_class(&tt,"Foo");
 	ASSERT(c!=NULL);
-	ASSERT_INT(types_find_field(c,"x")->offset, 16);
-	ASSERT_INT(types_find_field(c,"y")->offset, 24);
-	ASSERT_INT(c->object_size, 32);
+	ASSERT_INT(types_find_field(c,"x")->offset, 24);
+	ASSERT_INT(types_find_field(c,"y")->offset, 32);
+	ASSERT_INT(c->object_size, 40);
 }
 
 static void test_method_slot(void)
@@ -68,9 +68,9 @@ static void test_inherited_field_offset(void)
 	const char *s[]= {"class Animal { int age; }","class Dog extends Animal { int breed; }"};
 	build(&tt,u,s,2);
 	ClassInfo *dog=types_find_class(&tt,"Dog");
-	ASSERT_INT(types_find_field(dog,"age")->offset, 16);
-	ASSERT_INT(types_find_field(dog,"breed")->offset, 24);
-	ASSERT_INT(dog->object_size, 32);
+	ASSERT_INT(types_find_field(dog,"age")->offset, 24);
+	ASSERT_INT(types_find_field(dog,"breed")->offset, 32);
+	ASSERT_INT(dog->object_size, 40);
 }
 
 int main(void)

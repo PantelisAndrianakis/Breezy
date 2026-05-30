@@ -17,4 +17,5 @@ check while       tests/samples/while.bzy      "10"
 check multi_fn    tests/samples/multi_fn.bzy   "42"
 check inheritance tests/samples/proj_inherit  "2"
 check leak        tests/samples/proj_leak      "1"
+check cycle       tests/samples/proj_cycle     "0"
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

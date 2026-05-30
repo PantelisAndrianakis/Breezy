@@ -333,6 +333,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    call bzy_live_count");
 			cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 		}
+		else if (strcmp(e->name,"collectCycles")==0)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
+			cg_emit(cg,"    and rsp, -16");
+			cg_emit(cg,"    sub rsp, 32");
+			cg_emit(cg,"    call bzy_collect_cycles");
+			cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
+		}
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
@@ -616,6 +624,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_retain");
 	cg_emit(cg,"extern bzy_release");
 	cg_emit(cg,"extern bzy_live_count");
+	cg_emit(cg,"extern bzy_collect_cycles");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

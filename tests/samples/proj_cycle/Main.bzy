@@ -1,0 +1,16 @@
+void makeCycle()
+{
+	Node a;
+	Node b;
+	a = new Node();
+	b = new Node();
+	a.next = b;
+	b.next = a;
+}
+
+void main()
+{
+	makeCycle();
+	collectCycles();
+	print(liveCount());
+}

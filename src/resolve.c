@@ -129,6 +129,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (strcmp(e->name,"collectCycles")==0)
+		{
+			e->type.kind=TY_VOID;
+			break;
+		}
+
 		{
 			FuncInfo *fi=types_find_func(g_types,e->name);
 			if (!fi)
