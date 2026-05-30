@@ -98,10 +98,10 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		FieldInfo *fi=&c->fields[c->field_count];
 		strcpy(fi->name,d->fields[i].name);
 		fi->type=d->fields[i].type;
-		fi->offset=8 + c->field_count*8;
+		fi->offset=16 + c->field_count*8;
 		c->field_count++;
 	}
-	c->object_size = 8 + c->field_count*8;
+	c->object_size = 16 + c->field_count*8;
 	for (int i=0; i<d->method_count; i++)
 	{
 		Func *m=d->methods[i];
