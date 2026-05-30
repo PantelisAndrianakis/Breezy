@@ -27,6 +27,34 @@ int  cg_label(Codegen *cg)
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static const char *ARG_REG[4] = { "rcx","rdx","r8","r9" };   /* Win64 */
 
+/* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
+   matter the current rsp alignment or pending pushes; the argument is in rcx. */
+static void cg_aligned_call(Codegen *cg, const char *fn)
+{
+	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
+	cg_emit(cg,"    and rsp, -16");
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call %s", fn);
+	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
+}
+/* Release the object pointer currently in rcx; rax is clobbered. */
+static void cg_release_rcx(Codegen *cg)
+{
+	cg_aligned_call(cg,"bzy_release");
+}
+/* Release every object-typed local of the function, optionally skipping one
+   slot so a returned local can transfer ownership; pass except_off = -1 for none. */
+static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
+{
+	for (int i=0; i<f->obj_local_count; i++)
+	{
+		int off = f->obj_local_offsets[i];
+		if (off == except_off) continue;
+		cg_emit(cg,"    mov rcx, [rbp - %d]", off);
+		cg_release_rcx(cg);
+	}
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->lhs);
@@ -198,7 +226,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
-static void cg_block(Codegen *cg, TypeTable *tt, Block *b, int in_main);
+static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main);
 
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {
@@ -215,7 +243,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		cg_emit(cg,"    mov [rbx + %d], rax", target->anno_int);
 	}
 }
-static void cg_stmt(Codegen *cg, TypeTable *tt, Stmt *s, int in_main)
+static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
 	{
@@ -235,6 +263,11 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Stmt *s, int in_main)
 		break;
 	case ST_RETURN:
 		if (s->ret_val) cg_expr(cg,tt,s->ret_val);
+		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		cg_release_object_locals(cg, f, -1);
+		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		if (in_main) cg_emit(cg,"    xor eax, eax");
 		cg_emit(cg,"    mov rsp, rbp");
 		cg_emit(cg,"    pop rbp");
@@ -246,12 +279,12 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Stmt *s, int in_main)
 		cg_expr(cg,tt,s->cond);
 		cg_emit(cg,"    cmp rax, 0");
 		cg_emit(cg,"    je .L%d", s->else_blk?else_l:end_l);
-		cg_block(cg,tt,s->then_blk,in_main);
+		cg_block(cg,tt,f,s->then_blk,in_main);
 		if (s->else_blk)
 		{
 			cg_emit(cg,"    jmp .L%d",end_l);
 			cg_emit(cg,".L%d:",else_l);
-			cg_block(cg,tt,s->else_blk,in_main);
+			cg_block(cg,tt,f,s->else_blk,in_main);
 		}
 		cg_emit(cg,".L%d:",end_l);
 		break;
@@ -263,16 +296,16 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Stmt *s, int in_main)
 		cg_expr(cg,tt,s->cond);
 		cg_emit(cg,"    cmp rax, 0");
 		cg_emit(cg,"    je .L%d",end);
-		cg_block(cg,tt,s->then_blk,in_main);
+		cg_block(cg,tt,f,s->then_blk,in_main);
 		cg_emit(cg,"    jmp .L%d",top);
 		cg_emit(cg,".L%d:",end);
 		break;
 	}
 	}
 }
-static void cg_block(Codegen *cg, TypeTable *tt, Block *b, int in_main)
+static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 {
-	for (int i=0; i<b->count; i++) cg_stmt(cg,tt,b->stmts[i],in_main);
+	for (int i=0; i<b->count; i++) cg_stmt(cg,tt,f,b->stmts[i],in_main);
 }
 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
@@ -291,7 +324,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    mov rbp, rsp");
 	cg_emit(cg,"    sub rsp, %d", frame);
 
-	/* spill incoming args: this at [rbp-8], then params at [rbp-16],[rbp-24],... */
+	/* Spill incoming args: this at [rbp-8], then params at [rbp-16], [rbp-24], and so on. */
 	int reg = 0;
 	if (this_class)
 	{
@@ -305,8 +338,14 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		reg++;
 	}
 
-	cg_block(cg, tt, f->body, is_main);
+	/* Object locals must be NULL before any release; bzy_alloc only zeroes heap
+	   objects, not stack slots. */
+	for (int i=0; i<f->obj_local_count; i++)
+		cg_emit(cg,"    mov qword [rbp - %d], 0", f->obj_local_offsets[i]);
 
+	cg_block(cg, tt, f, f->body, is_main);
+
+	cg_release_object_locals(cg, f, -1);
 	if (is_main) cg_emit(cg,"    xor eax, eax");
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
