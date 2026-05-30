@@ -253,6 +253,22 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	ClassInfo *c=types_find_class(tt,e->name);
+	if (e->anno_stack)
+	{
+		/* The object lives in the frame at rbp - anno_stack_off: no refcount
+		   traffic, no free. A refcount of zero marks it unmanaged for the runtime. */
+		cg_emit(cg,"    lea rax, [rbp - %d]", e->anno_stack_off);
+		cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
+		cg_emit(cg,"    mov [rax], rbx");
+		cg_emit(cg,"    mov qword [rax + 8], 0");
+		for (int off=16; off<c->object_size; off+=8)
+		{
+			cg_emit(cg,"    mov qword [rax + %d], 0", off);
+		}
+
+		return;
+	}
+
 	cg_emit(cg,"    mov rcx, %d", c->object_size);
 	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
 	cg_emit(cg,"    and rsp, -16");
@@ -504,7 +520,14 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->val_save    = locals + 16;
 	cg->argtmp_base = locals + 24;
 	cg->assign_save = locals + 56;
-	int frame = locals + 64;        /* Reserve scratch above locals: sp_save, val_save, four arg temps, and assign_save. */
+	int scratch = 64;        /* sp_save, val_save, four arg temps, and assign_save. */
+	int stack_objs = f->stack_alloc_bytes;
+	if (stack_objs % 16 != 0)
+	{
+		stack_objs = (stack_objs/16 + 1)*16;   /* Keep the frame 16-byte aligned. */
+	}
+
+	int frame = locals + scratch + stack_objs;
 
 	cg_emit(cg,"global %s", label);
 	cg_emit(cg,"%s:", label);

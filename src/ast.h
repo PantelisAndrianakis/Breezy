@@ -22,6 +22,8 @@ struct Expr
 	TypeRef  type;            /* resolver: result type */
 	int      anno_int;        /* resolver: stack offset / field offset / vtable slot */
 	char     anno_str[64];    /* resolver: static class for dispatch */
+	int      anno_stack;      /* EX_NEW: 1 if stack-allocated, else 0 (heap). */
+	int      anno_stack_off;  /* EX_NEW: rbp offset of the stack object when anno_stack. */
 	long     int_val;         /* EX_INT */
 	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD */
 	int      op;              /* EX_BINARY/EX_UNARY: a TokenType */
@@ -74,6 +76,7 @@ typedef struct
 	int     frame_size;       /* resolver */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
+	int     stack_alloc_bytes;      /* Escape pass: total frame bytes reserved for stack objects. */
 } Func;
 
 typedef struct

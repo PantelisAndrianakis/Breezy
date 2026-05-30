@@ -5,7 +5,7 @@ CC      = gcc
 CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc -Wl,--stack,0x4000000
 
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
-          src/resolve.c src/symtable.c src/codegen.c src/ownership.c
+          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c
 
 RT_SRC  = runtime/alloc.c
 RT_HDR  = runtime/breezy.h
@@ -35,6 +35,9 @@ test_resolve: tests/test_resolve.c $(OBJS)
 test_ownership: tests/test_ownership.c $(OBJS)
 	$(CC) $(CFLAGS) -o test_ownership tests/test_ownership.c $(OBJS)
 
+test_escape: tests/test_escape.c $(OBJS)
+	$(CC) $(CFLAGS) -o test_escape tests/test_escape.c $(OBJS)
+
 lib_breezy.a: $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -c runtime/alloc.c -o runtime/alloc.o
 	ar rcs lib_breezy.a runtime/alloc.o
@@ -42,13 +45,14 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC)
 
-test: test_lexer test_ast test_parser test_types test_resolve test_ownership test_runtime breezy
+test: test_lexer test_ast test_parser test_types test_resolve test_ownership test_escape test_runtime breezy
 	./test_lexer
 	./test_ast
 	./test_parser
 	./test_types
 	./test_resolve
 	./test_ownership
+	./test_escape
 	./test_runtime
 	bash tests/run_integration.sh
 
@@ -56,4 +60,4 @@ integration: breezy lib_breezy.a
 	bash tests/run_integration.sh
 
 clean:
-	rm -f breezy test_lexer test_ast test_parser test_types test_resolve test_ownership test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe
+	rm -f breezy test_lexer test_ast test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe

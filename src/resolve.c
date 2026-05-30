@@ -1,6 +1,7 @@
 #include "resolve.h"
 #include "symtable.h"
 #include "ownership.h"
+#include "escape.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -220,6 +221,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	resolve_block(&st,f->body,this_class);
 	f->frame_size=sym_frame_size(&st);
 	ownership_annotate(f);
+	escape_annotate(g_types,f);
 }
 
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)

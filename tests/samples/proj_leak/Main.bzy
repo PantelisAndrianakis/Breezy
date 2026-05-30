@@ -1,3 +1,10 @@
+Cell makeCell()
+{
+	Cell c;
+	c = new Cell();
+	return c;
+}
+
 void main()
 {
 	int i;
@@ -5,7 +12,7 @@ void main()
 	i = 0;
 	while (i < 1000)
 	{
-		c = new Cell();
+		c = makeCell();
 		i = i + 1;
 	}
 

@@ -23,7 +23,13 @@ void bzy_retain(void *obj)
 		return;
 	}
 
-	(*(int64_t*)((char*)obj + 8))++;
+	int64_t *rc = (int64_t*)((char*)obj + 8);
+	if (*rc == 0)
+	{
+		return;       /* Unmanaged (stack) object: the refcount stays zero. */
+	}
+
+	(*rc)++;
 }
 
 void bzy_release(void *obj)
@@ -34,6 +40,11 @@ void bzy_release(void *obj)
 	}
 
 	int64_t *rc = (int64_t*)((char*)obj + 8);
+	if (*rc == 0)
+	{
+		return;       /* Unmanaged (stack) object: never freed. */
+	}
+
 	if (--(*rc) != 0)
 	{
 		return;

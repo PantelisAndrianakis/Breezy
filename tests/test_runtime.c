@@ -84,6 +84,19 @@ static void test_loop_reuse_is_bounded(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_unmanaged_object_ignored(void)
+{
+	/* A refcount-0 object models a stack allocation: retain and release must
+	   leave it untouched and never free it. */
+	int64_t buf[4] = {0,0,0,0};
+	void *o = buf;
+	int64_t before = bzy_live_count();
+	bzy_retain(o);
+	bzy_release(o);
+	ASSERT_INT(buf[1], 0);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -92,6 +105,7 @@ int main(void)
 	RUN(test_null_is_safe);
 	RUN(test_release_frees_owned_field);
 	RUN(test_loop_reuse_is_bounded);
+	RUN(test_unmanaged_object_ignored);
 	SUMMARY();
 	return 0;
 }
