@@ -1,5 +1,6 @@
 #include "resolve.h"
 #include "symtable.h"
+#include "ownership.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -149,6 +150,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	for (int i=0; i<f->param_count; i++) sym_add(&st,f->params[i].name,f->params[i].type);
 	resolve_block(&st,f->body,this_class);
 	f->frame_size=sym_frame_size(&st);
+	ownership_annotate(f);
 }
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 {

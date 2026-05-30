@@ -72,6 +72,8 @@ typedef struct
 	int param_count;
 	Block  *body;
 	int     frame_size;       /* resolver */
+	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
+	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
 } Func;
 
 typedef struct
