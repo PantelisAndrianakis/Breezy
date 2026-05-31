@@ -16,6 +16,7 @@ static const struct
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
 	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
+	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},
 	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{NULL,0}
 };
 
@@ -40,6 +41,36 @@ static char next_ch(Lexer *l)
 	}
 
 	return c;
+}
+
+/* Finish a float literal whose mantissa already occupies t->text[0..i): scan an
+   optional exponent (e[+/-]?digits) and an optional 'f' suffix, then mark it. */
+static Token finish_float(Lexer *l, Token *t, int i)
+{
+	if (peek_ch(l) == 'e' || peek_ch(l) == 'E')
+	{
+		t->text[i++] = next_ch(l);
+		if (peek_ch(l) == '+' || peek_ch(l) == '-')
+		{
+			t->text[i++] = next_ch(l);
+		}
+
+		while (isdigit((unsigned char)peek_ch(l)) && i < 255)
+		{
+			t->text[i++] = next_ch(l);
+		}
+	}
+
+	t->text[i] = '\0';
+	if (peek_ch(l) == 'f' || peek_ch(l) == 'F')
+	{
+		next_ch(l);
+		t->suffix[0] = 'f';
+		t->suffix[1] = '\0';
+	}
+
+	t->type = TOKEN_FLOAT_LIT;
+	return *t;
 }
 
 Token lexer_next(Lexer *l)
@@ -105,6 +136,20 @@ Token lexer_next(Lexer *l)
 			t.text[i++] = next_ch(l);
 		}
 
+		if (peek_ch(l) == '.' || peek_ch(l) == 'e' || peek_ch(l) == 'E')
+		{
+			if (peek_ch(l) == '.')
+			{
+				t.text[i++] = next_ch(l);
+				while (isdigit((unsigned char)peek_ch(l)) && i < 255)
+				{
+					t.text[i++] = next_ch(l);
+				}
+			}
+
+			return finish_float(l, &t, i);
+		}
+
 		t.text[i] = '\0';
 		/* Capture a trailing run of width/sign suffix letters (u/U, l/L). */
 		int s = 0;
@@ -155,6 +200,17 @@ Token lexer_next(Lexer *l)
 		t.type = TOKEN_COMMA;
 		return t;
 	case '.':
+		if (isdigit((unsigned char)peek_ch(l)))
+		{
+			int i = 1;   /* t.text[0] already holds '.'. */
+			while (isdigit((unsigned char)peek_ch(l)) && i < 255)
+			{
+				t.text[i++] = next_ch(l);
+			}
+
+			return finish_float(l, &t, i);
+		}
+
 		t.type = TOKEN_DOT;
 		return t;
 	case '<':
@@ -258,6 +314,12 @@ const char *token_type_name(TokenType t)
 		return "ulong";
 	case TOKEN_BOOLEAN:
 		return "boolean";
+	case TOKEN_FLOAT:
+		return "float";
+	case TOKEN_DOUBLE:
+		return "double";
+	case TOKEN_FLOAT_LIT:
+		return "FLOAT_LIT";
 	case TOKEN_TRUE:
 		return "true";
 	case TOKEN_FALSE:

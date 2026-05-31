@@ -58,6 +58,38 @@ static void test_int_suffixes(void)
 	ASSERT_STR(t.suffix, "Lu");
 }
 
+static void test_float_keywords(void)
+{
+	Lexer l;
+	lexer_init(&l, "float double");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_FLOAT);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_DOUBLE);
+}
+
+static void test_float_literals(void)
+{
+	Lexer l;
+	Token t;
+	lexer_init(&l, "1.5 1.5f 1e9 .5 2.");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "1.5");
+	ASSERT_STR(t.suffix, "");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "1.5");
+	ASSERT_STR(t.suffix, "f");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "1e9");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, ".5");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "2.");
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -120,6 +152,8 @@ int main(void)
 	printf("Lexer tests\n");
 	RUN(test_keywords);
 	RUN(test_scalar_keywords);
+	RUN(test_float_keywords);
+	RUN(test_float_literals);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);
