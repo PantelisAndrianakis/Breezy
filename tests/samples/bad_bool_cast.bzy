@@ -1,0 +1,7 @@
+void main()
+{
+	boolean f;
+	int x;
+	f = true;
+	x = (int)f;
+}

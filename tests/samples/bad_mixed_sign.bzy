@@ -1,0 +1,7 @@
+void main()
+{
+	int a;
+	uint b;
+	int c;
+	c = a + b;
+}

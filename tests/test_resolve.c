@@ -36,6 +36,57 @@ static void test_field_resolves_offset(void)
 	ASSERT_INT(assign->target->type.kind, TY_INT);
 }
 
+static void test_int_literal_widths(void)
+{
+	Func *f=build1("void main() { int a; long n; uint u; ulong g;"
+				   " a = 1; n = 5L; u = 3u; g = 9uL; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_INT);
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_LONG);
+	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_UINT);
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_ULONG);
+}
+
+static void test_bool_literal_type(void)
+{
+	Func *f=build1("void main() { boolean t; t = true; }")->funcs[0];
+	Stmt *assign=f->body->stmts[1];
+	ASSERT_INT(assign->value->kind, EX_BOOL);
+	ASSERT_INT(assign->value->type.kind, TY_BOOL);
+}
+
+static void test_arithmetic_widens_to_wider_operand(void)
+{
+	Func *f=build1("void main() { byte a; long n; long r; r = a + n; }")->funcs[0];
+	Stmt *assign=f->body->stmts[3];
+	ASSERT_INT(assign->value->kind, EX_BINARY);
+	ASSERT_INT(assign->value->type.kind, TY_LONG);
+}
+
+static void test_comparison_is_boolean(void)
+{
+	Func *f=build1("void main() { int x; boolean r; x = 0; r = x < 2; }")->funcs[0];
+	Stmt *assign=f->body->stmts[3];
+	ASSERT_INT(assign->value->kind, EX_BINARY);
+	ASSERT_INT(assign->value->type.kind, TY_BOOL);
+}
+
+static void test_implicit_widening_init(void)
+{
+	Func *f=build1("void main() { byte a; int x = a; }")->funcs[0];
+	Stmt *decl=f->body->stmts[1];
+	ASSERT_INT(decl->decl_type.kind, TY_INT);
+	ASSERT_INT(decl->decl_init->type.kind, TY_BYTE);
+}
+
+static void test_cast_result_type(void)
+{
+	Func *f=build1("void main() { int x; byte b; x = 300; b = (byte)x; }")->funcs[0];
+	Stmt *assign=f->body->stmts[3];
+	ASSERT_INT(assign->value->kind, EX_CAST);
+	ASSERT_INT(assign->value->type.kind, TY_BYTE);
+	ASSERT_INT(assign->value->lhs->type.kind, TY_INT);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -71,6 +122,12 @@ int main(void)
 	printf("Resolver tests\n");
 	RUN(test_local_int_offset);
 	RUN(test_field_resolves_offset);
+	RUN(test_int_literal_widths);
+	RUN(test_bool_literal_type);
+	RUN(test_arithmetic_widens_to_wider_operand);
+	RUN(test_comparison_is_boolean);
+	RUN(test_implicit_widening_init);
+	RUN(test_cast_result_type);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

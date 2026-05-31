@@ -88,6 +88,7 @@ struct Expr
 	int      anno_stack;      /* EX_NEW: 1 if stack-allocated, else 0 (heap). */
 	int      anno_stack_off;  /* EX_NEW: rbp offset of the stack object when anno_stack. */
 	long     int_val;         /* EX_INT */
+	char     int_suffix[4];   /* EX_INT: literal suffix from the lexer ("", "L", "u", "uL", "Lu"). */
 	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD */
 	int      op;              /* EX_BINARY/EX_UNARY: a TokenType */
 	Expr    *lhs;             /* binary left / unary operand / method-call|field receiver */
