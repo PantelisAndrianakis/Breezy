@@ -51,6 +51,8 @@ static Expr *parse_unary(Parser *p);
 static Expr *parse_postfix(Parser *p);
 static Expr *parse_primary(Parser *p);
 static int   parse_args(Parser *p, Expr **out);
+static int   parse_type(Parser *p, TypeRef *out);
+static int   scalar_type_kind(TokenType t, TypeKind *out);
 
 Expr *parse_expr(Parser *p)
 {
@@ -112,6 +114,17 @@ static Expr *parse_multiplicative(Parser *p)
 
 static Expr *parse_unary(Parser *p)
 {
+	TypeKind ck;
+	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID)
+	{
+		int line=p->cur.line;
+		advance(p);                 /* consume '('. */
+		Expr *e=expr_new(EX_CAST,line);
+		parse_type(p,&e->type);     /* cast target lives in the result type slot. */
+		expect(p,TOKEN_RPAREN);
+		e->lhs=parse_unary(p);
+		return e;
+	}
 	if (check(p,TOKEN_MINUS))
 	{
 		int line=p->cur.line;
@@ -183,6 +196,13 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+	if (check(p,TOKEN_TRUE) || check(p,TOKEN_FALSE))
+	{
+		Expr *e=expr_new(EX_BOOL,line);
+		e->int_val = check(p,TOKEN_TRUE) ? 1 : 0;
+		advance(p);
+		return e;
+	}
 	if (check(p,TOKEN_THIS))
 	{
 		advance(p);
@@ -228,18 +248,52 @@ static Expr *parse_primary(Parser *p)
 static Block *parse_block(Parser *p);
 static Stmt  *parse_statement(Parser *p);
 
+/* Maps a scalar/void type-keyword token to its TypeKind, or returns 0. */
+static int scalar_type_kind(TokenType t, TypeKind *out)
+{
+	switch (t)
+	{
+	case TOKEN_VOID:
+		*out=TY_VOID;
+		return 1;
+	case TOKEN_BOOLEAN:
+		*out=TY_BOOL;
+		return 1;
+	case TOKEN_BYTE:
+		*out=TY_BYTE;
+		return 1;
+	case TOKEN_SHORT:
+		*out=TY_SHORT;
+		return 1;
+	case TOKEN_INT:
+		*out=TY_INT;
+		return 1;
+	case TOKEN_LONG:
+		*out=TY_LONG;
+		return 1;
+	case TOKEN_UBYTE:
+		*out=TY_UBYTE;
+		return 1;
+	case TOKEN_USHORT:
+		*out=TY_USHORT;
+		return 1;
+	case TOKEN_UINT:
+		*out=TY_UINT;
+		return 1;
+	case TOKEN_ULONG:
+		*out=TY_ULONG;
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static int parse_type(Parser *p, TypeRef *out)
 {
-	if (check(p,TOKEN_INT))
+	TypeKind k;
+	if (scalar_type_kind(p->cur.type, &k))
 	{
-		out->kind=TY_INT;
-		out->class_name[0]='\0';
-		advance(p);
-		return 1;
-	}
-	if (check(p,TOKEN_VOID))
-	{
-		out->kind=TY_VOID;
+		out->kind=k;
 		out->class_name[0]='\0';
 		advance(p);
 		return 1;
@@ -256,7 +310,8 @@ static int parse_type(Parser *p, TypeRef *out)
 
 static int starts_vardecl(Parser *p)
 {
-	if (check(p,TOKEN_INT))
+	TypeKind k;
+	if (scalar_type_kind(p->cur.type, &k) && k != TY_VOID)
 	{
 		return 1;
 	}

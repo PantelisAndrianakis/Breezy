@@ -16,6 +16,48 @@ static void test_keywords(void)
 	}
 }
 
+static void test_scalar_keywords(void)
+{
+	Lexer l;
+	Token t;
+	lexer_init(&l, "byte short long ubyte ushort uint ulong boolean true false");
+	TokenType e[] = {TOKEN_BYTE,TOKEN_SHORT,TOKEN_LONG,TOKEN_UBYTE,TOKEN_USHORT,
+					 TOKEN_UINT,TOKEN_ULONG,TOKEN_BOOLEAN,TOKEN_TRUE,TOKEN_FALSE,TOKEN_EOF
+					};
+	for (int i = 0; i < 11; i++)
+	{
+		t = lexer_next(&l);
+		ASSERT_INT(t.type, e[i]);
+	}
+}
+
+static void test_int_suffixes(void)
+{
+	Lexer l;
+	Token t;
+	lexer_init(&l, "42 7L 9u 5uL 6Lu");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_INT_LIT);
+	ASSERT_STR(t.text, "42");
+	ASSERT_STR(t.suffix, "");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_INT_LIT);
+	ASSERT_STR(t.text, "7");
+	ASSERT_STR(t.suffix, "L");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_INT_LIT);
+	ASSERT_STR(t.text, "9");
+	ASSERT_STR(t.suffix, "u");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_INT_LIT);
+	ASSERT_STR(t.text, "5");
+	ASSERT_STR(t.suffix, "uL");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_INT_LIT);
+	ASSERT_STR(t.text, "6");
+	ASSERT_STR(t.suffix, "Lu");
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -77,6 +119,8 @@ int main(void)
 {
 	printf("Lexer tests\n");
 	RUN(test_keywords);
+	RUN(test_scalar_keywords);
+	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);
 	RUN(test_comment_and_lines);

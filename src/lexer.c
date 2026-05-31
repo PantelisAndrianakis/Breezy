@@ -4,11 +4,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static const struct { const char *kw; TokenType tt; } KEYWORDS[] =
+static const struct
+{
+	const char *kw;
+	TokenType tt;
+} KEYWORDS[] =
 {
 	{"void",TOKEN_VOID},{"int",TOKEN_INT},{"if",TOKEN_IF},{"else",TOKEN_ELSE},
 	{"while",TOKEN_WHILE},{"return",TOKEN_RETURN},{"class",TOKEN_CLASS},
-	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},{NULL,0}
+	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},
+	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
+	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
+	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
+	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{NULL,0}
 };
 
 void lexer_init(Lexer *l, const char *src)
@@ -38,6 +46,7 @@ Token lexer_next(Lexer *l)
 {
 	Token t;
 	t.text[0] = '\0';
+	t.suffix[0] = '\0';
 	for (;;)
 	{
 		while (peek_ch(l) && isspace((unsigned char)peek_ch(l)))
@@ -97,6 +106,15 @@ Token lexer_next(Lexer *l)
 		}
 
 		t.text[i] = '\0';
+		/* Capture a trailing run of width/sign suffix letters (u/U, l/L). */
+		int s = 0;
+		while ((peek_ch(l) == 'u' || peek_ch(l) == 'U'
+				|| peek_ch(l) == 'l' || peek_ch(l) == 'L') && s < 3)
+		{
+			t.suffix[s++] = next_ch(l);
+		}
+
+		t.suffix[s] = '\0';
 		t.type = TOKEN_INT_LIT;
 		return t;
 	}
@@ -224,6 +242,26 @@ const char *token_type_name(TokenType t)
 		return "new";
 	case TOKEN_THIS:
 		return "this";
+	case TOKEN_BYTE:
+		return "byte";
+	case TOKEN_SHORT:
+		return "short";
+	case TOKEN_LONG:
+		return "long";
+	case TOKEN_UBYTE:
+		return "ubyte";
+	case TOKEN_USHORT:
+		return "ushort";
+	case TOKEN_UINT:
+		return "uint";
+	case TOKEN_ULONG:
+		return "ulong";
+	case TOKEN_BOOLEAN:
+		return "boolean";
+	case TOKEN_TRUE:
+		return "true";
+	case TOKEN_FALSE:
+		return "false";
 	case TOKEN_PLUS:
 		return "+";
 	case TOKEN_MINUS:

@@ -36,6 +36,10 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_INT:
 		e->type.kind=TY_INT;
 		break;
+	case EX_BOOL:
+	case EX_CAST:
+		die(e->line,"scalar typing arrives in Part 3a Task 3",NULL);
+		break;
 	case EX_THIS:
 		if (!tc)
 		{

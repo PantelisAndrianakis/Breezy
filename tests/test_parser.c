@@ -15,6 +15,25 @@ static void test_int_literal(void)
 	ASSERT_INT(e->int_val, 42);
 }
 
+static void test_bool_literal(void)
+{
+	Expr *t = parse_str("true");
+	ASSERT_INT(t->kind, EX_BOOL);
+	ASSERT_INT(t->int_val, 1);
+	Expr *f = parse_str("false");
+	ASSERT_INT(f->kind, EX_BOOL);
+	ASSERT_INT(f->int_val, 0);
+}
+
+static void test_cast(void)
+{
+	Expr *e = parse_str("(byte)x");
+	ASSERT_INT(e->kind, EX_CAST);
+	ASSERT_INT(e->type.kind, TY_BYTE);
+	ASSERT_INT(e->lhs->kind, EX_IDENT);
+	ASSERT_STR(e->lhs->name, "x");
+}
+
 static void test_precedence(void)
 {
 	Expr *e = parse_str("1 + 2 * 3");
@@ -71,6 +90,16 @@ static void test_parse_function_with_vardecl(void)
 	ASSERT_INT(f->body->stmts[1]->kind, ST_ASSIGN);
 }
 
+static void test_parse_scalar_vardecls(void)
+{
+	Unit *u = parse_unit_str("void m() { ubyte b; long n; boolean f; }");
+	Block *body = u->funcs[0]->body;
+	ASSERT_INT(body->count, 3);
+	ASSERT_INT(body->stmts[0]->decl_type.kind, TY_UBYTE);
+	ASSERT_INT(body->stmts[1]->decl_type.kind, TY_LONG);
+	ASSERT_INT(body->stmts[2]->decl_type.kind, TY_BOOL);
+}
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -109,11 +138,14 @@ int main(void)
 {
 	printf("Parser (expr) tests\n");
 	RUN(test_int_literal);
+	RUN(test_bool_literal);
+	RUN(test_cast);
 	RUN(test_precedence);
 	RUN(test_method_call);
 	RUN(test_field_access);
 	RUN(test_new);
 	RUN(test_parse_function_with_vardecl);
+	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);

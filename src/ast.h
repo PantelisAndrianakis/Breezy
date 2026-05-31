@@ -22,14 +22,27 @@ static inline int ty_bits(TypeKind k)
 {
 	switch (k)
 	{
-		case TY_BOOL:                 return 1;
-		case TY_BYTE:  case TY_UBYTE: return 8;
-		case TY_SHORT: case TY_USHORT:return 16;
-		case TY_INT:   case TY_UINT:  return 32;
-		case TY_LONG:  case TY_ULONG: return 64;
-		case TY_OBJECT:case TY_STRING:return 64;
-		case TY_VOID:                 return 0;
+	case TY_BOOL:
+		return 1;
+	case TY_BYTE:
+	case TY_UBYTE:
+		return 8;
+	case TY_SHORT:
+	case TY_USHORT:
+		return 16;
+	case TY_INT:
+	case TY_UINT:
+		return 32;
+	case TY_LONG:
+	case TY_ULONG:
+		return 64;
+	case TY_OBJECT:
+	case TY_STRING:
+		return 64;
+	case TY_VOID:
+		return 0;
 	}
+
 	return 0;
 }
 
@@ -37,7 +50,7 @@ static inline int ty_bits(TypeKind k)
 static inline int ty_is_int(TypeKind k)
 {
 	return k == TY_BYTE || k == TY_SHORT || k == TY_INT || k == TY_LONG
-	    || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
+		   || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
 }
 
 /* True for the signed integer kinds. */
@@ -60,8 +73,8 @@ static inline int ty_rank(TypeKind k)
 
 typedef enum
 {
-	EX_INT, EX_IDENT, EX_THIS, EX_NEW,
-	EX_BINARY, EX_UNARY, EX_CALL, EX_METHOD_CALL, EX_FIELD
+	EX_INT, EX_BOOL, EX_IDENT, EX_THIS, EX_NEW,
+	EX_BINARY, EX_UNARY, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD
 } ExprKind;
 
 typedef struct Expr Expr;

@@ -158,8 +158,8 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 }
 
 static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
-                              Expr *self, Expr **args, int argc, int indirect,
-                              int result_is_object)
+							  Expr *self, Expr **args, int argc, int indirect,
+							  int result_is_object)
 {
 	int total = (self?1:0) + argc;
 	if (total > 4)
@@ -296,6 +296,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 	case EX_INT:
 		cg_emit(cg,"    mov rax, %ld", e->int_val);
+		break;
+	case EX_BOOL:
+	case EX_CAST:
+		fprintf(stderr,"codegen: scalar lowering arrives in Part 3a Task 4\n");
+		exit(1);
 		break;
 	case EX_THIS:
 		cg_emit(cg,"    mov rax, [rbp - 8]");
