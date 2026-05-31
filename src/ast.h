@@ -7,6 +7,7 @@ typedef enum
 	TY_BOOL,
 	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG,    /* signed   */
 	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* unsigned */
+	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only */
 	TY_OBJECT,
 	TY_STRING   /* reserved for Part 4a; not yet wired into the language. */
 } TypeKind;
@@ -36,6 +37,10 @@ static inline int ty_bits(TypeKind k)
 	case TY_LONG:
 	case TY_ULONG:
 		return 64;
+	case TY_FLOAT:
+		return 32;
+	case TY_DOUBLE:
+		return 64;
 	case TY_OBJECT:
 	case TY_STRING:
 		return 64;
@@ -63,6 +68,12 @@ static inline int ty_is_signed(TypeKind k)
 static inline int ty_is_unsigned(TypeKind k)
 {
 	return k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
+}
+
+/* True for the floating-point kinds. */
+static inline int ty_is_float(TypeKind k)
+{
+	return k == TY_FLOAT || k == TY_DOUBLE;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
