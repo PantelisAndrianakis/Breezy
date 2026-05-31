@@ -34,6 +34,20 @@ static void test_cast(void)
 	ASSERT_STR(e->lhs->name, "x");
 }
 
+static void test_float_literal(void)
+{
+	Expr *e = parse_str("1.5");
+	ASSERT_INT(e->kind, EX_FLOAT);
+	ASSERT(e->float_val > 1.4 && e->float_val < 1.6);
+}
+
+static void test_float_cast(void)
+{
+	Expr *e = parse_str("(float)x");
+	ASSERT_INT(e->kind, EX_CAST);
+	ASSERT_INT(e->type.kind, TY_FLOAT);
+}
+
 static void test_precedence(void)
 {
 	Expr *e = parse_str("1 + 2 * 3");
@@ -100,6 +114,14 @@ static void test_parse_scalar_vardecls(void)
 	ASSERT_INT(body->stmts[2]->decl_type.kind, TY_BOOL);
 }
 
+static void test_parse_double_vardecl(void)
+{
+	Unit *u = parse_unit_str("void m() { double d; float f; }");
+	Block *b = u->funcs[0]->body;
+	ASSERT_INT(b->stmts[0]->decl_type.kind, TY_DOUBLE);
+	ASSERT_INT(b->stmts[1]->decl_type.kind, TY_FLOAT);
+}
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -140,12 +162,15 @@ int main(void)
 	RUN(test_int_literal);
 	RUN(test_bool_literal);
 	RUN(test_cast);
+	RUN(test_float_literal);
+	RUN(test_float_cast);
 	RUN(test_precedence);
 	RUN(test_method_call);
 	RUN(test_field_access);
 	RUN(test_new);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
+	RUN(test_parse_double_vardecl);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);

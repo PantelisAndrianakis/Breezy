@@ -104,6 +104,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_BOOL:
 		e->type.kind=TY_BOOL;
 		break;
+	case EX_FLOAT:
+		die(e->line,"float typing arrives in Part 3b Task 4",NULL);
+		break;
 	case EX_CAST:
 	{
 		resolve_expr(st,e->lhs,tc);

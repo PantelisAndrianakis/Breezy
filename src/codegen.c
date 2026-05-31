@@ -386,6 +386,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_BOOL:
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
+	case EX_FLOAT:
+		fprintf(stderr,"codegen: float lowering arrives in Part 3b Task 5\n");
+		exit(1);
+		break;
 	case EX_CAST:
 		cg_expr(cg,tt,e->lhs);
 		cg_extend_reg(cg,e->type.kind);   /* Truncate/re-extend to the target width. */

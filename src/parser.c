@@ -197,6 +197,14 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+	if (check(p,TOKEN_FLOAT_LIT))
+	{
+		Expr *e=expr_new(EX_FLOAT,line);
+		e->float_val=strtod(p->cur.text,NULL);
+		strcpy(e->int_suffix,p->cur.suffix);   /* "f" → float, "" → double. */
+		advance(p);
+		return e;
+	}
 	if (check(p,TOKEN_TRUE) || check(p,TOKEN_FALSE))
 	{
 		Expr *e=expr_new(EX_BOOL,line);
@@ -283,6 +291,12 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 		return 1;
 	case TOKEN_ULONG:
 		*out=TY_ULONG;
+		return 1;
+	case TOKEN_FLOAT:
+		*out=TY_FLOAT;
+		return 1;
+	case TOKEN_DOUBLE:
+		*out=TY_DOUBLE;
 		return 1;
 	default:
 		return 0;
