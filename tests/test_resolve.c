@@ -87,6 +87,38 @@ static void test_cast_result_type(void)
 	ASSERT_INT(assign->value->lhs->type.kind, TY_INT);
 }
 
+static void test_float_literal_types(void)
+{
+	Func *f=build1("void main() { double d; float g; d = 1.5; g = 1.5f; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[2]->value->type.kind, TY_DOUBLE);
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_FLOAT);
+}
+
+static void test_double_arithmetic_type(void)
+{
+	Func *f=build1("void main() { double a; double b; double r; r = a + b; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_DOUBLE);
+}
+
+static void test_int_promotes_to_double(void)
+{
+	Func *f=build1("void main() { int n; double d; double r; r = n + d; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_DOUBLE);
+}
+
+static void test_implicit_int_to_double_init(void)
+{
+	Func *f=build1("void main() { int n; double d = n; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->decl_init->type.kind, TY_INT);
+	ASSERT_INT(f->body->stmts[1]->decl_type.kind, TY_DOUBLE);
+}
+
+static void test_float_compare_is_boolean(void)
+{
+	Func *f=build1("void main() { double a; double b; boolean r; r = a < b; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -128,6 +160,11 @@ int main(void)
 	RUN(test_comparison_is_boolean);
 	RUN(test_implicit_widening_init);
 	RUN(test_cast_result_type);
+	RUN(test_float_literal_types);
+	RUN(test_double_arithmetic_type);
+	RUN(test_int_promotes_to_double);
+	RUN(test_implicit_int_to_double_init);
+	RUN(test_float_compare_is_boolean);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

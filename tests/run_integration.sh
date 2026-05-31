@@ -30,4 +30,7 @@ check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy
 check_fail bool_int_cast  tests/samples/bad_bool_cast.bzy
+check_fail float_needs_cast tests/samples/bad_int_to_float.bzy
+check_fail dbl_to_float     tests/samples/bad_double_to_float.bzy
+check_fail float_int_mix    tests/samples/bad_float_int_mix.bzy
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

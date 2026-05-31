@@ -1,0 +1,6 @@
+void main()
+{
+	double d;
+	float f;
+	f = d;
+}

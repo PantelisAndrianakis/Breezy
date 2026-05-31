@@ -81,6 +81,11 @@ static int assignable(TypeKind to, TypeKind from)
 		return ty_is_signed(to) == ty_is_signed(from) && ty_rank(from) <= ty_rank(to);
 	}
 
+	if (to==TY_DOUBLE && ty_is_int(from))
+	{
+		return 1;   /* Implicit int->double widening. */
+	}
+
 	return 0;
 }
 
@@ -105,25 +110,24 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		e->type.kind=TY_BOOL;
 		break;
 	case EX_FLOAT:
-		die(e->line,"float typing arrives in Part 3b Task 4",NULL);
+		e->type.kind = (e->int_suffix[0]=='f') ? TY_FLOAT : TY_DOUBLE;
 		break;
 	case EX_CAST:
 	{
 		resolve_expr(st,e->lhs,tc);
 		TypeKind to=e->type.kind, from=e->lhs->type.kind;   /* target set by parser. */
-		if (!ty_is_int(to) && to!=TY_BOOL)
+		int to_num=ty_is_int(to) || ty_is_float(to);
+		int from_num=ty_is_int(from) || ty_is_float(from);
+		if (to==TY_BOOL || from==TY_BOOL)
 		{
-			die(e->line,"cast target must be a scalar type",NULL);
+			if (to != from)
+			{
+				die(e->line,"cannot cast between boolean and a number",NULL);
+			}
 		}
-
-		if (!ty_is_int(from) && from!=TY_BOOL)
+		else if (!to_num || !from_num)
 		{
-			die(e->line,"cannot cast a non-scalar value",NULL);
-		}
-
-		if ((to==TY_BOOL) != (from==TY_BOOL))
-		{
-			die(e->line,"cannot cast between boolean and integer",NULL);
+			die(e->line,"cast operand and target must be scalar numbers",NULL);
 		}
 
 		break;
@@ -172,6 +176,43 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
 		TypeKind a=e->lhs->type.kind, b=e->rhs->type.kind;
+		if (ty_is_float(a) || ty_is_float(b))
+		{
+			TypeKind ft;
+			if (ty_is_float(a) && ty_is_float(b))
+			{
+				if (a != b)
+				{
+					die(e->line,"mix of float and double; add a cast",NULL);
+				}
+
+				ft = a;
+			}
+			else
+			{
+				/* One operand is floating, the other must be an integer that
+				   promotes; only int->double is implicit, so float+int errors. */
+				TypeKind fk = ty_is_float(a) ? a : b;
+				TypeKind ik = ty_is_float(a) ? b : a;
+				if (!ty_is_int(ik))
+				{
+					die(e->line,"non-numeric operand",NULL);
+				}
+
+				if (fk==TY_FLOAT)
+				{
+					die(e->line,"mix of float and integer; add a cast",NULL);
+				}
+
+				ft = TY_DOUBLE;
+			}
+
+			int cmp = e->op==TOKEN_EQ || e->op==TOKEN_NEQ || e->op==TOKEN_LT
+					  || e->op==TOKEN_GT || e->op==TOKEN_LTE || e->op==TOKEN_GTE;
+			e->type.kind = cmp ? TY_BOOL : ft;
+			break;
+		}
+
 		if (e->op==TOKEN_EQ || e->op==TOKEN_NEQ)
 		{
 			int both_int=ty_is_int(a) && ty_is_int(b);
@@ -270,8 +311,13 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		resolve_args(st,e,tc);
 		if (strcmp(e->name,"print")==0)
 		{
-			if (e->arg_count<1
-					|| (!ty_is_int(e->args[0]->type.kind) && e->args[0]->type.kind!=TY_BOOL))
+			if (e->arg_count<1)
+			{
+				die(e->line,"print expects a scalar argument",NULL);
+			}
+
+			TypeKind ak=e->args[0]->type.kind;
+			if (!ty_is_int(ak) && ak!=TY_BOOL && !ty_is_float(ak))
 			{
 				die(e->line,"print expects a scalar argument",NULL);
 			}
