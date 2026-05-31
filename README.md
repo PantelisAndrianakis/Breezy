@@ -93,11 +93,13 @@ void main()
 
 ### No Primitive Wrapper Classes
 
-`int` is a raw 64-bit integer. There is no `Integer`, no boxing, no unboxing. What you write is what runs.
+`int` is a raw 32-bit machine integer (use `long` for 64-bit). There is no `Integer`, no boxing, no unboxing. What you write is what runs.
 
 ```breezy
 int x;
 x = 42;         // A raw machine integer - nothing more.
+long big;
+big = 10000000000L;   // 64-bit when you need it.
 ```
 
 ### Built-in Console I/O
@@ -292,40 +294,32 @@ The `blocking` keyword tells the runtime a call may block, so it's dispatched to
 
 | Type | Description |
 |---|---|
-| `int` | 64-bit signed integer |
-| `string` | UTF-8 string with Small String Optimization; mutable via `+=` |
-| `int[]` | Heap-allocated array of `int`, bounds-checked |
-| `string[]` | Heap-allocated array of `string`, bounds-checked |
-| `int[string]` | Hash map: string keys → int values (Swiss Table) |
-| `string[string]` | Hash map: string keys → string values (Swiss Table) |
+| `byte` `short` `int` `long` | Signed integers: 8, 16, **32**, 64-bit (two's complement) |
+| `ubyte` `ushort` `uint` `ulong` | Unsigned integers: 8, 16, 32, 64-bit |
+| `float` `double` | IEEE-754 floating point: 32, 64-bit |
+| `boolean` | `true` / `false` |
+| `string` | UTF-8 text; concatenate with `+` / `+=` |
+| `T[]` | Heap-allocated array of any type, bounds-checked |
+| `map<K,V>` | Hash map: Swiss Table + wyhash |
 | `chan<T>` | Channel for passing values between breezes |
 | `ClassName` | Heap-allocated object, memory managed automatically (ARC + cycles) |
 | `void` | No value; used as a function return type |
 
-Generics and floating-point types are planned for future versions.
+`int` is 32-bit; use `long` for 64-bit. There is no unsigned floating point. Generics
+(beyond the built-in `T[]` and `map<K,V>`) are planned for future versions.
 
 ### Strings
 
-Breezy strings use **Small String Optimization (SSO)**. Strings of 22 bytes or fewer are stored entirely inline - no heap allocation. Longer strings store a heap pointer, length, and capacity. The `string` value is 24 bytes regardless of content.
+A `string` is an immutable, heap-allocated, length-prefixed UTF-8 value held by a single 8-byte reference - the characters live inline with the object header in one allocation, so there is one `malloc` and one `free` per string. Strings are ARC-managed like any other object.
 
-```
-Short string (len ≤ 22):       Long string (len > 22):
-┌──────────────────────┬───┐   ┌─────────┬─────┬─────┐
-│  inline data [22]    │len│   │   ptr   │ len │ cap │
-└──────────────────────┴───┘   └─────────┴─────┴─────┘
-0                     22  23   0         8    16    24
-```
-
-Concatenation with `+` is a **single allocation** - the compiler sums the lengths, allocates once, and copies each part. For accumulation in a loop, `+=` reuses the buffer and doubles capacity when full, so `n` appends cost O(n) total, not O(n²).
+Concatenation with `+` allocates one new string sized to the sum of its parts. For heavy accumulation in a loop, use a **`StringBuilder`**, which appends into a doubling buffer so `n` appends cost O(n) total, not O(n²), then snapshots to an immutable `string` with `toString()`.
 
 ```breezy
-string log;
-log = "";
-while (i < count)
-{
-    log += parts[i];   // O(1) amortized - no alloc unless capacity exceeded.
-    i = i + 1;
-}
+StringBuilder sb;
+sb = new StringBuilder();
+sb.append("Hello, ");
+sb.append("Breezy");
+print(sb.toString());          // Hello, Breezy
 ```
 
 ---
@@ -363,7 +357,7 @@ int twice()
 ## Compilation Pipeline
 
 ```
-source.bzy → Breezy compiler → output.asm → NASM → output.o ──┐
+source.bzy → Breezy compiler → output.asm → NASM → output.o ─┐
                                                              ├─ GCC ─→ native binary
                               Breezy runtime (libbreezy.a) ──┘
 ```
@@ -409,35 +403,37 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. The compiler core (Part 1) is complete: Breezy `.bzy` source compiles to native Windows executables today.
+The language design is settled. The compiler and runtime are being built from scratch. Parts 1 and 2 are complete and green: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector) fully working.
 
-**Compiler core**
+**Compiler core (Part 1) — done**
 - [x] Lexer, parser, typed AST
 - [x] Type table: classes, inheritance, virtual dispatch
 - [x] x86-64 codegen (Windows PE64)
-- [ ] x86-64 codegen (Linux ELF64)
 
-**Memory**
-- [ ] Escape analysis → stack allocation
-- [ ] Automatic Reference Counting
-- [ ] Incremental cycle collector
+**Memory & runtime (Part 2) — done**
+- [x] Escape analysis → stack allocation
+- [x] Automatic Reference Counting
+- [x] Incremental cycle collector
 
-**Core types**
-- [ ] Strings with SSO and amortized `+=`
-- [ ] Arrays (`int[]`, `string[]`) with bounds checks
-- [ ] Maps (Swiss Table + wyhash)
+**Scalar types (Part 3)**
+- [ ] Sized integers `byte`/`short`/`int`/`long` + unsigned `ubyte`/`ushort`/`uint`/`ulong`
+- [ ] `boolean` (`true`/`false`)
+- [ ] `float` / `double` (IEEE-754, SSE path)
 
-**Concurrency & I/O**
+**Core types (Part 4)**
+- [ ] Strings with amortized append (`StringBuilder`)
+- [ ] Arrays (`T[]`) with bounds checks
+- [ ] Maps (`map<K,V>`, Swiss Table + wyhash)
+
+**Concurrency & I/O (Part 5)**
 - [ ] Breeze scheduler (M:N, one thread per core)
 - [ ] Channels
 - [ ] Async I/O facade (epoll/IOCP + offload pool; `io_uring` later)
 
-**Interop**
+**Interop (Part 7)**
 - [ ] `extern` C FFI with `blocking` dispatch
 
-**Beyond v1**
-- [ ] Interfaces
-- [ ] Generics
-- [ ] Floating-point types
-- [ ] Standard library
+**Other targets & beyond**
+- [ ] x86-64 codegen (Linux ELF64)
+- [ ] Interfaces, generics, standard library
 - [ ] Self-hosting compiler

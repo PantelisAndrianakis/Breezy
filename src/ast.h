@@ -1,12 +1,62 @@
 #ifndef AST_H
 #define AST_H
 
-typedef enum { TY_INT, TY_VOID, TY_OBJECT } TypeKind;
+typedef enum
+{
+	TY_VOID,
+	TY_BOOL,
+	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG,    /* signed   */
+	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* unsigned */
+	TY_OBJECT,
+	TY_STRING   /* reserved for Part 4a; not yet wired into the language. */
+} TypeKind;
 typedef struct
 {
 	TypeKind kind;
 	char class_name[64];
 } TypeRef;
+
+/* Width in bits of a scalar kind. Booleans report 1; objects/strings are
+ * 64-bit pointers; void has no width and reports 0. */
+static inline int ty_bits(TypeKind k)
+{
+	switch (k)
+	{
+		case TY_BOOL:                 return 1;
+		case TY_BYTE:  case TY_UBYTE: return 8;
+		case TY_SHORT: case TY_USHORT:return 16;
+		case TY_INT:   case TY_UINT:  return 32;
+		case TY_LONG:  case TY_ULONG: return 64;
+		case TY_OBJECT:case TY_STRING:return 64;
+		case TY_VOID:                 return 0;
+	}
+	return 0;
+}
+
+/* True for any integer kind (byte..ulong); excludes boolean. */
+static inline int ty_is_int(TypeKind k)
+{
+	return k == TY_BYTE || k == TY_SHORT || k == TY_INT || k == TY_LONG
+	    || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
+}
+
+/* True for the signed integer kinds. */
+static inline int ty_is_signed(TypeKind k)
+{
+	return k == TY_BYTE || k == TY_SHORT || k == TY_INT || k == TY_LONG;
+}
+
+/* True for the unsigned integer kinds. */
+static inline int ty_is_unsigned(TypeKind k)
+{
+	return k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
+}
+
+/* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
+static inline int ty_rank(TypeKind k)
+{
+	return ty_is_int(k) ? ty_bits(k) : 0;
+}
 
 typedef enum
 {
