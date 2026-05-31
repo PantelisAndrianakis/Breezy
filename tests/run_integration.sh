@@ -6,6 +6,7 @@ check() {
     ./breezy "$target" >/dev/null 2>&1
     if [ $? -ne 0 ]; then echo "  $name: COMPILE FAILED"; fail=1; return; fi
     local got; got="$(./out.exe)"
+    got="${got//$'\r'/}"   # Normalize Windows CRLF line endings to LF.
     if [ "$got" == "$expected" ]; then echo "  $name: OK"
     else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
 }
@@ -24,6 +25,7 @@ check multi_fn    tests/samples/multi_fn.bzy   "42"
 check inheritance tests/samples/proj_inherit  "2"
 check leak        tests/samples/proj_leak      "1"
 check cycle       tests/samples/proj_cycle     "0"
+check scalars     tests/samples/proj_scalars   $'0\n0\n5000000000\n4000000000\ntrue\n-1\nfalse\ntrue'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

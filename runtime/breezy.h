@@ -16,4 +16,8 @@ int64_t bzy_live_count(void);      /* Number of objects currently alive (for tes
 void    bzy_collect_cycles(void);  /* Run trial deletion over the buffered cycle-root candidates. */
 int64_t bzy_roots_buffered(void);  /* Number of candidate roots pending collection (for tests). */
 
+void    bzy_print_i64(int64_t v);  /* Print a signed integer as %lld followed by a newline. */
+void    bzy_print_u64(uint64_t v); /* Print an unsigned integer as %llu followed by a newline. */
+void    bzy_print_bool(int64_t v); /* Print "true" or "false" followed by a newline. */
+
 #endif

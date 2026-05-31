@@ -58,7 +58,7 @@ static TypeKind literal_type(Expr *e)
 		return TY_LONG;
 	}
 
-	if (e->int_val > 2147483647L)
+	if (e->int_val > 2147483647LL)
 	{
 		die(e->line,"integer literal out of int range; add an 'L' suffix",NULL);
 	}

@@ -87,7 +87,7 @@ struct Expr
 	char     anno_str[64];    /* resolver: static class for dispatch */
 	int      anno_stack;      /* EX_NEW: 1 if stack-allocated, else 0 (heap). */
 	int      anno_stack_off;  /* EX_NEW: rbp offset of the stack object when anno_stack. */
-	long     int_val;         /* EX_INT */
+	long long int_val;        /* EX_INT (64-bit: 'long' is 32-bit on Win64). */
 	char     int_suffix[4];   /* EX_INT: literal suffix from the lexer ("", "L", "u", "uL", "Lu"). */
 	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD */
 	int      op;              /* EX_BINARY/EX_UNARY: a TokenType */

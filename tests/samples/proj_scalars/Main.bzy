@@ -1,0 +1,34 @@
+void main()
+{
+	byte b;
+	byte c;
+	b = (byte)255;
+	c = (byte)1;
+	print(b + c);
+
+	ubyte ub;
+	ubyte uc;
+	ub = (ubyte)255;
+	uc = (ubyte)1;
+	print(ub + uc);
+
+	long n;
+	long m;
+	n = 3000000000L;
+	m = 2000000000L;
+	print(n + m);
+
+	uint big;
+	uint one;
+	big = 4000000000u;
+	one = 1u;
+	print(big);
+	print(big > one);
+
+	int neg;
+	neg = 0 - 1;
+	print(neg);
+	print(neg > 1);
+
+	print(true);
+}

@@ -29,6 +29,77 @@ int  cg_label(Codegen *cg)
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static const char *ARG_REG[4] = { "rcx","rdx","r8","r9" };   /* Win64 */
 
+/* Load a scalar from 'mem' into rax, sign- or zero-extending to 64 bits per its
+   declared width. Objects and 64-bit integers load with a plain mov. */
+static void cg_load_scalar(Codegen *cg, TypeKind k, const char *mem)
+{
+	if (k==TY_BOOL)
+	{
+		cg_emit(cg,"    movzx rax, byte %s", mem);
+		return;
+	}
+
+	switch (ty_bits(k))
+	{
+	case 8:
+		if (ty_is_signed(k))
+		{
+			cg_emit(cg,"    movsx rax, byte %s", mem);
+		}
+		else
+		{
+			cg_emit(cg,"    movzx rax, byte %s", mem);
+		}
+
+		break;
+	case 16:
+		if (ty_is_signed(k))
+		{
+			cg_emit(cg,"    movsx rax, word %s", mem);
+		}
+		else
+		{
+			cg_emit(cg,"    movzx rax, word %s", mem);
+		}
+
+		break;
+	case 32:
+		if (ty_is_signed(k))
+		{
+			cg_emit(cg,"    movsxd rax, dword %s", mem);
+		}
+		else
+		{
+			cg_emit(cg,"    mov eax, dword %s", mem);   /* Writing eax zero-extends rax. */
+		}
+
+		break;
+	default:
+		cg_emit(cg,"    mov rax, %s", mem);             /* 64-bit integer or object. */
+		break;
+	}
+}
+
+/* Re-extend the value already in rax to 64 bits at the given integer width, the
+   way a fresh load would. Used after width-truncating arithmetic and for casts. */
+static void cg_extend_reg(Codegen *cg, TypeKind k)
+{
+	switch (ty_bits(k))
+	{
+	case 8:
+		cg_emit(cg, ty_is_signed(k) ? "    movsx rax, al" : "    movzx rax, al");
+		break;
+	case 16:
+		cg_emit(cg, ty_is_signed(k) ? "    movsx rax, ax" : "    movzx rax, ax");
+		break;
+	case 32:
+		cg_emit(cg, ty_is_signed(k) ? "    movsxd rax, eax" : "    mov eax, eax");
+		break;
+	default:
+		break;   /* 64-bit: already full width. */
+	}
+}
+
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
    matter the current rsp alignment or pending pushes; the argument is in rcx. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
@@ -101,20 +172,34 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_expr(cg,tt,e->rhs);
 	cg_emit(cg,"    mov rbx, rax");
 	cg_emit(cg,"    pop rax");
+	int uns = ty_is_unsigned(e->lhs->type.kind);   /* Operands share signedness. */
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
 		cg_emit(cg,"    add rax, rbx");
+		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_MINUS:
 		cg_emit(cg,"    sub rax, rbx");
+		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_STAR:
-		cg_emit(cg,"    imul rax, rbx");
+		cg_emit(cg,"    imul rax, rbx");   /* Low bits agree with mul at any width. */
+		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_SLASH:
-		cg_emit(cg,"    cqo");
-		cg_emit(cg,"    idiv rbx");
+		if (uns)
+		{
+			cg_emit(cg,"    xor edx, edx");
+			cg_emit(cg,"    div rbx");
+		}
+		else
+		{
+			cg_emit(cg,"    cqo");
+			cg_emit(cg,"    idiv rbx");
+		}
+
+		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_EQ:
 	case TOKEN_NEQ:
@@ -133,16 +218,16 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			set="setne";
 			break;
 		case TOKEN_LT:
-			set="setl";
+			set=uns?"setb":"setl";
 			break;
 		case TOKEN_GT:
-			set="setg";
+			set=uns?"seta":"setg";
 			break;
 		case TOKEN_LTE:
-			set="setle";
+			set=uns?"setbe":"setle";
 			break;
 		default:
-			set="setge";
+			set=uns?"setae":"setge";
 			break;
 		}
 
@@ -283,11 +368,12 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->args[0]);
-	cg_emit(cg,"    mov rdx, rax");
-	cg_emit(cg,"    lea rcx, [rel __fmt_int]");
-	cg_emit(cg,"    sub rsp, 32");
-	cg_emit(cg,"    call printf");
-	cg_emit(cg,"    add rsp, 32");
+	cg_emit(cg,"    mov rcx, rax");
+	TypeKind k=e->args[0]->type.kind;
+	const char *fn = k==TY_BOOL ? "bzy_print_bool"
+					 : ty_is_unsigned(k) ? "bzy_print_u64"
+					 : "bzy_print_i64";
+	cg_aligned_call(cg,fn);
 }
 
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
@@ -295,26 +381,37 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	switch (e->kind)
 	{
 	case EX_INT:
-		cg_emit(cg,"    mov rax, %ld", e->int_val);
+		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
 	case EX_BOOL:
+		cg_emit(cg,"    mov rax, %lld", e->int_val);
+		break;
 	case EX_CAST:
-		fprintf(stderr,"codegen: scalar lowering arrives in Part 3a Task 4\n");
-		exit(1);
+		cg_expr(cg,tt,e->lhs);
+		cg_extend_reg(cg,e->type.kind);   /* Truncate/re-extend to the target width. */
 		break;
 	case EX_THIS:
 		cg_emit(cg,"    mov rax, [rbp - 8]");
 		break;
 	case EX_IDENT:
-		cg_emit(cg,"    mov rax, [rbp - %d]", e->anno_int);
+	{
+		char mem[32];
+		sprintf(mem,"[rbp - %d]", e->anno_int);
+		cg_load_scalar(cg,e->type.kind,mem);
 		break;
+	}
 	case EX_FIELD:
+	{
 		cg_expr(cg,tt,e->lhs);
-		cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int);
+		char mem[32];
+		sprintf(mem,"[rax + %d]", e->anno_int);
+		cg_load_scalar(cg,e->type.kind,mem);
 		break;
+	}
 	case EX_UNARY:
 		cg_expr(cg,tt,e->lhs);
 		cg_emit(cg,"    neg rax");
+		cg_extend_reg(cg,e->type.kind);
 		break;
 	case EX_BINARY:
 		cg_binary(cg,tt,e);
@@ -624,12 +721,14 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"bits 64");
 	cg_emit(cg,"default rel");
 	cg_emit(cg,"extern malloc");
-	cg_emit(cg,"extern printf");
 	cg_emit(cg,"extern bzy_alloc");
 	cg_emit(cg,"extern bzy_retain");
 	cg_emit(cg,"extern bzy_release");
 	cg_emit(cg,"extern bzy_live_count");
 	cg_emit(cg,"extern bzy_collect_cycles");
+	cg_emit(cg,"extern bzy_print_i64");
+	cg_emit(cg,"extern bzy_print_u64");
+	cg_emit(cg,"extern bzy_print_bool");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
@@ -678,6 +777,4 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	{
 		cg_emit_vtable(cg,&tt->classes[i]);
 	}
-
-	cg_emit(cg,"__fmt_int: db \"%%lld\", 10, 0");
 }

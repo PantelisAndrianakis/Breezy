@@ -192,7 +192,7 @@ static Expr *parse_primary(Parser *p)
 	if (check(p,TOKEN_INT_LIT))
 	{
 		Expr *e=expr_new(EX_INT,line);
-		e->int_val=strtol(p->cur.text,NULL,10);
+		e->int_val=strtoll(p->cur.text,NULL,10);
 		strcpy(e->int_suffix,p->cur.suffix);
 		advance(p);
 		return e;
