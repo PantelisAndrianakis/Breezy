@@ -365,9 +365,16 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* Emit a Win64 call. Each positional argument is materialized into rcx/rdx/r8/r9
+   (integer/object) or xmm0..3 (float/double) by index — arg i uses register slot
+   i regardless of class. Arguments are evaluated left-to-right into a 16-aligned
+   stack block (so nested calls compose), then loaded into their registers. The
+   integer-or-float routing follows the *parameter* type, so an int passed to a
+   double parameter is promoted with cvtsi2sd. */
 static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 							  Expr *self, Expr **args, int argc, int indirect,
-							  int result_is_object)
+							  int result_is_object, int result_is_fp,
+							  const TypeRef *params, int param_count)
 {
 	int total = (self?1:0) + argc;
 	if (total > 4)
@@ -376,51 +383,79 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		exit(1);
 	}
 
-	int owned_tmp[4];
-	int owned_n = 0;
-
 	if (indirect)
 	{
-		cg_emit(cg,"    push rax");          /* Callee address. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Callee address (freed by call time). */
 	}
 
-	int slot_index = 0;
+	int block = ((total*8 + 15)/16)*16;   /* 16-aligned scratch for spilled args. */
+	if (block)
+	{
+		cg_emit(cg,"    sub rsp, %d", block);
+	}
+
+	TypeKind slot_kind[4];
+	int owned_tmp[4];
+	int owned_n = 0;
+	int slot = 0;
+
 	if (self)
 	{
 		cg_expr(cg,tt,self);
+		slot_kind[slot] = TY_OBJECT;
 		if (expr_is_owned(self))
 		{
-			cg_emit(cg,"    mov [rbp - %d], rax", cg->argtmp_base + slot_index*8);
-			owned_tmp[owned_n++] = slot_index;
+			owned_tmp[owned_n++] = slot;
 		}
 
-		cg_emit(cg,"    push rax");
-		slot_index++;
+		cg_emit(cg,"    mov [rsp + %d], rax", slot*8);
+		slot++;
 	}
 
 	for (int i=0; i<argc; i++)
 	{
+		TypeKind pk = (i < param_count) ? params[i].kind : args[i]->type.kind;
 		cg_expr(cg,tt,args[i]);
-		if (expr_is_owned(args[i]))
+		cg_coerce(cg,pk,args[i]->type.kind);   /* Implicit int->double at a double parameter. */
+		slot_kind[slot] = pk;
+		if (ty_is_float(pk))
 		{
-			cg_emit(cg,"    mov [rbp - %d], rax", cg->argtmp_base + slot_index*8);
-			owned_tmp[owned_n++] = slot_index;
+			cg_emit(cg,"    movsd qword [rsp + %d], xmm0", slot*8);
+		}
+		else
+		{
+			if (expr_is_owned(args[i]))
+			{
+				owned_tmp[owned_n++] = slot;
+			}
+
+			cg_emit(cg,"    mov [rsp + %d], rax", slot*8);
 		}
 
-		cg_emit(cg,"    push rax");
-		slot_index++;
+		slot++;
 	}
 
-	for (int i=total-1; i>=0; i--)
+	for (int s=0; s<total; s++)
 	{
-		cg_emit(cg,"    pop %s", ARG_REG[i]);
+		if (slot_kind[s]==TY_FLOAT)
+		{
+			cg_emit(cg,"    movss xmm%d, dword [rsp + %d]", s, s*8);
+		}
+		else if (slot_kind[s]==TY_DOUBLE)
+		{
+			cg_emit(cg,"    movsd xmm%d, qword [rsp + %d]", s, s*8);
+		}
+		else
+		{
+			cg_emit(cg,"    mov %s, [rsp + %d]", ARG_REG[s], s*8);
+		}
 	}
 
 	if (indirect)
 	{
-		cg_emit(cg,"    pop rax");
+		cg_emit(cg,"    mov r11, [rbp - %d]", cg->val_save);
 		cg_emit(cg,"    sub rsp, 32");
-		cg_emit(cg,"    call rax");
+		cg_emit(cg,"    call r11");
 		cg_emit(cg,"    add rsp, 32");
 	}
 	else
@@ -437,9 +472,14 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		}
 
+		if (result_is_fp)
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);
+		}
+
 		for (int i=0; i<owned_n; i++)
 		{
-			cg_emit(cg,"    mov rcx, [rbp - %d]", cg->argtmp_base + owned_tmp[i]*8);
+			cg_emit(cg,"    mov rcx, [rsp + %d]", owned_tmp[i]*8);
 			cg_release_rcx(cg);
 		}
 
@@ -447,6 +487,16 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		{
 			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		}
+
+		if (result_is_fp)
+		{
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);
+		}
+	}
+
+	if (block)
+	{
+		cg_emit(cg,"    add rsp, %d", block);
 	}
 }
 
@@ -455,7 +505,10 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_expr(cg,tt,e->lhs);                       /* Receiver pointer in rax. */
 	cg_emit(cg,"    mov rax, [rax]");             /* Vtable pointer. */
 	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);
-	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, e->type.kind==TY_OBJECT);
+	ClassInfo *c=types_find_class(tt,e->anno_str);
+	MethodInfo *m=types_find_method(c,e->name);
+	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, e->type.kind==TY_OBJECT,
+					  ty_is_float(e->type.kind), m->param_types, m->param_count);
 }
 
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
@@ -640,7 +693,8 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
-			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, e->type.kind==TY_OBJECT);
+			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, e->type.kind==TY_OBJECT,
+							  ty_is_float(e->type.kind), fi->param_types, fi->param_count);
 		}
 		break;
 	}
@@ -892,7 +946,20 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	for (int i=0; i<f->param_count; i++)
 	{
 		int slot = this_class ? (16 + i*8) : (8 + i*8);
-		cg_emit(cg,"    mov [rbp - %d], %s", slot, ARG_REG[reg]);
+		TypeKind pk = f->params[i].type.kind;
+		if (pk==TY_FLOAT)
+		{
+			cg_emit(cg,"    movss dword [rbp - %d], xmm%d", slot, reg);
+		}
+		else if (pk==TY_DOUBLE)
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm%d", slot, reg);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], %s", slot, ARG_REG[reg]);
+		}
+
 		reg++;
 	}
 

@@ -403,7 +403,7 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. Parts 1 and 2 are complete and green: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector) fully working.
+The language design is settled. The compiler and runtime are being built from scratch. Parts 1, 2, and 3 are complete and green: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector) and the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`) fully working.
 
 **Compiler core (Part 1) — done**
 - [x] Lexer, parser, typed AST
@@ -415,10 +415,10 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Automatic Reference Counting
 - [x] Incremental cycle collector
 
-**Scalar types (Part 3)**
-- [ ] Sized integers `byte`/`short`/`int`/`long` + unsigned `ubyte`/`ushort`/`uint`/`ulong`
-- [ ] `boolean` (`true`/`false`)
-- [ ] `float` / `double` (IEEE-754, SSE path)
+**Scalar types (Part 3) — done**
+- [x] Sized integers `byte`/`short`/`int`/`long` + unsigned `ubyte`/`ushort`/`uint`/`ulong`
+- [x] `boolean` (`true`/`false`)
+- [x] `float` / `double` (IEEE-754, SSE path)
 
 **Core types (Part 4)**
 - [ ] Strings with amortized append (`StringBuilder`)

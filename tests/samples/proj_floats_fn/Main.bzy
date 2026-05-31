@@ -1,0 +1,11 @@
+double scale(double x, double k)
+{
+	return x * k;
+}
+
+void main()
+{
+	double r;
+	r = scale(2.5, 4.0);
+	print(r);
+}
