@@ -10,6 +10,7 @@ void cg_init(Codegen *cg, FILE *out)
 {
 	cg->out=out;
 	cg->label_count=0;
+	cg->fpk_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -100,6 +101,52 @@ static void cg_extend_reg(Codegen *cg, TypeKind k)
 	}
 }
 
+/* Record a float/double literal in the constant pool; returns its __fpk id. */
+static int cg_fp_const(Codegen *cg, Expr *e)
+{
+	int id = cg->fpk_count++;
+	if (e->type.kind == TY_FLOAT)
+	{
+		float fv = (float)e->float_val;
+		unsigned int u;
+		memcpy(&u, &fv, 4);
+		cg->fpk[id].is_float = 1;
+		cg->fpk[id].bits = u;
+	}
+	else
+	{
+		double dv = e->float_val;
+		unsigned long long u;
+		memcpy(&u, &dv, 8);
+		cg->fpk[id].is_float = 0;
+		cg->fpk[id].bits = u;
+	}
+
+	return id;
+}
+
+/* Load a float/double from 'mem' into xmm0. */
+static void cg_load_fp(Codegen *cg, TypeKind k, const char *mem)
+{
+	cg_emit(cg, k==TY_FLOAT ? "    movss xmm0, dword %s" : "    movsd xmm0, qword %s", mem);
+}
+
+/* Store xmm0 to 'mem' at the declared float/double width. */
+static void cg_store_fp(Codegen *cg, TypeKind k, const char *mem)
+{
+	cg_emit(cg, k==TY_FLOAT ? "    movss dword %s, xmm0" : "    movsd qword %s, xmm0", mem);
+}
+
+/* Coerce the just-evaluated value (rax if integer, xmm0 if float) to the target
+   type. The only implicit cross-channel conversion is int->double. */
+static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
+{
+	if (to==TY_DOUBLE && ty_is_int(from))
+	{
+		cg_emit(cg,"    cvtsi2sd xmm0, rax");
+	}
+}
+
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
    matter the current rsp alignment or pending pushes; the argument is in rcx. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
@@ -165,8 +212,84 @@ static void cg_expr_owned(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* Floating-point binary op. Operands evaluate to xmm0; the left operand is
+   spilled on the machine stack so nested FP expressions compose correctly. The
+   one legal int operand (int + double) is promoted with cvtsi2sd. */
+static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *sfx = (e->lhs->type.kind==TY_FLOAT && e->rhs->type.kind==TY_FLOAT) ? "ss" : "sd";
+	cg_expr(cg,tt,e->lhs);
+	if (ty_is_int(e->lhs->type.kind))
+	{
+		cg_emit(cg,"    cvtsi2sd xmm0, rax");
+	}
+
+	cg_emit(cg,"    sub rsp, 8");
+	cg_emit(cg,"    movsd qword [rsp], xmm0");   /* Spill lhs (float lives in the low 4 bytes). */
+	cg_expr(cg,tt,e->rhs);
+	if (ty_is_int(e->rhs->type.kind))
+	{
+		cg_emit(cg,"    cvtsi2sd xmm0, rax");
+	}
+
+	cg_emit(cg,"    movsd xmm1, xmm0");          /* rhs -> xmm1. */
+	cg_emit(cg,"    movsd xmm0, qword [rsp]");   /* lhs -> xmm0. */
+	cg_emit(cg,"    add rsp, 8");
+	switch (e->op)
+	{
+	case TOKEN_PLUS:
+		cg_emit(cg,"    add%s xmm0, xmm1", sfx);
+		break;
+	case TOKEN_MINUS:
+		cg_emit(cg,"    sub%s xmm0, xmm1", sfx);
+		break;
+	case TOKEN_STAR:
+		cg_emit(cg,"    mul%s xmm0, xmm1", sfx);
+		break;
+	case TOKEN_SLASH:
+		cg_emit(cg,"    div%s xmm0, xmm1", sfx);
+		break;
+	default:   /* comparison -> boolean in rax (unordered/NaN compares false except !=). */
+	{
+		const char *set;
+		switch (e->op)
+		{
+		case TOKEN_EQ:
+			set="sete";
+			break;
+		case TOKEN_NEQ:
+			set="setne";
+			break;
+		case TOKEN_LT:
+			set="setb";
+			break;
+		case TOKEN_GT:
+			set="seta";
+			break;
+		case TOKEN_LTE:
+			set="setbe";
+			break;
+		default:
+			set="setae";
+			break;
+		}
+
+		cg_emit(cg,"    ucomi%s xmm0, xmm1", sfx);
+		cg_emit(cg,"    %s al", set);
+		cg_emit(cg,"    movzx rax, al");
+		break;
+	}
+	}
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	if (ty_is_float(e->lhs->type.kind) || ty_is_float(e->rhs->type.kind))
+	{
+		cg_binary_fp(cg,tt,e);
+		return;
+	}
+
 	cg_expr(cg,tt,e->lhs);
 	cg_emit(cg,"    push rax");
 	cg_expr(cg,tt,e->rhs);
@@ -368,8 +491,19 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->args[0]);
-	cg_emit(cg,"    mov rcx, rax");
 	TypeKind k=e->args[0]->type.kind;
+	if (ty_is_float(k))
+	{
+		if (k==TY_FLOAT)
+		{
+			cg_emit(cg,"    cvtss2sd xmm0, xmm0");   /* Promote to double for printing. */
+		}
+
+		cg_aligned_call(cg,"bzy_print_f64");         /* Double arg already in xmm0. */
+		return;
+	}
+
+	cg_emit(cg,"    mov rcx, rax");
 	const char *fn = k==TY_BOOL ? "bzy_print_bool"
 					 : ty_is_unsigned(k) ? "bzy_print_u64"
 					 : "bzy_print_i64";
@@ -387,13 +521,42 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
 	case EX_FLOAT:
-		fprintf(stderr,"codegen: float lowering arrives in Part 3b Task 5\n");
-		exit(1);
+	{
+		int id=cg_fp_const(cg,e);
+		char mem[40];
+		sprintf(mem,"[rel __fpk%d]", id);
+		cg_load_fp(cg,e->type.kind,mem);
 		break;
+	}
 	case EX_CAST:
+	{
 		cg_expr(cg,tt,e->lhs);
-		cg_extend_reg(cg,e->type.kind);   /* Truncate/re-extend to the target width. */
+		TypeKind from=e->lhs->type.kind, to=e->type.kind;
+		int ff=ty_is_float(from), tf=ty_is_float(to);
+		if (!ff && !tf)
+		{
+			cg_extend_reg(cg,to);                  /* int -> int (truncate/re-extend). */
+		}
+		else if (!ff && tf)
+		{
+			cg_emit(cg, to==TY_FLOAT ? "    cvtsi2ss xmm0, rax" : "    cvtsi2sd xmm0, rax");
+		}
+		else if (ff && !tf)
+		{
+			cg_emit(cg, from==TY_FLOAT ? "    cvttss2si rax, xmm0" : "    cvttsd2si rax, xmm0");
+			cg_extend_reg(cg,to);                  /* Narrow the truncated integer to its width. */
+		}
+		else if (from==TY_FLOAT && to==TY_DOUBLE)
+		{
+			cg_emit(cg,"    cvtss2sd xmm0, xmm0");
+		}
+		else if (from==TY_DOUBLE && to==TY_FLOAT)
+		{
+			cg_emit(cg,"    cvtsd2ss xmm0, xmm0");
+		}
+
 		break;
+	}
 	case EX_THIS:
 		cg_emit(cg,"    mov rax, [rbp - 8]");
 		break;
@@ -401,7 +564,15 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		char mem[32];
 		sprintf(mem,"[rbp - %d]", e->anno_int);
-		cg_load_scalar(cg,e->type.kind,mem);
+		if (ty_is_float(e->type.kind))
+		{
+			cg_load_fp(cg,e->type.kind,mem);
+		}
+		else
+		{
+			cg_load_scalar(cg,e->type.kind,mem);
+		}
+
 		break;
 	}
 	case EX_FIELD:
@@ -409,13 +580,32 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_expr(cg,tt,e->lhs);
 		char mem[32];
 		sprintf(mem,"[rax + %d]", e->anno_int);
-		cg_load_scalar(cg,e->type.kind,mem);
+		if (ty_is_float(e->type.kind))
+		{
+			cg_load_fp(cg,e->type.kind,mem);
+		}
+		else
+		{
+			cg_load_scalar(cg,e->type.kind,mem);
+		}
+
 		break;
 	}
 	case EX_UNARY:
 		cg_expr(cg,tt,e->lhs);
-		cg_emit(cg,"    neg rax");
-		cg_extend_reg(cg,e->type.kind);
+		if (ty_is_float(e->type.kind))
+		{
+			const char *sfx = e->type.kind==TY_FLOAT ? "ss" : "sd";
+			cg_emit(cg,"    xorps xmm1, xmm1");
+			cg_emit(cg,"    sub%s xmm1, xmm0", sfx);   /* 0 - x = -x. */
+			cg_emit(cg,"    movaps xmm0, xmm1");
+		}
+		else
+		{
+			cg_emit(cg,"    neg rax");
+			cg_extend_reg(cg,e->type.kind);
+		}
+
 		break;
 	case EX_BINARY:
 		cg_binary(cg,tt,e);
@@ -460,11 +650,31 @@ static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {
+	int fp = ty_is_float(target->type.kind);
 	if (target->kind==EX_IDENT)
 	{
-		cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
+		char mem[32];
+		sprintf(mem,"[rbp - %d]", target->anno_int);
+		if (fp)
+		{
+			cg_store_fp(cg,target->type.kind,mem);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
+		}
 	}
-	else     /* EX_FIELD */
+	else if (fp)     /* EX_FIELD, float value in xmm0. */
+	{
+		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);   /* Spill value. */
+		cg_expr(cg,tt,target->lhs);
+		cg_emit(cg,"    mov rbx, rax");
+		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);   /* Reload value. */
+		char mem[32];
+		sprintf(mem,"[rbx + %d]", target->anno_int);
+		cg_store_fp(cg,target->type.kind,mem);
+	}
+	else             /* EX_FIELD, integer/object value in rax. */
 	{
 		cg_emit(cg,"    push rax");
 		cg_expr(cg,tt,target->lhs);
@@ -515,13 +725,23 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			if (s->decl_type.kind==TY_OBJECT)
 			{
 				cg_expr_owned(cg,tt,s->decl_init);
+				cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
 			}
 			else
 			{
 				cg_expr(cg,tt,s->decl_init);
+				cg_coerce(cg,s->decl_type.kind,s->decl_init->type.kind);
+				char mem[32];
+				sprintf(mem,"[rbp - %d]", s->decl_offset);
+				if (ty_is_float(s->decl_type.kind))
+				{
+					cg_store_fp(cg,s->decl_type.kind,mem);
+				}
+				else
+				{
+					cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+				}
 			}
-
-			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
 		}
 		break;
 	case ST_ASSIGN:
@@ -532,6 +752,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		else
 		{
 			cg_expr(cg,tt,s->value);
+			cg_coerce(cg,s->target->type.kind,s->value->type.kind);
 			cg_store(cg,tt,s->target);
 		}
 		break;
@@ -561,6 +782,16 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				cg_release_object_locals(cg, f, -1);
 				cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 			}
+		}
+		else if (s->ret_val && ty_is_float(f->ret_type.kind))
+		{
+			/* FP return value lives in xmm0; spill it across local releases
+			   (bzy_release may clobber xmm registers). */
+			cg_expr(cg,tt,s->ret_val);
+			cg_coerce(cg,f->ret_type.kind,s->ret_val->type.kind);
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);
+			cg_release_object_locals(cg, f, -1);
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);
 		}
 		else
 		{
@@ -634,7 +865,8 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->val_save    = locals + 16;
 	cg->argtmp_base = locals + 24;
 	cg->assign_save = locals + 56;
-	int scratch = 64;        /* sp_save, val_save, four arg temps, and assign_save. */
+	cg->fp_save     = locals + 64;
+	int scratch = 72;        /* sp_save, val_save, four arg temps, assign_save, fp_save. */
 	int stack_objs = f->stack_alloc_bytes;
 	if (stack_objs % 16 != 0)
 	{
@@ -733,6 +965,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_print_i64");
 	cg_emit(cg,"extern bzy_print_u64");
 	cg_emit(cg,"extern bzy_print_bool");
+	cg_emit(cg,"extern bzy_print_f64");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
@@ -780,5 +1013,17 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<tt->class_count; i++)
 	{
 		cg_emit_vtable(cg,&tt->classes[i]);
+	}
+
+	for (int i=0; i<cg->fpk_count; i++)
+	{
+		if (cg->fpk[i].is_float)
+		{
+			cg_emit(cg,"__fpk%d: dd 0x%08llx", i, cg->fpk[i].bits & 0xffffffffULL);
+		}
+		else
+		{
+			cg_emit(cg,"__fpk%d: dq 0x%016llx", i, cg->fpk[i].bits);
+		}
 	}
 }

@@ -164,9 +164,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	case EX_UNARY:
 		resolve_expr(st,e->lhs,tc);
-		if (!ty_is_int(e->lhs->type.kind))
+		if (!ty_is_int(e->lhs->type.kind) && !ty_is_float(e->lhs->type.kind))
 		{
-			die(e->line,"unary '-' requires an integer operand",NULL);
+			die(e->line,"unary '-' requires a numeric operand",NULL);
 		}
 
 		e->type=e->lhs->type;

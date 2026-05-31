@@ -19,5 +19,6 @@ int64_t bzy_roots_buffered(void);  /* Number of candidate roots pending collecti
 void    bzy_print_i64(int64_t v);  /* Print a signed integer as %lld followed by a newline. */
 void    bzy_print_u64(uint64_t v); /* Print an unsigned integer as %llu followed by a newline. */
 void    bzy_print_bool(int64_t v); /* Print "true" or "false" followed by a newline. */
+void    bzy_print_f64(double v);   /* Print a double with %.17g followed by a newline. */
 
 #endif

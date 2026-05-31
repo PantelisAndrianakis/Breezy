@@ -18,3 +18,8 @@ void bzy_print_bool(int64_t v)
 {
 	printf("%s\n", v ? "true" : "false");
 }
+
+void bzy_print_f64(double v)
+{
+	printf("%.17g\n", v);
+}

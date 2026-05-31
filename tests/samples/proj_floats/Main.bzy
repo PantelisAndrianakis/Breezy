@@ -1,0 +1,26 @@
+void main()
+{
+	double a;
+	double b;
+	a = 1.5;
+	b = 2.25;
+	print(a + b);
+
+	print(a * b);
+
+	int n;
+	n = 7;
+	double d;
+	d = n;
+
+	print(d);
+
+	double x;
+	x = 10.0;
+	print(x > a);
+	print((int)x);
+
+	float f;
+	f = 1.5f;
+	print(f);
+}
