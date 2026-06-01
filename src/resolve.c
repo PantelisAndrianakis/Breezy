@@ -76,19 +76,45 @@ static TypeKind literal_type(Expr *e)
 /* Can a value of kind 'from' be stored into a slot of kind 'to' without a cast?
    Scalars widen only within the same signedness; objects stay permissive (subtype
    checking is out of scope). Boolean<->integer and narrowing need an explicit cast. */
-static int assignable(TypeKind to, TypeKind from)
+/* Structural type equality (used for invariant array element comparison). */
+static int typeref_equal(const TypeRef *x, const TypeRef *y)
 {
-	if (to == from)
+	if (x->kind != y->kind)
 	{
-		return 1;
+		return 0;
 	}
 
-	if (ty_is_int(to) && ty_is_int(from))
+	if (x->kind==TY_OBJECT)
 	{
-		return ty_is_signed(to) == ty_is_signed(from) && ty_rank(from) <= ty_rank(to);
+		return strcmp(x->class_name,y->class_name)==0;
 	}
 
-	if (to==TY_DOUBLE && ty_is_int(from))
+	if (x->kind==TY_ARRAY)
+	{
+		return typeref_equal(x->elem,y->elem);
+	}
+
+	return 1;
+}
+
+static int assignable(const TypeRef *to, const TypeRef *from)
+{
+	if (to->kind==TY_ARRAY && from->kind==TY_ARRAY)
+	{
+		return typeref_equal(to,from);   /* invariant: int[]!=long[], Dog[]!=Animal[] */
+	}
+
+	if (to->kind == from->kind)
+	{
+		return 1;   /* same scalar/bool/object-by-kind/string/void */
+	}
+
+	if (ty_is_int(to->kind) && ty_is_int(from->kind))
+	{
+		return ty_is_signed(to->kind) == ty_is_signed(from->kind) && ty_rank(from->kind) <= ty_rank(to->kind);
+	}
+
+	if (to->kind==TY_DOUBLE && ty_is_int(from->kind))
 	{
 		return 1;   /* Implicit int->double widening. */
 	}
@@ -123,8 +149,34 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		e->type.kind=TY_STRING;
 		break;
 	case EX_NEWARRAY:
+		resolve_expr(st,e->lhs,tc);                 /* the count */
+		if (!ty_is_int(e->lhs->type.kind))
+		{
+			die(e->line,"array length must be an integer",NULL);
+		}
+
+		if (e->type.elem->kind==TY_OBJECT
+				&& !is_stringbuilder(e->type.elem)
+				&& !types_find_class(g_types,e->type.elem->class_name))
+		{
+			die(e->line,"unknown array element type: ",e->type.elem->class_name);
+		}
+
+		break;
 	case EX_INDEX:
-		die(e->line,"array typing arrives in Part 4b Task 3",NULL);
+		resolve_expr(st,e->lhs,tc);
+		resolve_expr(st,e->rhs,tc);
+		if (e->lhs->type.kind!=TY_ARRAY)
+		{
+			die(e->line,"indexing a non-array",NULL);
+		}
+
+		if (!ty_is_int(e->rhs->type.kind))
+		{
+			die(e->line,"array index must be an integer",NULL);
+		}
+
+		e->type = *e->lhs->type.elem;
 		break;
 	case EX_CAST:
 	{
@@ -287,6 +339,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_FIELD:
 	{
 		resolve_expr(st,e->lhs,tc);
+		if (e->lhs->type.kind==TY_ARRAY)
+		{
+			if (strcmp(e->name,"length")!=0)
+			{
+				die(e->line,"arrays have only '.length'",NULL);
+			}
+
+			e->type.kind=TY_INT;
+			e->anno_int=24;             /* The length field offset. */
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{
@@ -350,7 +414,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		resolve_args(st,e,tc);
 		for (int i=0; i<e->arg_count && i<m->param_count; i++)
 		{
-			if (!assignable(m->param_types[i].kind, e->args[i]->type.kind))
+			if (!assignable(&m->param_types[i], &e->args[i]->type))
 			{
 				die(e->line,"argument type mismatch; add a cast",NULL);
 			}
@@ -412,7 +476,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 			for (int i=0; i<e->arg_count && i<fi->param_count; i++)
 			{
-				if (!assignable(fi->param_types[i].kind, e->args[i]->type.kind))
+				if (!assignable(&fi->param_types[i], &e->args[i]->type))
 				{
 					die(e->line,"argument type mismatch; add a cast",NULL);
 				}
@@ -441,7 +505,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (s->decl_init)
 		{
 			resolve_expr(st,s->decl_init,tc);
-			if (!assignable(s->decl_type.kind, s->decl_init->type.kind))
+			if (!assignable(&s->decl_type, &s->decl_init->type))
 			{
 				die(s->line,"initializer type does not match; add a cast",NULL);
 			}
@@ -454,7 +518,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_ASSIGN:
 		resolve_expr(st,s->target,tc);
 		resolve_expr(st,s->value,tc);
-		if (!assignable(s->target->type.kind, s->value->type.kind))
+		if (!assignable(&s->target->type, &s->value->type))
 		{
 			die(s->line,"assigned value type does not match; add a cast",NULL);
 		}
@@ -485,7 +549,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (s->ret_val)
 		{
 			resolve_expr(st,s->ret_val,tc);
-			if (!assignable(g_ret->kind, s->ret_val->type.kind))
+			if (!assignable(g_ret, &s->ret_val->type))
 			{
 				die(s->line,"return type does not match; add a cast",NULL);
 			}

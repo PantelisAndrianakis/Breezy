@@ -141,6 +141,30 @@ static void test_length_is_int(void)
 	ASSERT_INT(a->value->type.kind, TY_INT);
 }
 
+static void test_newarray_type(void)
+{
+	Func *f=build1("void main() { int[] a; a = new int[3]; }")->funcs[0];
+	Stmt *as=f->body->stmts[1];
+	ASSERT_INT(as->value->kind, EX_NEWARRAY);
+	ASSERT_INT(as->value->type.kind, TY_ARRAY);
+	ASSERT_INT(as->value->type.elem->kind, TY_INT);
+}
+
+static void test_index_element_type(void)
+{
+	Func *f=build1("void main() { int[] a; int x; a = new int[3]; x = a[0]; }")->funcs[0];
+	Stmt *as=f->body->stmts[3];
+	ASSERT_INT(as->value->kind, EX_INDEX);
+	ASSERT_INT(as->value->type.kind, TY_INT);
+}
+
+static void test_array_length_is_int(void)
+{
+	Func *f=build1("void main() { int[] a; int n; a = new int[3]; n = a.length; }")->funcs[0];
+	Stmt *as=f->body->stmts[3];
+	ASSERT_INT(as->value->type.kind, TY_INT);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -190,6 +214,9 @@ int main(void)
 	RUN(test_string_literal_type);
 	RUN(test_concat_is_string);
 	RUN(test_length_is_int);
+	RUN(test_newarray_type);
+	RUN(test_index_element_type);
+	RUN(test_array_length_is_int);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

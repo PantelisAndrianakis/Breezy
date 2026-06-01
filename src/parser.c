@@ -473,7 +473,7 @@ static Stmt *parse_assign_or_expr(Parser *p)
 	Expr *first=parse_expr(p);
 	if (match(p,TOKEN_ASSIGN))
 	{
-		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD)
+		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
 		{
 			fprintf(stderr,"line %d: invalid assignment target\n",line);
 			exit(1);
