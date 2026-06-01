@@ -48,6 +48,13 @@ static void test_float_cast(void)
 	ASSERT_INT(e->type.kind, TY_FLOAT);
 }
 
+static void test_string_expr(void)
+{
+	Expr *e = parse_str("\"hi\"");
+	ASSERT_INT(e->kind, EX_STR);
+	ASSERT_STR(e->str_val, "hi");
+}
+
 static void test_precedence(void)
 {
 	Expr *e = parse_str("1 + 2 * 3");
@@ -164,6 +171,7 @@ int main(void)
 	RUN(test_cast);
 	RUN(test_float_literal);
 	RUN(test_float_cast);
+	RUN(test_string_expr);
 	RUN(test_precedence);
 	RUN(test_method_call);
 	RUN(test_field_access);

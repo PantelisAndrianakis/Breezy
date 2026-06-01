@@ -205,6 +205,13 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+	if (check(p,TOKEN_STR_LIT))
+	{
+		Expr *e=expr_new(EX_STR,line);
+		strcpy(e->str_val,p->cur.text);
+		advance(p);
+		return e;
+	}
 	if (check(p,TOKEN_TRUE) || check(p,TOKEN_FALSE))
 	{
 		Expr *e=expr_new(EX_BOOL,line);

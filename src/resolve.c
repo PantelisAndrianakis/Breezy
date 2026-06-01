@@ -112,6 +112,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_FLOAT:
 		e->type.kind = (e->int_suffix[0]=='f') ? TY_FLOAT : TY_DOUBLE;
 		break;
+	case EX_STR:
+		die(e->line,"string typing arrives in Part 4a Task 3",NULL);
+		break;
 	case EX_CAST:
 	{
 		resolve_expr(st,e->lhs,tc);

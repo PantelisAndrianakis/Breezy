@@ -90,6 +90,19 @@ static void test_float_literals(void)
 	ASSERT_STR(t.text, "2.");
 }
 
+static void test_string_literal(void)
+{
+	Lexer l;
+	Token t;
+	lexer_init(&l, "\"hello\" \"a\\nb\"");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_STR_LIT);
+	ASSERT_STR(t.text, "hello");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_STR_LIT);
+	ASSERT_STR(t.text, "a\nb");
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -154,6 +167,7 @@ int main(void)
 	RUN(test_scalar_keywords);
 	RUN(test_float_keywords);
 	RUN(test_float_literals);
+	RUN(test_string_literal);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

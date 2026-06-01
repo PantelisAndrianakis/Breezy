@@ -84,7 +84,7 @@ static inline int ty_rank(TypeKind k)
 
 typedef enum
 {
-	EX_INT, EX_BOOL, EX_FLOAT, EX_IDENT, EX_THIS, EX_NEW,
+	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW,
 	EX_BINARY, EX_UNARY, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD
 } ExprKind;
 
@@ -101,6 +101,7 @@ struct Expr
 	long long int_val;        /* EX_INT (64-bit: 'long' is 32-bit on Win64). */
 	char     int_suffix[4];   /* EX_INT/EX_FLOAT: literal suffix from the lexer ("", "L", "u", "uL", "Lu", "f"). */
 	double   float_val;       /* EX_FLOAT: parsed literal value. */
+	char     str_val[256];    /* EX_STR: decoded string-literal bytes. */
 	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD */
 	int      op;              /* EX_BINARY/EX_UNARY: a TokenType */
 	Expr    *lhs;             /* binary left / unary operand / method-call|field receiver */

@@ -164,6 +164,51 @@ Token lexer_next(Lexer *l)
 		return t;
 	}
 
+	if (c == '"')
+	{
+		next_ch(l);                 /* Consume the opening quote. */
+		int i = 0;
+		while (peek_ch(l) && peek_ch(l) != '"' && i < 255)
+		{
+			char d = next_ch(l);
+			if (d == '\\')
+			{
+				char e = next_ch(l);
+				switch (e)
+				{
+				case 'n':
+					d = '\n';
+					break;
+				case 't':
+					d = '\t';
+					break;
+				case '\\':
+					d = '\\';
+					break;
+				case '"':
+					d = '"';
+					break;
+				default:
+					fprintf(stderr, "line %d: bad string escape '\\%c'\n", l->line, e);
+					exit(1);
+				}
+			}
+
+			t.text[i++] = d;
+		}
+
+		if (peek_ch(l) != '"')
+		{
+			fprintf(stderr, "line %d: unterminated string literal\n", l->line);
+			exit(1);
+		}
+
+		next_ch(l);                 /* Consume the closing quote. */
+		t.text[i] = '\0';
+		t.type = TOKEN_STR_LIT;
+		return t;
+	}
+
 	next_ch(l);
 	t.text[0] = c;
 	t.text[1] = '\0';
@@ -320,6 +365,8 @@ const char *token_type_name(TokenType t)
 		return "double";
 	case TOKEN_FLOAT_LIT:
 		return "FLOAT_LIT";
+	case TOKEN_STR_LIT:
+		return "STR_LIT";
 	case TOKEN_TRUE:
 		return "true";
 	case TOKEN_FALSE:

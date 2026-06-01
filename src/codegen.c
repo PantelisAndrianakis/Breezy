@@ -573,6 +573,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_BOOL:
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
+	case EX_STR:
+		fprintf(stderr,"codegen: string lowering arrives in Part 4a Task 5\n");
+		exit(1);
+		break;
 	case EX_FLOAT:
 	{
 		int id=cg_fp_const(cg,e);
