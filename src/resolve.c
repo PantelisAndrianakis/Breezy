@@ -21,6 +21,13 @@ static ClassInfo *class_of(const TypeRef *t)
 	return t->kind==TY_OBJECT ? types_find_class(g_types,t->class_name) : NULL;
 }
 
+/* StringBuilder is a runtime-provided builtin object class (not user-declared),
+   so its type, new, and methods are special-cased rather than table-resolved. */
+static int is_stringbuilder(const TypeRef *t)
+{
+	return t->kind==TY_OBJECT && strcmp(t->class_name,"StringBuilder")==0;
+}
+
 /* Type of an integer literal from its suffix; range-checks the unsuffixed form. */
 static TypeKind literal_type(Expr *e)
 {
@@ -157,7 +164,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	}
 	case EX_NEW:
-		if (!types_find_class(g_types,e->name))
+		if (strcmp(e->name,"StringBuilder")!=0 && !types_find_class(g_types,e->name))
 		{
 			die(e->line,"unknown class: ",e->name);
 		}
@@ -295,6 +302,35 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_METHOD_CALL:
 	{
 		resolve_expr(st,e->lhs,tc);
+		if (is_stringbuilder(&e->lhs->type))
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"append")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"StringBuilder.append expects one string",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"toString")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"StringBuilder.toString takes no arguments",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else
+			{
+				die(e->line,"unknown StringBuilder method: ",e->name);
+			}
+
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{
@@ -392,7 +428,8 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	{
 	case ST_VARDECL:
 	{
-		if (s->decl_type.kind==TY_OBJECT && !types_find_class(g_types,s->decl_type.class_name))
+		if (s->decl_type.kind==TY_OBJECT && !is_stringbuilder(&s->decl_type)
+				&& !types_find_class(g_types,s->decl_type.class_name))
 		{
 			die(s->line,"unknown type: ",s->decl_type.class_name);
 		}

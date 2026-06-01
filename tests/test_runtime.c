@@ -148,6 +148,19 @@ static void test_string_concat(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_builder_append_tostring(void)
+{
+	int64_t before = bzy_live_count();
+	void *sb = bzy_sb_new();
+	bzy_sb_append_cstr(sb, "ab", 2);
+	bzy_sb_append_cstr(sb, "cd", 2);
+	void *s = bzy_sb_to_string(sb);
+	ASSERT(strcmp(bzy_str_data(s), "abcd") == 0);
+	bzy_release(s);
+	bzy_release(sb);
+	ASSERT_INT(bzy_live_count(), before);   /* The finalizer freed sb's buffer. */
+}
+
 static void test_finalizer_runs_on_free(void)
 {
 	int64_t before = bzy_live_count();
@@ -224,6 +237,7 @@ int main(void)
 	RUN(test_unmanaged_object_ignored);
 	RUN(test_string_new_and_len);
 	RUN(test_string_concat);
+	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);
 	RUN(test_self_cycle_collected);

@@ -1,0 +1,14 @@
+void main()
+{
+	StringBuilder sb;
+	int i;
+	sb = new StringBuilder();
+	i = 0;
+	while (i < 3)
+	{
+		sb.append("ab");
+		i = i + 1;
+	}
+
+	print(sb.toString());
+}

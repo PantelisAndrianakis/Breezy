@@ -27,4 +27,9 @@ const char *bzy_str_data(void *s);                   /* Pointer to the inline NU
 void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */
 void    bzy_print_str(void *s);                      /* Write the bytes + '\n'. */
 
+void   *bzy_sb_new(void);                            /* Owned (+1) empty StringBuilder. */
+void    bzy_sb_append(void *sb, void *s);            /* Append a string's bytes. */
+void    bzy_sb_append_cstr(void *sb, const char *bytes, int64_t len);
+void   *bzy_sb_to_string(void *sb);                  /* Owned (+1) immutable snapshot. */
+
 #endif

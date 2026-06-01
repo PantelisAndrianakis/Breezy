@@ -558,8 +558,44 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_float(e->type.kind), m->param_types, m->param_count);
 }
 
+/* StringBuilder methods lower to runtime calls (no vtable dispatch). The receiver
+   is borrowed; append releases an owned string argument; toString returns +1. */
+static void cg_sb_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	if (strcmp(e->name,"append")==0)
+	{
+		cg_expr(cg,tt,e->lhs);             /* sb pointer. */
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr(cg,tt,e->args[0]);         /* string argument. */
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_emit(cg,"    mov rdx, [rsp + 8]");
+		cg_aligned_call(cg,"bzy_sb_append");
+		if (expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_release_rcx(cg);
+		}
+
+		cg_emit(cg,"    add rsp, 16");
+	}
+	else   /* toString */
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    mov rcx, rax");
+		cg_aligned_call(cg,"bzy_sb_to_string");   /* Owned (+1) string in rax. */
+	}
+}
+
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	if (strcmp(e->name,"StringBuilder")==0)
+	{
+		cg_aligned_call(cg,"bzy_sb_new");   /* Owned (+1) StringBuilder in rax. */
+		return;
+	}
+
 	ClassInfo *c=types_find_class(tt,e->name);
 	if (e->anno_stack)
 	{
@@ -741,7 +777,15 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_new(cg,tt,e);
 		break;
 	case EX_METHOD_CALL:
-		cg_method_call(cg,tt,e);
+		if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
+		{
+			cg_sb_method(cg,tt,e);
+		}
+		else
+		{
+			cg_method_call(cg,tt,e);
+		}
+
 		break;
 	case EX_CALL:
 		if (strcmp(e->name,"print")==0)
@@ -1131,6 +1175,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_concat");
 	cg_emit(cg,"extern bzy_str_len");
 	cg_emit(cg,"extern bzy_print_str");
+	cg_emit(cg,"extern bzy_sb_new");
+	cg_emit(cg,"extern bzy_sb_append");
+	cg_emit(cg,"extern bzy_sb_to_string");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
