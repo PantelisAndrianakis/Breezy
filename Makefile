@@ -4,18 +4,37 @@ CC      = gcc
 # 64 MB stack at link time so those binaries run.
 CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc -Wl,--stack,0x4000000
 
+# Release flags: optimize, drop debug info, and let the linker garbage-collect
+# unreferenced functions so stages a binary never calls are not carried along.
+# -s strips the symbol table at link time (the bulk of the debug-build size).
+# Note: -fdata-sections is deliberately omitted. On the MinGW/PE target it
+# emits each global into its own named section, which the linker materializes
+# as initialized .data on disk -- that would force the ~1.6 MB zero-initialized
+# g_nodes pool out of .bss and bloat the binary instead of shrinking it.
+# The 64 MB stack reserve is still required because the TypeTable lives on the
+# stack in the driver.
+RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
+                 -ffunction-sections -Wl,--gc-sections \
+                 -s -Wl,--stack,0x4000000
+
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c
 
 RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c
 RT_HDR  = runtime/breezy.h
 
-.PHONY: all clean test integration
+.PHONY: all clean test integration release
 
 all: breezy
 
 breezy: src/main.c $(OBJS) lib_breezy.a
 	$(CC) $(CFLAGS) -o breezy src/main.c $(OBJS)
+
+# Stripped, garbage-collected build of the compiler. Produces the same
+# 'breezy' binary as 'all' but a fraction of the size (no debug symbols,
+# unused functions removed). Use this for distribution.
+release: src/main.c $(OBJS) lib_breezy.a
+	$(CC) $(RELEASE_CFLAGS) -o breezy src/main.c $(OBJS)
 
 test_lexer: tests/test_lexer.c src/lexer.c
 	$(CC) $(CFLAGS) -o test_lexer tests/test_lexer.c src/lexer.c
