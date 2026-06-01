@@ -21,4 +21,10 @@ void    bzy_print_u64(uint64_t v); /* Print an unsigned integer as %llu followed
 void    bzy_print_bool(int64_t v); /* Print "true" or "false" followed by a newline. */
 void    bzy_print_f64(double v);   /* Print a double with %.17g followed by a newline. */
 
+void   *bzy_str_new(const char *bytes, int64_t len); /* Owned (+1) immutable string. */
+int64_t bzy_str_len(void *s);                        /* Byte length (excludes the NUL). */
+const char *bzy_str_data(void *s);                   /* Pointer to the inline NUL-terminated bytes. */
+void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */
+void    bzy_print_str(void *s);                      /* Write the bytes + '\n'. */
+
 #endif

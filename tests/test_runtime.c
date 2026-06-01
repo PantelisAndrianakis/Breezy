@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "breezy.h"
 #include <stdint.h>
+#include <string.h>
 
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],
@@ -124,6 +125,29 @@ static void *fin_vtable(void)
 	return &g_fin_desc[3];
 }
 
+static void test_string_new_and_len(void)
+{
+	int64_t before = bzy_live_count();
+	void *s = bzy_str_new("hello", 5);
+	ASSERT_INT(bzy_str_len(s), 5);
+	ASSERT(strcmp(bzy_str_data(s), "hello") == 0);
+	bzy_release(s);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_string_concat(void)
+{
+	int64_t before = bzy_live_count();
+	void *a = bzy_str_new("foo", 3), *b = bzy_str_new("bar", 3);
+	void *c = bzy_str_concat(a, b);
+	ASSERT_INT(bzy_str_len(c), 6);
+	ASSERT(strcmp(bzy_str_data(c), "foobar") == 0);
+	bzy_release(a);
+	bzy_release(b);
+	bzy_release(c);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_finalizer_runs_on_free(void)
 {
 	int64_t before = bzy_live_count();
@@ -198,6 +222,8 @@ int main(void)
 	RUN(test_release_frees_owned_field);
 	RUN(test_loop_reuse_is_bounded);
 	RUN(test_unmanaged_object_ignored);
+	RUN(test_string_new_and_len);
+	RUN(test_string_concat);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);
 	RUN(test_self_cycle_collected);
