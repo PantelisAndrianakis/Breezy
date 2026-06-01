@@ -16,6 +16,13 @@ check_fail() {
     if [ $? -ne 0 ]; then echo "  $name: OK (rejected)"
     else echo "  $name: FAIL (compiled, expected rejection)"; fail=1; fi
 }
+check_abort() {
+    local name="$1" target="$2"
+    ./breezy "$target" >/dev/null 2>&1 || { echo "  $name: COMPILE FAILED"; fail=1; return; }
+    ./out.exe >/dev/null 2>&1
+    if [ $? -ne 0 ]; then echo "  $name: OK (aborted)"
+    else echo "  $name: FAIL (no abort)"; fail=1; fi
+}
 echo "Integration tests"
 check minimal     tests/samples/minimal.bzy    "0"
 check arith       tests/samples/arith.bzy      "14"
@@ -30,6 +37,9 @@ check floats      tests/samples/proj_floats    $'3.75\n3.375\n7\ntrue\n10\n1.5'
 check floats_fn   tests/samples/proj_floats_fn $'10'
 check string      tests/samples/proj_string    $'Hello, Breezy\n13'
 check array       tests/samples/proj_array     $'30'
+check array_obj   tests/samples/proj_array_obj $'4\n5'
+check array_cycle tests/samples/proj_array_cycle $'0'
+check_abort array_oob tests/samples/bad_array_oob.bzy
 check stringbuilder tests/samples/proj_sb        $'ababab'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy

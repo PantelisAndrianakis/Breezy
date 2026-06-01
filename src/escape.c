@@ -128,6 +128,15 @@ static void scan_stmt_escapes(Stmt *s)
 			walk_expr(s->target->lhs);
 		}
 
+		/* Storing a local into an array element captures it: the array may
+		   outlive the local and holds the reference with ARC. */
+		if (s->target->kind==EX_INDEX)
+		{
+			mark_captured(s->value);
+			walk_expr(s->target->lhs);
+			walk_expr(s->target->rhs);
+		}
+
 		if (s->target->kind==EX_IDENT && s->value->kind==EX_IDENT)
 		{
 			mark_captured(s->value);

@@ -1,0 +1,6 @@
+void main()
+{
+	int[] a;
+	a = new int[2];
+	print(a[5]);
+}

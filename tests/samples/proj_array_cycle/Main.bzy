@@ -1,0 +1,16 @@
+void makeCycle()
+{
+	Node a;
+	Node[] k;
+	a = new Node();
+	k = new Node[1];
+	k[0] = a;
+	a.kids = k;
+}
+
+void main()
+{
+	makeCycle();
+	collectCycles();
+	print(liveCount());
+}
