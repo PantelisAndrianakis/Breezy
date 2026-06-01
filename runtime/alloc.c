@@ -62,7 +62,17 @@ static int64_t *descriptor_of(void *o)
 static int has_object_children(void *o)
 {
 	int64_t *ti = descriptor_of(o);
-	return ti && ti[1] > 0;
+	if (!ti)
+	{
+		return 0;
+	}
+
+	if (ti[1] == -1)
+	{
+		return *(int64_t*)((char*)o + 24) > 0;   /* Array span: any elements. */
+	}
+
+	return ti[1] > 0;
 }
 
 /* The class finalizer (descriptor word 0, at vtable - 16), or NULL when the
@@ -72,6 +82,29 @@ static void (*finalizer_of(void *o))(void *)
 	int64_t *d = descriptor_of(o);
 	return d ? (void(*)(void*))d[0] : NULL;
 }
+
+/* Visit each managed child pointer of obj. Handles both the fixed offset list
+   (desc[1] = count, offsets at desc[2+i]) and the array span (desc[1] = -1,
+   first-element offset desc[2], stride desc[3], count = obj length @ offset 24).
+   Children with refcount 0 (unmanaged/stack) are skipped. */
+#define FOR_EACH_CHILD(obj, child, body)                                       \
+	do {                                                                       \
+		int64_t *_ti = descriptor_of(obj);                                     \
+		if (_ti)                                                               \
+		{                                                                      \
+			int _span = (_ti[1] == -1);                                        \
+			int64_t _n = _span ? *(int64_t*)((char*)(obj) + 24) : _ti[1];      \
+			for (int64_t _i = 0; _i < _n; _i++)                                \
+			{                                                                  \
+				int64_t _o = _span ? (_ti[2] + _i*_ti[3]) : _ti[2+_i];         \
+				void *child = *(void**)((char*)(obj) + _o);                    \
+				if (child && *RC(child) != 0)                                  \
+				{                                                              \
+					body;                                                      \
+				}                                                              \
+			}                                                                  \
+		}                                                                      \
+	} while (0)
 
 /* The roots buffer holds objects whose refcount was decremented to a positive
    value and which could therefore be the root of a dead cycle. */
@@ -128,17 +161,10 @@ static void free_object(void *obj)
 		fin(obj);
 	}
 
-	int64_t *ti = descriptor_of(obj);
-	if (ti)
+	FOR_EACH_CHILD(obj, child,
 	{
-		int64_t n = ti[1];
-		for (int64_t i = 0; i < n; i++)
-		{
-			void *child = *(void**)((char*)obj + ti[2 + i]);
-			bzy_release(child);
-		}
-	}
-
+		bzy_release(child);
+	});
 	g_live--;
 	free(obj);
 }
@@ -202,23 +228,6 @@ int64_t bzy_roots_buffered(void)
    subgraph BLACK; the rest are WHITE garbage. White nodes are gathered into a
    list and freed only after the whole walk, so no traversal ever dereferences
    freed memory. */
-
-#define FOR_EACH_CHILD(obj, child, body)                               \
-	do {                                                              \
-		int64_t *_ti = descriptor_of(obj);                          \
-		if (_ti)                                                     \
-		{                                                           \
-			int64_t _n = _ti[1];                                    \
-			for (int64_t _i = 0; _i < _n; _i++)                     \
-			{                                                       \
-				void *child = *(void**)((char*)(obj) + _ti[2+_i]);  \
-				if (child && *RC(child) != 0)                       \
-				{                                                   \
-					body;                                           \
-				}                                                   \
-			}                                                       \
-		}                                                           \
-	} while (0)
 
 static void mark_gray(void *s)
 {

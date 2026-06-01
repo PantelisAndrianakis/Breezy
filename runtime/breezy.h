@@ -32,4 +32,8 @@ void    bzy_sb_append(void *sb, void *s);            /* Append a string's bytes.
 void    bzy_sb_append_cstr(void *sb, const char *bytes, int64_t len);
 void   *bzy_sb_to_string(void *sb);                  /* Owned (+1) immutable snapshot. */
 
+void   *bzy_array_new(int64_t n, int64_t elem_is_managed); /* Owned (+1) zeroed array. */
+int64_t bzy_array_len(void *a);
+void    bzy_oob(int64_t index, int64_t length);     /* Print + abort (no return). */
+
 #endif

@@ -148,6 +148,29 @@ static void test_string_concat(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_array_value_roundtrip(void)
+{
+	int64_t before = bzy_live_count();
+	void *a = bzy_array_new(3, 0);          /* value array, 3 slots */
+	ASSERT_INT(bzy_array_len(a), 3);
+	*(int64_t*)((char*)a + 32 + 1*8) = 42;  /* a[1] = 42 */
+	ASSERT_INT(*(int64_t*)((char*)a + 32 + 1*8), 42);
+	bzy_release(a);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_array_object_elements_released(void)
+{
+	int64_t before = bzy_live_count();
+	void *a = bzy_array_new(2, 1);          /* managed-element array */
+	void *o = bzy_alloc(24);                /* a plain refcount-1 object */
+	*(void**)o = vtable_no_field();
+	*(void**)((char*)a + 32 + 0*8) = o;     /* a[0] = o (store the pointer) */
+	/* The array owns one reference to o; releasing the array must release o. */
+	bzy_release(a);
+	ASSERT_INT(bzy_live_count(), before);   /* both a and o reclaimed */
+}
+
 static void test_builder_append_tostring(void)
 {
 	int64_t before = bzy_live_count();
@@ -237,6 +260,8 @@ int main(void)
 	RUN(test_unmanaged_object_ignored);
 	RUN(test_string_new_and_len);
 	RUN(test_string_concat);
+	RUN(test_array_value_roundtrip);
+	RUN(test_array_object_elements_released);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);

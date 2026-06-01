@@ -7,7 +7,7 @@ CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc -Wl,--stack,0x4000000
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c
 
-RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c
+RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c
 RT_HDR  = runtime/breezy.h
 
 .PHONY: all clean test integration
@@ -42,7 +42,8 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -c runtime/alloc.c -o runtime/alloc.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/print.c -o runtime/print.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/string.c -o runtime/string.o
-	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o
+	$(CC) $(CFLAGS) -Iruntime -c runtime/array.c -o runtime/array.o
+	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o
 
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC)
