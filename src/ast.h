@@ -76,6 +76,13 @@ static inline int ty_is_float(TypeKind k)
 	return k == TY_FLOAT || k == TY_DOUBLE;
 }
 
+/* True for ARC-managed, heap, 8-byte-pointer kinds (objects and strings). Use
+   this — not a bare `== TY_OBJECT` — wherever a retain/release decision is made. */
+static inline int ty_is_managed(TypeKind k)
+{
+	return k == TY_OBJECT || k == TY_STRING;
+}
+
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
 static inline int ty_rank(TypeKind k)
 {

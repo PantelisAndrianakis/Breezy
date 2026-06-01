@@ -119,6 +119,28 @@ static void test_float_compare_is_boolean(void)
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);
 }
 
+static void test_string_literal_type(void)
+{
+	Func *f = build1("void main() { string s; s = \"x\"; }")->funcs[0];
+	Stmt *a = f->body->stmts[1];
+	ASSERT_INT(a->value->type.kind, TY_STRING);
+}
+
+static void test_concat_is_string(void)
+{
+	Func *f = build1("void main() { string s; s = \"a\" + \"b\"; }")->funcs[0];
+	Stmt *a = f->body->stmts[1];
+	ASSERT_INT(a->value->kind, EX_BINARY);
+	ASSERT_INT(a->value->type.kind, TY_STRING);
+}
+
+static void test_length_is_int(void)
+{
+	Func *f = build1("void main() { string s; int n; s = \"hi\"; n = length(s); }")->funcs[0];
+	Stmt *a = f->body->stmts[3];
+	ASSERT_INT(a->value->type.kind, TY_INT);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -165,6 +187,9 @@ int main(void)
 	RUN(test_int_promotes_to_double);
 	RUN(test_implicit_int_to_double_init);
 	RUN(test_float_compare_is_boolean);
+	RUN(test_string_literal_type);
+	RUN(test_concat_is_string);
+	RUN(test_length_is_int);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

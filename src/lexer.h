@@ -11,6 +11,7 @@ typedef enum
 	TOKEN_BOOLEAN, TOKEN_TRUE, TOKEN_FALSE,              /* boolean type + literals */
 	TOKEN_FLOAT, TOKEN_DOUBLE, TOKEN_FLOAT_LIT,          /* float/double types + literal */
 	TOKEN_STR_LIT,                                       /* "..." string literal */
+	TOKEN_STRING,                                        /* `string` type keyword */
 	TOKEN_PLUS, TOKEN_MINUS, TOKEN_STAR, TOKEN_SLASH,
 	TOKEN_ASSIGN, TOKEN_EQ, TOKEN_NEQ, TOKEN_LT, TOKEN_GT, TOKEN_LTE, TOKEN_GTE,
 	TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE, TOKEN_RBRACE,

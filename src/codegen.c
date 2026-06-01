@@ -185,7 +185,7 @@ static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
    method call returning an object. Other object reads are borrowed (+0). */
 static int expr_is_owned(Expr *e)
 {
-	if (e->type.kind != TY_OBJECT)
+	if (!ty_is_managed(e->type.kind))
 	{
 		return 0;
 	}
@@ -507,7 +507,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);
 	ClassInfo *c=types_find_class(tt,e->anno_str);
 	MethodInfo *m=types_find_method(c,e->name);
-	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, e->type.kind==TY_OBJECT,
+	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, ty_is_managed(e->type.kind),
 					  ty_is_float(e->type.kind), m->param_types, m->param_count);
 }
 
@@ -697,7 +697,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
-			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, e->type.kind==TY_OBJECT,
+			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
 							  ty_is_float(e->type.kind), fi->param_types, fi->param_count);
 		}
 		break;
@@ -780,7 +780,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_VARDECL:
 		if (s->decl_init)
 		{
-			if (s->decl_type.kind==TY_OBJECT)
+			if (ty_is_managed(s->decl_type.kind))
 			{
 				cg_expr_owned(cg,tt,s->decl_init);
 				cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
@@ -803,7 +803,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 		break;
 	case ST_ASSIGN:
-		if (s->target->type.kind==TY_OBJECT)
+		if (ty_is_managed(s->target->type.kind))
 		{
 			cg_assign_object(cg,tt,s->target,s->value);
 		}
@@ -816,14 +816,14 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	case ST_EXPR:
 		cg_expr(cg,tt,s->expr);
-		if (s->expr->type.kind==TY_OBJECT && expr_is_owned(s->expr))
+		if (ty_is_managed(s->expr->type.kind) && expr_is_owned(s->expr))
 		{
 			cg_emit(cg,"    mov rcx, rax");
 			cg_release_rcx(cg);
 		}
 		break;
 	case ST_RETURN:
-		if (s->ret_val && s->ret_val->type.kind==TY_OBJECT)
+		if (s->ret_val && ty_is_managed(s->ret_val->type.kind))
 		{
 			if (s->ret_val->kind==EX_IDENT)
 			{
@@ -994,7 +994,7 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 	int nobj=0;
 	for (int i=0; i<c->field_count; i++)
 	{
-		if (c->fields[i].type.kind==TY_OBJECT)
+		if (ty_is_managed(c->fields[i].type.kind))
 		{
 			nobj++;
 		}
@@ -1003,7 +1003,7 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 	cg_emit(cg,"    dq %d", nobj);
 	for (int i=0; i<c->field_count; i++)
 	{
-		if (c->fields[i].type.kind==TY_OBJECT)
+		if (ty_is_managed(c->fields[i].type.kind))
 		{
 			cg_emit(cg,"    dq %d", c->fields[i].offset);
 		}

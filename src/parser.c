@@ -320,6 +320,13 @@ static int parse_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+	if (check(p,TOKEN_STRING))
+	{
+		out->kind=TY_STRING;
+		out->class_name[0]='\0';
+		advance(p);
+		return 1;
+	}
 	if (check(p,TOKEN_IDENT))
 	{
 		out->kind=TY_OBJECT;
@@ -334,6 +341,10 @@ static int starts_vardecl(Parser *p)
 {
 	TypeKind k;
 	if (scalar_type_kind(p->cur.type, &k) && k != TY_VOID)
+	{
+		return 1;
+	}
+	if (check(p,TOKEN_STRING))
 	{
 		return 1;
 	}

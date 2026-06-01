@@ -113,7 +113,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		e->type.kind = (e->int_suffix[0]=='f') ? TY_FLOAT : TY_DOUBLE;
 		break;
 	case EX_STR:
-		die(e->line,"string typing arrives in Part 4a Task 3",NULL);
+		e->type.kind=TY_STRING;
 		break;
 	case EX_CAST:
 	{
@@ -179,6 +179,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
 		TypeKind a=e->lhs->type.kind, b=e->rhs->type.kind;
+		if (a==TY_STRING || b==TY_STRING)
+		{
+			if (e->op!=TOKEN_PLUS || a!=TY_STRING || b!=TY_STRING)
+			{
+				die(e->line,"strings support only '+' concatenation of two strings",NULL);
+			}
+
+			e->type.kind=TY_STRING;
+			break;
+		}
+
 		if (ty_is_float(a) || ty_is_float(b))
 		{
 			TypeKind ft;
@@ -320,12 +331,23 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			TypeKind ak=e->args[0]->type.kind;
-			if (!ty_is_int(ak) && ak!=TY_BOOL && !ty_is_float(ak))
+			if (!ty_is_int(ak) && ak!=TY_BOOL && !ty_is_float(ak) && ak!=TY_STRING)
 			{
-				die(e->line,"print expects a scalar argument",NULL);
+				die(e->line,"print expects a scalar or string argument",NULL);
 			}
 
 			e->type.kind=TY_VOID;
+			break;
+		}
+
+		if (strcmp(e->name,"length")==0)
+		{
+			if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+			{
+				die(e->line,"length expects one string argument",NULL);
+			}
+
+			e->type.kind=TY_INT;
 			break;
 		}
 
