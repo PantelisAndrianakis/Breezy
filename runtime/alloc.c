@@ -62,7 +62,15 @@ static int64_t *descriptor_of(void *o)
 static int has_object_children(void *o)
 {
 	int64_t *ti = descriptor_of(o);
-	return ti && ti[0] > 0;
+	return ti && ti[1] > 0;
+}
+
+/* The class finalizer (descriptor word 0, at vtable - 16), or NULL when the
+   class declares none. Runs before the object's memory is freed. */
+static void (*finalizer_of(void *o))(void *)
+{
+	int64_t *d = descriptor_of(o);
+	return d ? (void(*)(void*))d[0] : NULL;
 }
 
 /* The roots buffer holds objects whose refcount was decremented to a positive
@@ -114,13 +122,19 @@ void bzy_retain(void *obj)
    is known to be acyclic garbage (refcount reached zero). */
 static void free_object(void *obj)
 {
+	void (*fin)(void*) = finalizer_of(obj);
+	if (fin)
+	{
+		fin(obj);
+	}
+
 	int64_t *ti = descriptor_of(obj);
 	if (ti)
 	{
-		int64_t n = ti[0];
+		int64_t n = ti[1];
 		for (int64_t i = 0; i < n; i++)
 		{
-			void *child = *(void**)((char*)obj + ti[1 + i]);
+			void *child = *(void**)((char*)obj + ti[2 + i]);
 			bzy_release(child);
 		}
 	}
@@ -194,10 +208,10 @@ int64_t bzy_roots_buffered(void)
 		int64_t *_ti = descriptor_of(obj);                          \
 		if (_ti)                                                     \
 		{                                                           \
-			int64_t _n = _ti[0];                                    \
+			int64_t _n = _ti[1];                                    \
 			for (int64_t _i = 0; _i < _n; _i++)                     \
 			{                                                       \
-				void *child = *(void**)((char*)(obj) + _ti[1+_i]);  \
+				void *child = *(void**)((char*)(obj) + _ti[2+_i]);  \
 				if (child && *RC(child) != 0)                       \
 				{                                                   \
 					body;                                           \
@@ -323,9 +337,16 @@ void bzy_collect_cycles(void)
 
 	g_roots_n = 0;
 
-	/* Free the gathered garbage in a flat pass: no traversal touches it now. */
+	/* Free the gathered garbage in a flat pass: no traversal touches it now.
+	   Each node's finalizer runs just before its memory is reclaimed. */
 	for (int64_t i = 0; i < g_white_n; i++)
 	{
+		void (*fin)(void*) = finalizer_of(g_white[i]);
+		if (fin)
+		{
+			fin(g_white[i]);
+		}
+
 		g_live--;
 		free(g_white[i]);
 	}

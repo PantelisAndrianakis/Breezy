@@ -420,10 +420,13 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `boolean` (`true`/`false`)
 - [x] `float` / `double` (IEEE-754, SSE path)
 
-**Core types (Part 4)**
+**Core types & collections (Part 4)**
 - [ ] Strings with amortized append (`StringBuilder`)
 - [ ] Arrays (`T[]`) with bounds checks
 - [ ] Maps (`map<K,V>`, Swiss Table + wyhash)
+- [ ] `foreach` loop + iterator protocol
+- [ ] Stdlib-only monomorphized generics (specialized per element type, no boxing)
+- [ ] Generic collections — `List` / `Set` / `Queue` / `Deque` / `Stack`, holding primitives or objects, each with `.contains()`
 
 **Concurrency & I/O (Part 5)**
 - [ ] Breeze scheduler (M:N, one thread per core)
@@ -435,5 +438,5 @@ The language design is settled. The compiler and runtime are being built from sc
 
 **Other targets & beyond**
 - [ ] x86-64 codegen (Linux ELF64)
-- [ ] Interfaces, generics, standard library
+- [ ] Interfaces, user-definable generics (`class Foo<T>`), extended standard library
 - [ ] Self-hosting compiler

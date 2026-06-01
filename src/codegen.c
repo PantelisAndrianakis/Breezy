@@ -986,6 +986,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 {
 	cg_emit(cg,"__typeinfo_%s:", c->name);
+	cg_emit(cg,"    dq 0");   /* Finalizer slot (vtable-16): none for user classes. */
 	int nobj=0;
 	for (int i=0; i<c->field_count; i++)
 	{

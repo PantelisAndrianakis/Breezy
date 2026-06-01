@@ -2,22 +2,23 @@
 #include "breezy.h"
 #include <stdint.h>
 
-/* A descriptor for one object field at offset 24, followed by the vtable word.
-   The layout in memory is [n][off0][typeinfo-pointer][vtable...], so we hand
-   out vtable = &slot[3] and the runtime reads the descriptor at vtable - 8. */
-static int64_t g_desc_with_field[] = { 1, 24, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
-static int64_t g_desc_no_field[]   = { 0, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
+/* A descriptor for one object field at offset 24, preceded by the finalizer
+   slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],
+   so we hand out vtable = &slot[4] and the runtime reads the descriptor (which the
+   typeinfo-pointer word points at) at vtable - 8. */
+static int64_t g_desc_with_field[] = { 0 /* Finalizer. */, 1, 24, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
+static int64_t g_desc_no_field[]   = { 0 /* Finalizer. */, 0, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
 
 static void *vtable_with_field(void)
 {
-	g_desc_with_field[2] = (int64_t)&g_desc_with_field[0];
-	return &g_desc_with_field[3];
+	g_desc_with_field[3] = (int64_t)&g_desc_with_field[0];
+	return &g_desc_with_field[4];
 }
 
 static void *vtable_no_field(void)
 {
-	g_desc_no_field[1] = (int64_t)&g_desc_no_field[0];
-	return &g_desc_no_field[2];
+	g_desc_no_field[2] = (int64_t)&g_desc_no_field[0];
+	return &g_desc_no_field[3];
 }
 
 static void test_alloc_sets_refcount_and_live(void)
@@ -97,13 +98,41 @@ static void test_unmanaged_object_ignored(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
-/* A node descriptor: one object field at offset 24 (the widened-header base). */
-static int64_t g_node_desc[] = { 1, 24, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
+/* A node descriptor: one object field at offset 24 (the widened-header base),
+   preceded by the finalizer slot. */
+static int64_t g_node_desc[] = { 0 /* Finalizer. */, 1, 24, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
 
 static void *node_vtable(void)
 {
-	g_node_desc[2] = (int64_t)&g_node_desc[0];
-	return &g_node_desc[3];
+	g_node_desc[3] = (int64_t)&g_node_desc[0];
+	return &g_node_desc[4];
+}
+
+/* A no-field descriptor carrying a finalizer, to prove the finalizer fires on free. */
+static int g_fin_calls = 0;
+static void test_finalizer(void *obj)
+{
+	(void)obj;
+	g_fin_calls++;
+}
+
+static int64_t g_fin_desc[] = { 0 /* Finalizer. */, 0, 0 /* Typeinfo pointer. */, 0 /* Vtable slot zero. */ };
+static void *fin_vtable(void)
+{
+	g_fin_desc[0] = (int64_t)(void*)test_finalizer;
+	g_fin_desc[2] = (int64_t)&g_fin_desc[0];
+	return &g_fin_desc[3];
+}
+
+static void test_finalizer_runs_on_free(void)
+{
+	int64_t before = bzy_live_count();
+	g_fin_calls = 0;
+	void *o = bzy_alloc(24);
+	*(void**)o = fin_vtable();
+	bzy_release(o);
+	ASSERT_INT(g_fin_calls, 1);
+	ASSERT_INT(bzy_live_count(), before);
 }
 
 static void test_cycle_is_collected(void)
@@ -169,6 +198,7 @@ int main(void)
 	RUN(test_release_frees_owned_field);
 	RUN(test_loop_reuse_is_bounded);
 	RUN(test_unmanaged_object_ignored);
+	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);
 	RUN(test_self_cycle_collected);
 	RUN(test_live_cycle_kept);
