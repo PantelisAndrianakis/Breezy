@@ -163,6 +163,29 @@ static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
 	}
 }
 
+/* Leave the address of element a[i] in rbx, bounds-checked. Evaluates the array
+   (lhs) then the index (rhs); clobbers rax/rcx/rdx. An out-of-range index calls
+   bzy_oob (no return). xmm0 is untouched on the in-range path, so a float/double
+   value being stored survives address computation. */
+static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	cg_expr(cg,tt,e->lhs);                 /* base -> rax */
+	cg_emit(cg,"    push rax");
+	cg_expr(cg,tt,e->rhs);                 /* index -> rax */
+	cg_emit(cg,"    mov rcx, rax");
+	cg_emit(cg,"    pop rax");             /* base */
+	cg_emit(cg,"    mov rdx, [rax + 24]"); /* length */
+	int ok = cg_label(cg);
+	cg_emit(cg,"    cmp rcx, rdx");
+	cg_emit(cg,"    jb .L%d", ok);         /* unsigned: catches negative and >= length */
+	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
+	cg_emit(cg,"    and rsp, -16");
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call bzy_oob");        /* args: rcx = index, rdx = length */
+	cg_emit(cg,".L%d:", ok);
+	cg_emit(cg,"    lea rbx, [rax + rcx*8 + 32]");
+}
+
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
    matter the current rsp alignment or pending pushes; the argument is in rcx. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
@@ -209,7 +232,7 @@ static int expr_is_owned(Expr *e)
 	/* A managed EX_BINARY is a string concat (bzy_str_concat returns +1); an
 	   EX_STR literal is +1 from bzy_str_new. */
 	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
-		   || e->kind==EX_STR || e->kind==EX_BINARY;
+		   || e->kind==EX_STR || e->kind==EX_BINARY || e->kind==EX_NEWARRAY;
 }
 
 /* Retain the object pointer currently in rax; rax is preserved. */
@@ -676,9 +699,22 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
 	case EX_NEWARRAY:
+		cg_expr(cg,tt,e->lhs);             /* count -> rax */
+		cg_emit(cg,"    mov rcx, rax");
+		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem->kind) ? 1 : 0);
+		cg_aligned_call(cg,"bzy_array_new");   /* owned (+1) array in rax */
+		break;
 	case EX_INDEX:
-		fprintf(stderr,"codegen: array lowering arrives in Part 4b Task 4\n");
-		exit(1);
+		cg_index_addr(cg,tt,e);
+		if (ty_is_float(e->type.kind))
+		{
+			cg_load_fp(cg,e->type.kind,"[rbx]");
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbx]");
+		}
+
 		break;
 	case EX_STR:
 	{
@@ -847,6 +883,23 @@ static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {
 	int fp = ty_is_float(target->type.kind);
+	if (target->kind==EX_INDEX)
+	{
+		if (fp)
+		{
+			cg_index_addr(cg,tt,target);   /* rbx = element address; xmm0 preserved */
+			cg_store_fp(cg,target->type.kind,"[rbx]");
+		}
+		else
+		{
+			cg_emit(cg,"    push rax");      /* the integer value */
+			cg_index_addr(cg,tt,target);
+			cg_emit(cg,"    pop rax");
+			cg_emit(cg,"    mov [rbx], rax");
+		}
+
+		return;
+	}
 	if (target->kind==EX_IDENT)
 	{
 		char mem[32];
@@ -884,6 +937,18 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
    and any owned receiver temporary. */
 static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 {
+	if (target->kind==EX_INDEX)
+	{
+		cg_expr_owned(cg,tt,value);          /* +1 new element -> rax */
+		cg_emit(cg,"    push rax");
+		cg_index_addr(cg,tt,target);         /* rbx = element address */
+		cg_emit(cg,"    pop rax");
+		cg_emit(cg,"    mov rdx, [rbx]");     /* old element */
+		cg_emit(cg,"    mov [rbx], rax");     /* store new (transfers the +1) */
+		cg_emit(cg,"    mov rcx, rdx");
+		cg_release_rcx(cg);                   /* release old */
+		return;
+	}
 	if (target->kind==EX_IDENT)
 	{
 		cg_expr_owned(cg,tt,value);
@@ -1183,6 +1248,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_sb_new");
 	cg_emit(cg,"extern bzy_sb_append");
 	cg_emit(cg,"extern bzy_sb_to_string");
+	cg_emit(cg,"extern bzy_array_new");
+	cg_emit(cg,"extern bzy_array_len");
+	cg_emit(cg,"extern bzy_oob");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

@@ -1,0 +1,23 @@
+void main()
+{
+	int[] a;
+	int i;
+	int sum;
+	a = new int[5];
+	i = 0;
+	while (i < 5)
+	{
+		a[i] = i * i;
+		i = i + 1;
+	}
+
+	sum = 0;
+	i = 0;
+	while (i < a.length)
+	{
+		sum = sum + a[i];
+		i = i + 1;
+	}
+
+	print(sum);
+}
