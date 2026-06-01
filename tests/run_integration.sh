@@ -28,6 +28,7 @@ check cycle       tests/samples/proj_cycle     "0"
 check scalars     tests/samples/proj_scalars   $'0\n0\n5000000000\n4000000000\ntrue\n-1\nfalse\ntrue'
 check floats      tests/samples/proj_floats    $'3.75\n3.375\n7\ntrue\n10\n1.5'
 check floats_fn   tests/samples/proj_floats_fn $'10'
+check string      tests/samples/proj_string    $'Hello, Breezy\n13'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

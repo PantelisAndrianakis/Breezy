@@ -11,6 +11,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->out=out;
 	cg->label_count=0;
 	cg->fpk_count=0;
+	cg->strk_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -125,6 +126,21 @@ static int cg_fp_const(Codegen *cg, Expr *e)
 	return id;
 }
 
+/* Record a string literal in the constant pool; returns its __str id. */
+static int cg_str_const(Codegen *cg, Expr *e)
+{
+	int id = cg->strk_count++;
+	int n = 0;
+	while (e->str_val[n] && n < 255)
+	{
+		cg->strk[id].bytes[n] = e->str_val[n];
+		n++;
+	}
+
+	cg->strk[id].len = n;
+	return id;
+}
+
 /* Load a float/double from 'mem' into xmm0. */
 static void cg_load_fp(Codegen *cg, TypeKind k, const char *mem)
 {
@@ -190,7 +206,10 @@ static int expr_is_owned(Expr *e)
 		return 0;
 	}
 
-	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL;
+	/* A managed EX_BINARY is a string concat (bzy_str_concat returns +1); an
+	   EX_STR literal is +1 from bzy_str_new. */
+	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
+		   || e->kind==EX_STR || e->kind==EX_BINARY;
 }
 
 /* Retain the object pointer currently in rax; rax is preserved. */
@@ -210,6 +229,28 @@ static void cg_expr_owned(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		cg_retain_rax(cg);
 	}
+}
+
+/* String concatenation: evaluate both operands owned, call bzy_str_concat, then
+   release the two operand temporaries. Operands and result are spilled on the
+   machine stack so nested concats compose. */
+static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	cg_expr_owned(cg,tt,e->lhs);
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    mov [rsp], rax");          /* lhs */
+	cg_expr_owned(cg,tt,e->rhs);
+	cg_emit(cg,"    mov [rsp + 8], rax");      /* rhs */
+	cg_emit(cg,"    mov rcx, [rsp]");
+	cg_emit(cg,"    mov rdx, [rsp + 8]");
+	cg_aligned_call(cg,"bzy_str_concat");      /* Owned (+1) result in rax. */
+	cg_emit(cg,"    mov [rsp + 16], rax");
+	cg_emit(cg,"    mov rcx, [rsp]");           /* Release the lhs temporary. */
+	cg_release_rcx(cg);
+	cg_emit(cg,"    mov rcx, [rsp + 8]");       /* Release the rhs temporary. */
+	cg_release_rcx(cg);
+	cg_emit(cg,"    mov rax, [rsp + 16]");
+	cg_emit(cg,"    add rsp, 32");
 }
 
 /* Floating-point binary op. Operands evaluate to xmm0; the left operand is
@@ -284,6 +325,12 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	if (e->type.kind==TY_STRING)
+	{
+		cg_str_concat(cg,tt,e);
+		return;
+	}
+
 	if (ty_is_float(e->lhs->type.kind) || ty_is_float(e->rhs->type.kind))
 	{
 		cg_binary_fp(cg,tt,e);
@@ -545,6 +592,25 @@ static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->args[0]);
 	TypeKind k=e->args[0]->type.kind;
+	if (k==TY_STRING)
+	{
+		int owned = expr_is_owned(e->args[0]);
+		if (owned)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		}
+
+		cg_emit(cg,"    mov rcx, rax");
+		cg_aligned_call(cg,"bzy_print_str");
+		if (owned)
+		{
+			cg_emit(cg,"    mov rcx, [rbp - %d]", cg->val_save);
+			cg_release_rcx(cg);
+		}
+
+		return;
+	}
+
 	if (ty_is_float(k))
 	{
 		if (k==TY_FLOAT)
@@ -574,9 +640,13 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
 	case EX_STR:
-		fprintf(stderr,"codegen: string lowering arrives in Part 4a Task 5\n");
-		exit(1);
+	{
+		int id=cg_str_const(cg,e);
+		cg_emit(cg,"    lea rcx, [rel __str%d]", id);
+		cg_emit(cg,"    mov rdx, %d", cg->strk[id].len);
+		cg_aligned_call(cg,"bzy_str_new");   /* Owned (+1) string in rax. */
 		break;
+	}
 	case EX_FLOAT:
 	{
 		int id=cg_fp_const(cg,e);
@@ -693,6 +763,25 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    sub rsp, 32");
 			cg_emit(cg,"    call bzy_collect_cycles");
 			cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
+		}
+		else if (strcmp(e->name,"length")==0)
+		{
+			cg_expr(cg,tt,e->args[0]);
+			int owned = expr_is_owned(e->args[0]);
+			if (owned)
+			{
+				cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Save the string pointer. */
+			}
+
+			cg_emit(cg,"    mov rcx, rax");
+			cg_aligned_call(cg,"bzy_str_len");   /* Length (int) in rax. */
+			if (owned)
+			{
+				cg_emit(cg,"    mov rcx, [rbp - %d]", cg->val_save);
+				cg_emit(cg,"    push rax");        /* Preserve the length across the release. */
+				cg_release_rcx(cg);
+				cg_emit(cg,"    pop rax");
+			}
 		}
 		else
 		{
@@ -1038,6 +1127,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_print_u64");
 	cg_emit(cg,"extern bzy_print_bool");
 	cg_emit(cg,"extern bzy_print_f64");
+	cg_emit(cg,"extern bzy_str_new");
+	cg_emit(cg,"extern bzy_str_concat");
+	cg_emit(cg,"extern bzy_str_len");
+	cg_emit(cg,"extern bzy_print_str");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
@@ -1097,5 +1190,16 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		{
 			cg_emit(cg,"__fpk%d: dq 0x%016llx", i, cg->fpk[i].bits);
 		}
+	}
+
+	for (int i=0; i<cg->strk_count; i++)
+	{
+		fprintf(cg->out, "__str%d: db ", i);
+		for (int j=0; j<cg->strk[i].len; j++)
+		{
+			fprintf(cg->out, "%d,", (unsigned char)cg->strk[i].bytes[j]);
+		}
+
+		fprintf(cg->out, "0\n");   /* Trailing NUL (bzy_str_new also NUL-terminates). */
 	}
 }

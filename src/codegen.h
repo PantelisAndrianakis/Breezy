@@ -19,6 +19,12 @@ typedef struct
 		unsigned long long bits;  /* IEEE-754 bit pattern (low 32 bits used when is_float). */
 	} fpk[256];        /* Floating-point literal pool, emitted in .data as __fpk<id>. */
 	int fpk_count;
+	struct
+	{
+		char bytes[256];          /* Decoded literal bytes (no embedded NUL). */
+		int  len;
+	} strk[256];       /* String literal pool, emitted in .data as __str<id>. */
+	int strk_count;
 } Codegen;
 
 void cg_init(Codegen *cg, FILE *out);
