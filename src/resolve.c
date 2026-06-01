@@ -122,6 +122,10 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_STR:
 		e->type.kind=TY_STRING;
 		break;
+	case EX_NEWARRAY:
+	case EX_INDEX:
+		die(e->line,"array typing arrives in Part 4b Task 3",NULL);
+		break;
 	case EX_CAST:
 	{
 		resolve_expr(st,e->lhs,tc);

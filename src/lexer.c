@@ -238,6 +238,12 @@ Token lexer_next(Lexer *l)
 	case '}':
 		t.type = TOKEN_RBRACE;
 		return t;
+	case '[':
+		t.type = TOKEN_LBRACKET;
+		return t;
+	case ']':
+		t.type = TOKEN_RBRACKET;
+		return t;
 	case ';':
 		t.type = TOKEN_SEMICOLON;
 		return t;
@@ -369,6 +375,10 @@ const char *token_type_name(TokenType t)
 		return "STR_LIT";
 	case TOKEN_STRING:
 		return "string";
+	case TOKEN_LBRACKET:
+		return "[";
+	case TOKEN_RBRACKET:
+		return "]";
 	case TOKEN_TRUE:
 		return "true";
 	case TOKEN_FALSE:

@@ -103,6 +103,14 @@ static void test_string_literal(void)
 	ASSERT_STR(t.text, "a\nb");
 }
 
+static void test_brackets(void)
+{
+	Lexer l;
+	lexer_init(&l, "[ ]");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_LBRACKET);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_RBRACKET);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -168,6 +176,7 @@ int main(void)
 	RUN(test_float_keywords);
 	RUN(test_float_literals);
 	RUN(test_string_literal);
+	RUN(test_brackets);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

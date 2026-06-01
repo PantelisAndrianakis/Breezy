@@ -48,6 +48,26 @@ static void test_float_cast(void)
 	ASSERT_INT(e->type.kind, TY_FLOAT);
 }
 
+static void test_new_array(void)
+{
+	Expr *e = parse_str("new int[5]");
+	ASSERT_INT(e->kind, EX_NEWARRAY);
+	ASSERT_INT(e->type.kind, TY_ARRAY);
+	ASSERT_INT(e->type.elem->kind, TY_INT);
+	ASSERT_INT(e->lhs->kind, EX_INT);
+}
+
+static void test_index_and_length(void)
+{
+	Expr *e = parse_str("a[2]");
+	ASSERT_INT(e->kind, EX_INDEX);
+	ASSERT_INT(e->lhs->kind, EX_IDENT);
+	ASSERT_INT(e->rhs->kind, EX_INT);
+	Expr *n = parse_str("a.length");
+	ASSERT_INT(n->kind, EX_FIELD);
+	ASSERT_STR(n->name, "length");
+}
+
 static void test_string_expr(void)
 {
 	Expr *e = parse_str("\"hi\"");
@@ -129,6 +149,16 @@ static void test_parse_double_vardecl(void)
 	ASSERT_INT(b->stmts[1]->decl_type.kind, TY_FLOAT);
 }
 
+static void test_array_type_decls(void)
+{
+	Unit *u = parse_unit_str("void m() { int[] a; Foo[] b; }");
+	Block *body = u->funcs[0]->body;
+	ASSERT_INT(body->stmts[0]->decl_type.kind, TY_ARRAY);
+	ASSERT_INT(body->stmts[0]->decl_type.elem->kind, TY_INT);
+	ASSERT_INT(body->stmts[1]->decl_type.kind, TY_ARRAY);   /* object array via peek2 */
+	ASSERT_INT(body->stmts[1]->decl_type.elem->kind, TY_OBJECT);
+}
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -172,6 +202,8 @@ int main(void)
 	RUN(test_float_literal);
 	RUN(test_float_cast);
 	RUN(test_string_expr);
+	RUN(test_new_array);
+	RUN(test_index_and_length);
 	RUN(test_precedence);
 	RUN(test_method_call);
 	RUN(test_field_access);
@@ -179,6 +211,7 @@ int main(void)
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_double_vardecl);
+	RUN(test_array_type_decls);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);

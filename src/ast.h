@@ -8,13 +8,15 @@ typedef enum
 	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG,    /* signed   */
 	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* unsigned */
 	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only */
+	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array */
 	TY_OBJECT,
-	TY_STRING   /* reserved for Part 4a; not yet wired into the language. */
+	TY_STRING   /* immutable string (Part 4a). */
 } TypeKind;
-typedef struct
+typedef struct TypeRef
 {
 	TypeKind kind;
 	char class_name[64];
+	struct TypeRef *elem;   /* TY_ARRAY only: element type; NULL otherwise. */
 } TypeRef;
 
 /* Width in bits of a scalar kind. Booleans report 1; objects/strings are
@@ -41,6 +43,7 @@ static inline int ty_bits(TypeKind k)
 		return 32;
 	case TY_DOUBLE:
 		return 64;
+	case TY_ARRAY:
 	case TY_OBJECT:
 	case TY_STRING:
 		return 64;
@@ -80,7 +83,7 @@ static inline int ty_is_float(TypeKind k)
    this — not a bare `== TY_OBJECT` — wherever a retain/release decision is made. */
 static inline int ty_is_managed(TypeKind k)
 {
-	return k == TY_OBJECT || k == TY_STRING;
+	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
@@ -91,8 +94,8 @@ static inline int ty_rank(TypeKind k)
 
 typedef enum
 {
-	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW,
-	EX_BINARY, EX_UNARY, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD
+	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
+	EX_BINARY, EX_UNARY, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX
 } ExprKind;
 
 typedef struct Expr Expr;
@@ -188,6 +191,7 @@ typedef struct
 
 void   ast_free_all(void);
 Expr  *expr_new(ExprKind kind, int line);
+TypeRef *typeref_box(TypeRef t);
 Stmt  *stmt_new(StmtKind kind, int line);
 Block *block_new(void);
 void   block_push(Block *b, Stmt *s);

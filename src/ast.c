@@ -39,6 +39,12 @@ Expr *expr_new(ExprKind kind, int line)
 	e->line=line;
 	return e;
 }
+TypeRef *typeref_box(TypeRef t)
+{
+	TypeRef *p = track(calloc(1,sizeof(TypeRef)));
+	*p = t;
+	return p;
+}
 Stmt *stmt_new(StmtKind kind, int line)
 {
 	Stmt *s = track(calloc(1,sizeof(Stmt)));

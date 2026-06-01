@@ -6,7 +6,8 @@
 static void advance(Parser *p)
 {
 	p->cur = p->peek;
-	p->peek = lexer_next(&p->lex);
+	p->peek = p->peek2;
+	p->peek2 = lexer_next(&p->lex);
 }
 
 static int  check(Parser *p, TokenType tt)
@@ -41,6 +42,7 @@ void parser_init(Parser *p, const char *src)
 {
 	lexer_init(&p->lex, src);
 	p->peek = lexer_next(&p->lex);
+	p->peek2 = lexer_next(&p->lex);
 	advance(p);
 }
 
@@ -52,6 +54,7 @@ static Expr *parse_postfix(Parser *p);
 static Expr *parse_primary(Parser *p);
 static int   parse_args(Parser *p, Expr **out);
 static int   parse_type(Parser *p, TypeRef *out);
+static int   parse_base_type(Parser *p, TypeRef *out);
 static int   scalar_type_kind(TokenType t, TypeKind *out);
 
 Expr *parse_expr(Parser *p)
@@ -140,9 +143,20 @@ static Expr *parse_unary(Parser *p)
 static Expr *parse_postfix(Parser *p)
 {
 	Expr *e = parse_primary(p);
-	while (check(p,TOKEN_DOT))
+	while (check(p,TOKEN_DOT) || check(p,TOKEN_LBRACKET))
 	{
 		int line=p->cur.line;
+		if (check(p,TOKEN_LBRACKET))
+		{
+			advance(p);
+			Expr *ix=expr_new(EX_INDEX,line);
+			ix->lhs=e;
+			ix->rhs=parse_expr(p);
+			expect(p,TOKEN_RBRACKET);
+			e=ix;
+			continue;
+		}
+
 		advance(p);
 		Token name = expect(p, TOKEN_IDENT);
 		if (check(p,TOKEN_LPAREN))
@@ -227,11 +241,23 @@ static Expr *parse_primary(Parser *p)
 	if (check(p,TOKEN_NEW))
 	{
 		advance(p);
-		Token cls=expect(p,TOKEN_IDENT);
+		TypeRef et;
+		parse_base_type(p,&et);
+		if (check(p,TOKEN_LBRACKET))
+		{
+			advance(p);                       /* '[' */
+			Expr *e=expr_new(EX_NEWARRAY,line);
+			e->lhs=parse_expr(p);             /* the count */
+			expect(p,TOKEN_RBRACKET);
+			e->type.kind=TY_ARRAY;
+			e->type.elem=typeref_box(et);
+			return e;
+		}
+
 		expect(p,TOKEN_LPAREN);
 		expect(p,TOKEN_RPAREN);
 		Expr *e=expr_new(EX_NEW,line);
-		strcpy(e->name,cls.text);
+		strcpy(e->name,et.class_name);        /* object: et is an IDENT class */
 		return e;
 	}
 	if (check(p,TOKEN_IDENT))
@@ -310,9 +336,11 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 	}
 }
 
-static int parse_type(Parser *p, TypeRef *out)
+/* Parse a base (non-array) type: scalar / string / IDENT class. */
+static int parse_base_type(Parser *p, TypeRef *out)
 {
 	TypeKind k;
+	out->elem=NULL;
 	if (scalar_type_kind(p->cur.type, &k))
 	{
 		out->kind=k;
@@ -337,6 +365,29 @@ static int parse_type(Parser *p, TypeRef *out)
 	return 0;
 }
 
+/* A base type followed by zero or more empty `[]` suffixes → array types. Only
+   an empty `[]` is consumed here (the `[5]` of `new T[5]` and the `[i]` of an
+   index are left for their own parsers). */
+static int parse_type(Parser *p, TypeRef *out)
+{
+	if (!parse_base_type(p,out))
+	{
+		return 0;
+	}
+
+	while (check(p,TOKEN_LBRACKET) && p->peek.type==TOKEN_RBRACKET)
+	{
+		advance(p);   /* '[' */
+		advance(p);   /* ']' */
+		TypeRef elem = *out;
+		out->kind=TY_ARRAY;
+		out->class_name[0]='\0';
+		out->elem=typeref_box(elem);
+	}
+
+	return 1;
+}
+
 static int starts_vardecl(Parser *p)
 {
 	TypeKind k;
@@ -349,6 +400,11 @@ static int starts_vardecl(Parser *p)
 		return 1;
 	}
 	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_IDENT)
+	{
+		return 1;
+	}
+	/* `Foo[] a;` — an object-array declaration (vs. the index expression `foo[i]`). */
+	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_LBRACKET && p->peek2.type == TOKEN_RBRACKET)
 	{
 		return 1;
 	}

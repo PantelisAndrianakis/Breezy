@@ -675,6 +675,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_BOOL:
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
+	case EX_NEWARRAY:
+	case EX_INDEX:
+		fprintf(stderr,"codegen: array lowering arrives in Part 4b Task 4\n");
+		exit(1);
+		break;
 	case EX_STR:
 	{
 		int id=cg_str_const(cg,e);

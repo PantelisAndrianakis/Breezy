@@ -8,6 +8,7 @@ typedef struct
 	Lexer lex;
 	Token cur;
 	Token peek;
+	Token peek2;
 } Parser;
 
 void  parser_init(Parser *p, const char *src);
