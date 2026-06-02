@@ -1,0 +1,12 @@
+void main()
+{
+	map<string,int> d;
+	d = new map<string,int>();
+	d.put("a", 1);
+	d.put("b", 2);
+	d.put("a", d.get("a") + 10);   // Overwrite via get + put.
+	print(d.get("a"));             // 11
+	print(d.get("b"));             // 2
+	print(d.has("c"));             // false
+	print(d.size);                 // 2
+}

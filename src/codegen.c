@@ -232,7 +232,8 @@ static int expr_is_owned(Expr *e)
 	/* A managed EX_BINARY is a string concat (bzy_str_concat returns +1); an
 	   EX_STR literal is +1 from bzy_str_new. */
 	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
-		   || e->kind==EX_STR || e->kind==EX_BINARY || e->kind==EX_NEWARRAY;
+		   || e->kind==EX_STR || e->kind==EX_BINARY || e->kind==EX_NEWARRAY
+		   || e->kind==EX_NEWMAP;
 }
 
 /* Retain the object pointer currently in rax; rax is preserved. */
@@ -611,6 +612,64 @@ static void cg_sb_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* Map methods lower to runtime calls (no vtable dispatch). The receiver is
+   borrowed; key/value arguments that are owned temporaries are released after
+   the call (the runtime retains its own copies). get returns a +1 managed value
+   when V is managed; for value V / has the result is a plain integer in rax. */
+static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	if (strcmp(e->name,"put")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                 /* map */
+		cg_emit(cg,"    sub rsp, 32");
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr(cg,tt,e->args[0]);             /* key */
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_expr(cg,tt,e->args[1]);             /* value */
+		cg_emit(cg,"    mov [rsp + 16], rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_emit(cg,"    mov rdx, [rsp + 8]");
+		cg_emit(cg,"    mov r8, [rsp + 16]");
+		cg_aligned_call(cg,"bzy_map_put");
+		if (expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_release_rcx(cg);
+		}
+
+		if (expr_is_owned(e->args[1]))
+		{
+			cg_emit(cg,"    mov rcx, [rsp + 16]");
+			cg_release_rcx(cg);
+		}
+
+		cg_emit(cg,"    add rsp, 32");
+		return;
+	}
+
+	/* get / has / remove: receiver + one key argument. */
+	const char *fn = strcmp(e->name,"get")==0 ? "bzy_map_get"
+					 : strcmp(e->name,"has")==0 ? "bzy_map_has"
+					 : "bzy_map_remove";
+	cg_expr(cg,tt,e->lhs);                      /* map */
+	cg_emit(cg,"    sub rsp, 16");
+	cg_emit(cg,"    mov [rsp], rax");
+	cg_expr(cg,tt,e->args[0]);                  /* key */
+	cg_emit(cg,"    mov [rsp + 8], rax");
+	cg_emit(cg,"    mov rcx, [rsp]");
+	cg_emit(cg,"    mov rdx, [rsp + 8]");
+	cg_aligned_call(cg,fn);                     /* result (get/has) in rax */
+	if (expr_is_owned(e->args[0]))
+	{
+		cg_emit(cg,"    mov [rsp], rax");        /* Preserve the result across the key release. */
+		cg_emit(cg,"    mov rcx, [rsp + 8]");
+		cg_release_rcx(cg);
+		cg_emit(cg,"    mov rax, [rsp]");
+	}
+
+	cg_emit(cg,"    add rsp, 16");
+}
+
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (strcmp(e->name,"StringBuilder")==0)
@@ -705,8 +764,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_aligned_call(cg,"bzy_array_new");   /* owned (+1) array in rax */
 		break;
 	case EX_NEWMAP:
-		fprintf(stderr,"codegen: map lowering arrives in Part 4c Task 4\n");
-		exit(1);
+		cg_emit(cg,"    mov rcx, %d", e->type.elem->kind==TY_STRING ? 1 : 0);
+		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem2->kind) ? 1 : 0);
+		cg_aligned_call(cg,"bzy_map_new");   /* Owned (+1) map in rax. */
 		break;
 	case EX_INDEX:
 		cg_index_addr(cg,tt,e);
@@ -822,7 +882,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_new(cg,tt,e);
 		break;
 	case EX_METHOD_CALL:
-		if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
+		if (e->lhs->type.kind==TY_MAP)
+		{
+			cg_map_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
 			cg_sb_method(cg,tt,e);
 		}
@@ -1255,6 +1319,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_array_new");
 	cg_emit(cg,"extern bzy_array_len");
 	cg_emit(cg,"extern bzy_oob");
+	cg_emit(cg,"extern bzy_map_new");
+	cg_emit(cg,"extern bzy_map_put");
+	cg_emit(cg,"extern bzy_map_get");
+	cg_emit(cg,"extern bzy_map_has");
+	cg_emit(cg,"extern bzy_map_remove");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
