@@ -181,6 +181,33 @@ static void resolve_math(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"min")==0 || strcmp(m,"max")==0 || strcmp(m,"clamp")==0)
+	{
+		int n = strcmp(m,"clamp")==0 ? 3 : 2;
+		if (e->arg_count!=n)
+		{
+			die(e->line,"Math.min/max/clamp argument count",NULL);
+		}
+
+		int allint=1;
+		for (int i=0; i<n; i++)
+		{
+			TypeKind k=e->args[i]->type.kind;
+			if (!ty_is_int(k) && !ty_is_float(k))
+			{
+				die(e->line,"Math.min/max/clamp require numbers",NULL);
+			}
+
+			if (!ty_is_int(k) || k!=e->args[0]->type.kind)
+			{
+				allint=0;
+			}
+		}
+
+		e->type.kind = allint ? e->args[0]->type.kind : TY_DOUBLE;
+		return;
+	}
+
 	die(e->line,"unknown Math method: ",m);
 }
 

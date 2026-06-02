@@ -1171,6 +1171,74 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"min")==0 || strcmp(m,"max")==0)
+	{
+		int ismin = strcmp(m,"min")==0;
+		if (e->type.kind==TY_DOUBLE)
+		{
+			cg_to_double(cg,tt,e->args[0]);
+			cg_emit(cg,"    sub rsp, 16");
+			cg_emit(cg,"    movsd qword [rsp], xmm0");
+			cg_to_double(cg,tt,e->args[1]);
+			cg_emit(cg,"    movsd xmm1, xmm0");
+			cg_emit(cg,"    movsd xmm0, qword [rsp]");
+			cg_emit(cg,"    add rsp, 16");
+			cg_emit(cg, ismin ? "    minsd xmm0, xmm1" : "    maxsd xmm0, xmm1");
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[0]);
+			cg_emit(cg,"    push rax");
+			cg_expr(cg,tt,e->args[1]);
+			cg_emit(cg,"    mov rbx, rax");
+			cg_emit(cg,"    pop rax");
+			cg_emit(cg,"    cmp rax, rbx");
+			cg_emit(cg, ismin ? "    cmovg rax, rbx" : "    cmovl rax, rbx");
+		}
+
+		return;
+	}
+
+	if (strcmp(m,"clamp")==0)
+	{
+		if (e->type.kind==TY_DOUBLE)
+		{
+			cg_emit(cg,"    sub rsp, 32");
+			cg_to_double(cg,tt,e->args[0]);
+			cg_emit(cg,"    movsd qword [rsp], xmm0");        /* x */
+			cg_to_double(cg,tt,e->args[1]);
+			cg_emit(cg,"    movsd qword [rsp + 8], xmm0");    /* lo */
+			cg_to_double(cg,tt,e->args[2]);
+			cg_emit(cg,"    movsd qword [rsp + 16], xmm0");   /* hi */
+			cg_emit(cg,"    movsd xmm0, qword [rsp]");
+			cg_emit(cg,"    movsd xmm1, qword [rsp + 16]");
+			cg_emit(cg,"    minsd xmm0, xmm1");               /* min(x, hi) */
+			cg_emit(cg,"    movsd xmm1, qword [rsp + 8]");
+			cg_emit(cg,"    maxsd xmm0, xmm1");               /* max(., lo) */
+			cg_emit(cg,"    add rsp, 32");
+		}
+		else
+		{
+			cg_emit(cg,"    sub rsp, 32");
+			cg_expr(cg,tt,e->args[0]);
+			cg_emit(cg,"    mov [rsp], rax");
+			cg_expr(cg,tt,e->args[1]);
+			cg_emit(cg,"    mov [rsp + 8], rax");
+			cg_expr(cg,tt,e->args[2]);
+			cg_emit(cg,"    mov [rsp + 16], rax");
+			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rbx, [rsp + 16]");
+			cg_emit(cg,"    cmp rax, rbx");
+			cg_emit(cg,"    cmovg rax, rbx");                 /* min(x, hi) */
+			cg_emit(cg,"    mov rbx, [rsp + 8]");
+			cg_emit(cg,"    cmp rax, rbx");
+			cg_emit(cg,"    cmovl rax, rbx");                 /* max(., lo) */
+			cg_emit(cg,"    add rsp, 32");
+		}
+
+		return;
+	}
+
 	fprintf(stderr,"codegen: unsupported Math method '%s'\n", m);
 	exit(1);
 }

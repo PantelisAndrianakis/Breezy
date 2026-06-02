@@ -1,0 +1,10 @@
+void main()
+{
+	print(Math.max(3, 7));        // 7
+	print(Math.min(3, 7));        // 3
+	print(Math.clamp(10, 0, 5));  // 5
+	print(Math.clamp(-2, 0, 5));  // 0
+	double d;
+	d = Math.max(2.5, 1.5);
+	print(d);                     // 2.5
+}
