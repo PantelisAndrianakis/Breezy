@@ -2415,6 +2415,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_throw");
 	cg_emit(cg,"global __bzy_eh_funcs");
 	cg_emit(cg,"global __bzy_eh_func_count");
+	cg_emit(cg,"global __bzy_vtable_parents");
+	cg_emit(cg,"global __bzy_vtable_parent_count");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
@@ -2463,6 +2465,23 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	{
 		cg_emit_vtable(cg,&tt->classes[i]);
 	}
+
+	cg_emit(cg,"__bzy_vtable_parents:");           /* (child vtable, parent vtable) pairs for is-a. */
+	for (int i=0; i<tt->class_count; i++)
+	{
+		ClassInfo *c = &tt->classes[i];
+		cg_emit(cg,"    dq __vtable_%s", c->name);
+		if (c->parent)
+		{
+			cg_emit(cg,"    dq __vtable_%s", c->parent->name);
+		}
+		else
+		{
+			cg_emit(cg,"    dq 0");
+		}
+	}
+
+	cg_emit(cg,"__bzy_vtable_parent_count: dq %d", tt->class_count);
 
 	for (int i=0; i<cg->fpk_count; i++)
 	{

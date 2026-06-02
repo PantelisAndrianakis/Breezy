@@ -1,0 +1,1 @@
+class Aaa extends Exception { }

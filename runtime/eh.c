@@ -28,6 +28,36 @@ typedef struct
 extern BzyEHFunc *__bzy_eh_funcs[];
 extern int64_t __bzy_eh_func_count;
 
+extern void *__bzy_vtable_parents[];     /* Flat [child0, parent0, child1, parent1, ...]. */
+extern int64_t __bzy_vtable_parent_count;   /* Number of (child, parent) pairs. */
+
+static void *parent_vtable(void *vt)
+{
+	for (int64_t i = 0; i < __bzy_vtable_parent_count; i++)
+	{
+		if (__bzy_vtable_parents[i*2] == vt)
+		{
+			return __bzy_vtable_parents[i*2 + 1];
+		}
+	}
+
+	return NULL;
+}
+
+/* True if the object's class is the catch class or a subclass of it. */
+static int is_a(void *obj_vt, void *catch_vt)
+{
+	for (void *v = obj_vt; v; v = parent_vtable(v))
+	{
+		if (v == catch_vt)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 /* Restore the handler frame and jump to its landing pad with the exception in
    rax. Uses only volatile registers (r8-r11) for the operands so setting rsp/rbp
    never invalidates an operand still to be read. Never returns. */
@@ -90,7 +120,7 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 		for (int64_t t = 0; t < f->ntry; t++)
 		{
 			BzyEHTry *tr = &((BzyEHTry*)f->tryptr)[t];
-			if (pc >= tr->start && pc < tr->end && *(void**)exc == tr->catch_vtable)
+			if (pc >= tr->start && pc < tr->end && is_a(*(void**)exc, tr->catch_vtable))
 			{
 				eh_resume(exc, frame, frame - f->frame, tr->pad);   /* Never returns. */
 			}

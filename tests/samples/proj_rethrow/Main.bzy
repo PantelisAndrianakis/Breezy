@@ -1,0 +1,31 @@
+void deep()
+{
+	Bbb e;
+	e = new Bbb();
+	e.message = "bee";
+	throw e;
+}
+
+void mid()
+{
+	try
+	{
+		deep();
+	}
+	catch (Aaa a)
+	{
+		print(1);
+	}
+}
+
+void main()
+{
+	try
+	{
+		mid();
+	}
+	catch (Exception ex)
+	{
+		print(ex.message);
+	}
+}

@@ -1,0 +1,26 @@
+void risky()
+{
+	NotFound e;
+	e = new NotFound();
+	e.message = "missing";
+	throw e;
+}
+
+void handle()
+{
+	try
+	{
+		risky();
+	}
+	catch (Exception ex)
+	{
+		print(ex.message);
+	}
+}
+
+void main()
+{
+	handle();
+	collectCycles();
+	print(liveCount());
+}
