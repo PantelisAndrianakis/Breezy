@@ -176,6 +176,17 @@ static void test_new_map(void)
 	ASSERT_INT(e->type.elem2->kind, TY_INT);
 }
 
+static void test_foreach_stmt(void)
+{
+	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
+	Stmt *fe = u->funcs[0]->body->stmts[1];
+	ASSERT_INT(fe->kind, ST_FOREACH);
+	ASSERT_INT(fe->decl_type.kind, TY_INT);
+	ASSERT_STR(fe->decl_name, "x");
+	ASSERT_INT(fe->expr->kind, EX_IDENT);
+	ASSERT_INT(fe->then_blk->count, 1);
+}
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -231,6 +242,7 @@ int main(void)
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);
 	RUN(test_new_map);
+	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);

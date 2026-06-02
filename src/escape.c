@@ -163,6 +163,10 @@ static void scan_stmt_escapes(Stmt *s)
 	case ST_EXPR:
 		walk_expr(s->expr);
 		break;
+	case ST_FOREACH:
+		walk_expr(s->expr);
+		scan_block_escapes(s->then_blk);
+		break;
 	}
 }
 

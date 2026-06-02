@@ -123,7 +123,7 @@ struct Expr
 	int      arg_count;
 };
 
-typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR } StmtKind;
+typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH } StmtKind;
 
 typedef struct Stmt Stmt;
 typedef struct Block Block;
@@ -135,6 +135,10 @@ struct Stmt
 	char     decl_name[64];
 	Expr    *decl_init;       /* may be NULL */
 	int      decl_offset;     /* resolver: stack slot for this local */
+	int      fe_coll_offset;  /* ST_FOREACH: container pointer slot. */
+	int      fe_index_offset; /* ST_FOREACH: index / map slot cursor. */
+	int      fe_len_offset;   /* ST_FOREACH (string): precomputed length. */
+	int      fe_aux_offset;   /* ST_FOREACH (string): precomputed data pointer. */
 	Expr    *target;          /* ST_ASSIGN lvalue (EX_IDENT|EX_FIELD) */
 	Expr    *value;           /* ST_ASSIGN rhs */
 	Expr    *cond;            /* ST_IF / ST_WHILE */

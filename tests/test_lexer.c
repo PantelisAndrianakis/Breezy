@@ -118,6 +118,14 @@ static void test_map_keyword(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_MAP);
 }
 
+static void test_foreach_and_colon(void)
+{
+	Lexer l;
+	lexer_init(&l, "foreach :");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_FOREACH);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_COLON);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -185,6 +193,7 @@ int main(void)
 	RUN(test_string_literal);
 	RUN(test_brackets);
 	RUN(test_map_keyword);
+	RUN(test_foreach_and_colon);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

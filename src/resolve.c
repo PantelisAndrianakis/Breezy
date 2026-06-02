@@ -642,6 +642,9 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_EXPR:
 		resolve_expr(st,s->expr,tc);
 		break;
+	case ST_FOREACH:
+		die(s->line,"foreach resolve arrives in Part 4d Task 2",NULL);
+		break;
 	}
 }
 

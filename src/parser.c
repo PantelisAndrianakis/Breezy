@@ -483,6 +483,22 @@ static Stmt *parse_while(Parser *p)
 	return s;
 }
 
+static Stmt *parse_foreach(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                       /* Consume 'foreach'. */
+	Stmt *s=stmt_new(ST_FOREACH,line);
+	expect(p,TOKEN_LPAREN);
+	parse_type(p,&s->decl_type);
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(s->decl_name,name.text);
+	expect(p,TOKEN_COLON);
+	s->expr=parse_expr(p);
+	expect(p,TOKEN_RPAREN);
+	s->then_blk=parse_block(p);
+	return s;
+}
+
 static Stmt *parse_return(Parser *p)
 {
 	int line=p->cur.line;
@@ -532,6 +548,10 @@ static Stmt *parse_statement(Parser *p)
 	if (check(p,TOKEN_WHILE))
 	{
 		return parse_while(p);
+	}
+	if (check(p,TOKEN_FOREACH))
+	{
+		return parse_foreach(p);
 	}
 	if (check(p,TOKEN_RETURN))
 	{

@@ -11,7 +11,7 @@ static const struct
 } KEYWORDS[] =
 {
 	{"void",TOKEN_VOID},{"int",TOKEN_INT},{"if",TOKEN_IF},{"else",TOKEN_ELSE},
-	{"while",TOKEN_WHILE},{"return",TOKEN_RETURN},{"class",TOKEN_CLASS},
+	{"while",TOKEN_WHILE},{"foreach",TOKEN_FOREACH},{"return",TOKEN_RETURN},{"class",TOKEN_CLASS},
 	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
@@ -251,6 +251,9 @@ Token lexer_next(Lexer *l)
 	case ',':
 		t.type = TOKEN_COMMA;
 		return t;
+	case ':':
+		t.type = TOKEN_COLON;
+		return t;
 	case '.':
 		if (isdigit((unsigned char)peek_ch(l)))
 		{
@@ -340,6 +343,8 @@ const char *token_type_name(TokenType t)
 		return "else";
 	case TOKEN_WHILE:
 		return "while";
+	case TOKEN_FOREACH:
+		return "foreach";
 	case TOKEN_RETURN:
 		return "return";
 	case TOKEN_CLASS:
@@ -422,6 +427,8 @@ const char *token_type_name(TokenType t)
 		return ",";
 	case TOKEN_DOT:
 		return ".";
+	case TOKEN_COLON:
+		return ":";
 	default:
 		return "UNKNOWN";
 	}

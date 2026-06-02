@@ -1170,6 +1170,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,".L%d:",end);
 		break;
 	}
+	case ST_FOREACH:
+		fprintf(stderr,"codegen: foreach lowering arrives in Part 4d Task 4\n");
+		exit(1);
+		break;
 	}
 }
 
