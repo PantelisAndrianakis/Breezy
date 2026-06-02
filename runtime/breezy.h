@@ -79,4 +79,6 @@ double  bzy_rnd_get_d(double bound);
 double  bzy_rnd_get_dd(double origin, double bound);
 void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] slot with [0,255]. */
 
+void    bzy_throw(void *exc, int64_t pc, int64_t frame); /* Unwind the rbp chain; never returns. */
+
 #endif

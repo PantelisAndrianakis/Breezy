@@ -23,6 +23,15 @@ check_abort() {
     if [ $? -ne 0 ]; then echo "  $name: OK (aborted)"
     else echo "  $name: FAIL (no abort)"; fail=1; fi
 }
+check_throws() {
+    local name="$1" target="$2" expect="$3"
+    ./breezy "$target" >/dev/null 2>&1 || { echo "  $name: COMPILE FAILED"; fail=1; return; }
+    local out; out="$(./out.exe 2>&1)"; local code=$?
+    out="${out//$'\r'/}"
+    if [ $code -eq 0 ]; then echo "  $name: FAIL (expected abort)"; fail=1
+    elif echo "$out" | grep -qF "$expect"; then echo "  $name: OK (threw)"
+    else echo "  $name: FAIL (missing '$expect' in: $out)"; fail=1; fi
+}
 echo "Integration tests"
 check minimal     tests/samples/minimal.bzy    "0"
 check arith       tests/samples/arith.bzy      "14"
@@ -75,6 +84,7 @@ check math_round  tests/samples/proj_math_round    $'2\n3\n2\n3\ntrue\nfalse'
 check math_libm   tests/samples/proj_math_libm     $'1024\n1\n1\n0'
 check clock       tests/samples/proj_clock         $'true\ntrue'
 check random      tests/samples/proj_random        $'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n4'
+check_throws throw tests/samples/proj_throw "boom"
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

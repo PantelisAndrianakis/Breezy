@@ -1,0 +1,17 @@
+void deep()
+{
+	Exception e;
+	e = new Exception();
+	e.message = "boom";
+	throw e;
+}
+
+void mid()
+{
+	deep();
+}
+
+void main()
+{
+	mid();
+}

@@ -3,6 +3,10 @@
 #include <stdint.h>
 #include <string.h>
 
+/* EH registry stubs: no compiled Breezy program is linked into this unit-test binary. */
+void *__bzy_eh_funcs[1] = { 0 };
+long long __bzy_eh_func_count = 0;
+
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],
    so we hand out vtable = &slot[4] and the runtime reads the descriptor (which the

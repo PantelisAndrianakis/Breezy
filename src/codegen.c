@@ -14,6 +14,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->strk_count=0;
 	cg->cur_break_label=-1;
 	cg->cur_continue_label=-1;
+	cg->ehfn_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -2101,9 +2102,16 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_DEFAULT:
 		break;   /* Emitted by cg_switch, never reached here. */
 	case ST_THROW:
-		fprintf(stderr,"codegen: throw lowering arrives in Part 5e-1 Task 2\n");
-		exit(1);
+	{
+		cg_expr_owned(cg,tt,s->expr);            /* Owned (+1) exception pointer -> rax. */
+		cg_emit(cg,"    mov rcx, rax");
+		int pc=cg_label(cg);
+		cg_emit(cg,"    lea rdx, [rel .L%d]", pc);
+		cg_emit(cg,".L%d:", pc);                  /* The throw-site PC (within this function). */
+		cg_emit(cg,"    mov r8, rbp");
+		cg_aligned_call(cg,"bzy_throw");          /* bzy_throw(exc, pc, rbp) -- never returns. */
 		break;
+	}
 	}
 }
 
@@ -2113,6 +2121,52 @@ static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 	{
 		cg_stmt(cg,tt,f,b->stmts[i],in_main);
 	}
+}
+
+/* Emits one per-function EH record into .data (PC range, frame size, name,
+   object-local offsets; try-region fields are 0 until 5e-2). The end label is
+   placed in .text just past the function; the record is appended in .data. */
+static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f)
+{
+	int i = cg->ehfn_count++;
+	cg_emit(cg,"__ehend%d:", i);                 /* In .text, just past the function. */
+	cg_emit(cg,"section .data");
+	fprintf(cg->out, "__ehname%d: db ", i);
+	for (const char *p=f->name; *p; p++)
+	{
+		fprintf(cg->out, "%d,", (unsigned char)*p);
+	}
+
+	fprintf(cg->out, "0\n");
+	if (f->obj_local_count > 0)
+	{
+		fprintf(cg->out, "__ehobjs%d: dq ", i);
+		for (int j=0; j<f->obj_local_count; j++)
+		{
+			fprintf(cg->out, "%d%s", f->obj_local_offsets[j], j+1<f->obj_local_count ? "," : "");
+		}
+
+		fprintf(cg->out, "\n");
+	}
+
+	cg_emit(cg,"__ehfn%d:", i);
+	cg_emit(cg,"    dq %s", label);
+	cg_emit(cg,"    dq __ehend%d", i);
+	cg_emit(cg,"    dq %d", frame);
+	cg_emit(cg,"    dq __ehname%d", i);
+	cg_emit(cg,"    dq %d", f->obj_local_count);
+	if (f->obj_local_count > 0)
+	{
+		cg_emit(cg,"    dq __ehobjs%d", i);
+	}
+	else
+	{
+		cg_emit(cg,"    dq 0");
+	}
+
+	cg_emit(cg,"    dq 0");                       /* Try-region count (5e-2). */
+	cg_emit(cg,"    dq 0");                       /* Try-region ptr. */
+	cg_emit(cg,"section .text");
 }
 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
@@ -2190,6 +2244,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");
+	cg_emit_eh_record(cg, label, frame, f);
 }
 
 static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
@@ -2296,6 +2351,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_rnd_get_d");
 	cg_emit(cg,"extern bzy_rnd_get_dd");
 	cg_emit(cg,"extern bzy_rnd_bytes");
+	cg_emit(cg,"extern bzy_throw");
+	cg_emit(cg,"global __bzy_eh_funcs");
+	cg_emit(cg,"global __bzy_eh_func_count");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
@@ -2369,4 +2427,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	}
 
 	cg_emit(cg,"__deg2rad: dq 0x3f91df46a2529d39");   /* PI/180 = 0.017453292519943295 (Math.toRadians). */
+
+	cg_emit(cg,"__bzy_eh_funcs:");
+	for (int i=0; i<cg->ehfn_count; i++)
+	{
+		cg_emit(cg,"    dq __ehfn%d", i);
+	}
+
+	cg_emit(cg,"__bzy_eh_func_count: dq %d", cg->ehfn_count);
 }
