@@ -225,6 +225,21 @@ static void test_map_object_values_released(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_str_eq(void)
+{
+	int64_t before = bzy_live_count();
+	void *a = bzy_str_new("hello", 5);
+	void *b = bzy_str_new("hello", 5);
+	void *c = bzy_str_new("world", 5);
+	ASSERT_INT(bzy_str_eq(a, b), 1);   /* Content-equal, distinct objects. */
+	ASSERT_INT(bzy_str_eq(a, c), 0);
+	ASSERT_INT(bzy_str_eq(a, a), 1);   /* Identity. */
+	bzy_release(a);
+	bzy_release(b);
+	bzy_release(c);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_map_iteration(void)
 {
 	int64_t before = bzy_live_count();
@@ -343,6 +358,7 @@ int main(void)
 	RUN(test_map_string_keys_and_grow);
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);
+	RUN(test_str_eq);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);

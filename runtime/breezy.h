@@ -25,6 +25,7 @@ void   *bzy_str_new(const char *bytes, int64_t len); /* Owned (+1) immutable str
 int64_t bzy_str_len(void *s);                        /* Byte length (excludes the NUL). */
 const char *bzy_str_data(void *s);                   /* Pointer to the inline NUL-terminated bytes. */
 void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */
+int64_t bzy_str_eq(void *a, void *b);                /* 1 if byte-equal (NULL-safe, identity fast path). */
 void    bzy_print_str(void *s);                      /* Write the bytes + '\n'. */
 
 void   *bzy_sb_new(void);                            /* Owned (+1) empty StringBuilder. */

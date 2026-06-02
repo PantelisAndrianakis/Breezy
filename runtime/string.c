@@ -54,6 +54,22 @@ void *bzy_str_concat(void *a, void *b)
 	return c;
 }
 
+int64_t bzy_str_eq(void *a, void *b)
+{
+	if (a == b)
+	{
+		return 1;
+	}
+
+	if (!a || !b)
+	{
+		return 0;
+	}
+
+	int64_t la = bzy_str_len(a), lb = bzy_str_len(b);
+	return (la == lb && memcmp(bzy_str_data(a), bzy_str_data(b), (size_t)la) == 0) ? 1 : 0;
+}
+
 void bzy_print_str(void *s)
 {
 	fwrite(bzy_str_data(s), 1, (size_t)bzy_str_len(s), stdout);
