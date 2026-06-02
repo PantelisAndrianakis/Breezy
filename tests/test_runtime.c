@@ -263,6 +263,54 @@ static void test_map_iteration(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_vec_value_back(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(0);              /* int elements */
+	bzy_vec_push_back(v, 10);
+	bzy_vec_push_back(v, 20);
+	bzy_vec_push_back(v, 30);
+	ASSERT_INT(bzy_vec_len(v), 3);
+	ASSERT_INT(bzy_vec_get(v, 1), 20);
+	bzy_vec_set(v, 1, 99);
+	ASSERT_INT(bzy_vec_get(v, 1), 99);
+	ASSERT_INT(bzy_vec_pop_back(v), 30);
+	ASSERT_INT(bzy_vec_len(v), 2);
+	bzy_release(v);                         /* vector + data array */
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_vec_grow(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(0);
+	for (int i = 0; i < 50; i++)             /* forces several doublings */
+	{
+		bzy_vec_push_back(v, i);
+	}
+
+	ASSERT_INT(bzy_vec_len(v), 50);
+	ASSERT_INT(bzy_vec_get(v, 0), 0);
+	ASSERT_INT(bzy_vec_get(v, 49), 49);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_vec_object_released(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(4);                /* object elements */
+	void *a = bzy_alloc(24);
+	*(void**)a = vtable_no_field();
+	bzy_vec_push_back(v, (int64_t)a);        /* vector retains a */
+	bzy_release(a);                           /* drop our ref; vector holds it */
+	void *got = (void*)bzy_vec_get(v, 0);    /* get retains -> +1 */
+	ASSERT(got == a);
+	bzy_release(got);
+	bzy_release(v);                           /* releases data array -> releases a */
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_builder_append_tostring(void)
 {
 	int64_t before = bzy_live_count();
@@ -359,6 +407,9 @@ int main(void)
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);
 	RUN(test_str_eq);
+	RUN(test_vec_value_back);
+	RUN(test_vec_grow);
+	RUN(test_vec_object_released);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);

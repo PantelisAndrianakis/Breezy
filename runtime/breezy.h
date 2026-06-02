@@ -46,4 +46,18 @@ int64_t bzy_map_len(void *m);
 int64_t bzy_map_iter(void *m, int64_t from);   /* Next full slot index >= from, or -1. */
 int64_t bzy_map_key_at(void *m, int64_t slot); /* Key at slot (borrowed; no retain). */
 
+void   *bzy_vec_new(int64_t elem_kind);          /* Owned (+1). 0 int,1 float,2 double,3 string,4 object. */
+int64_t bzy_vec_len(void *v);
+void    bzy_vec_push_back(void *v, int64_t val); /* Retains a managed element. */
+void    bzy_vec_push_front(void *v, int64_t val);
+int64_t bzy_vec_pop_back(void *v);               /* Transfers out (owned); aborts if empty. */
+int64_t bzy_vec_pop_front(void *v);
+int64_t bzy_vec_get(void *v, int64_t i);         /* Bounds-checked; retains a managed value (owned). */
+void    bzy_vec_set(void *v, int64_t i, int64_t val);  /* Bounds-checked; retain new / release old. */
+int64_t bzy_vec_peek_back(void *v);              /* Retains (owned); aborts if empty. */
+int64_t bzy_vec_peek_front(void *v);
+void    bzy_vec_remove_at(void *v, int64_t i);   /* Bounds-checked; releases the removed managed element. */
+int64_t bzy_vec_index_of(void *v, int64_t needle); /* First index equal per elem_kind, or -1. */
+int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0 */
+
 #endif
