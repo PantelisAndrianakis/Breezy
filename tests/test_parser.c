@@ -226,6 +226,18 @@ static void test_new_generic(void)
 	ASSERT_STR(e->type.elem->class_name, "Dog");
 }
 
+static void test_compound_assign(void)
+{
+	Unit *u = parse_unit_str("void m() { int i; i = 0; i += 2; }");
+	Stmt *s = u->funcs[0]->body->stmts[2];
+	ASSERT_INT(s->kind, ST_ASSIGN);
+	ASSERT_INT(s->target->kind, EX_IDENT);
+	ASSERT_INT(s->value->kind, EX_BINARY);
+	ASSERT_INT(s->value->op, TOKEN_PLUS);
+	ASSERT_INT(s->value->lhs->kind, EX_IDENT);
+	ASSERT_INT(s->value->rhs->int_val, 2);
+}
+
 static void test_switch_parse(void)
 {
 	Unit *u = parse_unit_str("void m() { int x; x = 1; switch (x) { case 1: case 2: print(x); break; default: print(0); } }");
@@ -313,6 +325,7 @@ int main(void)
 	RUN(test_for_parse);
 	RUN(test_generic_type_decl);
 	RUN(test_new_generic);
+	RUN(test_compound_assign);
 	RUN(test_switch_parse);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);

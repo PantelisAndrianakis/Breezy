@@ -169,6 +169,16 @@ static void test_block_comment(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_ASSIGN);   // the empty block comment was skipped
 }
 
+static void test_compound_assign_ops(void)
+{
+	Lexer l;
+	lexer_init(&l, "+= -= *= /=");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_PLUS_ASSIGN);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_MINUS_ASSIGN);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_STAR_ASSIGN);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_SLASH_ASSIGN);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -242,6 +252,7 @@ int main(void)
 	RUN(test_for_keyword);
 	RUN(test_switch_keywords);
 	RUN(test_block_comment);
+	RUN(test_compound_assign_ops);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

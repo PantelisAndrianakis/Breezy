@@ -238,6 +238,11 @@ Token lexer_next(Lexer *l)
 			next_ch(l);
 			t.type=TOKEN_PLUSPLUS;
 		}
+		else if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_PLUS_ASSIGN;
+		}
 		else
 		{
 			t.type=TOKEN_PLUS;
@@ -250,6 +255,11 @@ Token lexer_next(Lexer *l)
 			next_ch(l);
 			t.type=TOKEN_MINUSMINUS;
 		}
+		else if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_MINUS_ASSIGN;
+		}
 		else
 		{
 			t.type=TOKEN_MINUS;
@@ -257,10 +267,28 @@ Token lexer_next(Lexer *l)
 
 		return t;
 	case '*':
-		t.type = TOKEN_STAR;
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_STAR_ASSIGN;
+		}
+		else
+		{
+			t.type=TOKEN_STAR;
+		}
+
 		return t;
 	case '/':
-		t.type = TOKEN_SLASH;
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_SLASH_ASSIGN;
+		}
+		else
+		{
+			t.type=TOKEN_SLASH;
+		}
+
 		return t;
 	case '(':
 		t.type = TOKEN_LPAREN;
@@ -446,6 +474,14 @@ const char *token_type_name(TokenType t)
 		return "++";
 	case TOKEN_MINUSMINUS:
 		return "--";
+	case TOKEN_PLUS_ASSIGN:
+		return "+=";
+	case TOKEN_MINUS_ASSIGN:
+		return "-=";
+	case TOKEN_STAR_ASSIGN:
+		return "*=";
+	case TOKEN_SLASH_ASSIGN:
+		return "/=";
 	case TOKEN_STAR:
 		return "*";
 	case TOKEN_SLASH:

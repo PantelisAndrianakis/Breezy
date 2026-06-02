@@ -553,6 +553,41 @@ static Stmt *parse_while(Parser *p)
 
 /* A statement with no trailing ';' (a for-loop init/post clause): a var-decl, an
    assignment, or a bare expression. */
+static int compound_to_binop(TokenType t, int *op)
+{
+	switch (t)
+	{
+	case TOKEN_PLUS_ASSIGN:
+		*op=TOKEN_PLUS;
+		return 1;
+	case TOKEN_MINUS_ASSIGN:
+		*op=TOKEN_MINUS;
+		return 1;
+	case TOKEN_STAR_ASSIGN:
+		*op=TOKEN_STAR;
+		return 1;
+	case TOKEN_SLASH_ASSIGN:
+		*op=TOKEN_SLASH;
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* Build `target = (target OP rhs)` from a compound assignment. The target node
+   is shared as both the store target and the binary's left operand. */
+static Stmt *make_compound_assign(int line, Expr *target, int binop, Expr *rhs)
+{
+	Expr *bin=expr_new(EX_BINARY,line);
+	bin->op=binop;
+	bin->lhs=target;
+	bin->rhs=rhs;
+	Stmt *s=stmt_new(ST_ASSIGN,line);
+	s->target=target;
+	s->value=bin;
+	return s;
+}
+
 static Stmt *parse_simple_stmt(Parser *p)
 {
 	int line=p->cur.line;
@@ -583,6 +618,19 @@ static Stmt *parse_simple_stmt(Parser *p)
 		s->target=first;
 		s->value=parse_expr(p);
 		return s;
+	}
+
+	int binop;
+	if (compound_to_binop(p->cur.type, &binop))
+	{
+		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
+		{
+			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			exit(1);
+		}
+
+		advance(p);
+		return make_compound_assign(line, first, binop, parse_expr(p));
 	}
 
 	Stmt *s=stmt_new(ST_EXPR,line);
@@ -725,6 +773,20 @@ static Stmt *parse_assign_or_expr(Parser *p)
 		Stmt *s=stmt_new(ST_ASSIGN,line);
 		s->target=first;
 		s->value=parse_expr(p);
+		expect(p,TOKEN_SEMICOLON);
+		return s;
+	}
+	int binop;
+	if (compound_to_binop(p->cur.type, &binop))
+	{
+		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
+		{
+			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			exit(1);
+		}
+
+		advance(p);
+		Stmt *s=make_compound_assign(line, first, binop, parse_expr(p));
 		expect(p,TOKEN_SEMICOLON);
 		return s;
 	}
