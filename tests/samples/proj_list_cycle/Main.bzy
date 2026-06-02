@@ -1,0 +1,14 @@
+void makeCycle()
+{
+	Node a;
+	a = new Node();
+	a.peers = new List<Node>();
+	a.peers.add(a);     // a -> peers(list) -> data array -> a
+}
+
+void main()
+{
+	makeCycle();
+	collectCycles();
+	print(liveCount());   // 0
+}

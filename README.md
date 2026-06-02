@@ -301,12 +301,15 @@ The `blocking` keyword tells the runtime a call may block, so it's dispatched to
 | `string` | UTF-8 text; concatenate with `+` / `+=` |
 | `T[]` | Heap-allocated array of any type, bounds-checked |
 | `map<K,V>` | Hash map: open addressing with Swiss-style control bytes (`int`/`string` keys) |
+| `List<T>` `Stack<T>` `Queue<T>` `Deque<T>` `Set<T>` | Monomorphized generic collections (no boxing); `.size`, `.contains(T)`, `foreach` |
 | `chan<T>` | Channel for passing values between breezes |
 | `ClassName` | Heap-allocated object, memory managed automatically (ARC + cycles) |
 | `void` | No value; used as a function return type |
 
-`int` is 32-bit; use `long` for 64-bit. There is no unsigned floating point. Generics
-(beyond the built-in `T[]` and `map<K,V>`) are planned for future versions.
+`int` is 32-bit; use `long` for 64-bit. There is no unsigned floating point. The generic
+collections (`List`/`Stack`/`Queue`/`Deque`/`Set`) are **stdlib-only and monomorphized** —
+specialized per element type with no boxing. User-defined generics (`class Foo<T>`) are a
+future version.
 
 ### Strings
 
@@ -351,6 +354,36 @@ print(counts.has("pears"));    // false
 print(counts.size);            // 1
 ```
 
+### Generic Collections — No Boxing
+
+`List`, `Stack`, `Queue`, `Deque`/`ArrayDeque`, and `Set` are **monomorphized per element type**: a `List<int>` stores raw 32-bit integers inline; a `List<Dog>` stores pointers with automatic reference counting. There is **no boxing** — primitives never get wrapped onto the heap. Every collection has `.size`, `.contains(T)`, and works with `foreach`.
+
+```breezy
+List<int> nums;
+nums = new List<int>();
+nums.add(10);
+nums.add(20);
+nums.add(30);
+print(nums.size);          // 3
+print(nums.contains(20));  // true
+
+int sum;
+sum = 0;
+foreach (int n : nums)
+{
+    sum = sum + n;
+}
+print(sum);                // 60
+
+Set<string> seen;
+seen = new Set<string>();
+seen.add("a");
+seen.add("a");             // deduped
+print(seen.size);          // 1
+```
+
+A growable vector (doubling) backs `List`/`Stack`; a ring buffer over it backs `Queue`/`Deque`; `Set` reuses the hash table. Managed elements are retained on insert and released on removal, and a collection caught in a reference cycle is reclaimed by the cycle collector — all with no per-element allocation overhead for primitives.
+
 ---
 
 ## Control Flow
@@ -370,6 +403,32 @@ else
 while (i < 100)
 {
     i = i + 1;
+}
+
+// C-style for, with ++ / --.
+for (int j = 0; j <= 10; j++)
+{
+    sum = sum + j;
+}
+
+// foreach over arrays, strings, maps, and collections.
+foreach (int n : nums)
+{
+    sum = sum + n;
+}
+
+// break / continue work in while, for, and foreach.
+foreach (int n : nums)
+{
+    if (n == 0)
+    {
+        continue;
+    }
+
+    if (n > 100)
+    {
+        break;
+    }
 }
 
 // Return.
@@ -432,7 +491,7 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered its core reference types: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), and the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>` — all ARC- and cycle-collector-aware. Loop control (`foreach`, `for`, `break`/`continue`) is in progress.
+The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered core types **and the full collection library**: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>`, full loop control (`for`, `while`, `foreach`, `break`/`continue`, `++`/`--`), and **no-boxing generic collections** — `List`/`Stack`/`Queue`/`Deque`/`Set` over a monomorphizing mechanism — all ARC- and cycle-collector-aware. (`switch` is the next item.)
 
 **Compiler core (Part 1) — done**
 - [x] Lexer, parser, typed AST
@@ -453,11 +512,11 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Strings with amortized append (`StringBuilder`)
 - [x] Arrays (`T[]`) with bounds checks
 - [x] Maps (`map<K,V>`, open addressing, ARC + cycle-collected)
-- [ ] Loop control: `for`, `break`/`continue`, `++`/`--`
-- [ ] `foreach` loop + iterator protocol
+- [x] Loop control: `for`, `break`/`continue`, `++`/`--`
+- [x] `foreach` loop + iterator protocol (arrays, strings, maps, collections)
+- [x] Stdlib-only monomorphized generics (specialized per element type, no boxing)
+- [x] Generic collections — `List` / `Stack` / `Queue` / `Deque` / `Set`, holding primitives or objects, each with `.contains()`
 - [ ] `switch` (C-style fallthrough, jump-table lowering)
-- [ ] Stdlib-only monomorphized generics (specialized per element type, no boxing)
-- [ ] Generic collections — `List` / `Set` / `Queue` / `Deque` / `Stack`, holding primitives or objects, each with `.contains()`
 
 **Concurrency & I/O (Part 5)**
 - [ ] Breeze scheduler (M:N, one thread per core)

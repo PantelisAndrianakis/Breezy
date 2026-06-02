@@ -1,0 +1,17 @@
+void main()
+{
+	List<Dog> l;
+	int i;
+	l = new List<Dog>();
+	i = 0;
+	while (i < 6)
+	{
+		l.add(new Dog());
+		i = i + 1;
+	}
+
+	print(l.size);          // 6
+	print(liveCount());     // vector + data array + 6 Dog = 8
+	l.removeAt(0);          // releases one Dog
+	print(liveCount());     // 7
+}
