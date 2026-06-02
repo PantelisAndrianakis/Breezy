@@ -170,6 +170,12 @@ static void scan_stmt_escapes(Stmt *s)
 	case ST_BREAK:
 	case ST_CONTINUE:
 		break;
+	case ST_FOR:
+		scan_stmt_escapes(s->for_init);
+		walk_expr(s->cond);
+		scan_stmt_escapes(s->for_post);
+		scan_block_escapes(s->then_blk);
+		break;
 	}
 }
 
@@ -241,6 +247,11 @@ static void mark_stmt_stack(TypeTable *tt, Stmt *s, Func *f, int base)
 	}
 
 	if (s->kind==ST_WHILE)
+	{
+		mark_block_stack(tt, s->then_blk, f, base);
+	}
+
+	if (s->kind==ST_FOR)
 	{
 		mark_block_stack(tt, s->then_blk, f, base);
 	}

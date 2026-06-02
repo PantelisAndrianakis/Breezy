@@ -195,6 +195,19 @@ static void test_break_continue_stmt(void)
 	ASSERT_INT(body->stmts[1]->kind, ST_CONTINUE);
 }
 
+static void test_for_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { int n; n = 0; for (int i = 0; i <= 10; i++) { n = n + i; } }");
+	Stmt *fr = u->funcs[0]->body->stmts[2];
+	ASSERT_INT(fr->kind, ST_FOR);
+	ASSERT_INT(fr->for_init->kind, ST_VARDECL);
+	ASSERT_STR(fr->for_init->decl_name, "i");
+	ASSERT_INT(fr->cond->kind, EX_BINARY);
+	ASSERT_INT(fr->for_post->kind, ST_EXPR);
+	ASSERT_INT(fr->for_post->expr->kind, EX_INCDEC);
+	ASSERT_INT(fr->then_blk->count, 1);
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -263,6 +276,7 @@ int main(void)
 	RUN(test_new_map);
 	RUN(test_incdec_parse);
 	RUN(test_break_continue_stmt);
+	RUN(test_for_parse);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

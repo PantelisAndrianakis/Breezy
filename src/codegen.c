@@ -955,6 +955,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 }
 
 static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main);
+static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);
 
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {
@@ -1050,6 +1051,29 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 			cg_release_rcx(cg);
 		}
 	}
+}
+
+/* C-style for: init once, then test/body/post, with continue landing on the
+   post step so the increment still runs. break -> end. Reuses the Part 4g
+   loop-label fields on Codegen. */
+static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
+	int sb=cg->cur_break_label, sc=cg->cur_continue_label;
+	cg_stmt(cg,tt,f,s->for_init,in_main);
+	cg_emit(cg,".L%d:", top);
+	cg_expr(cg,tt,s->cond);
+	cg_emit(cg,"    cmp rax, 0");
+	cg_emit(cg,"    je .L%d", end);
+	cg->cur_break_label=end;
+	cg->cur_continue_label=cont;
+	cg_block(cg,tt,f,s->then_blk,in_main);
+	cg->cur_break_label=sb;
+	cg->cur_continue_label=sc;
+	cg_emit(cg,".L%d:", cont);            /* continue lands here -> post runs. */
+	cg_stmt(cg,tt,f,s->for_post,in_main);
+	cg_emit(cg,"    jmp .L%d", top);
+	cg_emit(cg,".L%d:", end);
 }
 
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
@@ -1192,6 +1216,9 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	case ST_CONTINUE:
 		cg_emit(cg,"    jmp .L%d", cg->cur_continue_label);
+		break;
+	case ST_FOR:
+		cg_for(cg,tt,f,s,in_main);
 		break;
 	}
 }

@@ -23,6 +23,10 @@ static void walk_stmt(Func *f, Stmt *s)
 	case ST_WHILE:
 		walk_block(f, s->then_blk);
 		break;
+	case ST_FOR:
+		walk_stmt(f, s->for_init);
+		walk_block(f, s->then_blk);
+		break;
 	default:
 		break;
 	}

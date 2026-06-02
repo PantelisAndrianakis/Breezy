@@ -47,6 +47,7 @@ check map_cycle   tests/samples/proj_map_cycle $'0'
 check incdec      tests/samples/proj_incdec    $'42\n40'
 check break_loop  tests/samples/proj_break     $'8'
 check_fail break_outside tests/samples/bad_break_outside.bzy
+check for_loop    tests/samples/proj_for       $'55\n15'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

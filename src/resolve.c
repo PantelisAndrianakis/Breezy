@@ -664,6 +664,19 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line, s->kind==ST_BREAK ? "break outside a loop" : "continue outside a loop", NULL);
 		}
 		break;
+	case ST_FOR:
+		resolve_stmt(st,s->for_init,tc);
+		resolve_expr(st,s->cond,tc);
+		if (s->cond->type.kind!=TY_BOOL)
+		{
+			die(s->line,"'for' condition must be boolean",NULL);
+		}
+
+		resolve_stmt(st,s->for_post,tc);
+		g_loop_depth++;
+		resolve_block(st,s->then_blk,tc);
+		g_loop_depth--;
+		break;
 	}
 }
 

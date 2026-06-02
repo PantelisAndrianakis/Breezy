@@ -190,6 +190,14 @@ static void test_incdec_type(void)
 	ASSERT_INT(st->expr->type.kind, TY_INT);
 }
 
+static void test_for_resolve(void)
+{
+	Func *f=build1("void main() { int n; n = 0; for (int i = 0; i <= 10; i++) { n = n + i; } }")->funcs[0];
+	Stmt *fr=f->body->stmts[2];
+	ASSERT_INT(fr->kind, ST_FOR);
+	ASSERT_INT(fr->cond->type.kind, TY_BOOL);
+}
+
 static void test_break_in_loop_ok(void)
 {
 	Func *f=build1("void main() { int i; i = 0; while (i < 3) { break; } }")->funcs[0];
@@ -252,6 +260,7 @@ int main(void)
 	RUN(test_map_get_and_size_types);
 	RUN(test_incdec_type);
 	RUN(test_break_in_loop_ok);
+	RUN(test_for_resolve);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

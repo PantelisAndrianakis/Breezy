@@ -501,6 +501,61 @@ static Stmt *parse_while(Parser *p)
 	return s;
 }
 
+/* A statement with no trailing ';' (a for-loop init/post clause): a var-decl, an
+   assignment, or a bare expression. */
+static Stmt *parse_simple_stmt(Parser *p)
+{
+	int line=p->cur.line;
+	if (starts_vardecl(p))
+	{
+		Stmt *s=stmt_new(ST_VARDECL,line);
+		parse_type(p,&s->decl_type);
+		Token name=expect(p,TOKEN_IDENT);
+		strcpy(s->decl_name,name.text);
+		if (match(p,TOKEN_ASSIGN))
+		{
+			s->decl_init=parse_expr(p);
+		}
+
+		return s;
+	}
+
+	Expr *first=parse_expr(p);
+	if (match(p,TOKEN_ASSIGN))
+	{
+		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
+		{
+			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			exit(1);
+		}
+
+		Stmt *s=stmt_new(ST_ASSIGN,line);
+		s->target=first;
+		s->value=parse_expr(p);
+		return s;
+	}
+
+	Stmt *s=stmt_new(ST_EXPR,line);
+	s->expr=first;
+	return s;
+}
+
+static Stmt *parse_for(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                       /* Consume 'for'. */
+	Stmt *s=stmt_new(ST_FOR,line);
+	expect(p,TOKEN_LPAREN);
+	s->for_init=parse_simple_stmt(p);
+	expect(p,TOKEN_SEMICOLON);
+	s->cond=parse_expr(p);
+	expect(p,TOKEN_SEMICOLON);
+	s->for_post=parse_simple_stmt(p);
+	expect(p,TOKEN_RPAREN);
+	s->then_blk=parse_block(p);
+	return s;
+}
+
 static Stmt *parse_foreach(Parser *p)
 {
 	int line=p->cur.line;
@@ -570,6 +625,10 @@ static Stmt *parse_statement(Parser *p)
 	if (check(p,TOKEN_FOREACH))
 	{
 		return parse_foreach(p);
+	}
+	if (check(p,TOKEN_FOR))
+	{
+		return parse_for(p);
 	}
 	if (check(p,TOKEN_RETURN))
 	{
