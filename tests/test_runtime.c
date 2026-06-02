@@ -510,6 +510,24 @@ static void test_live_cycle_kept(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_regex_matches_basic(void)
+{
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaa", 3)), 0);   /* not full */
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("a|aa", 4), bzy_str_new("aa", 2)), 1);   /* alt full match */
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("[0-9]{2,4}", 10), bzy_str_new("123", 3)), 1);
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("[0-9]{2,4}", 10), bzy_str_new("1", 1)), 0);
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("\\d+", 3), bzy_str_new("42", 2)), 1);
+	ASSERT_INT(bzy_regex_matches(bzy_str_new("(ab)+", 5), bzy_str_new("abab", 4)), 1);
+}
+
+static void test_regex_test_search(void)
+{
+	ASSERT_INT(bzy_regex_test(bzy_str_new("a+b", 3), bzy_str_new("xxaaabyy", 8)), 1);   /* found inside */
+	ASSERT_INT(bzy_regex_test(bzy_str_new("^a+b$", 5), bzy_str_new("xxaaabyy", 8)), 0); /* anchored, no */
+	ASSERT_INT(bzy_regex_test(bzy_str_new("z", 1), bzy_str_new("abc", 3)), 0);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -541,6 +559,8 @@ int main(void)
 	RUN(test_cycle_is_collected);
 	RUN(test_self_cycle_collected);
 	RUN(test_live_cycle_kept);
+	RUN(test_regex_matches_basic);
+	RUN(test_regex_test_search);
 	SUMMARY();
 	return 0;
 }

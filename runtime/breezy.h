@@ -82,4 +82,9 @@ void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] slot
 
 void    bzy_throw(void *exc, int64_t pc, int64_t frame); /* Unwind the rbp chain; never returns. */
 
+int64_t bzy_regex_matches(void *pat, void *text);            /* Full match -> 1/0. */
+int64_t bzy_regex_test(void *pat, void *text);              /* Search -> 1/0. */
+void   *bzy_regex_find(void *pat, void *text);              /* Leftmost match substring (owned; "" if none). */
+void   *bzy_regex_replace(void *pat, void *text, void *repl); /* All matches replaced (owned). */
+
 #endif
