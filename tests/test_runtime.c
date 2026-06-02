@@ -528,6 +528,22 @@ static void test_regex_test_search(void)
 	ASSERT_INT(bzy_regex_test(bzy_str_new("z", 1), bzy_str_new("abc", 3)), 0);
 }
 
+static void test_regex_find(void)
+{
+	void *m = bzy_regex_find(bzy_str_new("[0-9]+", 6), bzy_str_new("abc123def", 9));
+	ASSERT_INT(bzy_str_len(m), 3);
+	ASSERT_INT(memcmp(bzy_str_data(m), "123", 3), 0);
+	void *none = bzy_regex_find(bzy_str_new("z+", 2), bzy_str_new("abc", 3));
+	ASSERT_INT(bzy_str_len(none), 0);
+}
+
+static void test_regex_replace(void)
+{
+	void *r = bzy_regex_replace(bzy_str_new("a+", 2), bzy_str_new("xaayaaaz", 8), bzy_str_new("-", 1));
+	ASSERT_INT(bzy_str_len(r), 5);
+	ASSERT_INT(memcmp(bzy_str_data(r), "x-y-z", 5), 0);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -561,6 +577,8 @@ int main(void)
 	RUN(test_live_cycle_kept);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
+	RUN(test_regex_find);
+	RUN(test_regex_replace);
 	SUMMARY();
 	return 0;
 }

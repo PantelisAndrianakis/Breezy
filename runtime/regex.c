@@ -736,3 +736,88 @@ int64_t bzy_regex_test(void *pat, void *text)
 	free(p);
 	return r;
 }
+
+void *bzy_regex_find(void *pat, void *text)
+{
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1);
+	const char *t = bzy_str_data(text);
+	int s = 0, e = 0;
+	int r = run(p, t, (int)bzy_str_len(text), 0, &s, &e);
+	free(p->in);
+	free(p);
+	if (!r)
+	{
+		return bzy_str_new("", 0);
+	}
+
+	return bzy_str_new(t + s, e - s);
+}
+
+void *bzy_regex_replace(void *pat, void *text, void *repl)
+{
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1);
+	const char *t = bzy_str_data(text);
+	int tl = (int)bzy_str_len(text);
+	const char *rp = bzy_str_data(repl);
+	int rl = (int)bzy_str_len(repl);
+
+	int cap = tl + 16, n = 0;
+	char *buf = malloc((size_t)cap);
+	int pos = 0;
+	while (pos <= tl)
+	{
+		int ms = 0, me = 0;
+		if (!run(p, t + pos, tl - pos, 0, &ms, &me))
+		{
+			break;
+		}
+
+		int abs_s = pos + ms, abs_e = pos + me;
+		int need = (abs_s - pos) + rl + 1;            /* +1 for a possible empty-match char. */
+		if (n + need > cap)
+		{
+			while (n + need > cap)
+			{
+				cap *= 2;
+			}
+
+			buf = realloc(buf, (size_t)cap);
+		}
+
+		memcpy(buf + n, t + pos, (size_t)(abs_s - pos));   /* Text before the match. */
+		n += abs_s - pos;
+		memcpy(buf + n, rp, (size_t)rl);                   /* The replacement. */
+		n += rl;
+		if (me == ms)                                      /* Empty match: emit one char, advance. */
+		{
+			if (abs_e < tl)
+			{
+				buf[n++] = t[abs_e];
+			}
+
+			pos = abs_e + 1;
+		}
+		else
+		{
+			pos = abs_e;
+		}
+	}
+
+	if (pos < tl)
+	{
+		if (n + (tl - pos) > cap)
+		{
+			cap = n + (tl - pos);
+			buf = realloc(buf, (size_t)cap);
+		}
+
+		memcpy(buf + n, t + pos, (size_t)(tl - pos));      /* Trailing text. */
+		n += tl - pos;
+	}
+
+	free(p->in);
+	free(p);
+	void *out = bzy_str_new(buf, n);
+	free(buf);
+	return out;
+}
