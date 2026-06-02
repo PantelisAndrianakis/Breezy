@@ -85,6 +85,7 @@ check math_libm   tests/samples/proj_math_libm     $'1024\n1\n1\n0'
 check clock       tests/samples/proj_clock         $'true\ntrue'
 check random      tests/samples/proj_random        $'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n4'
 check_throws throw tests/samples/proj_throw "boom"
+check catch       tests/samples/proj_catch         $'caught it\n0'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

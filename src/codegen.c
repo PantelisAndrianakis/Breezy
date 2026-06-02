@@ -15,6 +15,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->cur_break_label=-1;
 	cg->cur_continue_label=-1;
 	cg->ehfn_count=0;
+	cg->ehtry_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -1952,6 +1953,31 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_emit(cg,".L%d:", end);
 }
 
+/* try/catch (5e-2): the body is emitted inline between two file-unique labels;
+   normal completion jmps over the inline landing pad. The pad is reached only
+   by the unwinder (which sets rax = the caught exception), binds it into the
+   catch variable's slot (transferring the owned +1), and runs the catch body.
+   The region is recorded for this function's try-table (emitted in the EH record). */
+static void cg_try(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	int k = cg->ehtry_count++;
+	int after = cg_label(cg);
+	cg_emit(cg,"..@ehtry%d_s:", k);                /* `..@` labels are file-global yet don't reset .L scope. */
+	cg_block(cg,tt,f,s->then_blk,in_main);
+	cg_emit(cg,"..@ehtry%d_e:", k);
+	cg_emit(cg,"    jmp .L%d", after);             /* Normal path: skip the landing pad. */
+	cg_emit(cg,"..@ehtry%d_p:", k);                /* Landing pad: rax = caught exception. */
+	cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);   /* Bind (transfer owned). */
+	cg_block(cg,tt,f,s->else_blk,in_main);
+	cg_emit(cg,".L%d:", after);
+	if (cg->cur_try_count < 64)
+	{
+		cg->cur_try_k[cg->cur_try_count] = k;
+		strcpy(cg->cur_try_vt[cg->cur_try_count], s->decl_type.class_name);
+		cg->cur_try_count++;
+	}
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -2102,8 +2128,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_DEFAULT:
 		break;   /* Emitted by cg_switch, never reached here. */
 	case ST_TRY:
-		fprintf(stderr,"codegen: try/catch lowering arrives in Part 5e-2 Task 2\n");
-		exit(1);
+		cg_try(cg,tt,f,s,in_main);
 		break;
 	case ST_THROW:
 	{
@@ -2128,8 +2153,8 @@ static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 }
 
 /* Emits one per-function EH record into .data (PC range, frame size, name,
-   object-local offsets; try-region fields are 0 until 5e-2). The end label is
-   placed in .text just past the function; the record is appended in .data. */
+   object-local offsets, and the try-region table). The end label is placed in
+   .text just past the function; the record is appended in .data. */
 static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f)
 {
 	int i = cg->ehfn_count++;
@@ -2153,6 +2178,19 @@ static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f
 		fprintf(cg->out, "\n");
 	}
 
+	if (cg->cur_try_count > 0)
+	{
+		cg_emit(cg,"__ehtrytab%d:", i);          /* BzyEHTry[]: start, end, catch-vtable, pad. */
+		for (int t=0; t<cg->cur_try_count; t++)
+		{
+			int k = cg->cur_try_k[t];
+			cg_emit(cg,"    dq ..@ehtry%d_s", k);
+			cg_emit(cg,"    dq ..@ehtry%d_e", k);
+			cg_emit(cg,"    dq __vtable_%s", cg->cur_try_vt[t]);
+			cg_emit(cg,"    dq ..@ehtry%d_p", k);
+		}
+	}
+
 	cg_emit(cg,"__ehfn%d:", i);
 	cg_emit(cg,"    dq %s", label);
 	cg_emit(cg,"    dq __ehend%d", i);
@@ -2168,14 +2206,23 @@ static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f
 		cg_emit(cg,"    dq 0");
 	}
 
-	cg_emit(cg,"    dq 0");                       /* Try-region count (5e-2). */
-	cg_emit(cg,"    dq 0");                       /* Try-region ptr. */
+	cg_emit(cg,"    dq %d", cg->cur_try_count);   /* Try-region count. */
+	if (cg->cur_try_count > 0)
+	{
+		cg_emit(cg,"    dq __ehtrytab%d", i);
+	}
+	else
+	{
+		cg_emit(cg,"    dq 0");
+	}
+
 	cg_emit(cg,"section .text");
 }
 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
+	cg->cur_try_count = 0;
 	int locals = f->frame_size;
 	if (locals < 16)
 	{

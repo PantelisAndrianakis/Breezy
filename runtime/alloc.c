@@ -165,6 +165,15 @@ static void free_object(void *obj)
 	{
 		bzy_release(child);
 	});
+	set_color(obj, BLACK);
+	if (buffered(obj))
+	{
+		/* The roots buffer still points at this node, so freeing its memory now
+		   would leave a dangling candidate for the cycle collector to dereference.
+		   Leave it BLACK with a zero refcount; bzy_collect_cycles reclaims it. */
+		return;
+	}
+
 	g_live--;
 	free(obj);
 }
@@ -321,6 +330,13 @@ void bzy_collect_cycles(void)
 		else
 		{
 			set_buffered(s, 0);
+			if (*RC(s) == 0)
+			{
+				/* A node freed while still buffered (deferred by free_object):
+				   reclaim its memory now that it leaves the roots buffer. */
+				g_live--;
+				free(s);
+			}
 		}
 	}
 

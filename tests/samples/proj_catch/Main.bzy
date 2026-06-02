@@ -1,0 +1,26 @@
+void risky()
+{
+	Exception e;
+	e = new Exception();
+	e.message = "caught it";
+	throw e;
+}
+
+void handle()
+{
+	try
+	{
+		risky();
+	}
+	catch (Exception ex)
+	{
+		print(ex.message);
+	}
+}
+
+void main()
+{
+	handle();
+	collectCycles();
+	print(liveCount());
+}
