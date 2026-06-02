@@ -235,6 +235,14 @@ static void test_namespace_call(void)
 	ASSERT_INT(e->args[0]->kind, EX_FLOAT);
 }
 
+static void test_regex_namespace_call(void)
+{
+	Expr *e = parse_str("Regex.matches(p, t)");
+	ASSERT_INT(e->kind, EX_CALL);
+	ASSERT_STR(e->name, "Regex.matches");
+	ASSERT_INT(e->arg_count, 2);
+}
+
 static void test_compound_assign(void)
 {
 	Unit *u = parse_unit_str("void m() { int i; i = 0; i += 2; }");
@@ -358,6 +366,7 @@ int main(void)
 	RUN(test_generic_type_decl);
 	RUN(test_new_generic);
 	RUN(test_namespace_call);
+	RUN(test_regex_namespace_call);
 	RUN(test_compound_assign);
 	RUN(test_switch_parse);
 	RUN(test_throw_stmt);

@@ -84,6 +84,7 @@ check math_round  tests/samples/proj_math_round    $'2\n3\n2\n3\ntrue\nfalse'
 check math_libm   tests/samples/proj_math_libm     $'1024\n1\n1\n0'
 check clock       tests/samples/proj_clock         $'true\ntrue'
 check random      tests/samples/proj_random        $'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n4'
+check regex       tests/samples/proj_regex         $'true\ntrue\n123\na#b#c#'
 check_throws throw tests/samples/proj_throw "boom"
 check catch       tests/samples/proj_catch         $'caught it\n0'
 check catch_multi tests/samples/proj_catch_multi   $'bee\n99'

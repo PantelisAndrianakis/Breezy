@@ -1,0 +1,21 @@
+void main()
+{
+	string digits;
+	digits = "[0-9]+";
+
+	boolean ok;
+	ok = Regex.matches("a+b", "aaab");
+	print(ok);                                  // true
+
+	boolean found;
+	found = Regex.test(digits, "abc123");
+	print(found);                               // true
+
+	string hit;
+	hit = Regex.find(digits, "abc123def");
+	print(hit);                                 // 123
+
+	string masked;
+	masked = Regex.replace(digits, "a1b22c333", "#");
+	print(masked);                              // a#b#c#
+}

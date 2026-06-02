@@ -417,6 +417,26 @@ flip = Random.nextBoolean();
 
 `Random`: `get(bound)` / `get(origin, bound)` for `int`/`long`/`float`/`double`, plus `nextInt`/`nextLong`/`nextFloat`/`nextDouble`/`nextBoolean`/`nextGaussian`/`nextBytes`.
 
+### Regex
+
+`Regex` is a hand-written **Thompson NFA / Pike VM** — linear-time matching with no catastrophic backtracking (ReDoS-safe), which matters when matching untrusted input on a server.
+
+```breezy
+boolean ok;
+ok = Regex.matches("a+b", "aaab");          // full match -> true
+boolean found;
+found = Regex.test("[0-9]+", "abc123");     // search -> true
+
+string hit;
+hit = Regex.find("[0-9]+", "abc123def");    // leftmost match -> "123"
+string masked;
+masked = Regex.replace("[0-9]+", "a1b22c333", "#");   // -> "a#b#c#"
+```
+
+- `matches(pattern, text)` (full) and `test(pattern, text)` (search) return `boolean`; `find` returns the leftmost match substring (`""` if none); `replace` replaces every non-overlapping match.
+- Syntax: literals, `.`, `*` `+` `?`, alternation `|`, grouping `()`, anchors `^` `$`, classes `[a-z]`/`[^...]`, escapes `\d \D \w \W \s \S`, and bounded repetition `{n}` / `{n,}` / `{n,m}`.
+- Patterns are runtime strings, so they can be built and passed dynamically.
+
 ---
 
 ## Control Flow
@@ -613,6 +633,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
 - [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
 - [x] `Clock.currentTimeMillis()` / `currentTimeNanos()`
+- [x] `Regex` (`matches`/`test`/`find`/`replace`; Thompson NFA / Pike VM, linear-time, ReDoS-safe)
 - [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)
 

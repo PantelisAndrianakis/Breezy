@@ -262,6 +262,34 @@ static void resolve_clock(Expr *e)
 	e->type.kind = TY_LONG;
 }
 
+static void resolve_regex(Expr *e)
+{
+	const char *m = e->name + 6;   /* After "Regex.". */
+	int predicate = (strcmp(m,"matches")==0 || strcmp(m,"test")==0);
+	int find = strcmp(m,"find")==0;
+	int replace = strcmp(m,"replace")==0;
+	if (!predicate && !find && !replace)
+	{
+		die(e->line,"unknown Regex method: ",m);
+	}
+
+	int want = replace ? 3 : 2;
+	if (e->arg_count != want)
+	{
+		die(e->line,"wrong number of arguments for this Regex method",NULL);
+	}
+
+	for (int i=0; i<e->arg_count; i++)
+	{
+		if (e->args[i]->type.kind != TY_STRING)
+		{
+			die(e->line,"Regex arguments must be strings",NULL);
+		}
+	}
+
+	e->type.kind = predicate ? TY_BOOL : TY_STRING;
+}
+
 static void resolve_random(Expr *e)
 {
 	const char *m = e->name + 7;   /* After "Random.". */
@@ -898,6 +926,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Random.",7)==0)
 		{
 			resolve_random(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Regex.",6)==0)
+		{
+			resolve_regex(e);
 			break;
 		}
 

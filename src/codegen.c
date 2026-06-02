@@ -1285,6 +1285,25 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	exit(1);
 }
 
+/* Regex.* builtins -> bzy_regex_* (string args, boolean or owned-string result). */
+static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 6;   /* After "Regex.". */
+	const char *fn =
+		strcmp(m,"matches")==0 ? "bzy_regex_matches" :
+		strcmp(m,"test")==0    ? "bzy_regex_test" :
+		strcmp(m,"find")==0    ? "bzy_regex_find" :
+		"bzy_regex_replace";
+	TypeRef ps[3];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+}
+
 /* Random.* builtins. Selects the typed bzy_rnd_* symbol from the method + arg
    types and delegates to cg_call_with_args (int/fp routing + owned-temp release). */
 static void cg_random(Codegen *cg, TypeTable *tt, Expr *e)
@@ -1588,6 +1607,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Random.",7)==0)
 		{
 			cg_random(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Regex.",6)==0)
+		{
+			cg_regex(cg,tt,e);
 		}
 		else
 		{
@@ -2416,6 +2439,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_rnd_get_d");
 	cg_emit(cg,"extern bzy_rnd_get_dd");
 	cg_emit(cg,"extern bzy_rnd_bytes");
+	cg_emit(cg,"extern bzy_regex_matches");
+	cg_emit(cg,"extern bzy_regex_test");
+	cg_emit(cg,"extern bzy_regex_find");
+	cg_emit(cg,"extern bzy_regex_replace");
 	cg_emit(cg,"extern bzy_throw");
 	cg_emit(cg,"global __bzy_eh_funcs");
 	cg_emit(cg,"global __bzy_eh_func_count");

@@ -274,6 +274,14 @@ static void test_random_types(void)
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* nextBoolean -> boolean */
 }
 
+static void test_regex_types(void)
+{
+	Func *f=build1("void main() { string p; string t; p = \"a+\"; t = \"aa\"; "
+				   "boolean b; b = Regex.matches(p, t); string m; m = Regex.find(p, t); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* matches -> boolean */
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_STRING);  /* find -> string */
+}
+
 static void test_clock_type(void)
 {
 	Func *f=build1("void main() { long t; t = Clock.currentTimeMillis(); }")->funcs[0];
@@ -379,6 +387,7 @@ int main(void)
 	RUN(test_math_types);
 	RUN(test_clock_type);
 	RUN(test_random_types);
+	RUN(test_regex_types);
 	RUN(test_switch_resolves);
 	RUN(test_throw_resolves);
 	RUN(test_try_catch_resolves);
