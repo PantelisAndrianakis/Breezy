@@ -1239,6 +1239,22 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"floor")==0 || strcmp(m,"ceil")==0 || strcmp(m,"round")==0)
+	{
+		int mode = strcmp(m,"floor")==0 ? 1 : strcmp(m,"ceil")==0 ? 2 : 0;   /* 1 floor, 2 ceil, 0 nearest */
+		cg_to_double(cg,tt,e->args[0]);
+		cg_emit(cg,"    roundsd xmm0, xmm0, %d", mode);
+		return;
+	}
+
+	if (strcmp(m,"toRadians")==0)
+	{
+		cg_to_double(cg,tt,e->args[0]);
+		cg_emit(cg,"    movsd xmm1, qword [rel __deg2rad]");
+		cg_emit(cg,"    mulsd xmm0, xmm1");
+		return;
+	}
+
 	fprintf(stderr,"codegen: unsupported Math method '%s'\n", m);
 	exit(1);
 }
@@ -2236,4 +2252,6 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 
 		fprintf(cg->out, "0\n");   /* Trailing NUL (bzy_str_new also NUL-terminates). */
 	}
+
+	cg_emit(cg,"__deg2rad: dq 0x3f91df46a2529d39");   /* PI/180 = 0.017453292519943295 (Math.toRadians). */
 }

@@ -164,17 +164,18 @@ static void resolve_math(Expr *e)
 		return;
 	}
 
-	if (strcmp(m,"sqrt")==0)
+	if (strcmp(m,"sqrt")==0 || strcmp(m,"floor")==0 || strcmp(m,"ceil")==0
+			|| strcmp(m,"round")==0 || strcmp(m,"toRadians")==0)
 	{
 		if (e->arg_count!=1)
 		{
-			die(e->line,"Math.sqrt takes one argument",NULL);
+			die(e->line,"this Math function takes one argument",NULL);
 		}
 
 		TypeKind k=e->args[0]->type.kind;
 		if (!ty_is_int(k) && !ty_is_float(k))
 		{
-			die(e->line,"Math.sqrt requires a number",NULL);
+			die(e->line,"this Math function requires a number",NULL);
 		}
 
 		e->type.kind = TY_DOUBLE;
