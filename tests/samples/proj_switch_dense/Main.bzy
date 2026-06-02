@@ -1,0 +1,19 @@
+void main()
+{
+	int i;
+	i = 0;
+	while (i < 6)
+	{
+		switch (i)
+		{
+			case 0: print(100); break;
+			case 1: print(101); break;
+			case 2: print(102); break;
+			case 3: print(103); break;
+			case 4: print(104); break;
+			default: print(999);
+		}
+
+		i = i + 1;
+	}
+}

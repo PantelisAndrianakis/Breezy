@@ -1638,18 +1638,71 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 	}
 
-	cg_expr(cg,tt,s->cond);                 /* operand -> rax */
-	for (int i=0; i<b->count; i++)          /* Compare-chain dispatch. */
+	/* Collect case-value extent for the dense/sparse choice. */
+	long long lo=0, hi=0;
+	int ncases=0;
+	for (int i=0; i<b->count; i++)
 	{
-		Stmt *c=b->stmts[i];
-		if (c->kind==ST_CASE)
+		if (b->stmts[i]->kind==ST_CASE)
 		{
-			cg_emit(cg,"    cmp rax, %lld", c->value->int_val);
-			cg_emit(cg,"    je .L%d", c->decl_offset);
+			long long v=b->stmts[i]->value->int_val;
+			if (ncases==0 || v<lo)
+			{
+				lo=v;
+			}
+
+			if (ncases==0 || v>hi)
+			{
+				hi=v;
+			}
+
+			ncases++;
 		}
 	}
 
-	cg_emit(cg,"    jmp .L%d", default_lbl);
+	long long range = (ncases>0) ? (hi - lo + 1) : 0;
+	int dense = ncases>=4 && range<=4*ncases && range<=4096;
+
+	cg_expr(cg,tt,s->cond);                 /* operand -> rax */
+	if (dense)
+	{
+		int tab = cg_label(cg);
+		cg_emit(cg,"    mov rcx, rax");
+		cg_emit(cg,"    sub rcx, %lld", lo);
+		cg_emit(cg,"    cmp rcx, %lld", range);
+		cg_emit(cg,"    jae .L%d", default_lbl);     /* unsigned: outside [lo,hi] -> default/end */
+		cg_emit(cg,"    lea rdx, [rel .L%d]", tab);
+		cg_emit(cg,"    jmp [rdx + rcx*8]");
+		cg_emit(cg,".L%d:", tab);                    /* Inline table (jumped over; never executed). */
+		for (long long v=lo; v<=hi; v++)
+		{
+			int target = default_lbl;
+			for (int i=0; i<b->count; i++)
+			{
+				if (b->stmts[i]->kind==ST_CASE && b->stmts[i]->value->int_val==v)
+				{
+					target = b->stmts[i]->decl_offset;
+					break;
+				}
+			}
+
+			cg_emit(cg,"    dq .L%d", target);       /* Gaps -> default/end. */
+		}
+	}
+	else
+	{
+		for (int i=0; i<b->count; i++)          /* Compare-chain dispatch. */
+		{
+			Stmt *c=b->stmts[i];
+			if (c->kind==ST_CASE)
+			{
+				cg_emit(cg,"    cmp rax, %lld", c->value->int_val);
+				cg_emit(cg,"    je .L%d", c->decl_offset);
+			}
+		}
+
+		cg_emit(cg,"    jmp .L%d", default_lbl);
+	}
 
 	int sb = cg->cur_break_label;
 	cg->cur_break_label = end;              /* break -> switch end; continue unchanged. */

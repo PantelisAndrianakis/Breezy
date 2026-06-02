@@ -65,6 +65,8 @@ check foreach_set  tests/samples/proj_foreach_set  $'30\n2'
 check list_obj    tests/samples/proj_list_obj      $'6\n8\n7'
 check list_cycle  tests/samples/proj_list_cycle    $'0'
 check switch      tests/samples/proj_switch        $'20\n30\n10\n99'
+check switch_dense  tests/samples/proj_switch_dense  $'100\n101\n102\n103\n104\n999'
+check switch_braces tests/samples/proj_switch_braces $'2'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

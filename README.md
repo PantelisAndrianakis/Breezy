@@ -431,6 +431,20 @@ foreach (int n : nums)
     }
 }
 
+// switch — C-style fallthrough, default; dense cases lower to a jump table.
+switch (code)
+{
+    case 1:
+    case 2:
+        handleLow();      // 1 and 2 share this body
+        break;
+    case 3:
+        handleThree();
+        // falls through into default unless a break is added
+    default:
+        handleOther();
+}
+
 // Return.
 int twice()
 {
@@ -491,7 +505,7 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered core types **and the full collection library**: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>`, full loop control (`for`, `while`, `foreach`, `break`/`continue`, `++`/`--`), and **no-boxing generic collections** — `List`/`Stack`/`Queue`/`Deque`/`Set` over a monomorphizing mechanism — all ARC- and cycle-collector-aware. (`switch` is the next item.)
+The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered core types **and the full collection library**: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>`, full control flow (`if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, `++`/`--`), and **no-boxing generic collections** — `List`/`Stack`/`Queue`/`Deque`/`Set` over a monomorphizing mechanism — all ARC- and cycle-collector-aware. **Part 4 is complete**; Part 5 (language & stdlib essentials) is next.
 
 **Compiler core (Part 1) — done**
 - [x] Lexer, parser, typed AST
@@ -516,7 +530,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `foreach` loop + iterator protocol (arrays, strings, maps, collections)
 - [x] Stdlib-only monomorphized generics (specialized per element type, no boxing)
 - [x] Generic collections — `List` / `Stack` / `Queue` / `Deque` / `Set`, holding primitives or objects, each with `.contains()`
-- [ ] `switch` (C-style fallthrough, jump-table lowering)
+- [x] `switch` (C-style fallthrough, `default`, jump-table lowering for dense cases)
 
 **Language & standard-library essentials (Part 5)**
 - [ ] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
