@@ -235,7 +235,7 @@ static int expr_is_owned(Expr *e)
 	   EX_STR literal is +1 from bzy_str_new. */
 	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
 		   || e->kind==EX_STR || e->kind==EX_BINARY || e->kind==EX_NEWARRAY
-		   || e->kind==EX_NEWMAP;
+		   || e->kind==EX_NEWMAP || e->kind==EX_NEWGEN;
 }
 
 /* Retain the object pointer currently in rax; rax is preserved. */
@@ -672,6 +672,122 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    add rsp, 16");
 }
 
+/* Box<T> methods, specialized inline per T over the length-1 array slot at
+   [box+32]. The box is borrowed; set takes overwrite/ARC semantics; get retains
+   a managed value (owned); contains bakes equality per T and releases an owned
+   managed argument. */
+static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	TypeKind tk = e->lhs->type.elem->kind;
+	int managed = ty_is_managed(tk);
+	int fp = ty_is_float(tk);
+
+	if (strcmp(e->name,"get")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                 /* box ptr -> rax */
+		if (fp)
+		{
+			cg_load_fp(cg,tk,"[rax + 32]");
+		}
+		else if (managed)
+		{
+			cg_emit(cg,"    mov rax, [rax + 32]");
+			cg_retain_rax(cg);                 /* Owned (+1), like map.get. */
+		}
+		else
+		{
+			cg_load_scalar(cg,tk,"[rax + 32]");
+		}
+
+		return;
+	}
+
+	if (strcmp(e->name,"set")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                 /* box ptr */
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		if (fp)
+		{
+			cg_expr(cg,tt,e->args[0]);         /* value -> xmm0 */
+			cg_emit(cg,"    mov rax, [rsp]");
+			cg_store_fp(cg,tk,"[rax + 32]");
+		}
+		else if (managed)
+		{
+			cg_expr(cg,tt,e->args[0]);         /* value ptr -> rax */
+			cg_emit(cg,"    mov [rsp + 8], rax");
+			cg_emit(cg,"    mov rcx, rax");
+			cg_aligned_call(cg,"bzy_retain");  /* Retain the new occupant. */
+			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rdx, [rax + 32]");   /* Old occupant. */
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_emit(cg,"    mov [rax + 32], rcx");    /* Store new. */
+			cg_emit(cg,"    mov rcx, rdx");
+			cg_release_rcx(cg);                       /* Release the old. */
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[0]);         /* value -> rax */
+			cg_emit(cg,"    mov rbx, [rsp]");
+			cg_emit(cg,"    mov [rbx + 32], rax");    /* Width-extended 8-byte slot. */
+		}
+
+		cg_emit(cg,"    add rsp, 16");
+		return;
+	}
+
+	/* contains: bool in rax. */
+	cg_expr(cg,tt,e->lhs);                     /* box ptr */
+	cg_emit(cg,"    sub rsp, 16");
+	cg_emit(cg,"    mov [rsp], rax");
+	if (fp)
+	{
+		cg_expr(cg,tt,e->args[0]);             /* arg -> xmm0 */
+		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg, tk==TY_FLOAT ? "    movss xmm1, dword [rax + 32]" : "    movsd xmm1, qword [rax + 32]");
+		cg_emit(cg, tk==TY_FLOAT ? "    ucomiss xmm0, xmm1" : "    ucomisd xmm0, xmm1");
+		cg_emit(cg,"    sete al");
+		cg_emit(cg,"    movzx rax, al");
+	}
+	else if (tk==TY_STRING)
+	{
+		cg_expr(cg,tt,e->args[0]);             /* arg ptr -> rax */
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rdx, rax");
+		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg,"    mov rcx, [rax + 32]");
+		cg_aligned_call(cg,"bzy_str_eq");      /* rax = 0/1 */
+		if (expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov [rsp], rax");          /* Preserve result across release. */
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rsp]");
+		}
+	}
+	else   /* Scalar int/bool, or object identity. */
+	{
+		cg_expr(cg,tt,e->args[0]);             /* arg -> rax */
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rbx, rax");
+		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg,"    mov rax, [rax + 32]"); /* Slot value. */
+		cg_emit(cg,"    cmp rax, rbx");
+		cg_emit(cg,"    sete al");
+		cg_emit(cg,"    movzx rax, al");
+		if (managed && expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov [rsp], rax");          /* Preserve result. */
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rsp]");
+		}
+	}
+
+	cg_emit(cg,"    add rsp, 16");
+}
+
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (strcmp(e->name,"StringBuilder")==0)
@@ -771,8 +887,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_aligned_call(cg,"bzy_map_new");   /* Owned (+1) map in rax. */
 		break;
 	case EX_NEWGEN:
-		fprintf(stderr,"codegen: generic lowering arrives in Part 4e Task 4\n");
-		exit(1);
+		cg_emit(cg,"    mov rcx, 1");
+		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem->kind) ? 1 : 0);
+		cg_aligned_call(cg,"bzy_array_new");   /* Owned (+1) length-1 box in rax. */
 		break;
 	case EX_INDEX:
 		cg_index_addr(cg,tt,e);
@@ -894,7 +1011,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_new(cg,tt,e);
 		break;
 	case EX_METHOD_CALL:
-		if (e->lhs->type.kind==TY_MAP)
+		if (e->lhs->type.kind==TY_GENERIC)
+		{
+			cg_box_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_MAP)
 		{
 			cg_map_method(cg,tt,e);
 		}
@@ -1478,6 +1599,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
+	cg_emit(cg,"extern bzy_str_eq");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

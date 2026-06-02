@@ -1,0 +1,8 @@
+void main()
+{
+	Box<string> b;
+	b = new Box<string>();
+	b.set("hi");
+	print(b.contains("hi"));   // true (content equality)
+	print(b.contains("ho"));   // false
+}

@@ -1,0 +1,9 @@
+void main()
+{
+	Box<int> b;
+	b = new Box<int>();
+	b.set(7);
+	print(b.get());        // 7
+	print(b.contains(7));  // true
+	print(b.contains(3));  // false
+}
