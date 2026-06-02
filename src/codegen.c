@@ -820,14 +820,43 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    add rsp, 16");
 }
 
-/* Set<T> over a BzyMap (keys only). Defined in Part 4f Task 5. */
+/* Set<T> over a BzyMap (keys only). add/remove/contains lower to map put(k,1)/
+   remove/has. The receiver is borrowed; an owned managed key temporary is
+   released after the call (bzy_map_put retains its own copy). */
 static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	(void)cg;
-	(void)tt;
-	(void)e;
-	fprintf(stderr,"codegen: Set lowering arrives in Part 4f Task 5\n");
-	exit(1);
+	TypeKind tk = e->lhs->type.elem->kind;
+	const char *nm = e->name;
+	cg_expr(cg,tt,e->lhs);                  /* set (map) ptr */
+	cg_emit(cg,"    sub rsp, 16");
+	cg_emit(cg,"    mov [rsp], rax");
+	cg_expr(cg,tt,e->args[0]);              /* key */
+	cg_emit(cg,"    mov [rsp + 8], rax");
+	cg_emit(cg,"    mov rcx, [rsp]");
+	cg_emit(cg,"    mov rdx, [rsp + 8]");
+	if (strcmp(nm,"add")==0)
+	{
+		cg_emit(cg,"    mov r8, 1");        /* Dummy value. */
+		cg_aligned_call(cg,"bzy_map_put");
+	}
+	else if (strcmp(nm,"remove")==0)
+	{
+		cg_aligned_call(cg,"bzy_map_remove");
+	}
+	else   /* contains */
+	{
+		cg_aligned_call(cg,"bzy_map_has");
+	}
+
+	if (ty_is_managed(tk) && expr_is_owned(e->args[0]))
+	{
+		cg_emit(cg,"    mov [rsp], rax");        /* Preserve a bool result. */
+		cg_emit(cg,"    mov rcx, [rsp + 8]");
+		cg_release_rcx(cg);
+		cg_emit(cg,"    mov rax, [rsp]");
+	}
+
+	cg_emit(cg,"    add rsp, 16");
 }
 
 /* List / Stack / Queue / Deque / ArrayDeque methods over the vector runtime.

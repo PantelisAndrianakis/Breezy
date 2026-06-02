@@ -1,0 +1,14 @@
+void main()
+{
+	Set<string> s;
+	s = new Set<string>();
+	s.add("a");
+	s.add("b");
+	s.add("a");             // duplicate ignored
+	print(s.size);          // 2
+	print(s.contains("a")); // true
+	print(s.contains("c")); // false
+	s.remove("a");
+	print(s.contains("a")); // false
+	print(s.size);          // 1
+}

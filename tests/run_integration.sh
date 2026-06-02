@@ -59,6 +59,7 @@ check box_cycle  tests/samples/proj_box_cycle  $'0'
 check list_int    tests/samples/proj_list_int     $'3\n99\n2\nfalse\n99'
 check stack_queue tests/samples/proj_stack_queue  $'2\n2\n1\n7\n7\n8'
 check deque       tests/samples/proj_deque        $'1\n3\n1\n3\n1'
+check set_string  tests/samples/proj_set_string   $'2\ntrue\nfalse\nfalse\n1'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy
