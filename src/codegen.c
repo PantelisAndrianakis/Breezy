@@ -1497,6 +1497,8 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	int top = cg_label(cg), end = cg_label(cg), cont = cg_label(cg);
 	int owned = expr_is_owned(s->expr);
 	int sb = cg->cur_break_label, sc = cg->cur_continue_label;   /* Loop-label infra from Part 4g. */
+	int gen_set = (ik==TY_GENERIC && strcmp(s->expr->type.class_name,"Set")==0);   /* Set is a map. */
+	int gen_vec = (ik==TY_GENERIC && !gen_set);                                    /* List/Stack/Queue/Deque. */
 
 	cg_expr(cg,tt,s->expr);                     /* Container pointer -> rax. */
 	cg_emit(cg,"    mov [rbp - %d], rax", s->fe_coll_offset);
@@ -1513,7 +1515,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	}
 
 	cg_emit(cg,".L%d:", top);
-	if (ik==TY_MAP)
+	if (ik==TY_MAP || gen_set)
 	{
 		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
 		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_index_offset);
@@ -1534,6 +1536,34 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_aux_offset);
 		cg_emit(cg,"    movzx eax, byte [rax + rcx]");   /* byte -> int (zero-extended). */
 		cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+	}
+	else if (gen_vec)
+	{
+		TypeKind et = s->expr->type.elem->kind;
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_coll_offset);
+		cg_emit(cg,"    cmp rcx, [rdx + 24]");           /* index vs length@24 */
+		cg_emit(cg,"    jge .L%d", end);
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_index_offset);
+		cg_aligned_call(cg,"bzy_vec_get");               /* Element (managed -> retained) in rax. */
+		if (ty_is_float(et))
+		{
+			char mem[32];
+			cg_emit(cg, et==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+			sprintf(mem,"[rbp - %d]", s->decl_offset);
+			cg_store_fp(cg,et,mem);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+		}
+
+		if (ty_is_managed(et))   /* bzy_vec_get returned owned; the loop var is borrowed. */
+		{
+			cg_emit(cg,"    mov rcx, [rbp - %d]", s->decl_offset);
+			cg_release_rcx(cg);
+		}
 	}
 	else   /* TY_ARRAY */
 	{
@@ -1564,7 +1594,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	cg->cur_continue_label = sc;
 
 	cg_emit(cg,".L%d:", cont);            /* continue lands here, then the cursor advances. */
-	if (ik==TY_MAP)
+	if (ik==TY_MAP || gen_set)
 	{
 		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_index_offset);
 		cg_emit(cg,"    inc rax");

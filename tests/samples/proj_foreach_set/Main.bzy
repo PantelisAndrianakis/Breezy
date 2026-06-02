@@ -1,0 +1,20 @@
+void main()
+{
+	Set<int> s;
+	int sum;
+	int count;
+	s = new Set<int>();
+	s.add(10);
+	s.add(20);
+	s.add(10);
+	sum = 0;
+	count = 0;
+	foreach (int x : s)
+	{
+		sum = sum + x;
+		count = count + 1;
+	}
+
+	print(sum);     // 30
+	print(count);   // 2
+}

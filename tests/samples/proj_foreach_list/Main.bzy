@@ -1,0 +1,16 @@
+void main()
+{
+	List<int> l;
+	int sum;
+	l = new List<int>();
+	l.add(3);
+	l.add(4);
+	l.add(5);
+	sum = 0;
+	foreach (int x : l)
+	{
+		sum = sum + x;
+	}
+
+	print(sum);   // 12
+}

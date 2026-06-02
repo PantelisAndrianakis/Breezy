@@ -851,9 +851,13 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		{
 			elem.kind=TY_INT;           /* One byte per step, as an int. */
 		}
+		else if (ik==TY_GENERIC && strcmp(s->expr->type.class_name,"Box")!=0)
+		{
+			elem=*s->expr->type.elem;   /* List/Stack/Queue/Deque/Set yield T. */
+		}
 		else
 		{
-			die(s->line,"foreach requires an array, string, or map",NULL);
+			die(s->line,"foreach requires an array, string, map, or collection",NULL);
 		}
 
 		if (!assignable(&s->decl_type,&elem))
