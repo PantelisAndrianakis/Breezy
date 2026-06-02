@@ -100,6 +100,11 @@ static int typeref_equal(const TypeRef *x, const TypeRef *y)
 		return typeref_equal(x->elem,y->elem) && typeref_equal(x->elem2,y->elem2);
 	}
 
+	if (x->kind==TY_GENERIC)
+	{
+		return strcmp(x->class_name,y->class_name)==0 && typeref_equal(x->elem,y->elem);
+	}
+
 	return 1;
 }
 
@@ -113,6 +118,11 @@ static int assignable(const TypeRef *to, const TypeRef *from)
 	if (to->kind==TY_MAP && from->kind==TY_MAP)
 	{
 		return typeref_equal(to,from);   /* invariant on both key and value. */
+	}
+
+	if (to->kind==TY_GENERIC && from->kind==TY_GENERIC)
+	{
+		return typeref_equal(to,from);   /* invariant on template + element. */
 	}
 
 	if (to->kind == from->kind)
@@ -189,8 +199,23 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		break;   /* e->type is already TY_MAP + key/value, set by the parser. */
 	case EX_NEWGEN:
-		die(e->line,"generic resolve arrives in Part 4e Task 2",NULL);
-		break;
+	{
+		TypeKind ek=e->type.elem->kind;
+		int ok = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT;
+		if (!ok)
+		{
+			die(e->line,"Box element must be a scalar, string, or object",NULL);
+		}
+
+		if (ek==TY_OBJECT
+				&& !is_stringbuilder(e->type.elem)
+				&& !types_find_class(g_types,e->type.elem->class_name))
+		{
+			die(e->line,"unknown Box element type: ",e->type.elem->class_name);
+		}
+
+		break;   /* e->type already TY_GENERIC + elem, set by the parser. */
+	}
 	case EX_INDEX:
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
@@ -419,6 +444,45 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_METHOD_CALL:
 	{
 		resolve_expr(st,e->lhs,tc);
+		if (e->lhs->type.kind==TY_GENERIC)
+		{
+			resolve_args(st,e,tc);
+			TypeRef *T=e->lhs->type.elem;
+			if (strcmp(e->name,"set")==0)
+			{
+				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+				{
+					die(e->line,"Box.set(value) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"get")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Box.get() takes no arguments",NULL);
+				}
+
+				e->type=*T;
+			}
+			else if (strcmp(e->name,"contains")==0)
+			{
+				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+				{
+					die(e->line,"Box.contains(value) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else
+			{
+				die(e->line,"unknown Box method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_MAP)
 		{
 			resolve_args(st,e,tc);

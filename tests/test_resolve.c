@@ -224,6 +224,22 @@ static void test_break_in_loop_ok(void)
 	ASSERT_INT(f->body->stmts[2]->then_blk->stmts[0]->kind, ST_BREAK);
 }
 
+static void test_newgen_type(void)
+{
+	Func *f=build1("void main() { Box<int> b; b = new Box<int>(); }")->funcs[0];
+	Stmt *as=f->body->stmts[1];
+	ASSERT_INT(as->value->kind, EX_NEWGEN);
+	ASSERT_INT(as->value->type.kind, TY_GENERIC);
+}
+
+static void test_box_method_types(void)
+{
+	Func *f=build1("void main() { Box<int> b; int x; boolean c; "
+				   "b = new Box<int>(); b.set(7); x = b.get(); c = b.contains(7); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);    /* b.get() */
+	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_BOOL);   /* b.contains(7) */
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -283,6 +299,8 @@ int main(void)
 	RUN(test_for_resolve);
 	RUN(test_foreach_array_elem_type);
 	RUN(test_foreach_map_key_type);
+	RUN(test_newgen_type);
+	RUN(test_box_method_types);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();
