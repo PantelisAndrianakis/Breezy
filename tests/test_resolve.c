@@ -274,6 +274,14 @@ static void test_random_types(void)
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* nextBoolean -> boolean */
 }
 
+static void test_string_method_types(void)
+{
+	Func *f=build1("void main() { string s; s = \"hi\"; boolean b; b = s.contains(\"h\"); int i; i = s.indexOf(\"i\"); int n; n = s.length(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* contains -> boolean */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);    /* indexOf -> int */
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);    /* length -> int */
+}
+
 static void test_regex_types(void)
 {
 	Func *f=build1("void main() { string p; string t; p = \"a+\"; t = \"aa\"; "
@@ -387,6 +395,7 @@ int main(void)
 	RUN(test_math_types);
 	RUN(test_clock_type);
 	RUN(test_random_types);
+	RUN(test_string_method_types);
 	RUN(test_regex_types);
 	RUN(test_switch_resolves);
 	RUN(test_throw_resolves);

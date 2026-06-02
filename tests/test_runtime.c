@@ -528,6 +528,17 @@ static void test_regex_test_search(void)
 	ASSERT_INT(bzy_regex_test(bzy_str_new("z", 1), bzy_str_new("abc", 3)), 0);
 }
 
+static void test_str_query(void)
+{
+	ASSERT_INT(bzy_str_contains(bzy_str_new("hello world", 11), bzy_str_new("o w", 3)), 1);
+	ASSERT_INT(bzy_str_contains(bzy_str_new("hello", 5), bzy_str_new("z", 1)), 0);
+	ASSERT_INT(bzy_str_starts_with(bzy_str_new("/api/x", 6), bzy_str_new("/api", 4)), 1);
+	ASSERT_INT(bzy_str_starts_with(bzy_str_new("/x", 2), bzy_str_new("/api", 4)), 0);
+	ASSERT_INT(bzy_str_ends_with(bzy_str_new("file.bzy", 8), bzy_str_new(".bzy", 4)), 1);
+	ASSERT_INT(bzy_str_index_of(bzy_str_new("abcabc", 6), bzy_str_new("bc", 2)), 1);
+	ASSERT_INT(bzy_str_index_of(bzy_str_new("abc", 3), bzy_str_new("z", 1)), -1);
+}
+
 static void test_regex_find(void)
 {
 	void *m = bzy_regex_find(bzy_str_new("[0-9]+", 6), bzy_str_new("abc123def", 9));
@@ -577,6 +588,7 @@ int main(void)
 	RUN(test_live_cycle_kept);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
+	RUN(test_str_query);
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
 	SUMMARY();

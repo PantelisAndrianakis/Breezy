@@ -1,0 +1,21 @@
+void main()
+{
+	string path;
+	path = "/api/users";
+
+	boolean api;
+	api = path.startsWith("/api");
+	print(api);                 // true
+
+	boolean has;
+	has = path.contains("user");
+	print(has);                 // true
+
+	int at;
+	at = path.indexOf("users");
+	print(at);                  // 5
+
+	int len;
+	len = path.length();
+	print(len);                 // 10
+}

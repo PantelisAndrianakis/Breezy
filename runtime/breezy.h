@@ -26,6 +26,10 @@ int64_t bzy_str_len(void *s);                        /* Byte length (excludes th
 const char *bzy_str_data(void *s);                   /* Pointer to the inline NUL-terminated bytes. */
 void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */
 int64_t bzy_str_eq(void *a, void *b);                /* 1 if byte-equal (NULL-safe, identity fast path). */
+int64_t bzy_str_contains(void *s, void *needle);     /* 1 if needle occurs in s (empty needle -> 1). */
+int64_t bzy_str_starts_with(void *s, void *pre);     /* 1 if s begins with pre. */
+int64_t bzy_str_ends_with(void *s, void *suf);       /* 1 if s ends with suf. */
+int64_t bzy_str_index_of(void *s, void *needle);     /* First byte index of needle, or -1 (empty -> 0). */
 void    bzy_print_str(void *s);                      /* Write the bytes + '\n'. */
 
 void   *bzy_sb_new(void);                            /* Owned (+1) empty StringBuilder. */

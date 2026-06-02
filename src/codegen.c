@@ -546,14 +546,16 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 
 	if (owned_n > 0)
 	{
-		if (result_is_object)
-		{
-			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
-		}
-
+		/* Preserve the call result across the owned-temp releases: any non-fp
+		   result (object/int/bool) lives in rax, an fp result in xmm0. Both are
+		   caller-saved and clobbered by bzy_release, so spill and restore them. */
 		if (result_is_fp)
 		{
 			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		}
 
 		for (int i=0; i<owned_n; i++)
@@ -562,14 +564,13 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 			cg_release_rcx(cg);
 		}
 
-		if (result_is_object)
-		{
-			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
-		}
-
 		if (result_is_fp)
 		{
 			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		}
 	}
 
@@ -1285,6 +1286,26 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	exit(1);
 }
 
+/* string.method(...) -> bzy_str_* (receiver passed as self; boolean/int or owned result). */
+static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *nm = e->name;
+	const char *fn =
+		strcmp(nm,"length")==0      ? "bzy_str_len" :
+		strcmp(nm,"contains")==0    ? "bzy_str_contains" :
+		strcmp(nm,"startsWith")==0  ? "bzy_str_starts_with" :
+		strcmp(nm,"endsWith")==0    ? "bzy_str_ends_with" :
+		"bzy_str_index_of";
+	TypeRef ps[2];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+}
+
 /* Regex.* builtins -> bzy_regex_* (string args, boolean or owned-string result). */
 static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 {
@@ -1549,6 +1570,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
 			cg_sb_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_STRING)
+		{
+			cg_string_method(cg,tt,e);
 		}
 		else
 		{
@@ -2405,6 +2430,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
 	cg_emit(cg,"extern bzy_str_eq");
+	cg_emit(cg,"extern bzy_str_contains");
+	cg_emit(cg,"extern bzy_str_starts_with");
+	cg_emit(cg,"extern bzy_str_ends_with");
+	cg_emit(cg,"extern bzy_str_index_of");
 	cg_emit(cg,"extern bzy_vec_new");
 	cg_emit(cg,"extern bzy_vec_len");
 	cg_emit(cg,"extern bzy_vec_push_back");

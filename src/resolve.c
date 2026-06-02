@@ -262,6 +262,42 @@ static void resolve_clock(Expr *e)
 	e->type.kind = TY_LONG;
 }
 
+static void resolve_string_method(Expr *e)
+{
+	const char *nm = e->name;
+	if (strcmp(nm,"length")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"string.length() takes no arguments",NULL);
+		}
+
+		e->type.kind = TY_INT;
+	}
+	else if (strcmp(nm,"contains")==0 || strcmp(nm,"startsWith")==0 || strcmp(nm,"endsWith")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		{
+			die(e->line,"this string method expects one string argument",NULL);
+		}
+
+		e->type.kind = TY_BOOL;
+	}
+	else if (strcmp(nm,"indexOf")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		{
+			die(e->line,"string.indexOf expects one string argument",NULL);
+		}
+
+		e->type.kind = TY_INT;
+	}
+	else
+	{
+		die(e->line,"unknown string method: ",nm);
+	}
+}
+
 static void resolve_regex(Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Regex.". */
@@ -672,6 +708,13 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_METHOD_CALL:
 	{
 		resolve_expr(st,e->lhs,tc);
+		if (e->lhs->type.kind==TY_STRING)
+		{
+			resolve_args(st,e,tc);
+			resolve_string_method(e);
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			resolve_args(st,e,tc);

@@ -3,3 +3,5 @@
 --style=allman
 --indent=force-tab=4
 --add-braces
+# Edit in place without leaving *.orig backup files.
+--suffix=none

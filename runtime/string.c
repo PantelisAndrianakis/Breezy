@@ -70,6 +70,52 @@ int64_t bzy_str_eq(void *a, void *b)
 	return (la == lb && memcmp(bzy_str_data(a), bzy_str_data(b), (size_t)la) == 0) ? 1 : 0;
 }
 
+/* First index of needle in s, or -1. An empty needle matches at 0. */
+static int64_t str_find(const char *s, int64_t sl, const char *n, int64_t nl)
+{
+	if (nl == 0)
+	{
+		return 0;
+	}
+
+	if (nl > sl)
+	{
+		return -1;
+	}
+
+	for (int64_t i = 0; i + nl <= sl; i++)
+	{
+		if (memcmp(s + i, n, (size_t)nl) == 0)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+int64_t bzy_str_index_of(void *s, void *needle)
+{
+	return str_find(bzy_str_data(s), bzy_str_len(s), bzy_str_data(needle), bzy_str_len(needle));
+}
+
+int64_t bzy_str_contains(void *s, void *needle)
+{
+	return bzy_str_index_of(s, needle) >= 0 ? 1 : 0;
+}
+
+int64_t bzy_str_starts_with(void *s, void *pre)
+{
+	int64_t sl = bzy_str_len(s), pl = bzy_str_len(pre);
+	return (pl <= sl && memcmp(bzy_str_data(s), bzy_str_data(pre), (size_t)pl) == 0) ? 1 : 0;
+}
+
+int64_t bzy_str_ends_with(void *s, void *suf)
+{
+	int64_t sl = bzy_str_len(s), fl = bzy_str_len(suf);
+	return (fl <= sl && memcmp(bzy_str_data(s) + sl - fl, bzy_str_data(suf), (size_t)fl) == 0) ? 1 : 0;
+}
+
 void bzy_print_str(void *s)
 {
 	fwrite(bzy_str_data(s), 1, (size_t)bzy_str_len(s), stdout);
