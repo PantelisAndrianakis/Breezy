@@ -149,6 +149,13 @@ static void test_for_keyword(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_FOR);
 }
 
+static void test_throw_keyword(void)
+{
+	Lexer l;
+	lexer_init(&l, "throw");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_THROW);
+}
+
 static void test_switch_keywords(void)
 {
 	Lexer l;
@@ -250,6 +257,7 @@ int main(void)
 	RUN(test_incdec_operators);
 	RUN(test_break_continue_keywords);
 	RUN(test_for_keyword);
+	RUN(test_throw_keyword);
 	RUN(test_switch_keywords);
 	RUN(test_block_comment);
 	RUN(test_compound_assign_ops);

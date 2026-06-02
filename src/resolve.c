@@ -23,6 +23,19 @@ static ClassInfo *class_of(const TypeRef *t)
 	return t->kind==TY_OBJECT ? types_find_class(g_types,t->class_name) : NULL;
 }
 
+static int class_is_exception(ClassInfo *c)
+{
+	for (; c; c=c->parent)
+	{
+		if (strcmp(c->name,"Exception")==0)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 /* StringBuilder is a runtime-provided builtin object class (not user-declared),
    so its type, new, and methods are special-cased rather than table-resolved. */
 static int is_stringbuilder(const TypeRef *t)
@@ -1143,6 +1156,17 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;   /* Resolved as part of the enclosing switch body. */
+	case ST_THROW:
+	{
+		resolve_expr(st,s->expr,tc);
+		ClassInfo *c = s->expr->type.kind==TY_OBJECT ? class_of(&s->expr->type) : NULL;
+		if (!c || !class_is_exception(c))
+		{
+			die(s->line,"thrown value must be an Exception (or subclass)",NULL);
+		}
+
+		break;
+	}
 	}
 }
 

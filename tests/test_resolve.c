@@ -9,6 +9,7 @@ static Unit *build1(const char *s)
 	static Parser ps;
 	static Unit *u;
 	types_init(&g_tt);
+	types_register_builtins(&g_tt);
 	parser_init(&ps,s);
 	u=parse_unit(&ps);
 	types_register_unit_names(&g_tt,u);
@@ -287,6 +288,14 @@ static void test_switch_resolves(void)
 	ASSERT_INT(sw->cond->type.kind, TY_INT);
 }
 
+static void test_throw_resolves(void)
+{
+	Func *f=build1("void main() { Exception e; e = new Exception(); throw e; }")->funcs[0];
+	Stmt *s=f->body->stmts[2];
+	ASSERT_INT(s->kind, ST_THROW);
+	ASSERT_INT(s->expr->type.kind, TY_OBJECT);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -354,6 +363,7 @@ int main(void)
 	RUN(test_clock_type);
 	RUN(test_random_types);
 	RUN(test_switch_resolves);
+	RUN(test_throw_resolves);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

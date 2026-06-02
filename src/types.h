@@ -51,6 +51,7 @@ typedef struct
 } TypeTable;
 
 void       types_init(TypeTable *tt);
+void       types_register_builtins(TypeTable *tt);
 void       types_register_unit_names(TypeTable *tt, Unit *u);
 void       types_register_unit_members(TypeTable *tt, Unit *u);
 ClassInfo *types_find_class(TypeTable *tt, const char *name);

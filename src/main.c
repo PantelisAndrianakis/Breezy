@@ -88,6 +88,7 @@ int main(int argc, char *argv[])
 
 	TypeTable tt;
 	types_init(&tt);
+	types_register_builtins(&tt);
 	for (int i=0; i<nfiles; i++)
 	{
 		types_register_unit_names(&tt,units[i]);

@@ -2100,6 +2100,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;   /* Emitted by cg_switch, never reached here. */
+	case ST_THROW:
+		fprintf(stderr,"codegen: throw lowering arrives in Part 5e-1 Task 2\n");
+		exit(1);
+		break;
 	}
 }
 

@@ -860,6 +860,15 @@ static Stmt *parse_statement(Parser *p)
 		expect(p,TOKEN_SEMICOLON);
 		return stmt_new(ST_CONTINUE,line);
 	}
+	if (check(p,TOKEN_THROW))
+	{
+		int line=p->cur.line;
+		advance(p);
+		Stmt *s=stmt_new(ST_THROW,line);
+		s->expr=parse_expr(p);
+		expect(p,TOKEN_SEMICOLON);
+		return s;
+	}
 	return parse_assign_or_expr(p);
 }
 

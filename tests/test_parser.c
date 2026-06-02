@@ -263,6 +263,14 @@ static void test_switch_parse(void)
 	ASSERT_INT(b->stmts[4]->kind, ST_DEFAULT);
 }
 
+static void test_throw_stmt(void)
+{
+	Unit *u = parse_unit_str("void m() { Exception e; e = new Exception(); throw e; }");
+	Stmt *s = u->funcs[0]->body->stmts[2];
+	ASSERT_INT(s->kind, ST_THROW);
+	ASSERT_INT(s->expr->kind, EX_IDENT);
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -337,6 +345,7 @@ int main(void)
 	RUN(test_namespace_call);
 	RUN(test_compound_assign);
 	RUN(test_switch_parse);
+	RUN(test_throw_stmt);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

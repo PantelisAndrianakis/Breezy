@@ -9,6 +9,21 @@ void types_init(TypeTable *tt)
 	tt->func_count = 0;
 }
 
+void types_register_builtins(TypeTable *tt)
+{
+	ClassInfo *c = &tt->classes[tt->class_count++];
+	memset(c, 0, sizeof(*c));
+	strcpy(c->name, "Exception");
+	c->parent = NULL;
+	strcpy(c->fields[0].name, "message");
+	c->fields[0].type.kind = TY_STRING;
+	c->fields[0].offset = 24;
+	c->field_count = 1;
+	c->object_size = 32;
+	c->vtable_size = 0;
+	c->method_count = 0;
+}
+
 ClassInfo *types_find_class(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->class_count; i++)
