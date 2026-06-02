@@ -34,6 +34,10 @@ static void walk_stmt(Func *f, Stmt *s)
 		walk_block(f, s->then_blk);
 		break;
 	case ST_TRY:
+		walk_block(f, s->then_blk);
+		walk_block(f, s->else_blk);
+		break;
+	case ST_CATCH:
 		/* The catch variable is an object local: zeroed at the prologue and
 		   released at function exit, like any managed local. */
 		if (ty_is_managed(s->decl_type.kind) && f->obj_local_count < 64)
@@ -42,7 +46,6 @@ static void walk_stmt(Func *f, Stmt *s)
 		}
 
 		walk_block(f, s->then_blk);
-		walk_block(f, s->else_blk);
 		break;
 	default:
 		break;

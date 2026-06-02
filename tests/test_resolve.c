@@ -301,7 +301,8 @@ static void test_try_catch_resolves(void)
 	Func *f=build1("void main() { try { print(1); } catch (Exception e) { print(2); } }")->funcs[0];
 	Stmt *s=f->body->stmts[0];
 	ASSERT_INT(s->kind, ST_TRY);
-	ASSERT_INT(s->decl_type.kind, TY_OBJECT);
+	ASSERT_INT(s->else_blk->stmts[0]->kind, ST_CATCH);
+	ASSERT_INT(s->else_blk->stmts[0]->decl_type.kind, TY_OBJECT);
 }
 
 static void test_method_call_slot_and_class(void)

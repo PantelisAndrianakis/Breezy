@@ -191,6 +191,9 @@ static void scan_stmt_escapes(Stmt *s)
 		scan_block_escapes(s->then_blk);
 		scan_block_escapes(s->else_blk);
 		break;
+	case ST_CATCH:
+		scan_block_escapes(s->then_blk);
+		break;
 	}
 }
 

@@ -823,13 +823,21 @@ static Stmt *parse_try(Parser *p)
 	advance(p);                              /* Consume 'try'. */
 	Stmt *s=stmt_new(ST_TRY,line);
 	s->then_blk=parse_block(p);
-	expect(p,TOKEN_CATCH);
-	expect(p,TOKEN_LPAREN);
-	parse_type(p,&s->decl_type);
-	Token name=expect(p,TOKEN_IDENT);
-	strcpy(s->decl_name,name.text);
-	expect(p,TOKEN_RPAREN);
-	s->else_blk=parse_block(p);
+	s->else_blk=block_new();
+	do
+	{
+		int cline=p->cur.line;
+		expect(p,TOKEN_CATCH);
+		expect(p,TOKEN_LPAREN);
+		Stmt *c=stmt_new(ST_CATCH,cline);
+		parse_type(p,&c->decl_type);
+		Token name=expect(p,TOKEN_IDENT);
+		strcpy(c->decl_name,name.text);
+		expect(p,TOKEN_RPAREN);
+		c->then_blk=parse_block(p);
+		block_push(s->else_blk,c);
+	}
+	while (check(p,TOKEN_CATCH));
 	return s;
 }
 

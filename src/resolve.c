@@ -1169,18 +1169,25 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	}
 	case ST_TRY:
 	{
-		ClassInfo *cc = s->decl_type.kind==TY_OBJECT ? class_of(&s->decl_type) : NULL;
-		if (!cc || !class_is_exception(cc))
+		resolve_block(st,s->then_blk,tc);
+		for (int i=0; i<s->else_blk->count; i++)
 		{
-			die(s->line,"catch type must be an Exception (or subclass)",NULL);
+			Stmt *c=s->else_blk->stmts[i];
+			ClassInfo *cc = c->decl_type.kind==TY_OBJECT ? class_of(&c->decl_type) : NULL;
+			if (!cc || !class_is_exception(cc))
+			{
+				die(c->line,"catch type must be an Exception (or subclass)",NULL);
+			}
+
+			Symbol *cv=sym_add(st,c->decl_name,c->decl_type);
+			c->decl_offset=cv->offset;
+			resolve_block(st,c->then_blk,tc);
 		}
 
-		Symbol *cv=sym_add(st,s->decl_name,s->decl_type);
-		s->decl_offset=cv->offset;
-		resolve_block(st,s->then_blk,tc);
-		resolve_block(st,s->else_blk,tc);
 		break;
 	}
+	case ST_CATCH:
+		break;   /* Resolved as part of the enclosing try. */
 	}
 }
 

@@ -273,13 +273,17 @@ static void test_throw_stmt(void)
 
 static void test_try_catch_parse(void)
 {
-	Unit *u = parse_unit_str("void m() { try { print(1); } catch (Exception e) { print(2); } }");
+	Unit *u = parse_unit_str("void m() { try { print(1); } catch (Exception e) { print(2); } catch (Exception f) { print(3); } }");
 	Stmt *s = u->funcs[0]->body->stmts[0];
 	ASSERT_INT(s->kind, ST_TRY);
-	ASSERT_INT(s->then_blk->stmts[0]->kind, ST_EXPR);     /* print(1) */
-	ASSERT_INT(s->decl_type.kind, TY_OBJECT);             /* catch type */
-	ASSERT_STR(s->decl_name, "e");                        /* catch var */
-	ASSERT_INT(s->else_blk->stmts[0]->kind, ST_EXPR);     /* print(2) */
+	ASSERT_INT(s->then_blk->stmts[0]->kind, ST_EXPR);          /* try body: print(1) */
+	ASSERT_INT(s->else_blk->count, 2);                         /* two catch clauses */
+	Stmt *c0 = s->else_blk->stmts[0];
+	ASSERT_INT(c0->kind, ST_CATCH);
+	ASSERT_INT(c0->decl_type.kind, TY_OBJECT);
+	ASSERT_STR(c0->decl_name, "e");
+	ASSERT_INT(c0->then_blk->stmts[0]->kind, ST_EXPR);         /* handler: print(2) */
+	ASSERT_INT(s->else_blk->stmts[1]->kind, ST_CATCH);
 }
 
 static void test_foreach_stmt(void)

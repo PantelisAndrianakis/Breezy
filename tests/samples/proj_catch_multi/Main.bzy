@@ -1,0 +1,29 @@
+void risky()
+{
+	Bbb e;
+	e = new Bbb();
+	e.message = "bee";
+	throw e;
+}
+
+void handle()
+{
+	try
+	{
+		risky();
+	}
+	catch (Aaa a)
+	{
+		print(1);
+	}
+	catch (Bbb b)
+	{
+		print(b.message);
+	}
+}
+
+void main()
+{
+	handle();
+	print(99);
+}

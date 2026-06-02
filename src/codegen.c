@@ -1965,17 +1965,24 @@ static void cg_try(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_emit(cg,"..@ehtry%d_s:", k);                /* `..@` labels are file-global yet don't reset .L scope. */
 	cg_block(cg,tt,f,s->then_blk,in_main);
 	cg_emit(cg,"..@ehtry%d_e:", k);
-	cg_emit(cg,"    jmp .L%d", after);             /* Normal path: skip the landing pad. */
-	cg_emit(cg,"..@ehtry%d_p:", k);                /* Landing pad: rax = caught exception. */
-	cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);   /* Bind (transfer owned). */
-	cg_block(cg,tt,f,s->else_blk,in_main);
-	cg_emit(cg,".L%d:", after);
-	if (cg->cur_try_count < 64)
+	cg_emit(cg,"    jmp .L%d", after);             /* Normal path: skip all landing pads. */
+	for (int c=0; c<s->else_blk->count; c++)
 	{
-		cg->cur_try_k[cg->cur_try_count] = k;
-		strcpy(cg->cur_try_vt[cg->cur_try_count], s->decl_type.class_name);
-		cg->cur_try_count++;
+		Stmt *cl = s->else_blk->stmts[c];
+		cg_emit(cg,"..@ehtry%d_p%d:", k, c);       /* Landing pad: rax = caught exception. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cl->decl_offset);   /* Bind (transfer owned). */
+		cg_block(cg,tt,f,cl->then_blk,in_main);
+		cg_emit(cg,"    jmp .L%d", after);         /* After the handler, leave the try. */
+		if (cg->cur_try_count < 64)
+		{
+			cg->cur_try_k[cg->cur_try_count] = k;
+			cg->cur_try_c[cg->cur_try_count] = c;
+			strcpy(cg->cur_try_vt[cg->cur_try_count], cl->decl_type.class_name);
+			cg->cur_try_count++;
+		}
 	}
+
+	cg_emit(cg,".L%d:", after);
 }
 
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
@@ -2130,6 +2137,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_TRY:
 		cg_try(cg,tt,f,s,in_main);
 		break;
+	case ST_CATCH:
+		break;   /* Emitted by cg_try, never reached here. */
 	case ST_THROW:
 	{
 		cg_expr_owned(cg,tt,s->expr);            /* Owned (+1) exception pointer -> rax. */
@@ -2184,10 +2193,11 @@ static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f
 		for (int t=0; t<cg->cur_try_count; t++)
 		{
 			int k = cg->cur_try_k[t];
+			int c = cg->cur_try_c[t];
 			cg_emit(cg,"    dq ..@ehtry%d_s", k);
 			cg_emit(cg,"    dq ..@ehtry%d_e", k);
 			cg_emit(cg,"    dq __vtable_%s", cg->cur_try_vt[t]);
-			cg_emit(cg,"    dq ..@ehtry%d_p", k);
+			cg_emit(cg,"    dq ..@ehtry%d_p%d", k, c);
 		}
 	}
 
