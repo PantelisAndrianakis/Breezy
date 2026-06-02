@@ -126,6 +126,14 @@ static void test_foreach_and_colon(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_COLON);
 }
 
+static void test_incdec_operators(void)
+{
+	Lexer l;
+	lexer_init(&l, "++ --");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_PLUSPLUS);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_MINUSMINUS);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -194,6 +202,7 @@ int main(void)
 	RUN(test_brackets);
 	RUN(test_map_keyword);
 	RUN(test_foreach_and_colon);
+	RUN(test_incdec_operators);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

@@ -878,6 +878,12 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_BINARY:
 		cg_binary(cg,tt,e);
 		break;
+	case EX_INCDEC:
+		cg_expr(cg,tt,e->lhs);                 /* Current value -> rax. */
+		cg_emit(cg, e->op==TOKEN_PLUSPLUS ? "    add rax, 1" : "    sub rax, 1");
+		cg_extend_reg(cg,e->type.kind);        /* Re-extend to the declared width. */
+		cg_emit(cg,"    mov [rbp - %d], rax", e->lhs->anno_int);
+		break;
 	case EX_NEW:
 		cg_new(cg,tt,e);
 		break;

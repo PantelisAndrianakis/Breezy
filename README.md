@@ -300,7 +300,7 @@ The `blocking` keyword tells the runtime a call may block, so it's dispatched to
 | `boolean` | `true` / `false` |
 | `string` | UTF-8 text; concatenate with `+` / `+=` |
 | `T[]` | Heap-allocated array of any type, bounds-checked |
-| `map<K,V>` | Hash map: Swiss Table + wyhash |
+| `map<K,V>` | Hash map: open addressing with Swiss-style control bytes (`int`/`string` keys) |
 | `chan<T>` | Channel for passing values between breezes |
 | `ClassName` | Heap-allocated object, memory managed automatically (ARC + cycles) |
 | `void` | No value; used as a function return type |
@@ -320,6 +320,35 @@ sb = new StringBuilder();
 sb.append("Hello, ");
 sb.append("Breezy");
 print(sb.toString());          // Hello, Breezy
+```
+
+### Arrays
+
+Fixed-length, heap-allocated, and **bounds-checked** - an out-of-range index aborts rather than reading stray memory. Element loads are width-correct, and arrays of objects participate in ARC and the cycle collector.
+
+```breezy
+int[] squares;
+squares = new int[5];
+int i;
+i = 0;
+while (i < squares.length)
+{
+    squares[i] = i * i;
+    i = i + 1;
+}
+```
+
+### Maps
+
+`map<K,V>` is an open-addressing hash table (Swiss-style control bytes) keyed by `int` or `string`, with any value type. `put` / `get` / `has` / `remove` / `.size`; managed keys and values are retained and released automatically, and a map caught in a reference cycle is reclaimed by the cycle collector.
+
+```breezy
+map<string,int> counts;
+counts = new map<string,int>();
+counts.put("apples", 3);
+counts.put("apples", counts.get("apples") + 1);
+print(counts.has("pears"));    // false
+print(counts.size);            // 1
 ```
 
 ---
@@ -403,7 +432,7 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. Parts 1, 2, and 3 are complete and green: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector) and the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`) fully working.
+The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered its core reference types: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), and the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>` — all ARC- and cycle-collector-aware. Loop control (`foreach`, `for`, `break`/`continue`) is in progress.
 
 **Compiler core (Part 1) — done**
 - [x] Lexer, parser, typed AST
@@ -421,10 +450,12 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `float` / `double` (IEEE-754, SSE path)
 
 **Core types & collections (Part 4)**
-- [ ] Strings with amortized append (`StringBuilder`)
-- [ ] Arrays (`T[]`) with bounds checks
-- [ ] Maps (`map<K,V>`, Swiss Table + wyhash)
+- [x] Strings with amortized append (`StringBuilder`)
+- [x] Arrays (`T[]`) with bounds checks
+- [x] Maps (`map<K,V>`, open addressing, ARC + cycle-collected)
+- [ ] Loop control: `for`, `break`/`continue`, `++`/`--`
 - [ ] `foreach` loop + iterator protocol
+- [ ] `switch` (C-style fallthrough, jump-table lowering)
 - [ ] Stdlib-only monomorphized generics (specialized per element type, no boxing)
 - [ ] Generic collections — `List` / `Set` / `Queue` / `Deque` / `Stack`, holding primitives or objects, each with `.contains()`
 

@@ -216,10 +216,28 @@ Token lexer_next(Lexer *l)
 	switch (c)
 	{
 	case '+':
-		t.type = TOKEN_PLUS;
+		if (peek_ch(l)=='+')
+		{
+			next_ch(l);
+			t.type=TOKEN_PLUSPLUS;
+		}
+		else
+		{
+			t.type=TOKEN_PLUS;
+		}
+
 		return t;
 	case '-':
-		t.type = TOKEN_MINUS;
+		if (peek_ch(l)=='-')
+		{
+			next_ch(l);
+			t.type=TOKEN_MINUSMINUS;
+		}
+		else
+		{
+			t.type=TOKEN_MINUS;
+		}
+
 		return t;
 	case '*':
 		t.type = TOKEN_STAR;
@@ -395,6 +413,10 @@ const char *token_type_name(TokenType t)
 		return "+";
 	case TOKEN_MINUS:
 		return "-";
+	case TOKEN_PLUSPLUS:
+		return "++";
+	case TOKEN_MINUSMINUS:
+		return "--";
 	case TOKEN_STAR:
 		return "*";
 	case TOKEN_SLASH:

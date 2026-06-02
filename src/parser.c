@@ -118,6 +118,15 @@ static Expr *parse_multiplicative(Parser *p)
 static Expr *parse_unary(Parser *p)
 {
 	TypeKind ck;
+	if (check(p,TOKEN_PLUSPLUS) || check(p,TOKEN_MINUSMINUS))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_INCDEC,line);
+		e->op=op;
+		e->lhs=parse_unary(p);
+		return e;
+	}
 	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID)
 	{
 		int line=p->cur.line;
@@ -176,6 +185,15 @@ static Expr *parse_postfix(Parser *p)
 			f->lhs = e;
 			e = f;
 		}
+	}
+	if (check(p,TOKEN_PLUSPLUS) || check(p,TOKEN_MINUSMINUS))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *pe=expr_new(EX_INCDEC,line);
+		pe->op=op;
+		pe->lhs=e;
+		e=pe;
 	}
 	return e;
 }

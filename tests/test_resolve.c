@@ -181,6 +181,15 @@ static void test_map_get_and_size_types(void)
 	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT);   /* d.size */
 }
 
+static void test_incdec_type(void)
+{
+	Func *f=build1("void main() { int i; i = 0; i++; }")->funcs[0];
+	Stmt *st=f->body->stmts[2];
+	ASSERT_INT(st->kind, ST_EXPR);
+	ASSERT_INT(st->expr->kind, EX_INCDEC);
+	ASSERT_INT(st->expr->type.kind, TY_INT);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -235,6 +244,7 @@ int main(void)
 	RUN(test_array_length_is_int);
 	RUN(test_newmap_type);
 	RUN(test_map_get_and_size_types);
+	RUN(test_incdec_type);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

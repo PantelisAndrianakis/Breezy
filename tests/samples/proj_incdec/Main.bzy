@@ -1,0 +1,10 @@
+void main()
+{
+	int i;
+	i = 41;
+	i++;
+	print(i);   // 42
+	i--;
+	i--;
+	print(i);   // 40
+}

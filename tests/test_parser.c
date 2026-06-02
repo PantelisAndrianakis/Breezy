@@ -176,6 +176,17 @@ static void test_new_map(void)
 	ASSERT_INT(e->type.elem2->kind, TY_INT);
 }
 
+static void test_incdec_parse(void)
+{
+	Expr *post = parse_str("i++");
+	ASSERT_INT(post->kind, EX_INCDEC);
+	ASSERT_INT(post->op, TOKEN_PLUSPLUS);
+	ASSERT_INT(post->lhs->kind, EX_IDENT);
+	Expr *pre = parse_str("--i");
+	ASSERT_INT(pre->kind, EX_INCDEC);
+	ASSERT_INT(pre->op, TOKEN_MINUSMINUS);
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -242,6 +253,7 @@ int main(void)
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);
 	RUN(test_new_map);
+	RUN(test_incdec_parse);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

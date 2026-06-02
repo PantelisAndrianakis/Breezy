@@ -261,6 +261,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		e->type=e->lhs->type;
 		break;
+	case EX_INCDEC:
+		resolve_expr(st,e->lhs,tc);
+		if (e->lhs->kind!=EX_IDENT || !ty_is_int(e->lhs->type.kind))
+		{
+			die(e->line,"'++'/'--' requires an integer variable",NULL);
+		}
+
+		e->type=e->lhs->type;
+		break;
 	case EX_BINARY:
 	{
 		resolve_expr(st,e->lhs,tc);
