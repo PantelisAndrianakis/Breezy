@@ -1,0 +1,9 @@
+void main()
+{
+	Box<Dog> b;
+	b = new Box<Dog>();
+	b.set(new Dog());
+	print(liveCount());     // box (length-1 array) + Dog = 2
+	b.set(new Dog());       // overwrite: old Dog released, new retained
+	print(liveCount());     // still 2 (array + the new Dog)
+}

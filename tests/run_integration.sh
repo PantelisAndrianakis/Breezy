@@ -54,6 +54,8 @@ check foreach_map    tests/samples/proj_foreach_map    $'6\n3'
 check_fail foreach_noniter tests/samples/bad_foreach_noniter.bzy
 check box_int    tests/samples/proj_box_int    $'7\ntrue\nfalse'
 check box_string tests/samples/proj_box_string $'true\nfalse'
+check box_obj    tests/samples/proj_box_obj    $'2\n2'
+check box_cycle  tests/samples/proj_box_cycle  $'0'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

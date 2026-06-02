@@ -725,6 +725,11 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov [rax + 32], rcx");    /* Store new. */
 			cg_emit(cg,"    mov rcx, rdx");
 			cg_release_rcx(cg);                       /* Release the old. */
+			if (expr_is_owned(e->args[0]))
+			{
+				cg_emit(cg,"    mov rcx, [rsp + 8]"); /* Release the owned arg temporary. */
+				cg_release_rcx(cg);
+			}
 		}
 		else
 		{

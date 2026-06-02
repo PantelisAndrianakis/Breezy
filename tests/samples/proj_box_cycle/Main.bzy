@@ -1,0 +1,14 @@
+void makeCycle()
+{
+	Node n;
+	n = new Node();
+	n.self = new Box<Node>();
+	n.self.set(n);     // n -> self(box) -> slot -> n (cycle through the box).
+}
+
+void main()
+{
+	makeCycle();
+	collectCycles();
+	print(liveCount());   // 0
+}
