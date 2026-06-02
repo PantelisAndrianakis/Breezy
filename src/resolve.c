@@ -200,18 +200,24 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;   /* e->type is already TY_MAP + key/value, set by the parser. */
 	case EX_NEWGEN:
 	{
+		const char *tmpl=e->type.class_name;
 		TypeKind ek=e->type.elem->kind;
-		int ok = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT;
-		if (!ok)
+		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT;
+		if (!scalar_or_obj)
 		{
-			die(e->line,"Box element must be a scalar, string, or object",NULL);
+			die(e->line,"collection element must be a scalar, string, or object",NULL);
+		}
+
+		if (strcmp(tmpl,"Set")==0 && ek!=TY_INT && ek!=TY_STRING)
+		{
+			die(e->line,"Set element must be int or string (hashable)",NULL);
 		}
 
 		if (ek==TY_OBJECT
 				&& !is_stringbuilder(e->type.elem)
 				&& !types_find_class(g_types,e->type.elem->class_name))
 		{
-			die(e->line,"unknown Box element type: ",e->type.elem->class_name);
+			die(e->line,"unknown collection element type: ",e->type.elem->class_name);
 		}
 
 		break;   /* e->type already TY_GENERIC + elem, set by the parser. */
@@ -425,6 +431,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_GENERIC)
+		{
+			if (strcmp(e->name,"size")!=0)
+			{
+				die(e->line,"collections have only '.size'",NULL);
+			}
+
+			e->type.kind=TY_INT;
+			e->anno_int=24;             /* length (vector) / size (map) field offset. */
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{
@@ -447,37 +465,132 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			resolve_args(st,e,tc);
+			const char *tmpl=e->lhs->type.class_name;
 			TypeRef *T=e->lhs->type.elem;
-			if (strcmp(e->name,"set")==0)
+			const char *nm=e->name;
+
+			/* Shared by all: contains(T) -> bool. */
+			if (strcmp(nm,"contains")==0)
 			{
 				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
 				{
-					die(e->line,"Box.set(value) type mismatch",NULL);
+					die(e->line,"contains(value) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+				break;
+			}
+
+			if (strcmp(tmpl,"Box")==0)
+			{
+				if (strcmp(nm,"set")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"Box.set type mismatch",NULL);
+					}
+
+					e->type.kind=TY_VOID;
+				}
+				else if (strcmp(nm,"get")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"Box.get takes no arguments",NULL);
+					}
+
+					e->type=*T;
+				}
+				else
+				{
+					die(e->line,"unknown Box method: ",nm);
+				}
+
+				break;
+			}
+
+			if (strcmp(tmpl,"Set")==0)
+			{
+				if (strcmp(nm,"add")==0 || strcmp(nm,"remove")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"Set op type mismatch",NULL);
+					}
+
+					e->type.kind=TY_VOID;
+				}
+				else
+				{
+					die(e->line,"unknown Set method: ",nm);
+				}
+
+				break;
+			}
+
+			/* Vector-backed: List / Stack / Queue / Deque / ArrayDeque. */
+			int add1   = strcmp(nm,"add")==0 || strcmp(nm,"push")==0 || strcmp(nm,"enqueue")==0
+						 || strcmp(nm,"addFirst")==0 || strcmp(nm,"addLast")==0;
+			int takeT  = strcmp(nm,"pop")==0 || strcmp(nm,"dequeue")==0 || strcmp(nm,"peek")==0
+						 || strcmp(nm,"removeFirst")==0 || strcmp(nm,"removeLast")==0
+						 || strcmp(nm,"peekFirst")==0 || strcmp(nm,"peekLast")==0;
+			if (add1)
+			{
+				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+				{
+					die(e->line,"add(value) type mismatch",NULL);
 				}
 
 				e->type.kind=TY_VOID;
 			}
-			else if (strcmp(e->name,"get")==0)
+			else if (takeT)
 			{
 				if (e->arg_count!=0)
 				{
-					die(e->line,"Box.get() takes no arguments",NULL);
+					die(e->line,"this method takes no arguments",NULL);
 				}
 
 				e->type=*T;
 			}
-			else if (strcmp(e->name,"contains")==0)
+			else if (strcmp(nm,"get")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"get(index) needs an integer",NULL);
+				}
+
+				e->type=*T;
+			}
+			else if (strcmp(nm,"set")==0)
+			{
+				if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || !assignable(T,&e->args[1]->type))
+				{
+					die(e->line,"set(index,value) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(nm,"removeAt")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"removeAt(index) needs an integer",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(nm,"indexOf")==0)
 			{
 				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
 				{
-					die(e->line,"Box.contains(value) type mismatch",NULL);
+					die(e->line,"indexOf(value) type mismatch",NULL);
 				}
 
-				e->type.kind=TY_BOOL;
+				e->type.kind=TY_INT;
 			}
 			else
 			{
-				die(e->line,"unknown Box method: ",e->name);
+				die(e->line,"unknown collection method: ",nm);
 			}
 
 			break;

@@ -373,7 +373,13 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 /* The fixed set of compiler-known generic templates. Part 4f extends this. */
 static int is_generic_template(const char *name)
 {
-	return strcmp(name,"Box")==0;
+	return strcmp(name,"Box")==0
+		   || strcmp(name,"List")==0
+		   || strcmp(name,"Stack")==0
+		   || strcmp(name,"Queue")==0
+		   || strcmp(name,"Deque")==0
+		   || strcmp(name,"ArrayDeque")==0
+		   || strcmp(name,"Set")==0;
 }
 
 /* Parse a base (non-array) type: scalar / string / map / generic / IDENT class. */
