@@ -42,5 +42,7 @@ int64_t bzy_map_get(void *m, int64_t key);   /* 0/NULL if absent; retains a mana
 int64_t bzy_map_has(void *m, int64_t key);   /* 1 / 0 */
 void    bzy_map_remove(void *m, int64_t key);
 int64_t bzy_map_len(void *m);
+int64_t bzy_map_iter(void *m, int64_t from);   /* Next full slot index >= from, or -1. */
+int64_t bzy_map_key_at(void *m, int64_t slot); /* Key at slot (borrowed; no retain). */
 
 #endif

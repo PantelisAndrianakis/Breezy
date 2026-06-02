@@ -225,6 +225,29 @@ static void test_map_object_values_released(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_map_iteration(void)
+{
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(0, 0);           /* int keys, unmanaged values */
+	bzy_map_put(m, 5, 50);
+	bzy_map_put(m, 7, 70);
+	bzy_map_put(m, 9, 90);
+	int64_t keys_sum = 0, vals_sum = 0, count = 0;
+	for (int64_t c = bzy_map_iter(m, 0); c >= 0; c = bzy_map_iter(m, c + 1))
+	{
+		int64_t k = bzy_map_key_at(m, c);
+		keys_sum += k;
+		vals_sum += bzy_map_get(m, k);
+		count++;
+	}
+
+	ASSERT_INT(count, 3);
+	ASSERT_INT(keys_sum, 21);              /* 5 + 7 + 9 */
+	ASSERT_INT(vals_sum, 210);             /* 50 + 70 + 90 */
+	bzy_release(m);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_builder_append_tostring(void)
 {
 	int64_t before = bzy_live_count();
@@ -319,6 +342,7 @@ int main(void)
 	RUN(test_map_int_keys);
 	RUN(test_map_string_keys_and_grow);
 	RUN(test_map_object_values_released);
+	RUN(test_map_iteration);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);

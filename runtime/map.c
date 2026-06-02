@@ -267,6 +267,26 @@ int64_t bzy_map_len(void *m)
 	return *M_SIZE(m);
 }
 
+int64_t bzy_map_iter(void *m, int64_t from)
+{
+	int64_t cap = *M_CAP(m);
+	uint8_t *ctrl = *M_CTRL(m);
+	for (int64_t i = from; i < cap; i++)
+	{
+		if ((ctrl[i] & 0x80) == 0)   /* FULL: top bit clear (EMPTY/DELETED set it). */
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+int64_t bzy_map_key_at(void *m, int64_t slot)
+{
+	return keys_data(m)[slot];   /* Borrowed: the map keeps the reference. */
+}
+
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 {
 	for (int64_t i = 0; i < cap; i++)
