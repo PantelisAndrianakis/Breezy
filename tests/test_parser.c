@@ -187,6 +187,14 @@ static void test_incdec_parse(void)
 	ASSERT_INT(pre->op, TOKEN_MINUSMINUS);
 }
 
+static void test_break_continue_stmt(void)
+{
+	Unit *u = parse_unit_str("void m() { while (true) { break; continue; } }");
+	Block *body = u->funcs[0]->body->stmts[0]->then_blk;
+	ASSERT_INT(body->stmts[0]->kind, ST_BREAK);
+	ASSERT_INT(body->stmts[1]->kind, ST_CONTINUE);
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -254,6 +262,7 @@ int main(void)
 	RUN(test_map_type_decl);
 	RUN(test_new_map);
 	RUN(test_incdec_parse);
+	RUN(test_break_continue_stmt);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

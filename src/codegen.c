@@ -12,6 +12,8 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->label_count=0;
 	cg->fpk_count=0;
 	cg->strk_count=0;
+	cg->cur_break_label=-1;
+	cg->cur_continue_label=-1;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -1167,6 +1169,9 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_WHILE:
 	{
 		int top=cg_label(cg), end=cg_label(cg);
+		int sb=cg->cur_break_label, sc=cg->cur_continue_label;
+		cg->cur_break_label=end;
+		cg->cur_continue_label=top;
 		cg_emit(cg,".L%d:",top);
 		cg_expr(cg,tt,s->cond);
 		cg_emit(cg,"    cmp rax, 0");
@@ -1174,11 +1179,19 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_block(cg,tt,f,s->then_blk,in_main);
 		cg_emit(cg,"    jmp .L%d",top);
 		cg_emit(cg,".L%d:",end);
+		cg->cur_break_label=sb;
+		cg->cur_continue_label=sc;
 		break;
 	}
 	case ST_FOREACH:
 		fprintf(stderr,"codegen: foreach lowering arrives in Part 4d Task 4\n");
 		exit(1);
+		break;
+	case ST_BREAK:
+		cg_emit(cg,"    jmp .L%d", cg->cur_break_label);
+		break;
+	case ST_CONTINUE:
+		cg_emit(cg,"    jmp .L%d", cg->cur_continue_label);
 		break;
 	}
 }

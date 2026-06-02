@@ -167,6 +167,9 @@ static void scan_stmt_escapes(Stmt *s)
 		walk_expr(s->expr);
 		scan_block_escapes(s->then_blk);
 		break;
+	case ST_BREAK:
+	case ST_CONTINUE:
+		break;
 	}
 }
 

@@ -123,7 +123,7 @@ struct Expr
 	int      arg_count;
 };
 
-typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH } StmtKind;
+typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE } StmtKind;
 
 typedef struct Stmt Stmt;
 typedef struct Block Block;

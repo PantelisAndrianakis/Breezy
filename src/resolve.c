@@ -9,6 +9,7 @@
 
 static TypeTable *g_types;
 static const TypeRef *g_ret;   /* Return type of the function being resolved. */
+static int g_loop_depth;       /* >0 inside a while/for/foreach body; gates break/continue. */
 
 static void die(int line, const char *msg, const char *arg)
 {
@@ -636,7 +637,9 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"'while' condition must be boolean",NULL);
 		}
 
+		g_loop_depth++;
 		resolve_block(st,s->then_blk,tc);
+		g_loop_depth--;
 		break;
 	case ST_RETURN:
 		if (s->ret_val)
@@ -654,6 +657,13 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_FOREACH:
 		die(s->line,"foreach resolve arrives in Part 4d Task 2",NULL);
 		break;
+	case ST_BREAK:
+	case ST_CONTINUE:
+		if (g_loop_depth==0)
+		{
+			die(s->line, s->kind==ST_BREAK ? "break outside a loop" : "continue outside a loop", NULL);
+		}
+		break;
 	}
 }
 
@@ -669,6 +679,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 {
 	g_types=tt;
 	g_ret=&f->ret_type;
+	g_loop_depth=0;
 	SymTable st;
 	sym_init(&st);
 	if (this_class)

@@ -13,6 +13,8 @@ typedef struct
 	int argtmp_base;   /* The rbp offset of ARGTMP[0]; ARGTMP[i] is argtmp_base + i*8. */
 	int assign_save;   /* The rbp offset that holds a new field-store value across receiver evaluation. */
 	int fp_save;       /* The rbp offset for spilling xmm0 (FP return / FP field store). */
+	int cur_break_label;     /* Enclosing loop's end label (-1 if not in a loop). */
+	int cur_continue_label;  /* Enclosing loop's continue target (-1 if not in a loop). */
 	struct
 	{
 		int is_float;             /* 1 for a 32-bit float constant, 0 for 64-bit double. */

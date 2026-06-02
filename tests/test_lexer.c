@@ -134,6 +134,14 @@ static void test_incdec_operators(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_MINUSMINUS);
 }
 
+static void test_break_continue_keywords(void)
+{
+	Lexer l;
+	lexer_init(&l, "break continue");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_BREAK);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_CONTINUE);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -203,6 +211,7 @@ int main(void)
 	RUN(test_map_keyword);
 	RUN(test_foreach_and_colon);
 	RUN(test_incdec_operators);
+	RUN(test_break_continue_keywords);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

@@ -575,6 +575,20 @@ static Stmt *parse_statement(Parser *p)
 	{
 		return parse_return(p);
 	}
+	if (check(p,TOKEN_BREAK))
+	{
+		int line=p->cur.line;
+		advance(p);
+		expect(p,TOKEN_SEMICOLON);
+		return stmt_new(ST_BREAK,line);
+	}
+	if (check(p,TOKEN_CONTINUE))
+	{
+		int line=p->cur.line;
+		advance(p);
+		expect(p,TOKEN_SEMICOLON);
+		return stmt_new(ST_CONTINUE,line);
+	}
 	return parse_assign_or_expr(p);
 }
 

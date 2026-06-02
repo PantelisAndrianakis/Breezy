@@ -190,6 +190,12 @@ static void test_incdec_type(void)
 	ASSERT_INT(st->expr->type.kind, TY_INT);
 }
 
+static void test_break_in_loop_ok(void)
+{
+	Func *f=build1("void main() { int i; i = 0; while (i < 3) { break; } }")->funcs[0];
+	ASSERT_INT(f->body->stmts[2]->then_blk->stmts[0]->kind, ST_BREAK);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -245,6 +251,7 @@ int main(void)
 	RUN(test_newmap_type);
 	RUN(test_map_get_and_size_types);
 	RUN(test_incdec_type);
+	RUN(test_break_in_loop_ok);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();
