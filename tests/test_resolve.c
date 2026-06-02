@@ -256,6 +256,14 @@ static void test_set_string_ok(void)
 	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_GENERIC);
 }
 
+static void test_switch_resolves(void)
+{
+	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
+	Stmt *sw=f->body->stmts[2];
+	ASSERT_INT(sw->kind, ST_SWITCH);
+	ASSERT_INT(sw->cond->type.kind, TY_INT);
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -319,6 +327,7 @@ int main(void)
 	RUN(test_box_method_types);
 	RUN(test_list_method_types);
 	RUN(test_set_string_ok);
+	RUN(test_switch_resolves);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

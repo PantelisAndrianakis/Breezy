@@ -9,7 +9,8 @@
 
 static TypeTable *g_types;
 static const TypeRef *g_ret;   /* Return type of the function being resolved. */
-static int g_loop_depth;       /* >0 inside a while/for/foreach body; gates break/continue. */
+static int g_loop_depth;       /* >0 inside a while/for/foreach body; gates continue. */
+static int g_break_depth;      /* >0 inside a loop OR switch body; gates break. */
 
 static void die(int line, const char *msg, const char *arg)
 {
@@ -818,8 +819,10 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		}
 
 		g_loop_depth++;
+		g_break_depth++;
 		resolve_block(st,s->then_blk,tc);
 		g_loop_depth--;
+		g_break_depth--;
 		break;
 	case ST_RETURN:
 		if (s->ret_val)
@@ -872,15 +875,22 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		s->fe_len_offset=sym_add(st,"",s->decl_type)->offset;
 		s->fe_aux_offset=sym_add(st,"",s->decl_type)->offset;
 		g_loop_depth++;
+		g_break_depth++;
 		resolve_block(st,s->then_blk,tc);
 		g_loop_depth--;
+		g_break_depth--;
 		break;
 	}
 	case ST_BREAK:
+		if (g_break_depth==0)
+		{
+			die(s->line,"break outside a loop or switch",NULL);
+		}
+		break;
 	case ST_CONTINUE:
 		if (g_loop_depth==0)
 		{
-			die(s->line, s->kind==ST_BREAK ? "break outside a loop" : "continue outside a loop", NULL);
+			die(s->line,"continue outside a loop",NULL);
 		}
 		break;
 	case ST_FOR:
@@ -893,12 +903,57 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		resolve_stmt(st,s->for_post,tc);
 		g_loop_depth++;
+		g_break_depth++;
 		resolve_block(st,s->then_blk,tc);
 		g_loop_depth--;
+		g_break_depth--;
 		break;
 	case ST_SWITCH:
-		die(s->line,"switch resolve arrives in Part 4h Task 2",NULL);
+	{
+		resolve_expr(st,s->cond,tc);
+		if (!ty_is_int(s->cond->type.kind))
+		{
+			die(s->line,"switch operand must be an integer",NULL);
+		}
+
+		long long seen[256];
+		int nseen=0, ndefault=0;
+		Block *b=s->then_blk;
+		g_break_depth++;
+		for (int i=0; i<b->count; i++)
+		{
+			Stmt *c=b->stmts[i];
+			if (c->kind==ST_CASE)
+			{
+				for (int j=0; j<nseen; j++)
+				{
+					if (seen[j]==c->value->int_val)
+					{
+						die(c->line,"duplicate case value in switch",NULL);
+					}
+				}
+
+				if (nseen<256)
+				{
+					seen[nseen++]=c->value->int_val;
+				}
+			}
+			else if (c->kind==ST_DEFAULT)
+			{
+				if (ndefault++ > 0)
+				{
+					die(c->line,"more than one default in switch",NULL);
+				}
+			}
+			else
+			{
+				resolve_stmt(st,c,tc);
+			}
+		}
+
+		g_break_depth--;
 		break;
+	}
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;   /* Resolved as part of the enclosing switch body. */
@@ -918,6 +973,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	g_types=tt;
 	g_ret=&f->ret_type;
 	g_loop_depth=0;
+	g_break_depth=0;
 	SymTable st;
 	sym_init(&st);
 	if (this_class)
