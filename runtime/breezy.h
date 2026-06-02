@@ -36,4 +36,11 @@ void   *bzy_array_new(int64_t n, int64_t elem_is_managed); /* Owned (+1) zeroed 
 int64_t bzy_array_len(void *a);
 void    bzy_oob(int64_t index, int64_t length);     /* Print + abort (no return). */
 
+void   *bzy_map_new(int64_t key_kind, int64_t val_is_managed); /* Owned (+1). */
+void    bzy_map_put(void *m, int64_t key, int64_t val);
+int64_t bzy_map_get(void *m, int64_t key);   /* 0/NULL if absent; retains a managed value. */
+int64_t bzy_map_has(void *m, int64_t key);   /* 1 / 0 */
+void    bzy_map_remove(void *m, int64_t key);
+int64_t bzy_map_len(void *m);
+
 #endif
