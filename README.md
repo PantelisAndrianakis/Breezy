@@ -399,6 +399,24 @@ print(Math.pow(2.0, 10.0));     // 1024
 
 Inlined to SSE: `min` `max` `clamp` `abs` `sqrt` `floor` `ceil` `round` `toRadians`. Via libm: `cos` `tan` `exp` `pow`.
 
+### Clock & Random
+
+`Clock` exposes monotonic and wall-clock time; `Random` is a fast `xoshiro256**` PRNG mirroring a familiar API.
+
+```breezy
+long start;
+start = Clock.currentTimeNanos();
+
+int roll;
+roll = Random.get(1, 6);        // [1, 6] inclusive
+double d;
+d = Random.nextDouble();        // [0, 1)
+boolean flip;
+flip = Random.nextBoolean();
+```
+
+`Random`: `get(bound)` / `get(origin, bound)` for `int`/`long`/`float`/`double`, plus `nextInt`/`nextLong`/`nextFloat`/`nextDouble`/`nextBoolean`/`nextGaussian`/`nextBytes`.
+
 ---
 
 ## Control Flow
@@ -551,7 +569,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
 - [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
 - [x] `Clock.currentTimeMillis()` / `currentTimeNanos()`
-- [ ] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
+- [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [ ] Exceptions: `try`/`catch`/`throw` + stack traces
 
 **Concurrency & I/O (Part 6)**

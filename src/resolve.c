@@ -249,6 +249,69 @@ static void resolve_clock(Expr *e)
 	e->type.kind = TY_LONG;
 }
 
+static void resolve_random(Expr *e)
+{
+	const char *m = e->name + 7;   /* After "Random.". */
+	if (strcmp(m,"nextBoolean")==0)
+	{
+		e->type.kind = TY_BOOL;
+	}
+	else if (strcmp(m,"nextInt")==0)
+	{
+		e->type.kind = TY_INT;
+	}
+	else if (strcmp(m,"nextLong")==0)
+	{
+		e->type.kind = TY_LONG;
+	}
+	else if (strcmp(m,"nextFloat")==0)
+	{
+		e->type.kind = TY_FLOAT;
+	}
+	else if (strcmp(m,"nextDouble")==0 || strcmp(m,"nextGaussian")==0)
+	{
+		e->type.kind = TY_DOUBLE;
+	}
+	else if (strcmp(m,"nextBytes")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY || e->args[0]->type.elem->kind!=TY_BYTE)
+		{
+			die(e->line,"Random.nextBytes expects a byte[]",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+	}
+	else if (strcmp(m,"get")==0)
+	{
+		if (e->arg_count!=1 && e->arg_count!=2)
+		{
+			die(e->line,"Random.get takes one or two arguments",NULL);
+		}
+
+		TypeKind k=e->args[0]->type.kind;
+		if (k!=TY_INT && k!=TY_LONG && k!=TY_FLOAT && k!=TY_DOUBLE)
+		{
+			die(e->line,"Random.get bound must be int, long, float, or double",NULL);
+		}
+
+		if (e->arg_count==2 && e->args[1]->type.kind!=k)
+		{
+			die(e->line,"Random.get(origin, bound) arguments must be the same type",NULL);
+		}
+
+		e->type.kind = k;
+	}
+	else
+	{
+		die(e->line,"unknown Random method: ",m);
+	}
+
+	if (e->arg_count!=0 && strcmp(m,"get")!=0 && strcmp(m,"nextBytes")!=0)
+	{
+		die(e->line,"this Random method takes no arguments",NULL);
+	}
+}
+
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
 
 static void resolve_args(SymTable *st, Expr *e, const char *tc)
@@ -816,6 +879,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Clock.",6)==0)
 		{
 			resolve_clock(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Random.",7)==0)
+		{
+			resolve_random(e);
 			break;
 		}
 

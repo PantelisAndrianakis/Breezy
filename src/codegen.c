@@ -1279,6 +1279,68 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	exit(1);
 }
 
+/* Random.* builtins. Selects the typed bzy_rnd_* symbol from the method + arg
+   types and delegates to cg_call_with_args (int/fp routing + owned-temp release). */
+static void cg_random(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 7;   /* After "Random.". */
+	const char *fn;
+	TypeRef ps[2];
+	int np = 0;
+
+	if (strcmp(m,"nextBoolean")==0)
+	{
+		fn="bzy_rnd_bool";
+	}
+	else if (strcmp(m,"nextInt")==0)
+	{
+		fn="bzy_rnd_int";
+	}
+	else if (strcmp(m,"nextLong")==0)
+	{
+		fn="bzy_rnd_long";
+	}
+	else if (strcmp(m,"nextFloat")==0)
+	{
+		fn="bzy_rnd_float";
+	}
+	else if (strcmp(m,"nextDouble")==0)
+	{
+		fn="bzy_rnd_double";
+	}
+	else if (strcmp(m,"nextGaussian")==0)
+	{
+		fn="bzy_rnd_gaussian";
+	}
+	else if (strcmp(m,"nextBytes")==0)
+	{
+		fn="bzy_rnd_bytes";
+		ps[0]=e->args[0]->type;            /* The byte[]. */
+		np=1;
+	}
+	else   /* get */
+	{
+		TypeKind k=e->args[0]->type.kind;
+		const char *suffix =
+			k==TY_LONG   ? (e->arg_count==2 ? "ll" : "l") :
+			k==TY_FLOAT  ? (e->arg_count==2 ? "ff" : "f") :
+			k==TY_DOUBLE ? (e->arg_count==2 ? "dd" : "d") :
+			(e->arg_count==2 ? "ii" : "i");
+		static char buf[24];
+		snprintf(buf,sizeof buf,"bzy_rnd_get_%s",suffix);
+		fn=buf;
+		for (int i=0; i<e->arg_count; i++)
+		{
+			ps[i]=e->args[i]->type;
+		}
+
+		np=e->arg_count;
+	}
+
+	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), ps, np);
+}
+
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	switch (e->kind)
@@ -1516,6 +1578,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Clock.",6)==0)
 		{
 			cg_aligned_call(cg, strcmp(e->name+6,"currentTimeNanos")==0 ? "bzy_clock_nanos" : "bzy_clock_millis");
+		}
+		else if (strncmp(e->name,"Random.",7)==0)
+		{
+			cg_random(cg,tt,e);
 		}
 		else
 		{
@@ -2211,6 +2277,21 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern pow");
 	cg_emit(cg,"extern bzy_clock_millis");
 	cg_emit(cg,"extern bzy_clock_nanos");
+	cg_emit(cg,"extern bzy_rnd_bool");
+	cg_emit(cg,"extern bzy_rnd_int");
+	cg_emit(cg,"extern bzy_rnd_long");
+	cg_emit(cg,"extern bzy_rnd_float");
+	cg_emit(cg,"extern bzy_rnd_double");
+	cg_emit(cg,"extern bzy_rnd_gaussian");
+	cg_emit(cg,"extern bzy_rnd_get_i");
+	cg_emit(cg,"extern bzy_rnd_get_ii");
+	cg_emit(cg,"extern bzy_rnd_get_l");
+	cg_emit(cg,"extern bzy_rnd_get_ll");
+	cg_emit(cg,"extern bzy_rnd_get_f");
+	cg_emit(cg,"extern bzy_rnd_get_ff");
+	cg_emit(cg,"extern bzy_rnd_get_d");
+	cg_emit(cg,"extern bzy_rnd_get_dd");
+	cg_emit(cg,"extern bzy_rnd_bytes");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

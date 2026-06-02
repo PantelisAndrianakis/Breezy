@@ -264,6 +264,15 @@ static void test_math_types(void)
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);      /* abs(int) -> int */
 }
 
+static void test_random_types(void)
+{
+	Func *f=build1("void main() { int a; double d; boolean b; "
+				   "a = Random.get(10); d = Random.nextDouble(); b = Random.nextBoolean(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);     /* get(int) -> int */
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_DOUBLE);  /* nextDouble -> double */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* nextBoolean -> boolean */
+}
+
 static void test_clock_type(void)
 {
 	Func *f=build1("void main() { long t; t = Clock.currentTimeMillis(); }")->funcs[0];
@@ -343,6 +352,7 @@ int main(void)
 	RUN(test_set_string_ok);
 	RUN(test_math_types);
 	RUN(test_clock_type);
+	RUN(test_random_types);
 	RUN(test_switch_resolves);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();

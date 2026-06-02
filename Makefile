@@ -20,7 +20,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c
 
-RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c
+RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c
 RT_HDR  = runtime/breezy.h
 
 .PHONY: all clean test integration release
@@ -65,7 +65,8 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -c runtime/map.c -o runtime/map.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/vector.c -o runtime/vector.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/clock.c -o runtime/clock.o
-	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o runtime/map.o runtime/vector.o runtime/clock.o
+	$(CC) $(CFLAGS) -Iruntime -c runtime/random.c -o runtime/random.o
+	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o runtime/map.o runtime/vector.o runtime/clock.o runtime/random.o
 
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC)

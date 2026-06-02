@@ -1,0 +1,16 @@
+void main()
+{
+	print(Random.get(10) >= 0);        // true
+	print(Random.get(10) < 10);        // true
+	print(Random.get(5, 8) >= 5);      // true
+	print(Random.nextDouble() < 1.0);  // true
+	print(Random.get(2.0) < 2.0);      // true  (double bound)
+	print(Random.get(2.0f) < 2.0f);    // true  (float bound)
+	boolean b;
+	b = Random.nextBoolean();
+	print(b == b);                     // true
+	byte[] buf;
+	buf = new byte[4];
+	Random.nextBytes(buf);
+	print(buf.length);                 // 4
+}

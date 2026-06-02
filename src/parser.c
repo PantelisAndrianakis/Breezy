@@ -221,7 +221,7 @@ static int parse_args(Parser *p, Expr **out)
 /* The fixed set of compiler-known static namespaces. 5c/5d extend this. */
 static int is_namespace(const char *name)
 {
-	return strcmp(name,"Math")==0 || strcmp(name,"Clock")==0;
+	return strcmp(name,"Math")==0 || strcmp(name,"Clock")==0 || strcmp(name,"Random")==0;
 }
 
 static Expr *parse_primary(Parser *p)

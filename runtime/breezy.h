@@ -63,4 +63,20 @@ int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0 */
 int64_t bzy_clock_millis(void);   /* Wall-clock milliseconds since the Unix epoch. */
 int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanoseconds. */
 
+int64_t bzy_rnd_bool(void);                            /* 0 or 1. */
+int64_t bzy_rnd_int(void);                             /* Full 32-bit signed range. */
+int64_t bzy_rnd_long(void);                            /* Full 64-bit range. */
+float   bzy_rnd_float(void);                            /* [0, 1). */
+double  bzy_rnd_double(void);                           /* [0, 1). */
+double  bzy_rnd_gaussian(void);                         /* mean 0, stddev 1. */
+int64_t bzy_rnd_get_i(int64_t bound);                   /* [0, bound). */
+int64_t bzy_rnd_get_ii(int64_t origin, int64_t bound);  /* [origin, bound] inclusive. */
+int64_t bzy_rnd_get_l(int64_t bound);
+int64_t bzy_rnd_get_ll(int64_t origin, int64_t bound);
+float   bzy_rnd_get_f(float bound);                     /* [0, bound). */
+float   bzy_rnd_get_ff(float origin, float bound);      /* [origin, bound). */
+double  bzy_rnd_get_d(double bound);
+double  bzy_rnd_get_dd(double origin, double bound);
+void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] slot with [0,255]. */
+
 #endif

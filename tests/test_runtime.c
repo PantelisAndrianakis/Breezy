@@ -359,6 +359,63 @@ static void test_vec_contains_string(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_rnd(void)
+{
+	for (int i=0; i<2000; i++)
+	{
+		int64_t v = bzy_rnd_get_i(10);
+		ASSERT(v >= 0 && v < 10);
+	}
+
+	for (int i=0; i<2000; i++)
+	{
+		int64_t v = bzy_rnd_get_ii(5, 8);   /* inclusive */
+		ASSERT(v >= 5 && v <= 8);
+	}
+
+	for (int i=0; i<2000; i++)
+	{
+		double d = bzy_rnd_double();
+		ASSERT(d >= 0.0 && d < 1.0);
+	}
+
+	for (int i=0; i<2000; i++)
+	{
+		float f = bzy_rnd_float();
+		ASSERT(f >= 0.0f && f < 1.0f);
+	}
+
+	int seen0=0, seen1=0;
+	for (int i=0; i<2000; i++)
+	{
+		int64_t b = bzy_rnd_bool();
+		ASSERT(b==0 || b==1);
+		if (b==0)
+		{
+			seen0=1;
+		}
+		else
+		{
+			seen1=1;
+		}
+	}
+
+	ASSERT(seen0 && seen1);                 /* both outcomes appear */
+
+	double g = bzy_rnd_gaussian();
+	ASSERT(g == g);                          /* not NaN */
+
+	void *arr = bzy_array_new(8, 0);
+	bzy_rnd_bytes(arr);
+	int64_t *slots = (int64_t*)((char*)arr + 32);
+	for (int i=0; i<8; i++)
+	{
+		ASSERT(slots[i] >= 0 && slots[i] <= 255);
+	}
+
+	bzy_release(arr);
+}
+
 static void test_clock(void)
 {
 	int64_t m = bzy_clock_millis();
@@ -470,6 +527,7 @@ int main(void)
 	RUN(test_vec_ring);
 	RUN(test_vec_contains_and_remove);
 	RUN(test_vec_contains_string);
+	RUN(test_rnd);
 	RUN(test_clock);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
