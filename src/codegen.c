@@ -1322,6 +1322,26 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
 }
 
+/* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
+static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 6;   /* After "Clock.". */
+	if (strcmp(m,"getDateString")==0)
+	{
+		const char *fn = e->arg_count==2 ? "bzy_clock_date_fmt" : "bzy_clock_date";
+		TypeRef ps[2];
+		for (int i=0; i<e->arg_count; i++)
+		{
+			ps[i]=e->args[i]->type;
+		}
+
+		cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count);
+		return;
+	}
+
+	cg_aligned_call(cg, strcmp(m,"currentTimeNanos")==0 ? "bzy_clock_nanos" : "bzy_clock_millis");
+}
+
 /* Regex.* builtins -> bzy_regex_* (string args, boolean or owned-string result). */
 static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 {
@@ -1643,7 +1663,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else if (strncmp(e->name,"Clock.",6)==0)
 		{
-			cg_aligned_call(cg, strcmp(e->name+6,"currentTimeNanos")==0 ? "bzy_clock_nanos" : "bzy_clock_millis");
+			cg_clock(cg,tt,e);
 		}
 		else if (strncmp(e->name,"Random.",7)==0)
 		{
@@ -2480,6 +2500,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern pow");
 	cg_emit(cg,"extern bzy_clock_millis");
 	cg_emit(cg,"extern bzy_clock_nanos");
+	cg_emit(cg,"extern bzy_clock_date");
+	cg_emit(cg,"extern bzy_clock_date_fmt");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");
 	cg_emit(cg,"extern bzy_rnd_long");

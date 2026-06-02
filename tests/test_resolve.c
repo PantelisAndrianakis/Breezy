@@ -296,6 +296,13 @@ static void test_clock_type(void)
 	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LONG);
 }
 
+static void test_clock_date_types(void)
+{
+	Func *f=build1("void main() { long t; t = Clock.currentTimeMillis(); string a; a = Clock.getDateString(t); string b; b = Clock.getDateString(t, \"yyyy\"); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_STRING);   /* getDateString(t) */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING);   /* getDateString(t, fmt) */
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -394,6 +401,7 @@ int main(void)
 	RUN(test_set_string_ok);
 	RUN(test_math_types);
 	RUN(test_clock_type);
+	RUN(test_clock_date_types);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

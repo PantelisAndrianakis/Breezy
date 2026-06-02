@@ -2,6 +2,8 @@
 #include "breezy.h"
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
+#include <time.h>
 
 /* EH registry stubs: no compiled Breezy program is linked into this unit-test binary. */
 void *__bzy_eh_funcs[1] = { 0 };
@@ -569,6 +571,17 @@ static void test_str_more(void)
 	ASSERT_INT(memcmp(bzy_str_data(rp), "ababab", 6), 0);
 }
 
+static void test_clock_date(void)
+{
+	_putenv("TZ=UTC0");
+	_tzset();
+	void *s = bzy_clock_date(0);                 /* Epoch in UTC -> 1970-01-01 00:00:00. */
+	ASSERT_INT(bzy_str_len(s), 19);
+	ASSERT_INT(memcmp(bzy_str_data(s), "1970-01-01 00:00:00", 19), 0);
+	void *f = bzy_clock_date_fmt(0, bzy_str_new("yyyy/MM/dd HH:mm:ss", 19));
+	ASSERT_INT(memcmp(bzy_str_data(f), "1970/01/01 00:00:00", 19), 0);
+}
+
 static void test_str_split(void)
 {
 	void *a = bzy_str_split(bzy_str_new("a,bb,c", 6), bzy_str_new(",", 1));
@@ -634,6 +647,7 @@ int main(void)
 	RUN(test_str_transform);
 	RUN(test_str_more);
 	RUN(test_str_split);
+	RUN(test_clock_date);
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
 	SUMMARY();

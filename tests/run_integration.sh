@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -u
+export TZ=UTC0   # Make Clock.getDateString output deterministic across machines.
 fail=0
 check() {
     local name="$1" target="$2" expected="$3"
@@ -83,6 +84,7 @@ check math_minmax tests/samples/proj_math_minmax   $'7\n3\n5\n0\n2.5'
 check math_round  tests/samples/proj_math_round    $'2\n3\n2\n3\ntrue\nfalse'
 check math_libm   tests/samples/proj_math_libm     $'1024\n1\n1\n0'
 check clock       tests/samples/proj_clock         $'true\ntrue'
+check clock_date  tests/samples/proj_clock_date    $'1970-01-01 00:00:00\n1970/01/01 00:00'
 check random      tests/samples/proj_random        $'true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n4'
 check regex       tests/samples/proj_regex         $'true\ntrue\n123\na#b#c#'
 check str_query   tests/samples/proj_str_query     $'true\ntrue\n5\n10'

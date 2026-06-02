@@ -249,6 +249,31 @@ static void resolve_math(Expr *e)
 static void resolve_clock(Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Clock.". */
+	if (strcmp(m,"getDateString")==0)
+	{
+		if (e->arg_count == 1)
+		{
+			if (!ty_is_int(e->args[0]->type.kind))
+			{
+				die(e->line,"Clock.getDateString(millis) expects an integer",NULL);
+			}
+		}
+		else if (e->arg_count == 2)
+		{
+			if (!ty_is_int(e->args[0]->type.kind) || e->args[1]->type.kind != TY_STRING)
+			{
+				die(e->line,"Clock.getDateString(millis, format) expects (integer, string)",NULL);
+			}
+		}
+		else
+		{
+			die(e->line,"Clock.getDateString takes (millis) or (millis, format)",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+		return;
+	}
+
 	if (strcmp(m,"currentTimeMillis")!=0 && strcmp(m,"currentTimeNanos")!=0)
 	{
 		die(e->line,"unknown Clock method: ",m);

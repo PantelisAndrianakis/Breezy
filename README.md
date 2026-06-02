@@ -443,6 +443,20 @@ flip = Random.nextBoolean();
 
 `Random`: `get(bound)` / `get(origin, bound)` for `int`/`long`/`float`/`double`, plus `nextInt`/`nextLong`/`nextFloat`/`nextDouble`/`nextBoolean`/`nextGaussian`/`nextBytes`.
 
+`Clock.getDateString` turns epoch milliseconds into a local-time date string — a fixed ISO default, or a Java-style pattern.
+
+```breezy
+long now;
+now = Clock.currentTimeMillis();
+
+string iso;
+iso = Clock.getDateString(now);                       // 2026-06-02 14:30:09
+string custom;
+custom = Clock.getDateString(now, "yyyy/MM/dd HH:mm");  // 2026/06/02 14:30
+```
+
+Pattern tokens: `yyyy` `yy` `MM` `dd` `HH` (24h) `hh` (12h) `mm` `ss` `SSS` (millis) `a` (AM/PM); any other character is copied literally.
+
 ### Regex
 
 `Regex` is a hand-written **Thompson NFA / Pike VM** — linear-time matching with no catastrophic backtracking (ReDoS-safe), which matters when matching untrusted input on a server.
@@ -572,7 +586,7 @@ void main()
 ```
 
 - **`throw expr;`** — the operand must be an `Exception` (or subclass).
-- **`try { } catch (Type e) { } …`** — one or more `catch` clauses; the first whose type matches the thrown object (by **is-a**, walking the class hierarchy) wins. A `try` whose clauses don't match keeps unwinding to an outer handler.
+- **`try { } catch (Type e) { } ...`** — one or more `catch` clauses; the first whose type matches the thrown object (by **is-a**, walking the class hierarchy) wins. A `try` whose clauses don't match keeps unwinding to an outer handler.
 - **Builtins:** `Exception` (root, with a `string message`) and `IndexOutOfBounds` (thrown by out-of-range array indexing). User classes `extends Exception`.
 - **Uncaught** exceptions print `Uncaught exception: <message>` plus a function-name stack trace, then abort.
 - **ARC-correct while unwinding:** object locals of abandoned frames are released; the thrown object survives the unwind and is freed once the handler's scope exits.
@@ -630,17 +644,17 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered core types **and the full collection library**: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>`, full control flow (`if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, `++`/`--`), and **no-boxing generic collections** — `List`/`Stack`/`Queue`/`Deque`/`Set` over a monomorphizing mechanism — all ARC- and cycle-collector-aware. **Parts 4 and 5 are complete** — Part 5 added block comments, compound assignment, the `Math`/`Clock`/`Random` namespaces, and full **exceptions** (`throw` / `try` / `catch` with an exception hierarchy, is-a matching, and zero-cost-when-not-thrown table-based unwinding). Part 6 (concurrency & I/O) is next.
 
-**Compiler core (Part 1) — done**
+**Compiler core (Part 1)**
 - [x] Lexer, parser, typed AST
 - [x] Type table: classes, inheritance, virtual dispatch
 - [x] x86-64 codegen (Windows PE64)
 
-**Memory & runtime (Part 2) — done**
+**Memory & runtime (Part 2)**
 - [x] Escape analysis → stack allocation
 - [x] Automatic Reference Counting
 - [x] Incremental cycle collector
 
-**Scalar types (Part 3) — done**
+**Scalar types (Part 3)**
 - [x] Sized integers `byte`/`short`/`int`/`long` + unsigned `ubyte`/`ushort`/`uint`/`ulong`
 - [x] `boolean` (`true`/`false`)
 - [x] `float` / `double` (IEEE-754, SSE path)
@@ -658,7 +672,8 @@ The language design is settled. The compiler and runtime are being built from sc
 **Language & standard-library essentials (Part 5)**
 - [x] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
 - [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
-- [x] `Clock.currentTimeMillis()` / `currentTimeNanos()`
+- [x] `Clock.currentTimeMillis()` / `currentTimeNanos()` / `getDateString(millis[, format])`
+- [x] String methods (`contains`/`startsWith`/`indexOf`/`substring`/`replace`/`split`/`trim`/...)
 - [x] `Regex` (`matches`/`test`/`find`/`replace`; Thompson NFA / Pike VM, linear-time, ReDoS-safe)
 - [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)

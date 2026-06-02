@@ -1,0 +1,10 @@
+void main()
+{
+	string d;
+	d = Clock.getDateString(0);
+	print(d);                                  // 1970-01-01 00:00:00 (UTC)
+
+	string f;
+	f = Clock.getDateString(0, "yyyy/MM/dd HH:mm");
+	print(f);                                  // 1970/01/01 00:00
+}

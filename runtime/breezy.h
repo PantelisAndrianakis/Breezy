@@ -78,6 +78,8 @@ int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0 */
 
 int64_t bzy_clock_millis(void);   /* Wall-clock milliseconds since the Unix epoch. */
 int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanoseconds. */
+void   *bzy_clock_date(int64_t millis);                /* "yyyy-MM-dd HH:mm:ss", local time; owned. */
+void   *bzy_clock_date_fmt(int64_t millis, void *fmt); /* Java-style pattern, local time; owned. */
 
 int64_t bzy_rnd_bool(void);                            /* 0 or 1. */
 int64_t bzy_rnd_int(void);                             /* Full 32-bit signed range. */
