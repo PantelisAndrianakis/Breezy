@@ -165,6 +165,22 @@ static void test_array_length_is_int(void)
 	ASSERT_INT(as->value->type.kind, TY_INT);
 }
 
+static void test_newmap_type(void)
+{
+	Func *f=build1("void main() { map<string,int> d; d = new map<string,int>(); }")->funcs[0];
+	Stmt *as=f->body->stmts[1];
+	ASSERT_INT(as->value->kind, EX_NEWMAP);
+	ASSERT_INT(as->value->type.kind, TY_MAP);
+}
+
+static void test_map_get_and_size_types(void)
+{
+	Func *f=build1("void main() { map<int,int> d; int x; int n; "
+				   "d = new map<int,int>(); d.put(1, 9); x = d.get(1); n = d.size; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);   /* d.get(1) */
+	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT);   /* d.size */
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -217,6 +233,8 @@ int main(void)
 	RUN(test_newarray_type);
 	RUN(test_index_element_type);
 	RUN(test_array_length_is_int);
+	RUN(test_newmap_type);
+	RUN(test_map_get_and_size_types);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

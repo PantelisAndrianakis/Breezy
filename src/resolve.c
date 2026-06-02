@@ -94,6 +94,11 @@ static int typeref_equal(const TypeRef *x, const TypeRef *y)
 		return typeref_equal(x->elem,y->elem);
 	}
 
+	if (x->kind==TY_MAP)
+	{
+		return typeref_equal(x->elem,y->elem) && typeref_equal(x->elem2,y->elem2);
+	}
+
 	return 1;
 }
 
@@ -102,6 +107,11 @@ static int assignable(const TypeRef *to, const TypeRef *from)
 	if (to->kind==TY_ARRAY && from->kind==TY_ARRAY)
 	{
 		return typeref_equal(to,from);   /* invariant: int[]!=long[], Dog[]!=Animal[] */
+	}
+
+	if (to->kind==TY_MAP && from->kind==TY_MAP)
+	{
+		return typeref_equal(to,from);   /* invariant on both key and value. */
 	}
 
 	if (to->kind == from->kind)
@@ -164,8 +174,19 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		break;
 	case EX_NEWMAP:
-		die(e->line,"map resolve arrives in Part 4c Task 3",NULL);
-		break;
+		if (e->type.elem->kind!=TY_INT && e->type.elem->kind!=TY_STRING)
+		{
+			die(e->line,"map key must be int or string",NULL);
+		}
+
+		if (e->type.elem2->kind==TY_OBJECT
+				&& !is_stringbuilder(e->type.elem2)
+				&& !types_find_class(g_types,e->type.elem2->class_name))
+		{
+			die(e->line,"unknown map value type: ",e->type.elem2->class_name);
+		}
+
+		break;   /* e->type is already TY_MAP + key/value, set by the parser. */
 	case EX_INDEX:
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
@@ -354,6 +375,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_MAP)
+		{
+			if (strcmp(e->name,"size")!=0)
+			{
+				die(e->line,"maps have only '.size'",NULL);
+			}
+
+			e->type.kind=TY_INT;
+			e->anno_int=24;             /* The size field offset. */
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{
@@ -373,6 +406,54 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_METHOD_CALL:
 	{
 		resolve_expr(st,e->lhs,tc);
+		if (e->lhs->type.kind==TY_MAP)
+		{
+			resolve_args(st,e,tc);
+			TypeRef *K=e->lhs->type.elem, *V=e->lhs->type.elem2;
+			if (strcmp(e->name,"put")==0)
+			{
+				if (e->arg_count!=2 || !assignable(K,&e->args[0]->type) || !assignable(V,&e->args[1]->type))
+				{
+					die(e->line,"map.put(key,value) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"get")==0)
+			{
+				if (e->arg_count!=1 || !assignable(K,&e->args[0]->type))
+				{
+					die(e->line,"map.get(key) type mismatch",NULL);
+				}
+
+				e->type = *V;
+			}
+			else if (strcmp(e->name,"has")==0)
+			{
+				if (e->arg_count!=1 || !assignable(K,&e->args[0]->type))
+				{
+					die(e->line,"map.has(key) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"remove")==0)
+			{
+				if (e->arg_count!=1 || !assignable(K,&e->args[0]->type))
+				{
+					die(e->line,"map.remove(key) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"unknown map method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (is_stringbuilder(&e->lhs->type))
 		{
 			resolve_args(st,e,tc);
