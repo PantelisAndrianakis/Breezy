@@ -180,12 +180,16 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    pop rax");             /* base */
 	cg_emit(cg,"    mov rdx, [rax + 24]"); /* length */
 	int ok = cg_label(cg);
+	int pc = cg_label(cg);
 	cg_emit(cg,"    cmp rcx, rdx");
 	cg_emit(cg,"    jb .L%d", ok);         /* unsigned: catches negative and >= length */
+	cg_emit(cg,"    lea r8, [rel .L%d]", pc);
+	cg_emit(cg,".L%d:", pc);               /* The throw-site PC (within this function/try). */
+	cg_emit(cg,"    mov r9, rbp");
 	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
 	cg_emit(cg,"    and rsp, -16");
 	cg_emit(cg,"    sub rsp, 32");
-	cg_emit(cg,"    call bzy_oob");        /* args: rcx = index, rdx = length */
+	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns */
 	cg_emit(cg,".L%d:", ok);
 	cg_emit(cg,"    lea rbx, [rax + rcx*8 + 32]");
 }
@@ -2417,6 +2421,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"global __bzy_eh_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");
 	cg_emit(cg,"global __bzy_vtable_parent_count");
+	cg_emit(cg,"global __vtable_IndexOutOfBounds");   /* Referenced by the runtime bzy_oob. */
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

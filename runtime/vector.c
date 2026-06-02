@@ -117,7 +117,7 @@ int64_t bzy_vec_pop_back(void *v)
 {
 	if (*V_LEN(v) == 0)
 	{
-		bzy_oob(-1, 0);
+		bzy_oob_abort(-1, 0);
 	}
 
 	int64_t p = vec_phys(v, *V_LEN(v) - 1);
@@ -131,7 +131,7 @@ int64_t bzy_vec_get(void *v, int64_t i)
 {
 	if (i < 0 || i >= *V_LEN(v))
 	{
-		bzy_oob(i, *V_LEN(v));
+		bzy_oob_abort(i, *V_LEN(v));
 	}
 
 	int64_t val = vec_slots(v)[vec_phys(v, i)];
@@ -147,7 +147,7 @@ void bzy_vec_set(void *v, int64_t i, int64_t val)
 {
 	if (i < 0 || i >= *V_LEN(v))
 	{
-		bzy_oob(i, *V_LEN(v));
+		bzy_oob_abort(i, *V_LEN(v));
 	}
 
 	int64_t p = vec_phys(v, i);
@@ -164,7 +164,7 @@ int64_t bzy_vec_peek_back(void *v)
 {
 	if (*V_LEN(v) == 0)
 	{
-		bzy_oob(-1, 0);
+		bzy_oob_abort(-1, 0);
 	}
 
 	int64_t val = vec_slots(v)[vec_phys(v, *V_LEN(v) - 1)];
@@ -198,7 +198,7 @@ int64_t bzy_vec_pop_front(void *v)
 {
 	if (*V_LEN(v) == 0)
 	{
-		bzy_oob(-1, 0);
+		bzy_oob_abort(-1, 0);
 	}
 
 	int64_t p = *V_HEAD(v);
@@ -213,7 +213,7 @@ int64_t bzy_vec_peek_front(void *v)
 {
 	if (*V_LEN(v) == 0)
 	{
-		bzy_oob(-1, 0);
+		bzy_oob_abort(-1, 0);
 	}
 
 	int64_t val = vec_slots(v)[*V_HEAD(v)];
@@ -229,7 +229,7 @@ void bzy_vec_remove_at(void *v, int64_t i)
 {
 	if (i < 0 || i >= *V_LEN(v))
 	{
-		bzy_oob(i, *V_LEN(v));
+		bzy_oob_abort(i, *V_LEN(v));
 	}
 
 	int64_t *s = vec_slots(v);

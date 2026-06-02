@@ -89,6 +89,7 @@ check catch       tests/samples/proj_catch         $'caught it\n0'
 check catch_multi tests/samples/proj_catch_multi   $'bee\n99'
 check catch_subclass tests/samples/proj_catch_subclass $'missing\n0'
 check rethrow     tests/samples/proj_rethrow       "bee"
+check catch_oob   tests/samples/proj_catch_oob     $'array index 5 out of bounds for length 3\n99'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

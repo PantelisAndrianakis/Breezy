@@ -8,6 +8,7 @@ void *__bzy_eh_funcs[1] = { 0 };
 long long __bzy_eh_func_count = 0;
 void *__bzy_vtable_parents[1] = { 0 };
 long long __bzy_vtable_parent_count = 0;
+char __vtable_IndexOutOfBounds[8] = { 0 };
 
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],

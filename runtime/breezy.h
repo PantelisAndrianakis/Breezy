@@ -35,7 +35,8 @@ void   *bzy_sb_to_string(void *sb);                  /* Owned (+1) immutable sna
 
 void   *bzy_array_new(int64_t n, int64_t elem_is_managed); /* Owned (+1) zeroed array. */
 int64_t bzy_array_len(void *a);
-void    bzy_oob(int64_t index, int64_t length);     /* Print + abort (no return). */
+void    bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame); /* Throw IndexOutOfBounds (no return). */
+void    bzy_oob_abort(int64_t index, int64_t length);                      /* Print + abort (no return). */
 
 void   *bzy_map_new(int64_t key_kind, int64_t val_is_managed); /* Owned (+1). */
 void    bzy_map_put(void *m, int64_t key, int64_t val);

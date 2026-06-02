@@ -489,6 +489,50 @@ int twice()
 
 ---
 
+## Exceptions
+
+Java-style `throw` / `try` / `catch` with an exception hierarchy and stack traces. The implementation is **zero-cost when nothing is thrown** — entering a `try` emits no instructions; the only cost is the stack walk at throw time. It is homegrown (static per-function EH side tables + an `rbp`-chain-walking unwinder), not OS SEH.
+
+```breezy
+class NotFound extends Exception { }   // user exceptions extend the builtin root
+
+void lookup(int id)
+{
+    if (id < 0)
+    {
+        throw new Exception("bad id");
+    }
+
+    int[] table;
+    table = new int[3];
+    print(table[id]);                  // out-of-range throws a builtin IndexOutOfBounds
+}
+
+void main()
+{
+    try
+    {
+        lookup(5);
+    }
+    catch (IndexOutOfBounds e)         // first matching clause wins
+    {
+        print(e.message);             // "array index 5 out of bounds for length 3"
+    }
+    catch (Exception e)                // catches any subclass via is-a matching
+    {
+        print(e.message);
+    }
+}
+```
+
+- **`throw expr;`** — the operand must be an `Exception` (or subclass).
+- **`try { } catch (Type e) { } …`** — one or more `catch` clauses; the first whose type matches the thrown object (by **is-a**, walking the class hierarchy) wins. A `try` whose clauses don't match keeps unwinding to an outer handler.
+- **Builtins:** `Exception` (root, with a `string message`) and `IndexOutOfBounds` (thrown by out-of-range array indexing). User classes `extends Exception`.
+- **Uncaught** exceptions print `Uncaught exception: <message>` plus a function-name stack trace, then abort.
+- **ARC-correct while unwinding:** object locals of abandoned frames are released; the thrown object survives the unwind and is freed once the handler's scope exits.
+
+---
+
 ## Compilation Pipeline
 
 ```
@@ -538,7 +582,7 @@ Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Window
 
 ## Roadmap
 
-The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered core types **and the full collection library**: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>`, full control flow (`if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, `++`/`--`), and **no-boxing generic collections** — `List`/`Stack`/`Queue`/`Deque`/`Set` over a monomorphizing mechanism — all ARC- and cycle-collector-aware. **Part 4 is complete**; Part 5 (language & stdlib essentials) is next.
+The language design is settled. The compiler and runtime are being built from scratch. Parts 1–3 are complete and green, and Part 4 has delivered core types **and the full collection library**: Breezy `.bzy` source compiles to native Windows executables today, with automatic memory management (escape analysis, ARC, and an incremental cycle collector), the full scalar type system (sized signed/unsigned integers, `boolean`, and IEEE-754 `float`/`double`), the reference types `string` (+ `StringBuilder`), arrays (`T[]`), and `map<K,V>`, full control flow (`if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, `++`/`--`), and **no-boxing generic collections** — `List`/`Stack`/`Queue`/`Deque`/`Set` over a monomorphizing mechanism — all ARC- and cycle-collector-aware. **Parts 4 and 5 are complete** — Part 5 added block comments, compound assignment, the `Math`/`Clock`/`Random` namespaces, and full **exceptions** (`throw` / `try` / `catch` with an exception hierarchy, is-a matching, and zero-cost-when-not-thrown table-based unwinding). Part 6 (concurrency & I/O) is next.
 
 **Compiler core (Part 1) — done**
 - [x] Lexer, parser, typed AST
@@ -570,7 +614,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
 - [x] `Clock.currentTimeMillis()` / `currentTimeNanos()`
 - [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
-- [ ] Exceptions: `try`/`catch`/`throw` + stack traces
+- [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)
 
 **Concurrency & I/O (Part 6)**
 - [ ] Breeze scheduler (M:N, one thread per core)

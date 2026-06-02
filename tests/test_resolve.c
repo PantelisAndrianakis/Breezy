@@ -305,6 +305,14 @@ static void test_try_catch_resolves(void)
 	ASSERT_INT(s->else_blk->stmts[0]->decl_type.kind, TY_OBJECT);
 }
 
+static void test_catch_index_oob_resolves(void)
+{
+	Func *f=build1("void main() { try { print(1); } catch (IndexOutOfBounds e) { print(2); } }")->funcs[0];
+	Stmt *s=f->body->stmts[0];
+	ASSERT_INT(s->kind, ST_TRY);
+	ASSERT_STR(s->else_blk->stmts[0]->decl_type.class_name, "IndexOutOfBounds");
+}
+
 static void test_method_call_slot_and_class(void)
 {
 	static Parser ps[2];
@@ -374,6 +382,7 @@ int main(void)
 	RUN(test_switch_resolves);
 	RUN(test_throw_resolves);
 	RUN(test_try_catch_resolves);
+	RUN(test_catch_index_oob_resolves);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

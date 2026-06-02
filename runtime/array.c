@@ -37,7 +37,7 @@ int64_t bzy_array_len(void *a)
 	return *(int64_t*)((char*)a + 24);
 }
 
-void bzy_oob(int64_t index, int64_t length)
+void bzy_oob_abort(int64_t index, int64_t length)
 {
 	fprintf(stderr, "array index %lld out of bounds for length %lld\n",
 			(long long)index, (long long)length);

@@ -22,6 +22,18 @@ void types_register_builtins(TypeTable *tt)
 	c->object_size = 32;
 	c->vtable_size = 0;
 	c->method_count = 0;
+
+	ClassInfo *o = &tt->classes[tt->class_count++];
+	memset(o, 0, sizeof(*o));
+	strcpy(o->name, "IndexOutOfBounds");
+	o->parent = c;                       /* `c` is the Exception entry above. */
+	strcpy(o->fields[0].name, "message");
+	o->fields[0].type.kind = TY_STRING;
+	o->fields[0].offset = 24;
+	o->field_count = 1;
+	o->object_size = 32;
+	o->vtable_size = 0;
+	o->method_count = 0;
 }
 
 ClassInfo *types_find_class(TypeTable *tt, const char *name)
