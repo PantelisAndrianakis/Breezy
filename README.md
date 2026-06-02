@@ -325,6 +325,32 @@ sb.append("Breezy");
 print(sb.toString());          // Hello, Breezy
 ```
 
+Strings carry a full set of methods. Because strings are immutable, every transforming method returns a **new** string - the receiver is never changed.
+
+```breezy
+string path;
+path = "/api/users";
+
+boolean ok;
+ok = path.startsWith("/api");   // true
+int at;
+at = path.indexOf("users");     // 5
+string up;
+up = path.toUpper();            // /API/USERS  (path itself unchanged)
+
+string[] parts;
+parts = "red,green,blue".split(",");
+print(parts.length);            // 3
+foreach (string p : parts)
+{
+    print(p);                   // red / green / blue
+}
+```
+
+- **Query:** `length()`, `isEmpty()`, `equals(o)`, `equalsIgnoreCase(o)`, `contains(x)`, `startsWith(p)`, `endsWith(p)`, `indexOf(x)`, `lastIndexOf(x)`, `charAt(i)` (returns the byte as an `int`, or `-1` out of range).
+- **Transform (return a new string):** `substring(a, b)`, `replace(from, to)`, `repeat(n)`, `trim()`, `toUpper()`, `toLower()`.
+- **`split(sep)`** returns a `string[]` you can iterate with `foreach`.
+
 ### Arrays
 
 Fixed-length, heap-allocated, and **bounds-checked** - an out-of-range index aborts rather than reading stray memory. Element loads are width-correct, and arrays of objects participate in ARC and the cycle collector.

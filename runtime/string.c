@@ -344,6 +344,58 @@ void *bzy_str_repeat(void *s, int64_t n)
 	return o;
 }
 
+void *bzy_str_split(void *s, void *sep)
+{
+	const char *t = bzy_str_data(s);
+	int64_t tl = bzy_str_len(s);
+	const char *sp = bzy_str_data(sep);
+	int64_t spl = bzy_str_len(sep);
+
+	int64_t count = 1;
+	if (spl > 0)
+	{
+		int64_t i = 0;
+		while (i + spl <= tl)
+		{
+			if (memcmp(t + i, sp, (size_t)spl) == 0)
+			{
+				count++;
+				i += spl;
+			}
+			else
+			{
+				i++;
+			}
+		}
+	}
+
+	void *arr = bzy_array_new(count, 1);             /* Managed string elements. */
+	void **elems = (void**)((char*)arr + 32);
+	if (spl == 0)
+	{
+		elems[0] = bzy_str_new(t, tl);
+		return arr;
+	}
+
+	int64_t idx = 0, start = 0, i = 0;
+	while (i + spl <= tl)
+	{
+		if (memcmp(t + i, sp, (size_t)spl) == 0)
+		{
+			elems[idx++] = bzy_str_new(t + start, i - start);
+			i += spl;
+			start = i;
+		}
+		else
+		{
+			i++;
+		}
+	}
+
+	elems[idx] = bzy_str_new(t + start, tl - start); /* The final piece. */
+	return arr;
+}
+
 void bzy_print_str(void *s)
 {
 	fwrite(bzy_str_data(s), 1, (size_t)bzy_str_len(s), stdout);

@@ -364,6 +364,19 @@ static void resolve_string_method(Expr *e)
 
 		e->type.kind = TY_STRING;
 	}
+	else if (strcmp(nm,"split")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		{
+			die(e->line,"string.split expects one string argument",NULL);
+		}
+
+		TypeRef elem;
+		memset(&elem, 0, sizeof(elem));
+		elem.kind = TY_STRING;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(elem);
+	}
 	else
 	{
 		die(e->line,"unknown string method: ",nm);

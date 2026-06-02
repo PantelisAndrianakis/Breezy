@@ -1310,6 +1310,7 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"lastIndexOf")==0      ? "bzy_str_last_index_of" :
 		strcmp(nm,"charAt")==0           ? "bzy_str_char_at" :
 		strcmp(nm,"repeat")==0           ? "bzy_str_repeat" :
+		strcmp(nm,"split")==0            ? "bzy_str_split" :
 		"bzy_str_index_of";
 	TypeRef ps[2];
 	for (int i=0; i<e->arg_count; i++)
@@ -2459,6 +2460,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_char_at");
 	cg_emit(cg,"extern bzy_str_last_index_of");
 	cg_emit(cg,"extern bzy_str_repeat");
+	cg_emit(cg,"extern bzy_str_split");
 	cg_emit(cg,"extern bzy_vec_new");
 	cg_emit(cg,"extern bzy_vec_len");
 	cg_emit(cg,"extern bzy_vec_push_back");

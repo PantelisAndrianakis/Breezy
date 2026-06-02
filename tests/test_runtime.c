@@ -569,6 +569,18 @@ static void test_str_more(void)
 	ASSERT_INT(memcmp(bzy_str_data(rp), "ababab", 6), 0);
 }
 
+static void test_str_split(void)
+{
+	void *a = bzy_str_split(bzy_str_new("a,bb,c", 6), bzy_str_new(",", 1));
+	ASSERT_INT(bzy_array_len(a), 3);
+	void **e = (void**)((char*)a + 32);
+	ASSERT_INT(bzy_str_len(e[0]), 1);
+	ASSERT_INT(memcmp(bzy_str_data(e[0]), "a", 1), 0);
+	ASSERT_INT(bzy_str_len(e[1]), 2);
+	ASSERT_INT(memcmp(bzy_str_data(e[1]), "bb", 2), 0);
+	ASSERT_INT(memcmp(bzy_str_data(e[2]), "c", 1), 0);
+}
+
 static void test_regex_find(void)
 {
 	void *m = bzy_regex_find(bzy_str_new("[0-9]+", 6), bzy_str_new("abc123def", 9));
@@ -621,6 +633,7 @@ int main(void)
 	RUN(test_str_query);
 	RUN(test_str_transform);
 	RUN(test_str_more);
+	RUN(test_str_split);
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
 	SUMMARY();

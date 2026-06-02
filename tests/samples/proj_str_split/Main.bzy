@@ -1,0 +1,14 @@
+void main()
+{
+	string csv;
+	csv = "red,green,blue";
+
+	string[] parts;
+	parts = csv.split(",");
+	print(parts.length);            // 3
+
+	foreach (string p : parts)
+	{
+		print(p);                   // red / green / blue
+	}
+}
