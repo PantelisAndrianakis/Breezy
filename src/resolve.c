@@ -292,6 +292,33 @@ static void resolve_string_method(Expr *e)
 
 		e->type.kind = TY_INT;
 	}
+	else if (strcmp(nm,"substring")==0)
+	{
+		if (e->arg_count != 2 || !ty_is_int(e->args[0]->type.kind) || !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"string.substring expects two integer arguments",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+	}
+	else if (strcmp(nm,"replace")==0)
+	{
+		if (e->arg_count != 2 || e->args[0]->type.kind != TY_STRING || e->args[1]->type.kind != TY_STRING)
+		{
+			die(e->line,"string.replace expects two string arguments",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+	}
+	else if (strcmp(nm,"trim")==0 || strcmp(nm,"toUpper")==0 || strcmp(nm,"toLower")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"this string method takes no arguments",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+	}
 	else
 	{
 		die(e->line,"unknown string method: ",nm);

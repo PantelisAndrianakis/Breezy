@@ -462,6 +462,10 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		exit(1);
 	}
 
+	/* Result preservation across owned-temp releases keys off result_is_fp alone
+	   (rax holds every non-fp result); result_is_object is kept as caller intent. */
+	(void)result_is_object;
+
 	if (indirect)
 	{
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Callee address (freed by call time). */
@@ -1295,6 +1299,11 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"contains")==0    ? "bzy_str_contains" :
 		strcmp(nm,"startsWith")==0  ? "bzy_str_starts_with" :
 		strcmp(nm,"endsWith")==0    ? "bzy_str_ends_with" :
+		strcmp(nm,"substring")==0   ? "bzy_str_substring" :
+		strcmp(nm,"replace")==0     ? "bzy_str_replace" :
+		strcmp(nm,"trim")==0        ? "bzy_str_trim" :
+		strcmp(nm,"toUpper")==0     ? "bzy_str_to_upper" :
+		strcmp(nm,"toLower")==0     ? "bzy_str_to_lower" :
 		"bzy_str_index_of";
 	TypeRef ps[2];
 	for (int i=0; i<e->arg_count; i++)
@@ -2434,6 +2443,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_starts_with");
 	cg_emit(cg,"extern bzy_str_ends_with");
 	cg_emit(cg,"extern bzy_str_index_of");
+	cg_emit(cg,"extern bzy_str_substring");
+	cg_emit(cg,"extern bzy_str_replace");
+	cg_emit(cg,"extern bzy_str_trim");
+	cg_emit(cg,"extern bzy_str_to_upper");
+	cg_emit(cg,"extern bzy_str_to_lower");
 	cg_emit(cg,"extern bzy_vec_new");
 	cg_emit(cg,"extern bzy_vec_len");
 	cg_emit(cg,"extern bzy_vec_push_back");

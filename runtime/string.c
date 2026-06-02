@@ -116,6 +116,141 @@ int64_t bzy_str_ends_with(void *s, void *suf)
 	return (fl <= sl && memcmp(bzy_str_data(s) + sl - fl, bzy_str_data(suf), (size_t)fl) == 0) ? 1 : 0;
 }
 
+void *bzy_str_substring(void *s, int64_t start, int64_t end)
+{
+	int64_t sl = bzy_str_len(s);
+	if (start < 0)
+	{
+		start = 0;
+	}
+
+	if (end > sl)
+	{
+		end = sl;
+	}
+
+	if (start > end)
+	{
+		start = end;
+	}
+
+	return bzy_str_new(bzy_str_data(s) + start, end - start);
+}
+
+void *bzy_str_replace(void *s, void *from, void *to)
+{
+	const char *t = bzy_str_data(s);
+	int64_t tl = bzy_str_len(s);
+	const char *f = bzy_str_data(from);
+	int64_t fl = bzy_str_len(from);
+	const char *r = bzy_str_data(to);
+	int64_t rl = bzy_str_len(to);
+	if (fl == 0)
+	{
+		return bzy_str_new(t, tl);                 /* Empty needle: no-op (avoid looping). */
+	}
+
+	int64_t cap = tl + 16, n = 0;
+	char *buf = malloc((size_t)cap);
+	int64_t pos = 0;
+	while (pos <= tl - fl)
+	{
+		if (memcmp(t + pos, f, (size_t)fl) == 0)
+		{
+			if (n + rl > cap)
+			{
+				while (n + rl > cap)
+				{
+					cap *= 2;
+				}
+
+				buf = realloc(buf, (size_t)cap);
+			}
+
+			memcpy(buf + n, r, (size_t)rl);
+			n += rl;
+			pos += fl;
+		}
+		else
+		{
+			if (n + 1 > cap)
+			{
+				cap *= 2;
+				buf = realloc(buf, (size_t)cap);
+			}
+
+			buf[n++] = t[pos++];
+		}
+	}
+
+	int64_t tail = tl - pos;
+	if (n + tail > cap)
+	{
+		cap = n + tail;
+		buf = realloc(buf, (size_t)cap);
+	}
+
+	memcpy(buf + n, t + pos, (size_t)tail);        /* Trailing bytes after the last match. */
+	n += tail;
+	void *out = bzy_str_new(buf, n);
+	free(buf);
+	return out;
+}
+
+static int is_ws(char c)
+{
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+void *bzy_str_trim(void *s)
+{
+	const char *t = bzy_str_data(s);
+	int64_t a = 0, b = bzy_str_len(s);
+	while (a < b && is_ws(t[a]))
+	{
+		a++;
+	}
+
+	while (b > a && is_ws(t[b - 1]))
+	{
+		b--;
+	}
+
+	return bzy_str_new(t + a, b - a);
+}
+
+void *bzy_str_to_upper(void *s)
+{
+	int64_t sl = bzy_str_len(s);
+	const char *t = bzy_str_data(s);
+	char *buf = malloc((size_t)sl + 1);
+	for (int64_t i = 0; i < sl; i++)
+	{
+		char c = t[i];
+		buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+	}
+
+	void *o = bzy_str_new(buf, sl);
+	free(buf);
+	return o;
+}
+
+void *bzy_str_to_lower(void *s)
+{
+	int64_t sl = bzy_str_len(s);
+	const char *t = bzy_str_data(s);
+	char *buf = malloc((size_t)sl + 1);
+	for (int64_t i = 0; i < sl; i++)
+	{
+		char c = t[i];
+		buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+	}
+
+	void *o = bzy_str_new(buf, sl);
+	free(buf);
+	return o;
+}
+
 void bzy_print_str(void *s)
 {
 	fwrite(bzy_str_data(s), 1, (size_t)bzy_str_len(s), stdout);

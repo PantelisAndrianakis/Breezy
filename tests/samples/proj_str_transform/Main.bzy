@@ -1,0 +1,21 @@
+void main()
+{
+	string s;
+	s = "  Hello.World  ";
+
+	string t;
+	t = s.trim();
+	print(t);                       // Hello.World
+
+	string r;
+	r = t.replace(".", " ");
+	print(r);                       // Hello World
+
+	string u;
+	u = r.toUpper();
+	print(u);                       // HELLO WORLD
+
+	string sub;
+	sub = t.substring(0, 5);
+	print(sub);                     // Hello
+}

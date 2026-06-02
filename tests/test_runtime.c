@@ -539,6 +539,22 @@ static void test_str_query(void)
 	ASSERT_INT(bzy_str_index_of(bzy_str_new("abc", 3), bzy_str_new("z", 1)), -1);
 }
 
+static void test_str_transform(void)
+{
+	void *sub = bzy_str_substring(bzy_str_new("hello", 5), 1, 4);
+	ASSERT_INT(bzy_str_len(sub), 3);
+	ASSERT_INT(memcmp(bzy_str_data(sub), "ell", 3), 0);
+	void *rep = bzy_str_replace(bzy_str_new("a.b.c", 5), bzy_str_new(".", 1), bzy_str_new("/", 1));
+	ASSERT_INT(memcmp(bzy_str_data(rep), "a/b/c", 5), 0);
+	void *tr = bzy_str_trim(bzy_str_new("  hi \t", 6));
+	ASSERT_INT(bzy_str_len(tr), 2);
+	ASSERT_INT(memcmp(bzy_str_data(tr), "hi", 2), 0);
+	void *up = bzy_str_to_upper(bzy_str_new("aB3", 3));
+	ASSERT_INT(memcmp(bzy_str_data(up), "AB3", 3), 0);
+	void *lo = bzy_str_to_lower(bzy_str_new("aB3", 3));
+	ASSERT_INT(memcmp(bzy_str_data(lo), "ab3", 3), 0);
+}
+
 static void test_regex_find(void)
 {
 	void *m = bzy_regex_find(bzy_str_new("[0-9]+", 6), bzy_str_new("abc123def", 9));
@@ -589,6 +605,7 @@ int main(void)
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
 	RUN(test_str_query);
+	RUN(test_str_transform);
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
 	SUMMARY();
