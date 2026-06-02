@@ -1615,6 +1615,61 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	}
 }
 
+/* C-style switch: case/default are label statements in the body block, so
+   fallthrough is automatic (bodies emit contiguously) and only break exits.
+   A pre-pass assigns a label per case/default; dispatch is a compare-chain
+   (Part 4h Task 4 adds the dense jump table); break targets the switch end. */
+static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	Block *b = s->then_blk;
+	int end = cg_label(cg);
+	int default_lbl = end;                 /* No-match target; overridden if a default exists. */
+
+	for (int i=0; i<b->count; i++)         /* Pre-pass: one label per case/default position. */
+	{
+		Stmt *c=b->stmts[i];
+		if (c->kind==ST_CASE || c->kind==ST_DEFAULT)
+		{
+			c->decl_offset = cg_label(cg);
+			if (c->kind==ST_DEFAULT)
+			{
+				default_lbl = c->decl_offset;
+			}
+		}
+	}
+
+	cg_expr(cg,tt,s->cond);                 /* operand -> rax */
+	for (int i=0; i<b->count; i++)          /* Compare-chain dispatch. */
+	{
+		Stmt *c=b->stmts[i];
+		if (c->kind==ST_CASE)
+		{
+			cg_emit(cg,"    cmp rax, %lld", c->value->int_val);
+			cg_emit(cg,"    je .L%d", c->decl_offset);
+		}
+	}
+
+	cg_emit(cg,"    jmp .L%d", default_lbl);
+
+	int sb = cg->cur_break_label;
+	cg->cur_break_label = end;              /* break -> switch end; continue unchanged. */
+	for (int i=0; i<b->count; i++)          /* Body in source order; labels emit contiguously. */
+	{
+		Stmt *c=b->stmts[i];
+		if (c->kind==ST_CASE || c->kind==ST_DEFAULT)
+		{
+			cg_emit(cg,".L%d:", c->decl_offset);
+		}
+		else
+		{
+			cg_stmt(cg,tt,f,c,in_main);
+		}
+	}
+
+	cg->cur_break_label = sb;
+	cg_emit(cg,".L%d:", end);
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -1759,8 +1814,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_for(cg,tt,f,s,in_main);
 		break;
 	case ST_SWITCH:
-		fprintf(stderr,"codegen: switch lowering arrives in Part 4h Task 3\n");
-		exit(1);
+		cg_switch(cg,tt,f,s,in_main);
 		break;
 	case ST_CASE:
 	case ST_DEFAULT:

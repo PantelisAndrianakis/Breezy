@@ -1,0 +1,23 @@
+void sw(int x)
+{
+	switch (x)
+	{
+		case 1:
+			print(10);
+			break;
+		case 2:
+			print(20);
+		case 3:
+			print(30);
+			break;
+		default:
+			print(99);
+	}
+}
+
+void main()
+{
+	sw(2);   // 20 then fallthrough -> 30
+	sw(1);   // 10
+	sw(7);   // default -> 99
+}
