@@ -1,0 +1,9 @@
+void main()
+{
+	int n;
+	n = 5;
+	foreach (int x : n)
+	{
+		print(x);
+	}
+}

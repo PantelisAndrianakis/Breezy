@@ -1,0 +1,21 @@
+void main()
+{
+	int[] a;
+	int i;
+	int sum;
+	a = new int[5];
+	i = 0;
+	while (i < 5)
+	{
+		a[i] = i * i;
+		i = i + 1;
+	}
+
+	sum = 0;
+	foreach (int x : a)
+	{
+		sum = sum + x;
+	}
+
+	print(sum);   // 0+1+4+9+16 = 30
+}

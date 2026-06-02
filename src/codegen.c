@@ -1076,6 +1076,104 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_emit(cg,".L%d:", end);
 }
 
+/* foreach over an array (index loop), string (byte loop), or map (control-byte
+   slot scan). The loop variable receives each element/key borrowed (no retain);
+   continue lands on the cursor advance, break on the end. An owned iterable
+   temporary is released at loop exit. Reuses the Part 4g loop-label fields. */
+static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	TypeKind ik = s->expr->type.kind;          /* iterable: TY_ARRAY / TY_STRING / TY_MAP */
+	int top = cg_label(cg), end = cg_label(cg), cont = cg_label(cg);
+	int owned = expr_is_owned(s->expr);
+	int sb = cg->cur_break_label, sc = cg->cur_continue_label;   /* Loop-label infra from Part 4g. */
+
+	cg_expr(cg,tt,s->expr);                     /* Container pointer -> rax. */
+	cg_emit(cg,"    mov [rbp - %d], rax", s->fe_coll_offset);
+	cg_emit(cg,"    mov qword [rbp - %d], 0", s->fe_index_offset);
+
+	if (ik==TY_STRING)
+	{
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+		cg_aligned_call(cg,"bzy_str_len");
+		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_len_offset);
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+		cg_aligned_call(cg,"bzy_str_data");
+		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_aux_offset);
+	}
+
+	cg_emit(cg,".L%d:", top);
+	if (ik==TY_MAP)
+	{
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_index_offset);
+		cg_aligned_call(cg,"bzy_map_iter");      /* Next full slot or -1 in rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_index_offset);
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    jl .L%d", end);
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_index_offset);
+		cg_aligned_call(cg,"bzy_map_key_at");    /* Key (borrowed) in rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+	}
+	else if (ik==TY_STRING)
+	{
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    cmp rcx, [rbp - %d]", s->fe_len_offset);
+		cg_emit(cg,"    jge .L%d", end);
+		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_aux_offset);
+		cg_emit(cg,"    movzx eax, byte [rax + rcx]");   /* byte -> int (zero-extended). */
+		cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+	}
+	else   /* TY_ARRAY */
+	{
+		TypeKind et = s->expr->type.elem->kind;
+		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_coll_offset);
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    cmp rcx, [rax + 24]");           /* index vs length */
+		cg_emit(cg,"    jge .L%d", end);
+		cg_emit(cg,"    lea rbx, [rax + rcx*8 + 32]");    /* element address */
+		if (ty_is_float(et))
+		{
+			char mem[32];
+			sprintf(mem,"[rbp - %d]", s->decl_offset);
+			cg_load_fp(cg,et,"[rbx]");
+			cg_store_fp(cg,et,mem);
+		}
+		else
+		{
+			cg_load_scalar(cg,et,"[rbx]");
+			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+		}
+	}
+
+	cg->cur_break_label = end;            /* break -> .Lend; continue -> .Lcont (the increment). */
+	cg->cur_continue_label = cont;
+	cg_block(cg,tt,f,s->then_blk,in_main);
+	cg->cur_break_label = sb;
+	cg->cur_continue_label = sc;
+
+	cg_emit(cg,".L%d:", cont);            /* continue lands here, then the cursor advances. */
+	if (ik==TY_MAP)
+	{
+		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    inc rax");
+		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_index_offset);
+	}
+	else
+	{
+		cg_emit(cg,"    inc qword [rbp - %d]", s->fe_index_offset);
+	}
+
+	cg_emit(cg,"    jmp .L%d", top);
+	cg_emit(cg,".L%d:", end);
+
+	if (owned)   /* An owned iterable temporary (e.g. `new int[3]`) is released here. */
+	{
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+		cg_release_rcx(cg);
+	}
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -1208,8 +1306,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	}
 	case ST_FOREACH:
-		fprintf(stderr,"codegen: foreach lowering arrives in Part 4d Task 4\n");
-		exit(1);
+		cg_foreach(cg,tt,f,s,in_main);
 		break;
 	case ST_BREAK:
 		cg_emit(cg,"    jmp .L%d", cg->cur_break_label);
@@ -1374,6 +1471,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_get");
 	cg_emit(cg,"extern bzy_map_has");
 	cg_emit(cg,"extern bzy_map_remove");
+	cg_emit(cg,"extern bzy_str_data");
+	cg_emit(cg,"extern bzy_map_iter");
+	cg_emit(cg,"extern bzy_map_key_at");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

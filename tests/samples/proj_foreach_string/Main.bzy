@@ -1,0 +1,13 @@
+void main()
+{
+	string s;
+	int sum;
+	s = "ABC";
+	sum = 0;
+	foreach (int b : s)
+	{
+		sum = sum + b;
+	}
+
+	print(sum);   // 65 + 66 + 67 = 198
+}

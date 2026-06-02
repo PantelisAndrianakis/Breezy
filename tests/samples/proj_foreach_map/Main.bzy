@@ -1,0 +1,20 @@
+void main()
+{
+	map<string,int> m;
+	int sum;
+	int count;
+	m = new map<string,int>();
+	m.put("a", 1);
+	m.put("b", 2);
+	m.put("c", 3);
+	sum = 0;
+	count = 0;
+	foreach (string k : m)
+	{
+		sum = sum + m.get(k);
+		count = count + 1;
+	}
+
+	print(sum);     // 6
+	print(count);   // 3
+}
