@@ -187,6 +187,10 @@ static void scan_stmt_escapes(Stmt *s)
 		mark_captured(s->expr);
 		walk_expr(s->expr);
 		break;
+	case ST_TRY:
+		scan_block_escapes(s->then_blk);
+		scan_block_escapes(s->else_blk);
+		break;
 	}
 }
 

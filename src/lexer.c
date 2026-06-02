@@ -11,7 +11,7 @@ static const struct
 } KEYWORDS[] =
 {
 	{"void",TOKEN_VOID},{"int",TOKEN_INT},{"if",TOKEN_IF},{"else",TOKEN_ELSE},
-	{"while",TOKEN_WHILE},{"foreach",TOKEN_FOREACH},{"for",TOKEN_FOR},{"return",TOKEN_RETURN},{"throw",TOKEN_THROW},
+	{"while",TOKEN_WHILE},{"foreach",TOKEN_FOREACH},{"for",TOKEN_FOR},{"return",TOKEN_RETURN},{"throw",TOKEN_THROW},{"try",TOKEN_TRY},{"catch",TOKEN_CATCH},
 	{"break",TOKEN_BREAK},{"continue",TOKEN_CONTINUE},
 	{"switch",TOKEN_SWITCH},{"case",TOKEN_CASE},{"default",TOKEN_DEFAULT},{"class",TOKEN_CLASS},
 	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},
@@ -424,6 +424,10 @@ const char *token_type_name(TokenType t)
 		return "return";
 	case TOKEN_THROW:
 		return "throw";
+	case TOKEN_TRY:
+		return "try";
+	case TOKEN_CATCH:
+		return "catch";
 	case TOKEN_CLASS:
 		return "class";
 	case TOKEN_EXTENDS:

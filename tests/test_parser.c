@@ -271,6 +271,17 @@ static void test_throw_stmt(void)
 	ASSERT_INT(s->expr->kind, EX_IDENT);
 }
 
+static void test_try_catch_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { try { print(1); } catch (Exception e) { print(2); } }");
+	Stmt *s = u->funcs[0]->body->stmts[0];
+	ASSERT_INT(s->kind, ST_TRY);
+	ASSERT_INT(s->then_blk->stmts[0]->kind, ST_EXPR);     /* print(1) */
+	ASSERT_INT(s->decl_type.kind, TY_OBJECT);             /* catch type */
+	ASSERT_STR(s->decl_name, "e");                        /* catch var */
+	ASSERT_INT(s->else_blk->stmts[0]->kind, ST_EXPR);     /* print(2) */
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -346,6 +357,7 @@ int main(void)
 	RUN(test_compound_assign);
 	RUN(test_switch_parse);
 	RUN(test_throw_stmt);
+	RUN(test_try_catch_parse);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

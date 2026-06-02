@@ -343,6 +343,7 @@ static Expr *parse_primary(Parser *p)
 
 static Block *parse_block(Parser *p);
 static Stmt  *parse_statement(Parser *p);
+static Stmt  *parse_try(Parser *p);
 
 /* Maps a scalar/void type-keyword token to its TypeKind, or returns 0. */
 static int scalar_type_kind(TokenType t, TypeKind *out)
@@ -816,6 +817,22 @@ static Stmt *parse_assign_or_expr(Parser *p)
 	return s;
 }
 
+static Stmt *parse_try(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                              /* Consume 'try'. */
+	Stmt *s=stmt_new(ST_TRY,line);
+	s->then_blk=parse_block(p);
+	expect(p,TOKEN_CATCH);
+	expect(p,TOKEN_LPAREN);
+	parse_type(p,&s->decl_type);
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(s->decl_name,name.text);
+	expect(p,TOKEN_RPAREN);
+	s->else_blk=parse_block(p);
+	return s;
+}
+
 static Stmt *parse_statement(Parser *p)
 {
 	if (starts_vardecl(p))
@@ -868,6 +885,10 @@ static Stmt *parse_statement(Parser *p)
 		s->expr=parse_expr(p);
 		expect(p,TOKEN_SEMICOLON);
 		return s;
+	}
+	if (check(p,TOKEN_TRY))
+	{
+		return parse_try(p);
 	}
 	return parse_assign_or_expr(p);
 }

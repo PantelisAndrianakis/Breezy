@@ -2101,6 +2101,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;   /* Emitted by cg_switch, never reached here. */
+	case ST_TRY:
+		fprintf(stderr,"codegen: try/catch lowering arrives in Part 5e-2 Task 2\n");
+		exit(1);
+		break;
 	case ST_THROW:
 	{
 		cg_expr_owned(cg,tt,s->expr);            /* Owned (+1) exception pointer -> rax. */

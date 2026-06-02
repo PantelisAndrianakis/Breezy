@@ -1167,6 +1167,20 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		break;
 	}
+	case ST_TRY:
+	{
+		ClassInfo *cc = s->decl_type.kind==TY_OBJECT ? class_of(&s->decl_type) : NULL;
+		if (!cc || !class_is_exception(cc))
+		{
+			die(s->line,"catch type must be an Exception (or subclass)",NULL);
+		}
+
+		Symbol *cv=sym_add(st,s->decl_name,s->decl_type);
+		s->decl_offset=cv->offset;
+		resolve_block(st,s->then_blk,tc);
+		resolve_block(st,s->else_blk,tc);
+		break;
+	}
 	}
 }
 
