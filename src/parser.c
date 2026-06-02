@@ -269,6 +269,14 @@ static Expr *parse_primary(Parser *p)
 			e->type=et;                       /* Carries elem (key) + elem2 (value). */
 			return e;
 		}
+		if (et.kind==TY_GENERIC)
+		{
+			expect(p,TOKEN_LPAREN);
+			expect(p,TOKEN_RPAREN);
+			Expr *e=expr_new(EX_NEWGEN,line);
+			e->type=et;                       /* Carries class_name (template) + elem (T). */
+			return e;
+		}
 		if (check(p,TOKEN_LBRACKET))
 		{
 			advance(p);                       /* '[' */
@@ -362,12 +370,43 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 	}
 }
 
-/* Parse a base (non-array) type: scalar / string / IDENT class. */
+/* The fixed set of compiler-known generic templates. Part 4f extends this. */
+static int is_generic_template(const char *name)
+{
+	return strcmp(name,"Box")==0;
+}
+
+/* Parse a base (non-array) type: scalar / string / map / generic / IDENT class. */
 static int parse_base_type(Parser *p, TypeRef *out)
 {
 	TypeKind k;
 	out->elem=NULL;
 	out->elem2=NULL;
+	/* A known template name immediately followed by '<' is a generic. Since
+	   parse_base_type is only reached in type position, an unknown IDENT before
+	   '<' is a clear error, not a downstream parse failure. */
+	if (check(p,TOKEN_IDENT) && p->peek.type==TOKEN_LT)
+	{
+		if (!is_generic_template(p->cur.text))
+		{
+			fprintf(stderr,"line %d: unknown generic template '%s' (user-defined generics are not supported)\n",
+					p->cur.line, p->cur.text);
+			exit(1);
+		}
+
+		char tmpl[64];
+		strcpy(tmpl,p->cur.text);
+		advance(p);                 /* Template name. */
+		expect(p,TOKEN_LT);
+		TypeRef el;
+		parse_type(p,&el);
+		expect(p,TOKEN_GT);
+		out->kind=TY_GENERIC;
+		strcpy(out->class_name,tmpl);
+		out->elem=typeref_box(el);
+		out->elem2=NULL;
+		return 1;
+	}
 	if (check(p,TOKEN_MAP))
 	{
 		advance(p);
@@ -443,6 +482,11 @@ static int starts_vardecl(Parser *p)
 	}
 	/* `map<...>` declarations start unambiguously with the map keyword. */
 	if (check(p,TOKEN_MAP))
+	{
+		return 1;
+	}
+	/* `Box<...>` etc.: a known template name followed by '<'. */
+	if (check(p,TOKEN_IDENT) && is_generic_template(p->cur.text) && p->peek.type == TOKEN_LT)
 	{
 		return 1;
 	}

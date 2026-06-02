@@ -770,6 +770,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem2->kind) ? 1 : 0);
 		cg_aligned_call(cg,"bzy_map_new");   /* Owned (+1) map in rax. */
 		break;
+	case EX_NEWGEN:
+		fprintf(stderr,"codegen: generic lowering arrives in Part 4e Task 4\n");
+		exit(1);
+		break;
 	case EX_INDEX:
 		cg_index_addr(cg,tt,e);
 		if (ty_is_float(e->type.kind))

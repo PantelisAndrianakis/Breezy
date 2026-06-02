@@ -208,6 +208,24 @@ static void test_for_parse(void)
 	ASSERT_INT(fr->then_blk->count, 1);
 }
 
+static void test_generic_type_decl(void)
+{
+	Unit *u = parse_unit_str("void m() { Box<int> b; }");
+	TypeRef *t = &u->funcs[0]->body->stmts[0]->decl_type;
+	ASSERT_INT(t->kind, TY_GENERIC);
+	ASSERT_STR(t->class_name, "Box");
+	ASSERT_INT(t->elem->kind, TY_INT);
+}
+
+static void test_new_generic(void)
+{
+	Expr *e = parse_str("new Box<Dog>()");
+	ASSERT_INT(e->kind, EX_NEWGEN);
+	ASSERT_STR(e->type.class_name, "Box");
+	ASSERT_INT(e->type.elem->kind, TY_OBJECT);
+	ASSERT_STR(e->type.elem->class_name, "Dog");
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -277,6 +295,8 @@ int main(void)
 	RUN(test_incdec_parse);
 	RUN(test_break_continue_stmt);
 	RUN(test_for_parse);
+	RUN(test_generic_type_decl);
+	RUN(test_new_generic);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

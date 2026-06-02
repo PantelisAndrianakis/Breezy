@@ -10,6 +10,7 @@ typedef enum
 	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only */
 	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array */
 	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map */
+	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object */
 	TY_OBJECT,
 	TY_STRING   /* immutable string (Part 4a). */
 } TypeKind;
@@ -47,6 +48,7 @@ static inline int ty_bits(TypeKind k)
 		return 64;
 	case TY_ARRAY:
 	case TY_MAP:
+	case TY_GENERIC:
 	case TY_OBJECT:
 	case TY_STRING:
 		return 64;
@@ -86,7 +88,7 @@ static inline int ty_is_float(TypeKind k)
    this — not a bare `== TY_OBJECT` — wherever a retain/release decision is made. */
 static inline int ty_is_managed(TypeKind k)
 {
-	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP;
+	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
@@ -98,7 +100,7 @@ static inline int ty_rank(TypeKind k)
 typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
-	EX_NEWMAP, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX
+	EX_NEWMAP, EX_NEWGEN, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX
 } ExprKind;
 
 typedef struct Expr Expr;

@@ -188,6 +188,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		break;   /* e->type is already TY_MAP + key/value, set by the parser. */
+	case EX_NEWGEN:
+		die(e->line,"generic resolve arrives in Part 4e Task 2",NULL);
+		break;
 	case EX_INDEX:
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
