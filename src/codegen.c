@@ -672,6 +672,33 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    add rsp, 16");
 }
 
+/* Encode an element type as the collection runtime's elem_kind: 0 int/bool,
+   1 float, 2 double, 3 string (managed, content eq), 4 object (managed, identity). */
+static int cg_elem_kind(TypeKind k)
+{
+	if (k==TY_FLOAT)
+	{
+		return 1;
+	}
+
+	if (k==TY_DOUBLE)
+	{
+		return 2;
+	}
+
+	if (k==TY_STRING)
+	{
+		return 3;
+	}
+
+	if (ty_is_managed(k))
+	{
+		return 4;
+	}
+
+	return 0;   /* int / bool / integer widths. */
+}
+
 /* Box<T> methods, specialized inline per T over the length-1 array slot at
    [box+32]. The box is borrowed; set takes overwrite/ARC semantics; get retains
    a managed value (owned); contains bakes equality per T and releases an owned
@@ -793,6 +820,205 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    add rsp, 16");
 }
 
+/* Set<T> over a BzyMap (keys only). Defined in Part 4f Task 5. */
+static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	(void)cg;
+	(void)tt;
+	(void)e;
+	fprintf(stderr,"codegen: Set lowering arrives in Part 4f Task 5\n");
+	exit(1);
+}
+
+/* List / Stack / Queue / Deque / ArrayDeque methods over the vector runtime.
+   The receiver is borrowed; an owned managed argument is released after the call
+   (the runtime retains its own copy); fp element values are reinterpreted between
+   rax/eax and xmm0 around the call. get/peek return owned; pop/dequeue/remove*
+   transfer the element out. */
+static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	TypeKind tk = e->lhs->type.elem->kind;
+	int fp = ty_is_float(tk);
+	const char *nm = e->name;
+
+	const char *fn = NULL;
+	if (strcmp(nm,"add")==0 || strcmp(nm,"push")==0 || strcmp(nm,"enqueue")==0 || strcmp(nm,"addLast")==0)
+	{
+		fn="bzy_vec_push_back";
+	}
+	else if (strcmp(nm,"addFirst")==0)
+	{
+		fn="bzy_vec_push_front";
+	}
+	else if (strcmp(nm,"pop")==0 || strcmp(nm,"removeLast")==0)
+	{
+		fn="bzy_vec_pop_back";
+	}
+	else if (strcmp(nm,"dequeue")==0 || strcmp(nm,"removeFirst")==0)
+	{
+		fn="bzy_vec_pop_front";
+	}
+	else if (strcmp(nm,"peekLast")==0)
+	{
+		fn="bzy_vec_peek_back";
+	}
+	else if (strcmp(nm,"peekFirst")==0)
+	{
+		fn="bzy_vec_peek_front";
+	}
+	else if (strcmp(nm,"peek")==0)
+	{
+		fn = strcmp(e->lhs->type.class_name,"Queue")==0 ? "bzy_vec_peek_front" : "bzy_vec_peek_back";   /* Stack: top (back); Queue: front. */
+	}
+	else if (strcmp(nm,"get")==0)
+	{
+		fn="bzy_vec_get";
+	}
+	else if (strcmp(nm,"set")==0)
+	{
+		fn="bzy_vec_set";
+	}
+	else if (strcmp(nm,"removeAt")==0)
+	{
+		fn="bzy_vec_remove_at";
+	}
+	else if (strcmp(nm,"indexOf")==0)
+	{
+		fn="bzy_vec_index_of";
+	}
+	else
+	{
+		fn="bzy_vec_contains";
+	}
+
+	/* Zero-argument, returns T: pop / peek / dequeue / removeFirst|Last / peekFirst|Last. */
+	int zero_ret = strcmp(nm,"pop")==0 || strcmp(nm,"peek")==0 || strcmp(nm,"dequeue")==0
+				   || strcmp(nm,"removeFirst")==0 || strcmp(nm,"removeLast")==0
+				   || strcmp(nm,"peekFirst")==0 || strcmp(nm,"peekLast")==0;
+	if (zero_ret)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    mov rcx, rax");
+		cg_aligned_call(cg,fn);                     /* Result int64 in rax. */
+		if (fp)
+		{
+			cg_emit(cg, tk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+		}
+
+		return;
+	}
+
+	/* get(index) -> T, one integer arg. */
+	if (strcmp(nm,"get")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr(cg,tt,e->args[0]);
+		cg_emit(cg,"    mov rdx, rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_aligned_call(cg,"bzy_vec_get");
+		if (fp)
+		{
+			cg_emit(cg, tk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+		}
+
+		cg_emit(cg,"    add rsp, 16");
+		return;
+	}
+
+	/* removeAt(index) / indexOf(value) / contains(value): receiver + one arg. */
+	if (strcmp(nm,"removeAt")==0 || strcmp(nm,"indexOf")==0 || strcmp(nm,"contains")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		if (fp)
+		{
+			cg_expr(cg,tt,e->args[0]);
+			cg_emit(cg, tk==TY_FLOAT ? "    movd edx, xmm0" : "    movq rdx, xmm0");
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[0]);
+			cg_emit(cg,"    mov [rsp + 8], rax");
+			cg_emit(cg,"    mov rdx, rax");
+		}
+
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_aligned_call(cg,fn);
+		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))   /* indexOf/contains arg temp */
+		{
+			cg_emit(cg,"    mov [rsp], rax");
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rsp]");
+		}
+
+		cg_emit(cg,"    add rsp, 16");
+		return;
+	}
+
+	/* set(index, value): receiver + index + value, void. */
+	if (strcmp(nm,"set")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    sub rsp, 32");
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr(cg,tt,e->args[0]);                  /* index */
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		if (fp)
+		{
+			cg_expr(cg,tt,e->args[1]);
+			cg_emit(cg, tk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[1]);
+		}
+
+		cg_emit(cg,"    mov [rsp + 16], rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_emit(cg,"    mov rdx, [rsp + 8]");
+		cg_emit(cg,"    mov r8, [rsp + 16]");
+		cg_aligned_call(cg,"bzy_vec_set");
+		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[1]))
+		{
+			cg_emit(cg,"    mov rcx, [rsp + 16]");
+			cg_release_rcx(cg);
+		}
+
+		cg_emit(cg,"    add rsp, 32");
+		return;
+	}
+
+	/* push-shape: add / push / enqueue / addFirst / addLast — one value arg, void. */
+	cg_expr(cg,tt,e->lhs);
+	cg_emit(cg,"    sub rsp, 16");
+	cg_emit(cg,"    mov [rsp], rax");
+	if (fp)
+	{
+		cg_expr(cg,tt,e->args[0]);
+		cg_emit(cg, tk==TY_FLOAT ? "    movd edx, xmm0" : "    movq rdx, xmm0");
+	}
+	else
+	{
+		cg_expr(cg,tt,e->args[0]);
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rdx, rax");
+	}
+
+	cg_emit(cg,"    mov rcx, [rsp]");
+	cg_aligned_call(cg,fn);
+	if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))
+	{
+		cg_emit(cg,"    mov rcx, [rsp + 8]");
+		cg_release_rcx(cg);
+	}
+
+	cg_emit(cg,"    add rsp, 16");
+}
+
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (strcmp(e->name,"StringBuilder")==0)
@@ -892,9 +1118,24 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_aligned_call(cg,"bzy_map_new");   /* Owned (+1) map in rax. */
 		break;
 	case EX_NEWGEN:
-		cg_emit(cg,"    mov rcx, 1");
-		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem->kind) ? 1 : 0);
-		cg_aligned_call(cg,"bzy_array_new");   /* Owned (+1) length-1 box in rax. */
+		if (strcmp(e->type.class_name,"Box")==0)
+		{
+			cg_emit(cg,"    mov rcx, 1");
+			cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem->kind) ? 1 : 0);
+			cg_aligned_call(cg,"bzy_array_new");   /* Box = length-1 array. */
+		}
+		else if (strcmp(e->type.class_name,"Set")==0)
+		{
+			cg_emit(cg,"    mov rcx, %d", e->type.elem->kind==TY_STRING ? 1 : 0);   /* key_kind */
+			cg_emit(cg,"    mov rdx, 0");                                            /* Values unmanaged. */
+			cg_aligned_call(cg,"bzy_map_new");
+		}
+		else   /* List / Stack / Queue / Deque / ArrayDeque -> vector. */
+		{
+			cg_emit(cg,"    mov rcx, %d", cg_elem_kind(e->type.elem->kind));
+			cg_aligned_call(cg,"bzy_vec_new");
+		}
+
 		break;
 	case EX_INDEX:
 		cg_index_addr(cg,tt,e);
@@ -1018,7 +1259,18 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_METHOD_CALL:
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
-			cg_box_method(cg,tt,e);
+			if (strcmp(e->lhs->type.class_name,"Box")==0)
+			{
+				cg_box_method(cg,tt,e);
+			}
+			else if (strcmp(e->lhs->type.class_name,"Set")==0)
+			{
+				cg_set_method(cg,tt,e);
+			}
+			else
+			{
+				cg_collection_method(cg,tt,e);
+			}
 		}
 		else if (e->lhs->type.kind==TY_MAP)
 		{
@@ -1605,6 +1857,19 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
 	cg_emit(cg,"extern bzy_str_eq");
+	cg_emit(cg,"extern bzy_vec_new");
+	cg_emit(cg,"extern bzy_vec_len");
+	cg_emit(cg,"extern bzy_vec_push_back");
+	cg_emit(cg,"extern bzy_vec_push_front");
+	cg_emit(cg,"extern bzy_vec_pop_back");
+	cg_emit(cg,"extern bzy_vec_pop_front");
+	cg_emit(cg,"extern bzy_vec_get");
+	cg_emit(cg,"extern bzy_vec_set");
+	cg_emit(cg,"extern bzy_vec_peek_back");
+	cg_emit(cg,"extern bzy_vec_peek_front");
+	cg_emit(cg,"extern bzy_vec_remove_at");
+	cg_emit(cg,"extern bzy_vec_index_of");
+	cg_emit(cg,"extern bzy_vec_contains");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

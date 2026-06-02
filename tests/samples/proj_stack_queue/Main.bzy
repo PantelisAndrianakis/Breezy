@@ -1,0 +1,18 @@
+void main()
+{
+	Stack<int> s;
+	Queue<int> q;
+	s = new Stack<int>();
+	s.push(1);
+	s.push(2);
+	print(s.peek());    // 2
+	print(s.pop());     // 2
+	print(s.pop());     // 1
+
+	q = new Queue<int>();
+	q.enqueue(7);
+	q.enqueue(8);
+	print(q.peek());    // 7 (FIFO)
+	print(q.dequeue()); // 7
+	print(q.dequeue()); // 8
+}

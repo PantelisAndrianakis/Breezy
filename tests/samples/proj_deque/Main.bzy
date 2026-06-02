@@ -1,0 +1,13 @@
+void main()
+{
+	Deque<int> d;
+	d = new Deque<int>();
+	d.addLast(2);
+	d.addFirst(1);
+	d.addLast(3);       // [1, 2, 3]
+	print(d.peekFirst());    // 1
+	print(d.peekLast());     // 3
+	print(d.removeFirst());  // 1
+	print(d.removeLast());   // 3
+	print(d.size);           // 1
+}
