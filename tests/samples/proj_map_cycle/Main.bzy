@@ -1,0 +1,16 @@
+void makeCycle()
+{
+	Node a;
+	map<int,Node> m;
+	a = new Node();
+	m = new map<int,Node>();
+	m.put(0, a);      // Map value -> a.
+	a.peers = m;      // a -> m -> a (cycle through the map's value array).
+}
+
+void main()
+{
+	makeCycle();
+	collectCycles();
+	print(liveCount());   // 0
+}

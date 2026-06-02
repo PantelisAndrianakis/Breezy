@@ -1,0 +1,15 @@
+void main()
+{
+	map<int,Box> d;
+	int i;
+	d = new map<int,Box>();
+	i = 0;
+	while (i < 6)
+	{
+		d.put(i, new Box());
+		i = i + 1;
+	}
+
+	print(d.size);          // 6
+	print(liveCount());     // map + keys array + vals array + 6 Box = 9
+}
