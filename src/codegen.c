@@ -1513,6 +1513,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_math(cg,tt,e);
 		}
+		else if (strncmp(e->name,"Clock.",6)==0)
+		{
+			cg_aligned_call(cg, strcmp(e->name+6,"currentTimeNanos")==0 ? "bzy_clock_nanos" : "bzy_clock_millis");
+		}
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
@@ -2205,6 +2209,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern tan");
 	cg_emit(cg,"extern exp");
 	cg_emit(cg,"extern pow");
+	cg_emit(cg,"extern bzy_clock_millis");
+	cg_emit(cg,"extern bzy_clock_nanos");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

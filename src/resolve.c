@@ -233,6 +233,22 @@ static void resolve_math(Expr *e)
 	die(e->line,"unknown Math method: ",m);
 }
 
+static void resolve_clock(Expr *e)
+{
+	const char *m = e->name + 6;   /* After "Clock.". */
+	if (strcmp(m,"currentTimeMillis")!=0 && strcmp(m,"currentTimeNanos")!=0)
+	{
+		die(e->line,"unknown Clock method: ",m);
+	}
+
+	if (e->arg_count!=0)
+	{
+		die(e->line,"Clock methods take no arguments",NULL);
+	}
+
+	e->type.kind = TY_LONG;
+}
+
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
 
 static void resolve_args(SymTable *st, Expr *e, const char *tc)
@@ -794,6 +810,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Math.",5)==0)
 		{
 			resolve_math(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Clock.",6)==0)
+		{
+			resolve_clock(e);
 			break;
 		}
 

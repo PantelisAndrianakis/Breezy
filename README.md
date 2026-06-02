@@ -550,7 +550,7 @@ The language design is settled. The compiler and runtime are being built from sc
 **Language & standard-library essentials (Part 5)**
 - [x] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
 - [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
-- [ ] `Clock.currentTimeMillis()` / `currentTimeNanos()`
+- [x] `Clock.currentTimeMillis()` / `currentTimeNanos()`
 - [ ] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [ ] Exceptions: `try`/`catch`/`throw` + stack traces
 

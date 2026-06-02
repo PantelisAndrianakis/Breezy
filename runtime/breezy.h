@@ -60,4 +60,7 @@ void    bzy_vec_remove_at(void *v, int64_t i);   /* Bounds-checked; releases the
 int64_t bzy_vec_index_of(void *v, int64_t needle); /* First index equal per elem_kind, or -1. */
 int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0 */
 
+int64_t bzy_clock_millis(void);   /* Wall-clock milliseconds since the Unix epoch. */
+int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanoseconds. */
+
 #endif

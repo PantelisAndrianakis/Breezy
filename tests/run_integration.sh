@@ -73,6 +73,7 @@ check math_basic  tests/samples/proj_math_basic    $'4\n5\n2.5'
 check math_minmax tests/samples/proj_math_minmax   $'7\n3\n5\n0\n2.5'
 check math_round  tests/samples/proj_math_round    $'2\n3\n2\n3\ntrue\nfalse'
 check math_libm   tests/samples/proj_math_libm     $'1024\n1\n1\n0'
+check clock       tests/samples/proj_clock         $'true\ntrue'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

@@ -1,0 +1,12 @@
+void main()
+{
+	long t;
+	t = Clock.currentTimeMillis();
+	print(t > 0);          // true
+
+	long n1;
+	long n2;
+	n1 = Clock.currentTimeNanos();
+	n2 = Clock.currentTimeNanos();
+	print(n2 >= n1);       // true (monotonic non-decreasing)
+}

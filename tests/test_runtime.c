@@ -359,6 +359,15 @@ static void test_vec_contains_string(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_clock(void)
+{
+	int64_t m = bzy_clock_millis();
+	ASSERT(m > 0);                         /* Wall-clock ms since 1970 is large/positive. */
+	int64_t a = bzy_clock_nanos();
+	int64_t b = bzy_clock_nanos();
+	ASSERT(b >= a);                        /* Monotonic non-decreasing. */
+}
+
 static void test_builder_append_tostring(void)
 {
 	int64_t before = bzy_live_count();
@@ -461,6 +470,7 @@ int main(void)
 	RUN(test_vec_ring);
 	RUN(test_vec_contains_and_remove);
 	RUN(test_vec_contains_string);
+	RUN(test_clock);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);
