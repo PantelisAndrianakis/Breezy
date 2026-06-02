@@ -158,6 +158,17 @@ static void test_switch_keywords(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_DEFAULT);
 }
 
+static void test_block_comment(void)
+{
+	Lexer l;
+	lexer_init(&l, "int /* skip\n me */ x /**/ = ");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_INT);
+	Token t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_IDENT);
+	ASSERT_STR(t.text, "x");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_ASSIGN);   // the empty block comment was skipped
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -230,6 +241,7 @@ int main(void)
 	RUN(test_break_continue_keywords);
 	RUN(test_for_keyword);
 	RUN(test_switch_keywords);
+	RUN(test_block_comment);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

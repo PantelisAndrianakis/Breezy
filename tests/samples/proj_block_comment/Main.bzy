@@ -1,0 +1,8 @@
+/* A block comment
+   spanning multiple lines. */
+void main()
+{
+	int x; /* inline */ x = 7;
+	// a line comment
+	print(x);   /* prints 7 */
+}

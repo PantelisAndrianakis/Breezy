@@ -95,6 +95,21 @@ Token lexer_next(Lexer *l)
 				next_ch(l);
 			}
 		}
+		else if (peek_ch(l) == '/' && l->src[l->pos+1] == '*')
+		{
+			next_ch(l);   /* Consume '/'. */
+			next_ch(l);   /* Consume '*'. */
+			while (peek_ch(l) && !(peek_ch(l) == '*' && l->src[l->pos+1] == '/'))
+			{
+				next_ch(l);
+			}
+
+			if (peek_ch(l))
+			{
+				next_ch(l);   /* Consume '*'. */
+				next_ch(l);   /* Consume '/'. */
+			}
+		}
 		else
 		{
 			break;
