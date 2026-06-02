@@ -175,3 +175,119 @@ int64_t bzy_vec_peek_back(void *v)
 
 	return val;
 }
+
+void bzy_vec_push_front(void *v, int64_t val)
+{
+	if (*V_LEN(v) + 1 > *V_CAP(v))
+	{
+		vec_grow(v);
+	}
+
+	if (vec_managed(v))
+	{
+		bzy_retain((void*)val);
+	}
+
+	int64_t cap = *V_CAP(v);
+	*V_HEAD(v) = (*V_HEAD(v) - 1 + cap) % cap;
+	vec_slots(v)[*V_HEAD(v)] = val;
+	(*V_LEN(v))++;
+}
+
+int64_t bzy_vec_pop_front(void *v)
+{
+	if (*V_LEN(v) == 0)
+	{
+		bzy_oob(-1, 0);
+	}
+
+	int64_t p = *V_HEAD(v);
+	int64_t val = vec_slots(v)[p];
+	vec_slots(v)[p] = 0;                    /* Transfer out (owned). */
+	*V_HEAD(v) = (p + 1) % *V_CAP(v);
+	(*V_LEN(v))--;
+	return val;
+}
+
+int64_t bzy_vec_peek_front(void *v)
+{
+	if (*V_LEN(v) == 0)
+	{
+		bzy_oob(-1, 0);
+	}
+
+	int64_t val = vec_slots(v)[*V_HEAD(v)];
+	if (vec_managed(v))
+	{
+		bzy_retain((void*)val);
+	}
+
+	return val;
+}
+
+void bzy_vec_remove_at(void *v, int64_t i)
+{
+	if (i < 0 || i >= *V_LEN(v))
+	{
+		bzy_oob(i, *V_LEN(v));
+	}
+
+	int64_t *s = vec_slots(v);
+	if (vec_managed(v))
+	{
+		bzy_release((void*)s[vec_phys(v, i)]);
+	}
+
+	for (int64_t j = i; j < *V_LEN(v) - 1; j++)   /* Shift logical j+1 -> j. */
+	{
+		s[vec_phys(v, j)] = s[vec_phys(v, j + 1)];
+	}
+
+	s[vec_phys(v, *V_LEN(v) - 1)] = 0;
+	(*V_LEN(v))--;
+}
+
+static int vec_eq(void *v, int64_t a, int64_t b)
+{
+	switch (*V_KIND(v))
+	{
+	case 1:
+	{
+		float fa, fb;
+		uint32_t ua = (uint32_t)a, ub = (uint32_t)b;
+		memcpy(&fa, &ua, 4);
+		memcpy(&fb, &ub, 4);
+		return fa == fb;
+	}
+	case 2:
+	{
+		double da, db;
+		memcpy(&da, &a, 8);
+		memcpy(&db, &b, 8);
+		return da == db;
+	}
+	case 3:
+		return bzy_str_eq((void*)a, (void*)b) ? 1 : 0;
+	default:
+		return a == b;   /* int/bool (0) and object identity (4). */
+	}
+}
+
+int64_t bzy_vec_index_of(void *v, int64_t needle)
+{
+	int64_t *s = vec_slots(v);
+	for (int64_t i = 0; i < *V_LEN(v); i++)
+	{
+		if (vec_eq(v, s[vec_phys(v, i)], needle))
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+int64_t bzy_vec_contains(void *v, int64_t needle)
+{
+	return bzy_vec_index_of(v, needle) >= 0 ? 1 : 0;
+}

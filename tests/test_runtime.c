@@ -311,6 +311,54 @@ static void test_vec_object_released(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_vec_ring(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(0);
+	bzy_vec_push_back(v, 2);
+	bzy_vec_push_front(v, 1);     /* [1, 2] */
+	bzy_vec_push_back(v, 3);      /* [1, 2, 3] */
+	ASSERT_INT(bzy_vec_peek_front(v), 1);
+	ASSERT_INT(bzy_vec_peek_back(v), 3);
+	ASSERT_INT(bzy_vec_pop_front(v), 1);   /* [2, 3] */
+	ASSERT_INT(bzy_vec_pop_back(v), 3);    /* [2] */
+	ASSERT_INT(bzy_vec_len(v), 1);
+	ASSERT_INT(bzy_vec_get(v, 0), 2);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_vec_contains_and_remove(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(0);
+	bzy_vec_push_back(v, 5);
+	bzy_vec_push_back(v, 6);
+	bzy_vec_push_back(v, 7);
+	ASSERT_INT(bzy_vec_index_of(v, 6), 1);
+	ASSERT_INT(bzy_vec_contains(v, 7), 1);
+	ASSERT_INT(bzy_vec_contains(v, 9), 0);
+	bzy_vec_remove_at(v, 1);      /* [5, 7] */
+	ASSERT_INT(bzy_vec_len(v), 2);
+	ASSERT_INT(bzy_vec_get(v, 1), 7);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_vec_contains_string(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(3);                /* string elements */
+	void *a = bzy_str_new("ab", 2);
+	bzy_vec_push_back(v, (int64_t)a);
+	bzy_release(a);
+	void *probe = bzy_str_new("ab", 2);
+	ASSERT_INT(bzy_vec_contains(v, (int64_t)probe), 1);   /* content equality */
+	bzy_release(probe);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_builder_append_tostring(void)
 {
 	int64_t before = bzy_live_count();
@@ -410,6 +458,9 @@ int main(void)
 	RUN(test_vec_value_back);
 	RUN(test_vec_grow);
 	RUN(test_vec_object_released);
+	RUN(test_vec_ring);
+	RUN(test_vec_contains_and_remove);
+	RUN(test_vec_contains_string);
 	RUN(test_builder_append_tostring);
 	RUN(test_finalizer_runs_on_free);
 	RUN(test_cycle_is_collected);
