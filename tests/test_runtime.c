@@ -555,6 +555,20 @@ static void test_str_transform(void)
 	ASSERT_INT(memcmp(bzy_str_data(lo), "ab3", 3), 0);
 }
 
+static void test_str_more(void)
+{
+	ASSERT_INT(bzy_str_equals_ignore_case(bzy_str_new("HeLLo", 5), bzy_str_new("hello", 5)), 1);
+	ASSERT_INT(bzy_str_equals_ignore_case(bzy_str_new("a", 1), bzy_str_new("ab", 2)), 0);
+	ASSERT_INT(bzy_str_is_empty(bzy_str_new("", 0)), 1);
+	ASSERT_INT(bzy_str_is_empty(bzy_str_new("x", 1)), 0);
+	ASSERT_INT(bzy_str_char_at(bzy_str_new("abc", 3), 1), 'b');
+	ASSERT_INT(bzy_str_char_at(bzy_str_new("abc", 3), 9), -1);
+	ASSERT_INT(bzy_str_last_index_of(bzy_str_new("abcabc", 6), bzy_str_new("bc", 2)), 4);
+	void *rp = bzy_str_repeat(bzy_str_new("ab", 2), 3);
+	ASSERT_INT(bzy_str_len(rp), 6);
+	ASSERT_INT(memcmp(bzy_str_data(rp), "ababab", 6), 0);
+}
+
 static void test_regex_find(void)
 {
 	void *m = bzy_regex_find(bzy_str_new("[0-9]+", 6), bzy_str_new("abc123def", 9));
@@ -606,6 +620,7 @@ int main(void)
 	RUN(test_regex_test_search);
 	RUN(test_str_query);
 	RUN(test_str_transform);
+	RUN(test_str_more);
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
 	SUMMARY();

@@ -87,6 +87,7 @@ check random      tests/samples/proj_random        $'true\ntrue\ntrue\ntrue\ntru
 check regex       tests/samples/proj_regex         $'true\ntrue\n123\na#b#c#'
 check str_query   tests/samples/proj_str_query     $'true\ntrue\n5\n10'
 check str_transform tests/samples/proj_str_transform $'Hello.World\nHello World\nHELLO WORLD\nHello'
+check str_more    tests/samples/proj_str_more      $'true\nfalse\n101\n4\nababab'
 check_throws throw tests/samples/proj_throw "boom"
 check catch       tests/samples/proj_catch         $'caught it\n0'
 check catch_multi tests/samples/proj_catch_multi   $'bee\n99'

@@ -1,0 +1,25 @@
+void main()
+{
+	string s;
+	s = "Hello";
+
+	boolean eq;
+	eq = s.equalsIgnoreCase("HELLO");
+	print(eq);                  // true
+
+	boolean empty;
+	empty = s.isEmpty();
+	print(empty);               // false
+
+	int c;
+	c = s.charAt(1);
+	print(c);                   // 101  (the byte 'e')
+
+	int last;
+	last = "abcabc".lastIndexOf("bc");
+	print(last);                // 4
+
+	string rep;
+	rep = "ab".repeat(3);
+	print(rep);                 // ababab
+}

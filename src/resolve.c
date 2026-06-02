@@ -319,6 +319,51 @@ static void resolve_string_method(Expr *e)
 
 		e->type.kind = TY_STRING;
 	}
+	else if (strcmp(nm,"isEmpty")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"string.isEmpty() takes no arguments",NULL);
+		}
+
+		e->type.kind = TY_BOOL;
+	}
+	else if (strcmp(nm,"equals")==0 || strcmp(nm,"equalsIgnoreCase")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		{
+			die(e->line,"this string method expects one string argument",NULL);
+		}
+
+		e->type.kind = TY_BOOL;
+	}
+	else if (strcmp(nm,"lastIndexOf")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		{
+			die(e->line,"string.lastIndexOf expects one string argument",NULL);
+		}
+
+		e->type.kind = TY_INT;
+	}
+	else if (strcmp(nm,"charAt")==0)
+	{
+		if (e->arg_count != 1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"string.charAt expects one integer argument",NULL);
+		}
+
+		e->type.kind = TY_INT;
+	}
+	else if (strcmp(nm,"repeat")==0)
+	{
+		if (e->arg_count != 1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"string.repeat expects one integer argument",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+	}
 	else
 	{
 		die(e->line,"unknown string method: ",nm);

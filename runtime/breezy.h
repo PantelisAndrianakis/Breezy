@@ -35,6 +35,11 @@ void   *bzy_str_replace(void *s, void *from, void *to);         /* All literal o
 void   *bzy_str_trim(void *s);                                  /* Strip ASCII whitespace ends; owned. */
 void   *bzy_str_to_upper(void *s);                              /* ASCII upper; owned. */
 void   *bzy_str_to_lower(void *s);                              /* ASCII lower; owned. */
+int64_t bzy_str_equals_ignore_case(void *a, void *b);  /* ASCII case-insensitive equality. */
+int64_t bzy_str_is_empty(void *s);                     /* 1 if length 0. */
+int64_t bzy_str_char_at(void *s, int64_t i);           /* Byte at i as int, or -1 out of range. */
+int64_t bzy_str_last_index_of(void *s, void *needle);  /* Last byte index of needle, or -1 (empty -> len). */
+void   *bzy_str_repeat(void *s, int64_t n);            /* s repeated n times (n<=0 -> ""); owned. */
 void    bzy_print_str(void *s);                      /* Write the bytes + '\n'. */
 
 void   *bzy_sb_new(void);                            /* Owned (+1) empty StringBuilder. */

@@ -1304,6 +1304,12 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"trim")==0        ? "bzy_str_trim" :
 		strcmp(nm,"toUpper")==0     ? "bzy_str_to_upper" :
 		strcmp(nm,"toLower")==0     ? "bzy_str_to_lower" :
+		strcmp(nm,"isEmpty")==0          ? "bzy_str_is_empty" :
+		strcmp(nm,"equals")==0           ? "bzy_str_eq" :
+		strcmp(nm,"equalsIgnoreCase")==0 ? "bzy_str_equals_ignore_case" :
+		strcmp(nm,"lastIndexOf")==0      ? "bzy_str_last_index_of" :
+		strcmp(nm,"charAt")==0           ? "bzy_str_char_at" :
+		strcmp(nm,"repeat")==0           ? "bzy_str_repeat" :
 		"bzy_str_index_of";
 	TypeRef ps[2];
 	for (int i=0; i<e->arg_count; i++)
@@ -2448,6 +2454,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_trim");
 	cg_emit(cg,"extern bzy_str_to_upper");
 	cg_emit(cg,"extern bzy_str_to_lower");
+	cg_emit(cg,"extern bzy_str_equals_ignore_case");
+	cg_emit(cg,"extern bzy_str_is_empty");
+	cg_emit(cg,"extern bzy_str_char_at");
+	cg_emit(cg,"extern bzy_str_last_index_of");
+	cg_emit(cg,"extern bzy_str_repeat");
 	cg_emit(cg,"extern bzy_vec_new");
 	cg_emit(cg,"extern bzy_vec_len");
 	cg_emit(cg,"extern bzy_vec_push_back");

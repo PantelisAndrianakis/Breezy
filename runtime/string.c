@@ -251,6 +251,99 @@ void *bzy_str_to_lower(void *s)
 	return o;
 }
 
+int64_t bzy_str_equals_ignore_case(void *a, void *b)
+{
+	int64_t la = bzy_str_len(a), lb = bzy_str_len(b);
+	if (la != lb)
+	{
+		return 0;
+	}
+
+	const char *pa = bzy_str_data(a), *pb = bzy_str_data(b);
+	for (int64_t i = 0; i < la; i++)
+	{
+		char ca = pa[i], cb = pb[i];
+		if (ca >= 'A' && ca <= 'Z')
+		{
+			ca = (char)(ca + 32);
+		}
+
+		if (cb >= 'A' && cb <= 'Z')
+		{
+			cb = (char)(cb + 32);
+		}
+
+		if (ca != cb)
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+int64_t bzy_str_is_empty(void *s)
+{
+	return bzy_str_len(s) == 0 ? 1 : 0;
+}
+
+int64_t bzy_str_char_at(void *s, int64_t i)
+{
+	int64_t sl = bzy_str_len(s);
+	if (i < 0 || i >= sl)
+	{
+		return -1;
+	}
+
+	return (unsigned char)bzy_str_data(s)[i];
+}
+
+int64_t bzy_str_last_index_of(void *s, void *needle)
+{
+	int64_t sl = bzy_str_len(s), nl = bzy_str_len(needle);
+	const char *d = bzy_str_data(s), *n = bzy_str_data(needle);
+	if (nl == 0)
+	{
+		return sl;
+	}
+
+	if (nl > sl)
+	{
+		return -1;
+	}
+
+	for (int64_t i = sl - nl; i >= 0; i--)
+	{
+		if (memcmp(d + i, n, (size_t)nl) == 0)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+void *bzy_str_repeat(void *s, int64_t n)
+{
+	int64_t sl = bzy_str_len(s);
+	if (n <= 0 || sl == 0)
+	{
+		return bzy_str_new("", 0);
+	}
+
+	int64_t total = sl * n;
+	char *buf = malloc((size_t)total);
+	const char *d = bzy_str_data(s);
+	for (int64_t k = 0; k < n; k++)
+	{
+		memcpy(buf + k * sl, d, (size_t)sl);
+	}
+
+	void *o = bzy_str_new(buf, total);
+	free(buf);
+	return o;
+}
+
 void bzy_print_str(void *s)
 {
 	fwrite(bzy_str_data(s), 1, (size_t)bzy_str_len(s), stdout);
