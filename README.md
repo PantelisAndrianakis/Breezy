@@ -384,6 +384,21 @@ print(seen.size);          // 1
 
 A growable vector (doubling) backs `List`/`Stack`; a ring buffer over it backs `Queue`/`Deque`; `Set` reuses the hash table. Managed elements are retained on insert and released on removal, and a collection caught in a reference cycle is reclaimed by the cycle collector — all with no per-element allocation overhead for primitives.
 
+### Math
+
+`Math` is a built-in static namespace. The common operations inline to a few SSE instructions — no call, no boxing — and `int` `min`/`max`/`clamp`/`abs` stay on the integer unit; only the transcendental functions defer to libm.
+
+```breezy
+print(Math.sqrt(16.0));         // 4
+print(Math.max(3, 7));          // 7 (integer, no FP)
+print(Math.clamp(value, 0, 100));
+double r;
+r = Math.cos(Math.toRadians(60.0));   // ~0.5
+print(Math.pow(2.0, 10.0));     // 1024
+```
+
+Inlined to SSE: `min` `max` `clamp` `abs` `sqrt` `floor` `ceil` `round` `toRadians`. Via libm: `cos` `tan` `exp` `pow`.
+
 ---
 
 ## Control Flow
@@ -533,8 +548,8 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `switch` (C-style fallthrough, `default`, jump-table lowering for dense cases)
 
 **Language & standard-library essentials (Part 5)**
-- [ ] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
-- [ ] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`; libm `cos`/`tan`/`exp`/`pow`/`toRadians`)
+- [x] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
+- [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
 - [ ] `Clock.currentTimeMillis()` / `currentTimeNanos()`
 - [ ] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [ ] Exceptions: `try`/`catch`/`throw` + stack traces

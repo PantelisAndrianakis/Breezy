@@ -165,7 +165,8 @@ static void resolve_math(Expr *e)
 	}
 
 	if (strcmp(m,"sqrt")==0 || strcmp(m,"floor")==0 || strcmp(m,"ceil")==0
-			|| strcmp(m,"round")==0 || strcmp(m,"toRadians")==0)
+			|| strcmp(m,"round")==0 || strcmp(m,"toRadians")==0
+			|| strcmp(m,"cos")==0 || strcmp(m,"tan")==0 || strcmp(m,"exp")==0)
 	{
 		if (e->arg_count!=1)
 		{
@@ -176,6 +177,26 @@ static void resolve_math(Expr *e)
 		if (!ty_is_int(k) && !ty_is_float(k))
 		{
 			die(e->line,"this Math function requires a number",NULL);
+		}
+
+		e->type.kind = TY_DOUBLE;
+		return;
+	}
+
+	if (strcmp(m,"pow")==0)
+	{
+		if (e->arg_count!=2)
+		{
+			die(e->line,"Math.pow takes two arguments",NULL);
+		}
+
+		for (int i=0; i<2; i++)
+		{
+			TypeKind k=e->args[i]->type.kind;
+			if (!ty_is_int(k) && !ty_is_float(k))
+			{
+				die(e->line,"Math.pow requires numbers",NULL);
+			}
 		}
 
 		e->type.kind = TY_DOUBLE;

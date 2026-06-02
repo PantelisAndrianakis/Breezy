@@ -1255,6 +1255,26 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"cos")==0 || strcmp(m,"tan")==0 || strcmp(m,"exp")==0)
+	{
+		cg_to_double(cg,tt,e->args[0]);
+		cg_aligned_call(cg,m);              /* Arg already in xmm0; result in xmm0. */
+		return;
+	}
+
+	if (strcmp(m,"pow")==0)
+	{
+		cg_to_double(cg,tt,e->args[0]);
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    movsd qword [rsp], xmm0");
+		cg_to_double(cg,tt,e->args[1]);
+		cg_emit(cg,"    movsd xmm1, xmm0");
+		cg_emit(cg,"    movsd xmm0, qword [rsp]");
+		cg_emit(cg,"    add rsp, 16");
+		cg_aligned_call(cg,"pow");          /* base xmm0, exp xmm1; result xmm0. */
+		return;
+	}
+
 	fprintf(stderr,"codegen: unsupported Math method '%s'\n", m);
 	exit(1);
 }
@@ -2181,6 +2201,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_vec_remove_at");
 	cg_emit(cg,"extern bzy_vec_index_of");
 	cg_emit(cg,"extern bzy_vec_contains");
+	cg_emit(cg,"extern cos");
+	cg_emit(cg,"extern tan");
+	cg_emit(cg,"extern exp");
+	cg_emit(cg,"extern pow");
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

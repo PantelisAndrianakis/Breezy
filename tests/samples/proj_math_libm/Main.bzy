@@ -1,0 +1,7 @@
+void main()
+{
+	print(Math.pow(2.0, 10.0));   // 1024
+	print(Math.exp(0.0));         // 1
+	print(Math.cos(0.0));         // 1
+	print(Math.tan(0.0));         // 0
+}
