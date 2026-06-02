@@ -243,6 +243,14 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		TypeRef et;
 		parse_base_type(p,&et);
+		if (et.kind==TY_MAP)
+		{
+			expect(p,TOKEN_LPAREN);
+			expect(p,TOKEN_RPAREN);
+			Expr *e=expr_new(EX_NEWMAP,line);
+			e->type=et;                       /* Carries elem (key) + elem2 (value). */
+			return e;
+		}
 		if (check(p,TOKEN_LBRACKET))
 		{
 			advance(p);                       /* '[' */
@@ -341,6 +349,22 @@ static int parse_base_type(Parser *p, TypeRef *out)
 {
 	TypeKind k;
 	out->elem=NULL;
+	out->elem2=NULL;
+	if (check(p,TOKEN_MAP))
+	{
+		advance(p);
+		expect(p,TOKEN_LT);
+		TypeRef key, val;
+		parse_type(p,&key);
+		expect(p,TOKEN_COMMA);
+		parse_type(p,&val);
+		expect(p,TOKEN_GT);
+		out->kind=TY_MAP;
+		out->class_name[0]='\0';
+		out->elem=typeref_box(key);
+		out->elem2=typeref_box(val);
+		return 1;
+	}
 	if (scalar_type_kind(p->cur.type, &k))
 	{
 		out->kind=k;
@@ -396,6 +420,11 @@ static int starts_vardecl(Parser *p)
 		return 1;
 	}
 	if (check(p,TOKEN_STRING))
+	{
+		return 1;
+	}
+	/* `map<...>` declarations start unambiguously with the map keyword. */
+	if (check(p,TOKEN_MAP))
 	{
 		return 1;
 	}

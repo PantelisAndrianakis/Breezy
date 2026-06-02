@@ -163,6 +163,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		break;
+	case EX_NEWMAP:
+		die(e->line,"map resolve arrives in Part 4c Task 3",NULL);
+		break;
 	case EX_INDEX:
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);

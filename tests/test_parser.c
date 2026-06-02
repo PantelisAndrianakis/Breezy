@@ -159,6 +159,23 @@ static void test_array_type_decls(void)
 	ASSERT_INT(body->stmts[1]->decl_type.elem->kind, TY_OBJECT);
 }
 
+static void test_map_type_decl(void)
+{
+	Unit *u = parse_unit_str("void m() { map<string,int> d; }");
+	TypeRef *t = &u->funcs[0]->body->stmts[0]->decl_type;
+	ASSERT_INT(t->kind, TY_MAP);
+	ASSERT_INT(t->elem->kind, TY_STRING);
+	ASSERT_INT(t->elem2->kind, TY_INT);
+}
+
+static void test_new_map(void)
+{
+	Expr *e = parse_str("new map<int,int>()");
+	ASSERT_INT(e->kind, EX_NEWMAP);
+	ASSERT_INT(e->type.elem->kind, TY_INT);
+	ASSERT_INT(e->type.elem2->kind, TY_INT);
+}
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -212,6 +229,8 @@ int main(void)
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_double_vardecl);
 	RUN(test_array_type_decls);
+	RUN(test_map_type_decl);
+	RUN(test_new_map);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);
