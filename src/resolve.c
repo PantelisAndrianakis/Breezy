@@ -144,6 +144,46 @@ static int assignable(const TypeRef *to, const TypeRef *from)
 	return 0;
 }
 
+static void resolve_math(Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Math.". */
+	if (strcmp(m,"abs")==0)
+	{
+		if (e->arg_count!=1)
+		{
+			die(e->line,"Math.abs takes one argument",NULL);
+		}
+
+		TypeKind k=e->args[0]->type.kind;
+		if (!ty_is_int(k) && !ty_is_float(k))
+		{
+			die(e->line,"Math.abs requires a number",NULL);
+		}
+
+		e->type.kind = ty_is_int(k) ? k : TY_DOUBLE;   /* float promotes to double */
+		return;
+	}
+
+	if (strcmp(m,"sqrt")==0)
+	{
+		if (e->arg_count!=1)
+		{
+			die(e->line,"Math.sqrt takes one argument",NULL);
+		}
+
+		TypeKind k=e->args[0]->type.kind;
+		if (!ty_is_int(k) && !ty_is_float(k))
+		{
+			die(e->line,"Math.sqrt requires a number",NULL);
+		}
+
+		e->type.kind = TY_DOUBLE;
+		return;
+	}
+
+	die(e->line,"unknown Math method: ",m);
+}
+
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
 
 static void resolve_args(SymTable *st, Expr *e, const char *tc)
@@ -702,6 +742,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_CALL:
 		resolve_args(st,e,tc);
+		if (strncmp(e->name,"Math.",5)==0)
+		{
+			resolve_math(e);
+			break;
+		}
+
 		if (strcmp(e->name,"print")==0)
 		{
 			if (e->arg_count<1)

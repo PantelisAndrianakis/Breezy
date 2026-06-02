@@ -1,0 +1,10 @@
+void main()
+{
+	double r;
+	r = Math.sqrt(16.0);
+	print(r);             // 4
+	print(Math.abs(-5));  // 5
+	double d;
+	d = Math.abs(-2.5);
+	print(d);             // 2.5
+}

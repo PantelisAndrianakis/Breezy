@@ -218,6 +218,12 @@ static int parse_args(Parser *p, Expr **out)
 	return n;
 }
 
+/* The fixed set of compiler-known static namespaces. 5c/5d extend this. */
+static int is_namespace(const char *name)
+{
+	return strcmp(name,"Math")==0;
+}
+
 static Expr *parse_primary(Parser *p)
 {
 	int line = p->cur.line;
@@ -292,6 +298,20 @@ static Expr *parse_primary(Parser *p)
 		expect(p,TOKEN_RPAREN);
 		Expr *e=expr_new(EX_NEW,line);
 		strcpy(e->name,et.class_name);        /* object: et is an IDENT class */
+		return e;
+	}
+	if (check(p,TOKEN_IDENT) && is_namespace(p->cur.text) && p->peek.type==TOKEN_DOT)
+	{
+		char ns[64];
+		strcpy(ns,p->cur.text);
+		advance(p);                 /* namespace */
+		expect(p,TOKEN_DOT);
+		Token m=expect(p,TOKEN_IDENT);
+		expect(p,TOKEN_LPAREN);
+		Expr *e=expr_new(EX_CALL,line);
+		snprintf(e->name,sizeof e->name,"%s.%s",ns,m.text);
+		e->arg_count=parse_args(p,e->args);
+		expect(p,TOKEN_RPAREN);
 		return e;
 	}
 	if (check(p,TOKEN_IDENT))

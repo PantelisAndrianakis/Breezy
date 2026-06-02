@@ -226,6 +226,15 @@ static void test_new_generic(void)
 	ASSERT_STR(e->type.elem->class_name, "Dog");
 }
 
+static void test_namespace_call(void)
+{
+	Expr *e = parse_str("Math.sqrt(2.0)");
+	ASSERT_INT(e->kind, EX_CALL);
+	ASSERT_STR(e->name, "Math.sqrt");
+	ASSERT_INT(e->arg_count, 1);
+	ASSERT_INT(e->args[0]->kind, EX_FLOAT);
+}
+
 static void test_compound_assign(void)
 {
 	Unit *u = parse_unit_str("void m() { int i; i = 0; i += 2; }");
@@ -325,6 +334,7 @@ int main(void)
 	RUN(test_for_parse);
 	RUN(test_generic_type_decl);
 	RUN(test_new_generic);
+	RUN(test_namespace_call);
 	RUN(test_compound_assign);
 	RUN(test_switch_parse);
 	RUN(test_foreach_stmt);

@@ -69,6 +69,7 @@ check switch_dense  tests/samples/proj_switch_dense  $'100\n101\n102\n103\n104\n
 check switch_braces tests/samples/proj_switch_braces $'2'
 check block_comment tests/samples/proj_block_comment $'7'
 check compound    tests/samples/proj_compound      $'6\n10\nabc'
+check math_basic  tests/samples/proj_math_basic    $'4\n5\n2.5'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy

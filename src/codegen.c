@@ -1125,6 +1125,56 @@ static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_aligned_call(cg,fn);
 }
 
+/* Evaluate an argument and leave it in xmm0 as a double (promoting int/float). */
+static void cg_to_double(Codegen *cg, TypeTable *tt, Expr *a)
+{
+	cg_expr(cg,tt,a);
+	if (ty_is_int(a->type.kind))
+	{
+		cg_emit(cg,"    cvtsi2sd xmm0, rax");
+	}
+	else if (a->type.kind==TY_FLOAT)
+	{
+		cg_emit(cg,"    cvtss2sd xmm0, xmm0");
+	}
+}
+
+/* Math.* builtins. Integer results land in rax; double results in xmm0. */
+static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Math.". */
+	if (strcmp(m,"sqrt")==0)
+	{
+		cg_to_double(cg,tt,e->args[0]);
+		cg_emit(cg,"    sqrtsd xmm0, xmm0");
+		return;
+	}
+
+	if (strcmp(m,"abs")==0)
+	{
+		if (e->type.kind==TY_DOUBLE)
+		{
+			cg_to_double(cg,tt,e->args[0]);
+			cg_emit(cg,"    movq rax, xmm0");
+			cg_emit(cg,"    btr rax, 63");      /* Clear the sign bit. */
+			cg_emit(cg,"    movq xmm0, rax");
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[0]);          /* Integer in rax. */
+			cg_emit(cg,"    mov rcx, rax");
+			cg_emit(cg,"    neg rcx");
+			cg_emit(cg,"    test rax, rax");
+			cg_emit(cg,"    cmovs rax, rcx");   /* If x < 0, take -x. */
+		}
+
+		return;
+	}
+
+	fprintf(stderr,"codegen: unsupported Math method '%s'\n", m);
+	exit(1);
+}
+
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	switch (e->kind)
@@ -1354,6 +1404,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				cg_release_rcx(cg);
 				cg_emit(cg,"    pop rax");
 			}
+		}
+		else if (strncmp(e->name,"Math.",5)==0)
+		{
+			cg_math(cg,tt,e);
 		}
 		else
 		{
