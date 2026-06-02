@@ -226,6 +226,22 @@ static void test_new_generic(void)
 	ASSERT_STR(e->type.elem->class_name, "Dog");
 }
 
+static void test_switch_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { int x; x = 1; switch (x) { case 1: case 2: print(x); break; default: print(0); } }");
+	Stmt *sw = u->funcs[0]->body->stmts[2];
+	ASSERT_INT(sw->kind, ST_SWITCH);
+	ASSERT_INT(sw->cond->kind, EX_IDENT);
+	Block *b = sw->then_blk;
+	ASSERT_INT(b->stmts[0]->kind, ST_CASE);
+	ASSERT_INT(b->stmts[0]->value->int_val, 1);
+	ASSERT_INT(b->stmts[1]->kind, ST_CASE);
+	ASSERT_INT(b->stmts[1]->value->int_val, 2);
+	ASSERT_INT(b->stmts[2]->kind, ST_EXPR);     /* print(x) */
+	ASSERT_INT(b->stmts[3]->kind, ST_BREAK);
+	ASSERT_INT(b->stmts[4]->kind, ST_DEFAULT);
+}
+
 static void test_foreach_stmt(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
@@ -297,6 +313,7 @@ int main(void)
 	RUN(test_for_parse);
 	RUN(test_generic_type_decl);
 	RUN(test_new_generic);
+	RUN(test_switch_parse);
 	RUN(test_foreach_stmt);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

@@ -12,7 +12,8 @@ static const struct
 {
 	{"void",TOKEN_VOID},{"int",TOKEN_INT},{"if",TOKEN_IF},{"else",TOKEN_ELSE},
 	{"while",TOKEN_WHILE},{"foreach",TOKEN_FOREACH},{"for",TOKEN_FOR},{"return",TOKEN_RETURN},
-	{"break",TOKEN_BREAK},{"continue",TOKEN_CONTINUE},{"class",TOKEN_CLASS},
+	{"break",TOKEN_BREAK},{"continue",TOKEN_CONTINUE},
+	{"switch",TOKEN_SWITCH},{"case",TOKEN_CASE},{"default",TOKEN_DEFAULT},{"class",TOKEN_CLASS},
 	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
@@ -370,6 +371,12 @@ const char *token_type_name(TokenType t)
 		return "break";
 	case TOKEN_CONTINUE:
 		return "continue";
+	case TOKEN_SWITCH:
+		return "switch";
+	case TOKEN_CASE:
+		return "case";
+	case TOKEN_DEFAULT:
+		return "default";
 	case TOKEN_RETURN:
 		return "return";
 	case TOKEN_CLASS:

@@ -518,7 +518,14 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Generic collections — `List` / `Stack` / `Queue` / `Deque` / `Set`, holding primitives or objects, each with `.contains()`
 - [ ] `switch` (C-style fallthrough, jump-table lowering)
 
-**Concurrency & I/O (Part 5)**
+**Language & standard-library essentials (Part 5)**
+- [ ] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
+- [ ] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`; libm `cos`/`tan`/`exp`/`pow`/`toRadians`)
+- [ ] `Clock.currentTimeMillis()` / `currentTimeNanos()`
+- [ ] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
+- [ ] Exceptions: `try`/`catch`/`throw` + stack traces
+
+**Concurrency & I/O (Part 6)**
 - [ ] Breeze scheduler (M:N, one thread per core)
 - [ ] Channels
 - [ ] Async I/O facade (epoll/IOCP + offload pool; `io_uring` later)

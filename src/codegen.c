@@ -1758,6 +1758,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_FOR:
 		cg_for(cg,tt,f,s,in_main);
 		break;
+	case ST_SWITCH:
+		fprintf(stderr,"codegen: switch lowering arrives in Part 4h Task 3\n");
+		exit(1);
+		break;
+	case ST_CASE:
+	case ST_DEFAULT:
+		break;   /* Emitted by cg_switch, never reached here. */
 	}
 }
 

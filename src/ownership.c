@@ -30,6 +30,9 @@ static void walk_stmt(Func *f, Stmt *s)
 	case ST_FOREACH:
 		walk_block(f, s->then_blk);
 		break;
+	case ST_SWITCH:
+		walk_block(f, s->then_blk);
+		break;
 	default:
 		break;
 	}

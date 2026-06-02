@@ -896,6 +896,12 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		resolve_block(st,s->then_blk,tc);
 		g_loop_depth--;
 		break;
+	case ST_SWITCH:
+		die(s->line,"switch resolve arrives in Part 4h Task 2",NULL);
+		break;
+	case ST_CASE:
+	case ST_DEFAULT:
+		break;   /* Resolved as part of the enclosing switch body. */
 	}
 }
 

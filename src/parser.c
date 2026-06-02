@@ -606,6 +606,82 @@ static Stmt *parse_for(Parser *p)
 	return s;
 }
 
+static Expr *parse_case_const(Parser *p)
+{
+	int line=p->cur.line;
+	int neg=0;
+	if (check(p,TOKEN_MINUS))
+	{
+		neg=1;
+		advance(p);
+	}
+
+	Token t=expect(p,TOKEN_INT_LIT);
+	Expr *e=expr_new(EX_INT,line);
+	e->int_val=strtoll(t.text,NULL,10);
+	if (neg)
+	{
+		e->int_val=-e->int_val;
+	}
+
+	return e;
+}
+
+static Stmt *parse_switch(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                       /* Consume 'switch'. */
+	Stmt *s=stmt_new(ST_SWITCH,line);
+	expect(p,TOKEN_LPAREN);
+	s->cond=parse_expr(p);
+	expect(p,TOKEN_RPAREN);
+	expect(p,TOKEN_LBRACE);
+	s->then_blk=block_new();
+	int seen_label=0;
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		if (check(p,TOKEN_CASE))
+		{
+			int cl=p->cur.line;
+			advance(p);
+			Stmt *c=stmt_new(ST_CASE,cl);
+			c->value=parse_case_const(p);
+			expect(p,TOKEN_COLON);
+			block_push(s->then_blk,c);
+			seen_label=1;
+		}
+		else if (check(p,TOKEN_DEFAULT))
+		{
+			int cl=p->cur.line;
+			advance(p);
+			expect(p,TOKEN_COLON);
+			block_push(s->then_blk,stmt_new(ST_DEFAULT,cl));
+			seen_label=1;
+		}
+		else if (check(p,TOKEN_LBRACE))
+		{
+			Block *grp=parse_block(p);            /* Java/K&R braces: flatten. */
+			for (int i=0; i<grp->count; i++)
+			{
+				block_push(s->then_blk,grp->stmts[i]);
+			}
+		}
+		else
+		{
+			if (!seen_label)
+			{
+				fprintf(stderr,"line %d: statement before first case in switch\n",p->cur.line);
+				exit(1);
+			}
+
+			block_push(s->then_blk,parse_statement(p));
+		}
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return s;
+}
+
 static Stmt *parse_foreach(Parser *p)
 {
 	int line=p->cur.line;
@@ -679,6 +755,10 @@ static Stmt *parse_statement(Parser *p)
 	if (check(p,TOKEN_FOR))
 	{
 		return parse_for(p);
+	}
+	if (check(p,TOKEN_SWITCH))
+	{
+		return parse_switch(p);
 	}
 	if (check(p,TOKEN_RETURN))
 	{

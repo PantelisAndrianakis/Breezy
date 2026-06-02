@@ -149,6 +149,15 @@ static void test_for_keyword(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_FOR);
 }
 
+static void test_switch_keywords(void)
+{
+	Lexer l;
+	lexer_init(&l, "switch case default");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_SWITCH);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_CASE);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_DEFAULT);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -220,6 +229,7 @@ int main(void)
 	RUN(test_incdec_operators);
 	RUN(test_break_continue_keywords);
 	RUN(test_for_keyword);
+	RUN(test_switch_keywords);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

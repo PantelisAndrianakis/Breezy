@@ -176,6 +176,13 @@ static void scan_stmt_escapes(Stmt *s)
 		scan_stmt_escapes(s->for_post);
 		scan_block_escapes(s->then_blk);
 		break;
+	case ST_SWITCH:
+		walk_expr(s->cond);
+		scan_block_escapes(s->then_blk);
+		break;
+	case ST_CASE:
+	case ST_DEFAULT:
+		break;
 	}
 }
 
@@ -257,6 +264,11 @@ static void mark_stmt_stack(TypeTable *tt, Stmt *s, Func *f, int base)
 	}
 
 	if (s->kind==ST_FOREACH)
+	{
+		mark_block_stack(tt, s->then_blk, f, base);
+	}
+
+	if (s->kind==ST_SWITCH)
 	{
 		mark_block_stack(tt, s->then_blk, f, base);
 	}
