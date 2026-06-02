@@ -255,6 +255,11 @@ static void mark_stmt_stack(TypeTable *tt, Stmt *s, Func *f, int base)
 	{
 		mark_block_stack(tt, s->then_blk, f, base);
 	}
+
+	if (s->kind==ST_FOREACH)
+	{
+		mark_block_stack(tt, s->then_blk, f, base);
+	}
 }
 
 static void mark_block_stack(TypeTable *tt, Block *b, Func *f, int base)

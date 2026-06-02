@@ -190,6 +190,26 @@ static void test_incdec_type(void)
 	ASSERT_INT(st->expr->type.kind, TY_INT);
 }
 
+static void test_foreach_array_elem_type(void)
+{
+	Func *f=build1("void main() { int[] a; int s; a = new int[3]; s = 0; "
+				   "foreach (int x : a) { s = s + x; } }")->funcs[0];
+	Stmt *fe=f->body->stmts[4];
+	ASSERT_INT(fe->kind, ST_FOREACH);
+	ASSERT_INT(fe->decl_type.kind, TY_INT);
+	ASSERT(fe->decl_offset > 0);
+	ASSERT(fe->fe_index_offset != fe->decl_offset);
+}
+
+static void test_foreach_map_key_type(void)
+{
+	Func *f=build1("void main() { map<string,int> m; m = new map<string,int>(); "
+				   "foreach (string k : m) { print(k); } }")->funcs[0];
+	Stmt *fe=f->body->stmts[2];
+	ASSERT_INT(fe->kind, ST_FOREACH);
+	ASSERT_INT(fe->decl_type.kind, TY_STRING);
+}
+
 static void test_for_resolve(void)
 {
 	Func *f=build1("void main() { int n; n = 0; for (int i = 0; i <= 10; i++) { n = n + i; } }")->funcs[0];
@@ -261,6 +281,8 @@ int main(void)
 	RUN(test_incdec_type);
 	RUN(test_break_in_loop_ok);
 	RUN(test_for_resolve);
+	RUN(test_foreach_array_elem_type);
+	RUN(test_foreach_map_key_type);
 	RUN(test_method_call_slot_and_class);
 	ast_free_all();
 	SUMMARY();

@@ -655,8 +655,43 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		resolve_expr(st,s->expr,tc);
 		break;
 	case ST_FOREACH:
-		die(s->line,"foreach resolve arrives in Part 4d Task 2",NULL);
+	{
+		resolve_expr(st,s->expr,tc);
+		TypeKind ik=s->expr->type.kind;
+		TypeRef elem;
+		elem.kind=TY_VOID;
+		elem.class_name[0]='\0';
+		elem.elem=NULL;
+		elem.elem2=NULL;
+		if (ik==TY_ARRAY || ik==TY_MAP)
+		{
+			elem=*s->expr->type.elem;   /* Array element, or map key. */
+		}
+		else if (ik==TY_STRING)
+		{
+			elem.kind=TY_INT;           /* One byte per step, as an int. */
+		}
+		else
+		{
+			die(s->line,"foreach requires an array, string, or map",NULL);
+		}
+
+		if (!assignable(&s->decl_type,&elem))
+		{
+			die(s->line,"foreach loop variable type does not match the element type",NULL);
+		}
+
+		Symbol *lv=sym_add(st,s->decl_name,s->decl_type);
+		s->decl_offset=lv->offset;
+		s->fe_coll_offset=sym_add(st,"",s->expr->type)->offset;
+		s->fe_index_offset=sym_add(st,"",s->decl_type)->offset;
+		s->fe_len_offset=sym_add(st,"",s->decl_type)->offset;
+		s->fe_aux_offset=sym_add(st,"",s->decl_type)->offset;
+		g_loop_depth++;
+		resolve_block(st,s->then_blk,tc);
+		g_loop_depth--;
 		break;
+	}
 	case ST_BREAK:
 	case ST_CONTINUE:
 		if (g_loop_depth==0)
