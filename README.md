@@ -284,8 +284,6 @@ void main()
 
 A breeze stack is tens of KB, not the megabytes an OS thread costs. **10,000 concurrent connections ≈ a few hundred MB of stacks**, instead of tens of GB.
 
-> **Implemented today (Part 6a-1):** the breeze runtime and a **single-thread cooperative scheduler** are live. `spawn f();` enqueues a breeze running the zero-argument `void` function `f`; `yield();` hands control back to the scheduler so ready breezes interleave. `main` itself is breeze 0, so it interleaves with what it spawns, and a program that never `spawn`s runs unchanged. Stacks are Windows Fibers behind a portable seam (Linux lands in Part 8). Still to come: **channels** (`channel<T>`, cross-breeze communication — 6a-2), **multi-core** scheduling with atomic refcounts for shared objects (6a-3), and the I/O integration that parks a breeze on a blocking call (Part 6b). Today `yield()` is explicit; the auto-yield-on-I/O shown above is the roadmap.
-
 ```breezy
 void a()
 {
@@ -340,18 +338,6 @@ void main()
 }
 ```
 
-> **Implemented today (Part 6a-3):** bounded `channel<T>` with `send`/`recv` (parking on full/empty), `spawn` with up to 4 arguments, and **multi-core scheduling** - one worker thread per logical core, each with its own run queue and **work-stealing** so breezes spread across all your cores automatically. Set `BZY_WORKERS=N` to control the worker count (`BZY_WORKERS=1` gives the deterministic single-thread cooperative scheduler; ordering across breezes is otherwise not guaranteed). Objects that can cross a channel use **atomic** reference counts (decided at compile time); everything else stays non-atomic. Managed values **move** across a channel - the owned reference transfers from sender to receiver with no extra retain. Still to come: the I/O integration that parks a breeze on a blocking call (Part 6b).
-
-> **Implemented today (Part 6a-4):** **timers** — `scheduleAfter(f, delayMs)` runs the zero-argument `void` function `f` once after a delay; `scheduleEvery(f, delayMs, periodMs)` runs it repeatedly. Both return a `Timer` you can `.cancel()`. The scheduler keeps a min-heap of pending timers: when it has no ready breeze it sleeps until the next deadline (no busy-wait) and a pending timer keeps the program alive; periodic timers are fixed-rate and coalesce missed ticks (a stall fires once, not a burst). Also **crash-safe breezes** — an uncaught exception in one breeze prints its stack trace and ends just that breeze; the rest of the program keeps running (the process still exits non-zero so the failure is visible).
-
-> **Implemented today (Part 6b-1):** **file I/O no longer blocks the scheduler.** A bounded **offload thread pool** (one OS thread per logical core; `BZY_OFFLOAD_THREADS=N` overrides) handles the blocking work: when a breeze calls a `File.*` read/write (`readText`/`readLines`/`readBytes`/`writeText`/`appendText`/`writeBytes`), the breeze **parks**, a pool worker performs the syscall, and the breeze resumes with the result — so a compute breeze keeps progressing while a large file write is in flight, even on a single scheduler worker. The same pool will carry `blocking` C/DB calls in Part 7. (Fast metadata ops — `exists`/`isFile`/`create*`/`delete*`/`list`/`search*` — stay synchronous.) Still to come within Part 6b: buffered writes (6b-3) and a channel-fed logger (6b-4).
-
-> **Implemented today (Part 6b-2):** **network sockets that park a breeze instead of blocking a core.** A process-wide Windows **IOCP** completion port + a dedicated completion thread back every socket op: a breeze issues the read/accept/connect and **parks**; the kernel does the work; the completion thread wakes it on the result — so one scheduler core serves many connections. The **`Network`** namespace constructs handles: `Network.listen(port) -> Listener`, `Network.connect(host, port) -> Socket`, `Network.udp(port) -> UdpSocket`. **TCP**: `Listener.accept()`/`tryAccept()`/`accept(timeoutMs)`/`port()`/`close()` and `Socket.read(max)`/`readText(max)`/`write(byte[])`/`writeText(string)`/`close()` (plus `try*` and `timeoutMs` read variants). **UDP**: `UdpSocket.sendTo`/`sendTextTo`/`receive()`/`tryReceive()`/`receive(timeoutMs)`/`port()`/`close()` returning a `Datagram` (`data()`/`text()`/`host()`/`port()`). Reads are **partial** (whatever ≥1 byte arrived; length 0 = peer closed), writes are **full** (loop until every byte is sent). (Windows/IOCP + IPv4 today; the Linux epoll backend lands with Part 8; no TLS yet.) Still to come within Part 6b: buffered writes (6b-3) and a channel-fed logger (6b-4).
-
-> **Implemented today (Part 6b-5):** **random-access file I/O — the storage foundation for a database.** `File.openChannel(path)` returns a `FileChannel` with **positioned** reads and writes: `readAt(offset, maxBytes) -> byte[]` and `writeAt(offset, byte[]) -> int` issue overlapped reads/writes on the **same IOCP completion port** as the sockets, so the breeze parks on each op and resumes on completion — true async positioned I/O with no thread hand-off. An explicit `sync()` forces durability (`FlushFileBuffers`, off the scheduler core) — the WAL commit barrier — and `size()`/`truncate(size)` round out the surface. That's the missing half a storage engine needs: positioned page reads/writes plus an explicit durability point. Combined with the IOCP sockets and the zone model, an on-disk, networked store is buildable in Breezy today. (Windows/IOCP today; the Linux `pread`/`pwrite`/`io_uring` backend lands with Part 8; no mmap or file locking yet.)
-
-> **Implemented today (Part 6b-3):** **buffered file writes.** `File.openWrite(path)` (truncate) / `File.openAppend(path)` return a `FileWriter` whose `write`/`writeLine`/`writeBytes` accumulate into a userspace buffer — a plain `memcpy`, no syscall — so a tick loop emitting many small lines coalesces them into a handful of disk writes. The buffer flushes when it fills, on an explicit `flush()`, or on `close()`, and each real flush runs on the offload pool so the writing breeze parks instead of blocking its core. The buffer size is configurable (`File.openWrite(path, bufferBytes)`, default 64 KiB). Still to come within Part 6b: the channel-fed logger (6b-4).
-
 ### The zone model (and why it's fast)
 
 The recommended architecture shards your state into **zones** (say, per tenant, account, or region), each owned by a single breeze that exclusively owns its data. **No locks inside a zone.** Cross-zone interactions go through channels. This scales a service across all your cores by *zone*, with near-zero contention - and it lets the compiler keep reference counts **non-atomic** on the hot path, paying the atomic cost only for objects that actually cross breezes.
@@ -392,15 +378,14 @@ void handle(Socket c)
 
 ### File writing done right
 
-A `FileWriter` **buffers writes** - small writes coalesce in a userspace buffer and flush in far fewer syscalls, and each flush runs off the scheduler core. (Logging on top of this is a channel, not a syscall: game breezes `send` log lines to a dedicated logger breeze that flushes them off the hot path - so **a tick never waits on disk**. The channel-fed logger is the next sub-part.)
+A `FileWriter` **buffers writes** - small writes coalesce in a userspace buffer and flush in far fewer syscalls, and each flush runs off the scheduler core. And logging is a channel, not a syscall: a `Logger` owns a dedicated logger breeze that drains a `channel<string>` and writes off the hot path, so **a tick never waits on disk**.
 
 ```breezy
-FileWriter log;
-log = File.openAppend("game.log");   // 64 KiB buffer by default.
-log.writeLine("tick " + n + " done");  // memcpy into the buffer - no syscall.
+Logger log;
+log = Log.open("game.log");          // Owns a channel + a FileWriter + a logger breeze.
+log.log("tick " + n + " done");      // Hand off over the channel - returns immediately.
 // ... many ticks later ...
-log.flush();                          // Coalesced write, off the scheduler core.
-log.close();
+log.close();                          // Drain, flush, and join the logger breeze.
 ```
 
 ---
@@ -911,7 +896,8 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Network sockets via IOCP — `Network.listen`/`connect`/`udp`; TCP `Listener`/`Socket` + UDP `UdpSocket`/`Datagram` park a breeze on the completion port (6b-2)
 - [x] Random-access `FileChannel` — `File.openChannel`; positioned `readAt`/`writeAt` over IOCP + explicit `sync()`; the database storage foundation (6b-5)
 - [x] Buffered file writes — `File.openWrite`/`openAppend` → `FileWriter`; small writes coalesce in a userspace buffer, flush on the offload pool (6b-3)
-- [ ] Async I/O facade: channel-fed logger (6b-4); epoll backend with Part 8, `io_uring` later
+- [x] Channel-fed logger — `Log.open` → `Logger`; a dedicated logger breeze drains a `channel<string>` and writes off the hot path, so a tick never waits on disk (6b-4)
+- [ ] Linux async I/O backends: epoll (sockets) + `pread`/`pwrite`/`io_uring` (files) under the same surface (Part 8)
 
 **Interop (Part 7)**
 - [ ] `extern` C FFI with `blocking` dispatch

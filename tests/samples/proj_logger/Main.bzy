@@ -1,0 +1,25 @@
+// A compute loop logs every iteration via a channel-fed logger breeze, so the loop
+// never waits on disk. close() drains the queue and joins the logger breeze; we then
+// read the file back and print the line count. Prints 200.
+void main()
+{
+	Logger g;
+	g = Log.open("compute.log");
+	int sum;
+	sum = 0;
+	int i;
+	i = 0;
+	while (i < 200)
+	{
+		sum = sum + i;
+		g.log("step");          // memcpy into a buffer behind a channel - no disk wait.
+		i = i + 1;
+	}
+
+	g.close();                  // Drain + flush + join the logger breeze.
+
+	string[] lines;
+	lines = File.readLines("compute.log");
+	print(lines.length);        // 200
+	File.delete("compute.log");
+}
