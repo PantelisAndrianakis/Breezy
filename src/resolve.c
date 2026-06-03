@@ -680,6 +680,53 @@ static void resolve_args(SymTable *st, Expr *e, const char *tc)
 	}
 }
 
+/* scheduleAfter(f, delayMs) / scheduleEvery(f, delayMs, periodMs): f is a bare
+   named zero-arg void function (not a value), the rest are integer delays. */
+static void resolve_schedule(SymTable *st, Expr *e, const char *tc)
+{
+	int periodic = (strcmp(e->name,"scheduleEvery")==0);
+	int want = periodic ? 3 : 2;
+	if (e->arg_count != want)
+	{
+		die(e->line, periodic ? "scheduleEvery expects (function, delayMs, periodMs)"
+			: "scheduleAfter expects (function, delayMs)", NULL);
+	}
+
+	if (e->args[0]->kind != EX_IDENT)
+	{
+		die(e->line,"schedule target must be a named function",NULL);
+	}
+
+	FuncInfo *fi = types_find_func(g_types, e->args[0]->name);
+	if (!fi)
+	{
+		die(e->line,"schedule target is not a function: ",e->args[0]->name);
+	}
+
+	if (fi->ret_type.kind != TY_VOID)
+	{
+		die(e->line,"schedule target must return void",NULL);
+	}
+
+	if (fi->param_count != 0)
+	{
+		die(e->line,"schedule target must take no arguments",NULL);
+	}
+
+	/* The delay (and period) are ordinary integer expressions. */
+	for (int i = 1; i < e->arg_count; i++)
+	{
+		resolve_expr(st, e->args[i], tc);
+		if (!ty_is_int(e->args[i]->type.kind))
+		{
+			die(e->line,"schedule delay/period must be an integer",NULL);
+		}
+	}
+
+	e->type.kind = TY_TIMER;
+	e->type.class_name[0] = '\0';
+}
+
 static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 {
 	switch (e->kind)
@@ -1130,6 +1177,23 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_TIMER)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"cancel")!=0)
+			{
+				die(e->line,"unknown Timer method: ",e->name);
+			}
+
+			if (e->arg_count!=0)
+			{
+				die(e->line,"Timer.cancel() takes no arguments",NULL);
+			}
+
+			e->type.kind=TY_VOID;
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			resolve_args(st,e,tc);
@@ -1412,6 +1476,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	}
 	case EX_CALL:
+		if (strcmp(e->name,"scheduleAfter")==0 || strcmp(e->name,"scheduleEvery")==0)
+		{
+			resolve_schedule(st,e,tc);
+			break;
+		}
+
 		resolve_args(st,e,tc);
 		if (strncmp(e->name,"Math.",5)==0)
 		{

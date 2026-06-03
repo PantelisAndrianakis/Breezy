@@ -476,6 +476,23 @@ static void test_shared_set_inference(void)
 	ASSERT_INT(types_find_class(&g_tt,"Loner")->is_shared, 0);
 }
 
+static void test_schedule_after_returns_timer(void)
+{
+	/* tick: a named zero-arg void function; scheduleAfter returns a Timer, and
+	   Timer.cancel() resolves to void. */
+	Unit *u = build1("void tick() {} void main() { Timer t; t = scheduleAfter(tick, 100); t.cancel(); }");
+	Func *mn = u->funcs[1];
+	ASSERT_INT(mn->body->stmts[0]->decl_type.kind, TY_TIMER);    /* Timer t; */
+	ASSERT_INT(mn->body->stmts[1]->value->type.kind, TY_TIMER);  /* scheduleAfter(...) -> Timer. */
+	ASSERT_INT(mn->body->stmts[2]->expr->type.kind, TY_VOID);    /* t.cancel() -> void. */
+}
+
+static void test_schedule_every_returns_timer(void)
+{
+	Unit *u = build1("void tick() {} void main() { Timer t; t = scheduleEvery(tick, 100, 50); }");
+	ASSERT_INT(u->funcs[1]->body->stmts[1]->value->type.kind, TY_TIMER);
+}
+
 int main(void)
 {
 	printf("Resolver tests\n");
@@ -530,6 +547,8 @@ int main(void)
 	RUN(test_catch_index_oob_resolves);
 	RUN(test_method_call_slot_and_class);
 	RUN(test_shared_set_inference);
+	RUN(test_schedule_after_returns_timer);
+	RUN(test_schedule_every_returns_timer);
 	ast_free_all();
 	SUMMARY();
 	return 0;

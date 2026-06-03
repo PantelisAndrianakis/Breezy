@@ -1510,6 +1510,43 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
 }
 
+/* scheduleAfter(f, delayMs) / scheduleEvery(f, delayMs, periodMs): pass the
+   target's address (a named zero-arg void function) plus the integer delays to
+   the timer runtime. Returns an owned (+1) Timer in rax. */
+static void cg_schedule(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	int periodic = (strcmp(e->name,"scheduleEvery")==0);
+	FuncInfo *fi = types_find_func(tt, e->args[0]->name);
+	if (periodic)
+	{
+		cg_emit(cg,"    sub rsp, 16");
+		cg_expr(cg,tt,e->args[1]);          /* delayMs -> rax. */
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr(cg,tt,e->args[2]);          /* periodMs -> rax. */
+		cg_emit(cg,"    mov r8, rax");      /* period -> 3rd arg. */
+		cg_emit(cg,"    mov rdx, [rsp]");   /* delay  -> 2nd arg. */
+		cg_emit(cg,"    add rsp, 16");
+		cg_emit(cg,"    lea rcx, [rel %s]", fi->asm_label);   /* entry -> 1st arg (after the cg_exprs). */
+		cg_aligned_call(cg,"bzy_timer_every");
+	}
+	else
+	{
+		cg_expr(cg,tt,e->args[1]);          /* delayMs -> rax. */
+		cg_emit(cg,"    mov rdx, rax");     /* delay -> 2nd arg. */
+		cg_emit(cg,"    lea rcx, [rel %s]", fi->asm_label);   /* entry -> 1st arg. */
+		cg_aligned_call(cg,"bzy_timer_after");
+	}
+	/* Owned (+1) Timer in rax. */
+}
+
+/* Timer.cancel(): mark the timer dead (the heap evicts it lazily). */
+static void cg_timer_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	cg_expr(cg,tt,e->lhs);             /* Timer handle -> rax (borrowed, not owned). */
+	cg_emit(cg,"    mov rcx, rax");
+	cg_aligned_call(cg,"bzy_timer_cancel");
+}
+
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
 {
@@ -1933,6 +1970,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_channel_method(cg,tt,e);
 		}
+		else if (e->lhs->type.kind==TY_TIMER)
+		{
+			cg_timer_method(cg,tt,e);
+		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
 			cg_sb_method(cg,tt,e);
@@ -1998,6 +2039,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Clock.",6)==0)
 		{
 			cg_clock(cg,tt,e);
+		}
+		else if (strcmp(e->name,"scheduleAfter")==0 || strcmp(e->name,"scheduleEvery")==0)
+		{
+			cg_schedule(cg,tt,e);
 		}
 		else if (strncmp(e->name,"Random.",7)==0)
 		{
@@ -2955,6 +3000,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_channel_new");
 	cg_emit(cg,"extern bzy_channel_send");
 	cg_emit(cg,"extern bzy_channel_recv");
+	cg_emit(cg,"extern bzy_timer_after");
+	cg_emit(cg,"extern bzy_timer_every");
+	cg_emit(cg,"extern bzy_timer_cancel");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

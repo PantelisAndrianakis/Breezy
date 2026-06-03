@@ -141,6 +141,13 @@ static void test_parse_scalar_vardecls(void)
 	ASSERT_INT(body->stmts[2]->decl_type.kind, TY_BOOL);
 }
 
+static void test_parse_timer_vardecl(void)
+{
+	Unit *u = parse_unit_str("void main() { Timer t; }");
+	ASSERT_INT(u->funcs[0]->body->stmts[0]->kind, ST_VARDECL);
+	ASSERT_INT(u->funcs[0]->body->stmts[0]->decl_type.kind, TY_TIMER);
+}
+
 static void test_parse_double_vardecl(void)
 {
 	Unit *u = parse_unit_str("void m() { double d; float f; }");
@@ -400,6 +407,7 @@ int main(void)
 	RUN(test_new);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
+	RUN(test_parse_timer_vardecl);
 	RUN(test_parse_double_vardecl);
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);

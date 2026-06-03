@@ -13,6 +13,7 @@ typedef enum
 	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object */
 	TY_ENTRY,                                 /* map Entry: 8-byte pointer; elem=K, elem2=V */
 	TY_CHANNEL,                               /* channel<T>: 8-byte pointer; elem=T */
+	TY_TIMER,                                 /* Timer: 8-byte pointer to a heap timer handle */
 	TY_OBJECT,
 	TY_STRING   /* immutable string. */
 } TypeKind;
@@ -53,6 +54,7 @@ static inline int ty_bits(TypeKind k)
 	case TY_GENERIC:
 	case TY_ENTRY:
 	case TY_CHANNEL:
+	case TY_TIMER:
 	case TY_OBJECT:
 	case TY_STRING:
 		return 64;
@@ -92,7 +94,7 @@ static inline int ty_is_float(TypeKind k)
    this — not a bare `== TY_OBJECT` — wherever a retain/release decision is made. */
 static inline int ty_is_managed(TypeKind k)
 {
-	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL;
+	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
