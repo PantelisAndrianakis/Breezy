@@ -1185,6 +1185,63 @@ static void test_udp_loopback_echo(void)
 	bzy_iocp_shutdown();
 }
 
+static int g_fc_ok;
+
+/* Build a value byte[] from a C string's bytes (one byte per 8-byte slot). */
+static void *fc_bytes(const char *s, int n)
+{
+	void *arr = bzy_array_new(n, 0);
+	int64_t *slots = (int64_t*)((char*)arr + 32);
+	for (int i = 0; i < n; i++)
+	{
+		slots[i] = (unsigned char)s[i];
+	}
+
+	return arr;
+}
+
+static void fc_breeze(void)
+{
+	void *path = bzy_str_new("fc_unit.tmp", 11);
+	void *ch = bzy_filechannel_open(path);
+
+	void *a = fc_bytes("hello", 5);
+	void *b = fc_bytes("world", 5);
+	bzy_filechannel_write_at(ch, 0, a);     /* Parks on the IOCP write. */
+	bzy_filechannel_write_at(ch, 5, b);
+	bzy_filechannel_sync(ch);               /* Durability barrier (offloaded). */
+
+	void *back = bzy_filechannel_read_at(ch, 0, 10);   /* Parks on the IOCP read. */
+	int64_t *slots = (int64_t*)((char*)back + 32);
+	const char *want = "helloworld";
+	int ok = (bzy_array_len(back) == 10);
+	for (int i = 0; ok && i < 10; i++)
+	{
+		ok = (slots[i] == (unsigned char)want[i]);
+	}
+
+	g_fc_ok = ok && (bzy_filechannel_size(ch) == 10);
+
+	bzy_filechannel_close(ch);
+	bzy_release(back);
+	bzy_release(a);
+	bzy_release(b);
+	bzy_release(ch);
+	bzy_release(path);
+}
+
+static void test_filechannel_positioned_io(void)
+{
+	g_fc_ok = 0;
+	bzy_sched_init();
+	bzy_spawn(fc_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_fc_ok, 1);              /* Positioned writes + sync + read round-trip and size are correct. */
+	bzy_offload_shutdown();
+	bzy_iocp_shutdown();
+	remove("fc_unit.tmp");
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1248,6 +1305,7 @@ int main(void)
 	RUN(test_tcp_loopback_echo);
 	RUN(test_tcp_accept_timeout_and_try);
 	RUN(test_udp_loopback_echo);
+	RUN(test_filechannel_positioned_io);
 	SUMMARY();
 	return 0;
 }

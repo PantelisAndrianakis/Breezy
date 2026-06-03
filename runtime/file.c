@@ -21,6 +21,13 @@ static void io_fail(const char *msg)
 	g_io_error = msg;                 /* Static strings only (stable lifetime). */
 }
 
+/* Public wrapper so other runtime TUs (filechannel.c) can set the same thread-local
+   io-error that bzy_io_check consumes. */
+void bzy_io_fail(const char *msg)
+{
+	io_fail(msg);
+}
+
 /* Called by codegen after each fallible File op. Throws IOException if the last
    op failed; pc/frame locate the Breezy call site (the bzy_oob pattern). */
 void bzy_io_check(int64_t pc, int64_t frame)

@@ -219,6 +219,19 @@ void   *bzy_dgram_text(void *d);   /* Owned string (+1) of the payload bytes. */
 void   *bzy_dgram_host(void *d);   /* Owned string (+1) sender IP. */
 int64_t bzy_dgram_port(void *d);   /* Sender port. */
 
+/* Random-access file channel (6b-5): a managed handle over an overlapped Win32
+   file HANDLE on the IOCP port. readAt/writeAt are async positioned I/O (park on
+   the completion port, no offload hand-off); sync() forces durability via the
+   offload pool; size/truncate are inline. The finalizer CloseHandle()s. */
+void  bzy_io_fail(const char *msg);   /* Set the thread-local io-error (defined in file.c). */
+void *bzy_filechannel_open(void *path);                       /* Owned (+1); read+write, OPEN_ALWAYS. */
+void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes);  /* Owned byte[] (len 0 = EOF). */
+int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data);     /* byte[]; writes all; count. */
+int64_t bzy_filechannel_size(void *ch);                       /* Current size in bytes (-1 on error). */
+void  bzy_filechannel_truncate(void *ch, int64_t size);       /* Set file length (grow or shrink). */
+void  bzy_filechannel_sync(void *ch);                         /* FlushFileBuffers (offloaded). */
+void  bzy_filechannel_close(void *ch);
+
 /* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */
