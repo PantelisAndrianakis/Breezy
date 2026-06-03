@@ -87,6 +87,20 @@ static void breeze_run(void *p)
 	bzy_coroutine_switch(t_sched);   /* TLS: the scheduler of whatever thread runs us now. */
 }
 
+/* An uncaught exception in the running breeze (called by bzy_throw): mark the
+   breeze done and switch back to the scheduler. A plain fiber switch — the dead
+   breeze's stack is abandoned (worker_loop deletes the fiber), so no unwind of
+   its SEH-less NASM frames is attempted. Never returns to the caller. */
+void bzy_sched_breeze_uncaught(void)
+{
+	if (t_running)
+	{
+		t_running->done = 1;
+	}
+
+	bzy_coroutine_switch(t_sched);
+}
+
 void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => auto (logical core count). */
 {
 	if (n <= 0)

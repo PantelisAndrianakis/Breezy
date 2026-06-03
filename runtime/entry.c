@@ -14,5 +14,8 @@ int main(void)
 
 	bzy_spawn(bzy_user_main);
 	bzy_sched_run();
-	return 0;
+
+	/* A breeze that died from an uncaught exception is survived (the scheduler keeps
+	   running other breezes), but the process still reports failure. */
+	return bzy_uncaught_count() ? 1 : 0;
 }

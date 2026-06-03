@@ -115,6 +115,14 @@ void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] slot
 void    bzy_throw(void *exc, int64_t pc, int64_t frame); /* Unwind the rbp chain; never returns. */
 void    bzy_io_check(int64_t pc, int64_t frame);         /* Throw IOException if the last File op failed. */
 
+/* Crash-safe breezes (6a-4): on an uncaught exception inside a breeze, bzy_throw
+   prints the trace then calls bzy_sched_breeze_uncaught, which ends the breeze and
+   switches back to the scheduler (a fiber switch, NOT setjmp/longjmp — the dead
+   breeze's NASM frames carry no SEH unwind info, so longjmp across them crashes).
+   Outside a breeze (unit tests / pre-scheduler) bzy_throw aborts as before. */
+void    bzy_sched_breeze_uncaught(void);   /* End the running breeze; resume the scheduler (no return). */
+int64_t bzy_uncaught_count(void);          /* Count of uncaught exceptions the scheduler survived. */
+
 int64_t bzy_file_exists(void *path);      /* 1 if the path exists. */
 int64_t bzy_file_is_file(void *path);     /* 1 if it exists and is a regular file. */
 int64_t bzy_file_is_folder(void *path);   /* 1 if it exists and is a directory. */

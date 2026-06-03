@@ -1,0 +1,20 @@
+// An uncaught throw in one breeze must not abort the whole process: bad() trips
+// an out-of-bounds access (an uncaught exception); the scheduler prints its trace
+// to stderr and keeps running, so good() still prints 42 on stdout.
+void bad()
+{
+	int[] a;
+	a = new int[1];
+	print(a[5]);
+}
+
+void good()
+{
+	print(42);
+}
+
+void main()
+{
+	spawn bad();
+	spawn good();
+}

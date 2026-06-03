@@ -112,6 +112,7 @@ check file_attr   tests/samples/proj_file_attr       $'true\nfalse\ntrue\nfalse'
 export BZY_WORKERS=1
 check spawn       tests/samples/proj_spawn         $'1\n2\n9\n3\n4'
 check spawn_args  tests/samples/proj_spawn_args    $'7\nhi'
+check timer_crash tests/samples/proj_timer_crash   $'42'
 unset BZY_WORKERS
 check channel     tests/samples/proj_channel       $'60'
 check mc_sum      tests/samples/proj_mc_sum        $'100'

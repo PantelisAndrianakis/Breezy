@@ -33,6 +33,13 @@ extern int64_t __bzy_vtable_parent_count;   /* Number of (child, parent) pairs. 
 
 extern char __vtable_IndexOutOfBounds[];   /* Emitted by codegen for the builtin class. */
 
+static int64_t g_uncaught = 0;   /* Uncaught exceptions survived by the scheduler (atomic). */
+
+int64_t bzy_uncaught_count(void)   /* Lets the entry point exit non-zero after a survived crash. */
+{
+	return __atomic_load_n(&g_uncaught, __ATOMIC_RELAXED);
+}
+
 static void *parent_vtable(void *vt)
 {
 	for (int64_t i = 0; i < __bzy_vtable_parent_count; i++)
@@ -154,7 +161,17 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 		fprintf(stderr, "  at %s\n", trace[i]);
 	}
 
-	abort();
+	if (bzy_sched_current())
+	{
+		/* Inside a breeze: survive it. The unwind loop above already released every
+		   frame's object locals; the breeze's stack is abandoned and its fiber freed,
+		   so we must not longjmp across those NASM frames. The Exception object itself
+		   is left unreleased (a small, rare per-crash leak — see the 6a-4 limitations). */
+		__atomic_add_fetch(&g_uncaught, 1, __ATOMIC_RELAXED);   /* The process will exit non-zero. */
+		bzy_sched_breeze_uncaught();   /* End this breeze; resume the scheduler. Never returns. */
+	}
+
+	abort();   /* No breeze context (unit test / pre-scheduler): preserve the original behavior. */
 }
 
 /* Array index out of bounds: build an IndexOutOfBounds and unwind from the
