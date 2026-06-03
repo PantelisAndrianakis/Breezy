@@ -1,0 +1,18 @@
+void main()
+{
+	Vector2i a;
+	a = new Vector2i(0, 0);
+	Vector2i b;
+	b = new Vector2i(3, 4);
+	print(a.calculateDistance(b));    // 5
+	print(a.equals(b));               // false
+	Vector2i c;
+	c = new Vector2i(0, 0);
+	print(a.equals(c));               // true
+
+	Vector2f fa;
+	fa = new Vector2f(1.0f, 2.0f);
+	Vector2f fb;
+	fb = new Vector2f(4.0f, 6.0f);
+	print(fa.calculateDistance(fb));  // 5
+}

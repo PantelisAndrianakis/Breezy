@@ -18,7 +18,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
                  -s -Wl,--stack,0x4000000
 
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
-          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c
+          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/prelude.c
 
 RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/exception.c runtime/regex.c runtime/coroutine_win.c runtime/sched.c runtime/map_entry.c runtime/channel.c runtime/file.c
 RT_HDR  = runtime/breezy.h runtime/coroutine.h

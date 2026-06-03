@@ -6,6 +6,7 @@
 #include "types.h"
 #include "resolve.h"
 #include "codegen.h"
+#include "prelude.h"
 
 static char *read_file(const char *path)
 {
@@ -79,25 +80,40 @@ int main(int argc, char *argv[])
 
 	static Parser parsers[MAX_FILES];
 	static Unit *units[MAX_FILES];
+
+	/* The prelude (built-in vector classes etc.) compiles ahead of user files. */
+	int np=BZY_PRELUDE_COUNT;
+	int total=np+nfiles;
+	if (total>MAX_FILES)
+	{
+		fprintf(stderr,"too many files (prelude + sources)\n");
+		exit(1);
+	}
+
+	for (int i=0; i<np; i++)
+	{
+		parser_init(&parsers[i],BZY_PRELUDE[i]);
+		units[i]=parse_unit(&parsers[i]);
+	}
 	for (int i=0; i<nfiles; i++)
 	{
 		char *src=read_file(paths[i]);
-		parser_init(&parsers[i],src);
-		units[i]=parse_unit(&parsers[i]);
+		parser_init(&parsers[np+i],src);
+		units[np+i]=parse_unit(&parsers[np+i]);
 	}
 
 	TypeTable tt;
 	types_init(&tt);
 	types_register_builtins(&tt);
-	for (int i=0; i<nfiles; i++)
+	for (int i=0; i<total; i++)
 	{
 		types_register_unit_names(&tt,units[i]);
 	}
-	for (int i=0; i<nfiles; i++)
+	for (int i=0; i<total; i++)
 	{
 		types_register_unit_members(&tt,units[i]);
 	}
-	resolve_program(&tt,units,nfiles);
+	resolve_program(&tt,units,total);
 
 	FILE *out=fopen("out.asm","w");
 	if (!out)
@@ -107,7 +123,7 @@ int main(int argc, char *argv[])
 	}
 	Codegen cg;
 	cg_init(&cg,out);
-	cg_program(&cg,&tt,units,nfiles);
+	cg_program(&cg,&tt,units,total);
 	fclose(out);
 	printf("Wrote out.asm\n");
 
