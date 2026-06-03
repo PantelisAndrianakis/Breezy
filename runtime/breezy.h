@@ -232,6 +232,17 @@ void  bzy_filechannel_truncate(void *ch, int64_t size);       /* Set file length
 void  bzy_filechannel_sync(void *ch);                         /* FlushFileBuffers (offloaded). */
 void  bzy_filechannel_close(void *ch);
 
+/* Buffered file writer (6b-3): a managed handle over an open FILE* + a userspace
+   buffer. write/writeLine/writeBytes memcpy into the buffer (no syscall); the buffer
+   flushes to disk when it fills, on flush(), or on close() -- each real flush runs on
+   the offload pool so the breeze parks. open is inline; the finalizer flushes+closes. */
+void *bzy_filewriter_open(void *path, int64_t append, int64_t buf_bytes);  /* Owned (+1); 0 buf_bytes = 64 KiB. */
+void  bzy_filewriter_write(void *w, void *str);        /* Buffer the string's bytes. */
+void  bzy_filewriter_write_line(void *w, void *str);   /* Buffer the string + '\n'. */
+void  bzy_filewriter_write_bytes(void *w, void *data); /* Buffer a byte[]'s bytes. */
+void  bzy_filewriter_flush(void *w);                   /* Flush buffered bytes to disk (offloaded). */
+void  bzy_filewriter_close(void *w);                   /* Flush + close (offloaded). */
+
 /* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */

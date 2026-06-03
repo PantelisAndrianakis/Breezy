@@ -732,6 +732,32 @@ static void offload2v(void (*fn)(void*,void*), void *a0, void *a1)
 	g_io_error = c.err;
 }
 
+typedef struct
+{
+	void (*fn)(void*);
+	void *a0;
+	const char *err;
+} Off1v;
+static void off1v_run(void *p)
+{
+	Off1v *c = (Off1v*)p;
+	c->fn(c->a0);
+	c->err = g_io_error;
+	g_io_error = NULL;
+}
+static void offload1v(void (*fn)(void*), void *a0)
+{
+	if (!bzy_sched_current())
+	{
+		fn(a0);                /* No breeze: run inline. */
+		return;
+	}
+
+	Off1v c = { fn, a0, NULL };
+	bzy_offload_run(off1v_run, &c);
+	g_io_error = c.err;        /* Transfer onto the breeze thread for bzy_io_check. */
+}
+
 void *bzy_file_read_text(void *path)
 {
 	return offload1(real_read_text, path);
@@ -755,4 +781,181 @@ void  bzy_file_append_text(void *path, void *c)
 void  bzy_file_write_bytes(void *path, void *d)
 {
 	offload2v(real_write_bytes, path, d);
+}
+
+/* FileWriter (6b-3): a managed leaf handle (object_size = 64):
+   0 vtable | 8 rc | 16 gcinfo | 24 FILE* | 32 buf | 40 cap | 48 len | 56 closed.
+   write* memcpy into buf on the breeze thread; flush/close run the fwrite on the
+   offload pool. The finalizer flushes+closes inline (it cannot park) and frees buf. */
+#define FW_FILE(o)   (*(FILE**)((char*)(o) + 24))
+#define FW_BUF(o)    (*(char**)((char*)(o) + 32))
+#define FW_CAP(o)    (*(int64_t*)((char*)(o) + 40))
+#define FW_LEN(o)    (*(int64_t*)((char*)(o) + 48))
+#define FW_CLOSED(o) (*(int64_t*)((char*)(o) + 56))
+
+static void fw_finalize(void *w)
+{
+	if (!FW_CLOSED(w) && FW_FILE(w))
+	{
+		if (FW_LEN(w) > 0)
+		{
+			fwrite(FW_BUF(w), 1, (size_t)FW_LEN(w), FW_FILE(w));   /* Best-effort: a finalizer cannot park. */
+		}
+
+		fclose(FW_FILE(w));
+		FW_FILE(w) = NULL;
+	}
+
+	free(FW_BUF(w));
+	FW_BUF(w) = NULL;
+	FW_CLOSED(w) = 1;
+}
+
+static int64_t g_fw_typeinfo[2] = { 0 /* Finalizer (set on first use). */, 0 };
+static int64_t g_fw_vtable[2];
+
+static void *fw_vtable(void)
+{
+	g_fw_typeinfo[0] = (int64_t)(void*)fw_finalize;
+	g_fw_vtable[0] = (int64_t)&g_fw_typeinfo[0];
+	return &g_fw_vtable[1];
+}
+
+void *bzy_filewriter_open(void *path, int64_t append, int64_t buf_bytes)
+{
+	FILE *f = fopen(bzy_str_data(path), append ? "ab" : "wb");
+	if (!f)
+	{
+		io_fail(append ? "File.openAppend: could not open file." : "File.openWrite: could not open file.");
+		return NULL;   /* The codegen-emitted bzy_io_check throws before this is used. */
+	}
+
+	int64_t cap = buf_bytes > 0 ? buf_bytes : 65536;
+	void *w = bzy_alloc(64);
+	*(void**)w = fw_vtable();
+	FW_FILE(w) = f;
+	FW_BUF(w) = (char*)malloc((size_t)cap);
+	FW_CAP(w) = cap;
+	FW_LEN(w) = 0;
+	FW_CLOSED(w) = 0;
+	return w;
+}
+
+/* Worker-side: write the buffered bytes out and reset the fill. Runs on the offload
+   pool (the breeze is parked) so a failed write sets g_io_error on the worker thread;
+   offload1v transfers it back. */
+static void real_flush(void *w)
+{
+	if (FW_LEN(w) > 0)
+	{
+		size_t got = fwrite(FW_BUF(w), 1, (size_t)FW_LEN(w), FW_FILE(w));
+		if (got != (size_t)FW_LEN(w))
+		{
+			io_fail("FileWriter.flush: write failed.");
+		}
+
+		FW_LEN(w) = 0;
+	}
+}
+
+static void real_close(void *w)
+{
+	real_flush(w);
+	if (FW_FILE(w))
+	{
+		fclose(FW_FILE(w));
+		FW_FILE(w) = NULL;
+	}
+}
+
+/* Append n bytes into the buffer on the breeze thread, flushing (offloaded) whenever
+   it fills. A chunk larger than the buffer drains in capacity-sized flushes. */
+static void fw_append(void *w, const char *data, int64_t n)
+{
+	int64_t off = 0;
+	while (off < n)
+	{
+		int64_t space = FW_CAP(w) - FW_LEN(w);
+		int64_t take = (n - off < space) ? (n - off) : space;
+		memcpy(FW_BUF(w) + FW_LEN(w), data + off, (size_t)take);
+		FW_LEN(w) += take;
+		off += take;
+		if (FW_LEN(w) == FW_CAP(w))
+		{
+			offload1v(real_flush, w);   /* Buffer full: flush (parks the breeze). */
+			if (g_io_error)
+			{
+				return;                 /* A failed flush: stop; bzy_io_check will throw. */
+			}
+		}
+	}
+}
+
+void bzy_filewriter_write(void *w, void *str)
+{
+	if (FW_CLOSED(w))
+	{
+		io_fail("FileWriter.write: writer is closed.");
+		return;
+	}
+
+	fw_append(w, bzy_str_data(str), bzy_str_len(str));
+}
+
+void bzy_filewriter_write_line(void *w, void *str)
+{
+	if (FW_CLOSED(w))
+	{
+		io_fail("FileWriter.writeLine: writer is closed.");
+		return;
+	}
+
+	fw_append(w, bzy_str_data(str), bzy_str_len(str));
+	if (!g_io_error)
+	{
+		fw_append(w, "\n", 1);
+	}
+}
+
+void bzy_filewriter_write_bytes(void *w, void *data)
+{
+	if (FW_CLOSED(w))
+	{
+		io_fail("FileWriter.writeBytes: writer is closed.");
+		return;
+	}
+
+	int64_t n = bzy_array_len(data);
+	int64_t *slots = (int64_t*)((char*)data + 32);
+	for (int64_t i = 0; i < n; i++)
+	{
+		char b = (char)(unsigned char)slots[i];
+		fw_append(w, &b, 1);
+		if (g_io_error)
+		{
+			return;
+		}
+	}
+}
+
+void bzy_filewriter_flush(void *w)
+{
+	if (FW_CLOSED(w))
+	{
+		io_fail("FileWriter.flush: writer is closed.");
+		return;
+	}
+
+	offload1v(real_flush, w);
+}
+
+void bzy_filewriter_close(void *w)
+{
+	if (FW_CLOSED(w))
+	{
+		return;   /* Idempotent. */
+	}
+
+	offload1v(real_close, w);
+	FW_CLOSED(w) = 1;   /* Closed even if the final flush failed; bzy_io_check will throw. */
 }

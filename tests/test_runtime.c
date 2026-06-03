@@ -1242,6 +1242,38 @@ static void test_filechannel_positioned_io(void)
 	remove("fc_unit.tmp");
 }
 
+static int g_fw_ok;
+static void fw_breeze(void)
+{
+	void *path = bzy_str_new("fw_unit.tmp", 11);
+	void *w = bzy_filewriter_open(path, 0, 8);   /* Truncate; 8-byte buffer forces flushes. */
+	void *chunk = bzy_str_new("ab", 2);
+	for (int i = 0; i < 1000; i++)
+	{
+		bzy_filewriter_write(w, chunk);          /* Buffers; flushes (parks) when the 8 bytes fill. */
+	}
+
+	bzy_filewriter_close(w);                      /* Final flush + close. */
+	bzy_release(chunk);
+	bzy_release(w);
+
+	void *back = bzy_file_read_text(path);        /* 2000 bytes written. */
+	g_fw_ok = (bzy_str_len(back) == 2000);
+	bzy_release(back);
+	bzy_release(path);
+}
+
+static void test_filewriter_buffered_flush(void)
+{
+	g_fw_ok = 0;
+	bzy_sched_init();
+	bzy_spawn(fw_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_fw_ok, 1);                       /* All 2000 bytes made it through the buffered flushes. */
+	bzy_offload_shutdown();
+	remove("fw_unit.tmp");
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1306,6 +1338,7 @@ int main(void)
 	RUN(test_tcp_accept_timeout_and_try);
 	RUN(test_udp_loopback_echo);
 	RUN(test_filechannel_positioned_io);
+	RUN(test_filewriter_buffered_flush);
 	SUMMARY();
 	return 0;
 }
