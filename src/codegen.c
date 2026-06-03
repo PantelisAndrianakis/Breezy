@@ -2025,6 +2025,27 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_string_method(cg,tt,e);
 		}
+		else if (strcmp(e->name,"getClassName")==0
+				 && !types_find_method(types_find_class(tt,e->lhs->type.class_name),"getClassName"))
+		{
+			/* Builtin: dynamic class name. Read it from the receiver's actual vtable. */
+			cg_expr(cg,tt,e->lhs);                       /* Receiver -> rax. */
+			int owned = expr_is_owned(e->lhs);
+			if (owned)
+			{
+				cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+			}
+
+			cg_emit(cg,"    mov rcx, rax");
+			cg_aligned_call(cg,"bzy_class_name");        /* Owned (+1) string in rax. */
+			if (owned)
+			{
+				cg_emit(cg,"    mov rcx, [rbp - %d]", cg->val_save);
+				cg_emit(cg,"    push rax");               /* Preserve the string across the release. */
+				cg_release_rcx(cg);
+				cg_emit(cg,"    pop rax");
+			}
+		}
 		else
 		{
 			cg_method_call(cg,tt,e);
@@ -2990,6 +3011,7 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 		}
 	}
 
+	cg_emit(cg,"    dq __classname_%s", c->name);  /* Class name pointer at descriptor[2+nobj]. */
 	cg_emit(cg,"    dq __typeinfo_%s", c->name);   /* This word lands at the vtable label minus eight. */
 	cg_emit(cg,"__vtable_%s:", c->name);
 	for (int slot=0; slot<c->vtable_size; slot++)
@@ -3003,6 +3025,8 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 			}
 		}
 	}
+
+	cg_emit(cg,"__classname_%s: db \"%s\", 0", c->name, c->name);   /* NUL-terminated dynamic class name. */
 }
 
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
@@ -3092,6 +3116,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_clock_date");
 	cg_emit(cg,"extern bzy_clock_date_fmt");
 	cg_emit(cg,"extern bzy_system_shell");
+	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");
 	cg_emit(cg,"extern bzy_rnd_long");

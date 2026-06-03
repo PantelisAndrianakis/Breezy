@@ -19,6 +19,7 @@ void    bzy_retain(void *obj);     /* Increment the refcount (NULL-safe). */
 void    bzy_release(void *obj);    /* Decrement the refcount; free acyclic garbage, buffer cycle candidates (NULL-safe). */
 int64_t bzy_live_count(void);      /* Number of objects currently alive (for tests and leak checks). */
 
+void   *bzy_class_name(void *obj);  /* Owned (+1) string: the object's dynamic class name. */
 void    bzy_collect_cycles(void);  /* Run trial deletion over the buffered cycle-root candidates. */
 int64_t bzy_roots_buffered(void);  /* Number of candidate roots pending collection (for tests). */
 
