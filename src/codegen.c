@@ -14,8 +14,8 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->strk_count=0;
 	cg->cur_break_label=-1;
 	cg->cur_continue_label=-1;
-	cg->ehfn_count=0;
-	cg->ehtry_count=0;
+	cg->exception_fn_count=0;
+	cg->exception_try_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -458,7 +458,7 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	int total = (self?1:0) + argc;
 	if (total > 4)
 	{
-		fprintf(stderr,"codegen: >4 args unsupported in core plan\n");
+		fprintf(stderr,"codegen: >4 args unsupported\n");
 		exit(1);
 	}
 
@@ -1783,7 +1783,7 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 }
 
 /* C-style for: init once, then test/body/post, with continue landing on the
-   post step so the increment still runs. break -> end. Reuses the Part 4g
+   post step so the increment still runs. break -> end. Reuses the shared
    loop-label fields on Codegen. */
 static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
@@ -1808,13 +1808,13 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 /* foreach over an array (index loop), string (byte loop), or map (control-byte
    slot scan). The loop variable receives each element/key borrowed (no retain);
    continue lands on the cursor advance, break on the end. An owned iterable
-   temporary is released at loop exit. Reuses the Part 4g loop-label fields. */
+   temporary is released at loop exit. Reuses the shared loop-label fields. */
 static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	TypeKind ik = s->expr->type.kind;          /* iterable: TY_ARRAY / TY_STRING / TY_MAP */
 	int top = cg_label(cg), end = cg_label(cg), cont = cg_label(cg);
 	int owned = expr_is_owned(s->expr);
-	int sb = cg->cur_break_label, sc = cg->cur_continue_label;   /* Loop-label infra from Part 4g. */
+	int sb = cg->cur_break_label, sc = cg->cur_continue_label;   /* Save the enclosing loop labels. */
 	int gen_set = (ik==TY_GENERIC && strcmp(s->expr->type.class_name,"Set")==0);   /* Set is a map. */
 	int gen_vec = (ik==TY_GENERIC && !gen_set);                                    /* List/Stack/Queue/Deque. */
 
@@ -1935,8 +1935,8 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 
 /* C-style switch: case/default are label statements in the body block, so
    fallthrough is automatic (bodies emit contiguously) and only break exits.
-   A pre-pass assigns a label per case/default; dispatch is a compare-chain
-   (Part 4h Task 4 adds the dense jump table); break targets the switch end. */
+   A pre-pass assigns a label per case/default; dispatch is a compare-chain;
+   break targets the switch end. */
 static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	Block *b = s->then_blk;
@@ -2045,19 +2045,19 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
    normal completion jmps over the inline landing pad. The pad is reached only
    by the unwinder (which sets rax = the caught exception), binds it into the
    catch variable's slot (transferring the owned +1), and runs the catch body.
-   The region is recorded for this function's try-table (emitted in the EH record). */
+   The region is recorded for this function's try-table (emitted in the exception record). */
 static void cg_try(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
-	int k = cg->ehtry_count++;
+	int k = cg->exception_try_count++;
 	int after = cg_label(cg);
-	cg_emit(cg,"..@ehtry%d_s:", k);                /* `..@` labels are file-global yet don't reset .L scope. */
+	cg_emit(cg,"..@exceptiontry%d_s:", k);                /* `..@` labels are file-global yet don't reset .L scope. */
 	cg_block(cg,tt,f,s->then_blk,in_main);
-	cg_emit(cg,"..@ehtry%d_e:", k);
+	cg_emit(cg,"..@exceptiontry%d_e:", k);
 	cg_emit(cg,"    jmp .L%d", after);             /* Normal path: skip all landing pads. */
 	for (int c=0; c<s->else_blk->count; c++)
 	{
 		Stmt *cl = s->else_blk->stmts[c];
-		cg_emit(cg,"..@ehtry%d_p%d:", k, c);       /* Landing pad: rax = caught exception. */
+		cg_emit(cg,"..@exceptiontry%d_p%d:", k, c);       /* Landing pad: rax = caught exception. */
 		cg_emit(cg,"    mov [rbp - %d], rax", cl->decl_offset);   /* Bind (transfer owned). */
 		cg_block(cg,tt,f,cl->then_blk,in_main);
 		cg_emit(cg,"    jmp .L%d", after);         /* After the handler, leave the try. */
@@ -2249,15 +2249,15 @@ static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 	}
 }
 
-/* Emits one per-function EH record into .data (PC range, frame size, name,
+/* Emits one per-function exception record into .data (PC range, frame size, name,
    object-local offsets, and the try-region table). The end label is placed in
    .text just past the function; the record is appended in .data. */
-static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f)
+static void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f)
 {
-	int i = cg->ehfn_count++;
-	cg_emit(cg,"__ehend%d:", i);                 /* In .text, just past the function. */
+	int i = cg->exception_fn_count++;
+	cg_emit(cg,"__exceptionend%d:", i);                 /* In .text, just past the function. */
 	cg_emit(cg,"section .data");
-	fprintf(cg->out, "__ehname%d: db ", i);
+	fprintf(cg->out, "__exceptionname%d: db ", i);
 	for (const char *p=f->name; *p; p++)
 	{
 		fprintf(cg->out, "%d,", (unsigned char)*p);
@@ -2266,7 +2266,7 @@ static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f
 	fprintf(cg->out, "0\n");
 	if (f->obj_local_count > 0)
 	{
-		fprintf(cg->out, "__ehobjs%d: dq ", i);
+		fprintf(cg->out, "__exceptionobjs%d: dq ", i);
 		for (int j=0; j<f->obj_local_count; j++)
 		{
 			fprintf(cg->out, "%d%s", f->obj_local_offsets[j], j+1<f->obj_local_count ? "," : "");
@@ -2277,27 +2277,27 @@ static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f
 
 	if (cg->cur_try_count > 0)
 	{
-		cg_emit(cg,"__ehtrytab%d:", i);          /* BzyEHTry[]: start, end, catch-vtable, pad. */
+		cg_emit(cg,"__exceptiontrytab%d:", i);          /* BzyExceptionTry[]: start, end, catch-vtable, pad. */
 		for (int t=0; t<cg->cur_try_count; t++)
 		{
 			int k = cg->cur_try_k[t];
 			int c = cg->cur_try_c[t];
-			cg_emit(cg,"    dq ..@ehtry%d_s", k);
-			cg_emit(cg,"    dq ..@ehtry%d_e", k);
+			cg_emit(cg,"    dq ..@exceptiontry%d_s", k);
+			cg_emit(cg,"    dq ..@exceptiontry%d_e", k);
 			cg_emit(cg,"    dq __vtable_%s", cg->cur_try_vt[t]);
-			cg_emit(cg,"    dq ..@ehtry%d_p%d", k, c);
+			cg_emit(cg,"    dq ..@exceptiontry%d_p%d", k, c);
 		}
 	}
 
-	cg_emit(cg,"__ehfn%d:", i);
+	cg_emit(cg,"__exceptionfn%d:", i);
 	cg_emit(cg,"    dq %s", label);
-	cg_emit(cg,"    dq __ehend%d", i);
+	cg_emit(cg,"    dq __exceptionend%d", i);
 	cg_emit(cg,"    dq %d", frame);
-	cg_emit(cg,"    dq __ehname%d", i);
+	cg_emit(cg,"    dq __exceptionname%d", i);
 	cg_emit(cg,"    dq %d", f->obj_local_count);
 	if (f->obj_local_count > 0)
 	{
-		cg_emit(cg,"    dq __ehobjs%d", i);
+		cg_emit(cg,"    dq __exceptionobjs%d", i);
 	}
 	else
 	{
@@ -2307,7 +2307,7 @@ static void cg_emit_eh_record(Codegen *cg, const char *label, int frame, Func *f
 	cg_emit(cg,"    dq %d", cg->cur_try_count);   /* Try-region count. */
 	if (cg->cur_try_count > 0)
 	{
-		cg_emit(cg,"    dq __ehtrytab%d", i);
+		cg_emit(cg,"    dq __exceptiontrytab%d", i);
 	}
 	else
 	{
@@ -2393,7 +2393,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");
-	cg_emit_eh_record(cg, label, frame, f);
+	cg_emit_exception_record(cg, label, frame, f);
 }
 
 static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
@@ -2522,8 +2522,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_regex_find");
 	cg_emit(cg,"extern bzy_regex_replace");
 	cg_emit(cg,"extern bzy_throw");
-	cg_emit(cg,"global __bzy_eh_funcs");
-	cg_emit(cg,"global __bzy_eh_func_count");
+	cg_emit(cg,"global __bzy_exception_funcs");
+	cg_emit(cg,"global __bzy_exception_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");
 	cg_emit(cg,"global __bzy_vtable_parent_count");
 	cg_emit(cg,"global __vtable_IndexOutOfBounds");   /* Referenced by the runtime bzy_oob. */
@@ -2618,11 +2618,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 
 	cg_emit(cg,"__deg2rad: dq 0x3f91df46a2529d39");   /* PI/180 = 0.017453292519943295 (Math.toRadians). */
 
-	cg_emit(cg,"__bzy_eh_funcs:");
-	for (int i=0; i<cg->ehfn_count; i++)
+	cg_emit(cg,"__bzy_exception_funcs:");
+	for (int i=0; i<cg->exception_fn_count; i++)
 	{
-		cg_emit(cg,"    dq __ehfn%d", i);
+		cg_emit(cg,"    dq __exceptionfn%d", i);
 	}
 
-	cg_emit(cg,"__bzy_eh_func_count: dq %d", cg->ehfn_count);
+	cg_emit(cg,"__bzy_exception_func_count: dq %d", cg->exception_fn_count);
 }

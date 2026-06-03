@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <time.h>
 
-/* EH registry stubs: no compiled Breezy program is linked into this unit-test binary. */
-void *__bzy_eh_funcs[1] = { 0 };
-long long __bzy_eh_func_count = 0;
+/* Exception registry stubs: no compiled Breezy program is linked into this unit-test binary. */
+void *__bzy_exception_funcs[1] = { 0 };
+long long __bzy_exception_func_count = 0;
 void *__bzy_vtable_parents[1] = { 0 };
 long long __bzy_vtable_parent_count = 0;
 char __vtable_IndexOutOfBounds[8] = { 0 };

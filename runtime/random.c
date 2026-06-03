@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <math.h>
 
-/* xoshiro256** seeded (lazily, from the clock) via splitmix64. Single global
-   generator; a per-breeze generator arrives with Part 6. */
+/* xoshiro256** seeded (lazily, from the clock) via splitmix64. A single global
+   generator. */
 static uint64_t g_s[4];
 static int g_seeded;
 static int g_has_spare;

@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-/* See docs .../04f-collections.md for the layout. The data buffer is a managed
-   BzyArray (the vector's one child), so ARC + the cycle collector reach elements
-   through the array span; unused ring slots stay 0 so that span is NULL-safe.
+/* A growable ring-buffer vector. The data buffer is a managed BzyArray (the
+   vector's one child), so ARC + the cycle collector reach elements through the
+   array span; unused ring slots stay 0 so that span is NULL-safe.
    Layout (object_size = 64): 0 vtable | 8 rc | 16 gcinfo | 24 length | 32 cap |
    40 head | 48 data array | 56 elem_kind. */
 

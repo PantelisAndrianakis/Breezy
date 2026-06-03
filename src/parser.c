@@ -391,7 +391,7 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 	}
 }
 
-/* The fixed set of compiler-known generic templates. Part 4f extends this. */
+/* The fixed set of compiler-known generic templates. */
 static int is_generic_template(const char *name)
 {
 	return strcmp(name,"Box")==0

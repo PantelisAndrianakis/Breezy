@@ -35,7 +35,7 @@ int64_t bzy_clock_nanos(void)
 
 int64_t bzy_clock_millis(void)
 {
-	return (int64_t)time(NULL) * 1000;   /* Coarse fallback; Part 8 refines for Linux. */
+	return (int64_t)time(NULL) * 1000;   /* Coarse fallback for non-Windows platforms. */
 }
 
 int64_t bzy_clock_nanos(void)

@@ -14,7 +14,7 @@ typedef struct
 	int64_t *objs;
 	int64_t ntry;
 	void *tryptr;
-} BzyEHFunc;
+} BzyExceptionFunc;
 
 /* Must match the codegen try-region layout (4 qwords). */
 typedef struct
@@ -23,10 +23,10 @@ typedef struct
 	int64_t end;
 	void *catch_vtable;
 	int64_t pad;
-} BzyEHTry;
+} BzyExceptionTry;
 
-extern BzyEHFunc *__bzy_eh_funcs[];
-extern int64_t __bzy_eh_func_count;
+extern BzyExceptionFunc *__bzy_exception_funcs[];
+extern int64_t __bzy_exception_func_count;
 
 extern void *__bzy_vtable_parents[];     /* Flat [child0, parent0, child1, parent1, ...]. */
 extern int64_t __bzy_vtable_parent_count;   /* Number of (child, parent) pairs. */
@@ -64,7 +64,7 @@ static int is_a(void *obj_vt, void *catch_vt)
    rax. Uses only volatile registers (r8-r11) for the operands so setting rsp/rbp
    never invalidates an operand still to be read. Never returns. */
 __attribute__((noreturn))
-static void eh_resume(void *exc, int64_t newrbp, int64_t newrsp, int64_t pad)
+static void exception_resume(void *exc, int64_t newrbp, int64_t newrsp, int64_t pad)
 {
 	register int64_t r_rsp __asm__("r8")  = newrsp;
 	register int64_t r_rbp __asm__("r9")  = newrbp;
@@ -82,11 +82,11 @@ static void eh_resume(void *exc, int64_t newrbp, int64_t newrsp, int64_t pad)
 	__builtin_unreachable();
 }
 
-static BzyEHFunc *eh_find(int64_t pc)
+static BzyExceptionFunc *exception_find(int64_t pc)
 {
-	for (int64_t i = 0; i < __bzy_eh_func_count; i++)
+	for (int64_t i = 0; i < __bzy_exception_func_count; i++)
 	{
-		BzyEHFunc *f = __bzy_eh_funcs[i];
+		BzyExceptionFunc *f = __bzy_exception_funcs[i];
 		if (pc >= f->start && pc < f->end)
 		{
 			return f;
@@ -105,7 +105,7 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 	   (one of which may be the thrown object) never frees it. */
 	for (;;)
 	{
-		BzyEHFunc *f = eh_find(pc);
+		BzyExceptionFunc *f = exception_find(pc);
 		if (!f)
 		{
 			break;                               /* Off the top -> uncaught. */
@@ -121,10 +121,10 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 		   releasing this frame's locals (the handler frame keeps executing). */
 		for (int64_t t = 0; t < f->ntry; t++)
 		{
-			BzyEHTry *tr = &((BzyEHTry*)f->tryptr)[t];
+			BzyExceptionTry *tr = &((BzyExceptionTry*)f->tryptr)[t];
 			if (pc >= tr->start && pc < tr->end && is_a(*(void**)exc, tr->catch_vtable))
 			{
-				eh_resume(exc, frame, frame - f->frame, tr->pad);   /* Never returns. */
+				exception_resume(exc, frame, frame - f->frame, tr->pad);   /* Never returns. */
 			}
 		}
 

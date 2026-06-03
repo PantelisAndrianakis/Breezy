@@ -20,7 +20,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c
 
-RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/eh.c runtime/regex.c runtime/coroutine_win.c runtime/sched.c
+RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/exception.c runtime/regex.c runtime/coroutine_win.c runtime/sched.c
 RT_HDR  = runtime/breezy.h runtime/coroutine.h
 
 .PHONY: all clean test integration release
@@ -58,6 +58,7 @@ test_escape: tests/test_escape.c $(OBJS)
 	$(CC) $(CFLAGS) -o test_escape tests/test_escape.c $(OBJS)
 
 lib_breezy.a: $(RT_SRC) $(RT_HDR)
+	rm -f lib_breezy.a   # Rebuild from scratch so renamed/removed members never linger in the archive.
 	$(CC) $(CFLAGS) -Iruntime -c runtime/alloc.c -o runtime/alloc.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/print.c -o runtime/print.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/string.c -o runtime/string.o
@@ -66,12 +67,12 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -c runtime/vector.c -o runtime/vector.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/clock.c -o runtime/clock.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/random.c -o runtime/random.o
-	$(CC) $(CFLAGS) -Iruntime -c runtime/eh.c -o runtime/eh.o
+	$(CC) $(CFLAGS) -Iruntime -c runtime/exception.c -o runtime/exception.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/regex.c -o runtime/regex.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/coroutine_win.c -o runtime/coroutine_win.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/sched.c -o runtime/sched.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/entry.c -o runtime/entry.o
-	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o runtime/map.o runtime/vector.o runtime/clock.o runtime/random.o runtime/eh.o runtime/regex.o runtime/coroutine_win.o runtime/sched.o runtime/entry.o
+	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o runtime/map.o runtime/vector.o runtime/clock.o runtime/random.o runtime/exception.o runtime/regex.o runtime/coroutine_win.o runtime/sched.o runtime/entry.o
 
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC)

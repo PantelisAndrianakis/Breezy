@@ -15,8 +15,8 @@ typedef struct
 	int fp_save;       /* The rbp offset for spilling xmm0 (FP return / FP field store). */
 	int cur_break_label;     /* Enclosing loop's end label (-1 if not in a loop). */
 	int cur_continue_label;  /* Enclosing loop's continue target (-1 if not in a loop). */
-	int ehfn_count;          /* Number of per-function EH records emitted so far. */
-	int ehtry_count;         /* File-unique try-region label counter (__ehtry<k>_*). */
+	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
+	int exception_try_count; /* File-unique try-region label counter (__exceptiontry<k>_*). */
 	int cur_try_count;       /* Try-regions in the function currently being emitted. */
 	int cur_try_k[64];       /* Their label indices. */
 	int cur_try_c[64];       /* Their clause indices (distinct landing pads per try). */

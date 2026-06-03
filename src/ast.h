@@ -12,7 +12,7 @@ typedef enum
 	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map */
 	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object */
 	TY_OBJECT,
-	TY_STRING   /* immutable string (Part 4a). */
+	TY_STRING   /* immutable string. */
 } TypeKind;
 typedef struct TypeRef
 {
