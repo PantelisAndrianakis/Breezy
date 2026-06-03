@@ -37,6 +37,7 @@ typedef struct ClassInfo
 	int ctor_param_count;
 	TypeRef ctor_param_types[8];
 	char ctor_asm_label[160];
+	int is_shared;                 /* 1 if instances may cross a core boundary -> atomic refcounts (6a-3). */
 } ClassInfo;
 typedef struct
 {
@@ -59,6 +60,7 @@ void       types_init(TypeTable *tt);
 void       types_register_builtins(TypeTable *tt);
 void       types_register_unit_names(TypeTable *tt, Unit *u);
 void       types_register_unit_members(TypeTable *tt, Unit *u);
+void       types_compute_shared_set(TypeTable *tt);   /* Conservative-static: mark channel-reachable classes shared (6a-3). */
 ClassInfo *types_find_class(TypeTable *tt, const char *name);
 FuncInfo  *types_find_func(TypeTable *tt, const char *name);
 MethodInfo*types_find_method(ClassInfo *c, const char *name);

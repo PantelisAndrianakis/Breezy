@@ -443,6 +443,39 @@ static void test_method_call_slot_and_class(void)
 	ASSERT_STR(call->expr->anno_str, "Dog");
 }
 
+static void test_shared_set_inference(void)
+{
+	/* worker takes a channel<Player>, so Player can cross cores -> shared.
+	   Player has an Inventory field, so Inventory is shared too (transitive).
+	   Loner is never channel-reachable -> not shared. */
+	static Parser ps[4];
+	static Unit *units[4];
+	const char *s[]= {"class Inventory { int n; }",
+					  "class Player { Inventory inv; }",
+					  "class Loner { int x; }",
+					  "void worker(channel<Player> c) { }"
+					 };
+	types_init(&g_tt);
+	types_register_builtins(&g_tt);
+	for (int i=0; i<4; i++)
+	{
+		parser_init(&ps[i],s[i]);
+		units[i]=parse_unit(&ps[i]);
+	}
+	for (int i=0; i<4; i++)
+	{
+		types_register_unit_names(&g_tt,units[i]);
+	}
+	for (int i=0; i<4; i++)
+	{
+		types_register_unit_members(&g_tt,units[i]);
+	}
+	resolve_program(&g_tt,units,4);
+	ASSERT_INT(types_find_class(&g_tt,"Player")->is_shared, 1);
+	ASSERT_INT(types_find_class(&g_tt,"Inventory")->is_shared, 1);
+	ASSERT_INT(types_find_class(&g_tt,"Loner")->is_shared, 0);
+}
+
 int main(void)
 {
 	printf("Resolver tests\n");
@@ -496,6 +529,7 @@ int main(void)
 	RUN(test_try_catch_resolves);
 	RUN(test_catch_index_oob_resolves);
 	RUN(test_method_call_slot_and_class);
+	RUN(test_shared_set_inference);
 	ast_free_all();
 	SUMMARY();
 	return 0;

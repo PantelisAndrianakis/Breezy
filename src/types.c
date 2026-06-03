@@ -61,6 +61,103 @@ ClassInfo *types_find_class(TypeTable *tt, const char *name)
 	return NULL;
 }
 
+/* Seed step: any channel<T> with an object element type T marks T's class shared.
+   Recurses through container TypeRefs (array/map) so a channel nested inside, e.g.,
+   a parameter type is still found. (Sending a *collection* of confined objects
+   without the element type itself being a channel element is a known conservative
+   gap; builtin managed types string/array/map crossing a channel are likewise not
+   marked here, since they carry no ClassInfo.) */
+static void seed_shared_from_typeref(TypeTable *tt, TypeRef *t)
+{
+	if (!t)
+	{
+		return;
+	}
+
+	if (t->kind==TY_CHANNEL && t->elem && t->elem->kind==TY_OBJECT)
+	{
+		ClassInfo *c=types_find_class(tt,t->elem->class_name);
+		if (c)
+		{
+			c->is_shared=1;
+		}
+	}
+
+	seed_shared_from_typeref(tt,t->elem);
+	seed_shared_from_typeref(tt,t->elem2);
+}
+
+void types_compute_shared_set(TypeTable *tt)
+{
+	/* Seed from every channel<T> that appears in a signature the runtime can use
+	   to move a channel between breezes: class fields, method/function/ctor
+	   parameters, and return types. A channel only reaches another breeze through
+	   one of these, so this is sufficient to catch every cross-core object. */
+	for (int ci=0; ci<tt->class_count; ci++)
+	{
+		ClassInfo *c=&tt->classes[ci];
+		for (int fi=0; fi<c->field_count; fi++)
+		{
+			seed_shared_from_typeref(tt,&c->fields[fi].type);
+		}
+
+		for (int mi=0; mi<c->method_count; mi++)
+		{
+			MethodInfo *m=&c->methods[mi];
+			seed_shared_from_typeref(tt,&m->ret_type);
+			for (int pi=0; pi<m->param_count; pi++)
+			{
+				seed_shared_from_typeref(tt,&m->param_types[pi]);
+			}
+		}
+
+		for (int pi=0; pi<c->ctor_param_count; pi++)
+		{
+			seed_shared_from_typeref(tt,&c->ctor_param_types[pi]);
+		}
+	}
+
+	for (int fi=0; fi<tt->func_count; fi++)
+	{
+		FuncInfo *f=&tt->funcs[fi];
+		seed_shared_from_typeref(tt,&f->ret_type);
+		for (int pi=0; pi<f->param_count; pi++)
+		{
+			seed_shared_from_typeref(tt,&f->param_types[pi]);
+		}
+	}
+
+	/* Fixpoint: a shared object reachable across cores drags its object-typed
+	   fields along, so they must be shared too. Iterate until nothing changes. */
+	int changed=1;
+	while (changed)
+	{
+		changed=0;
+		for (int ci=0; ci<tt->class_count; ci++)
+		{
+			ClassInfo *c=&tt->classes[ci];
+			if (!c->is_shared)
+			{
+				continue;
+			}
+
+			for (int fi=0; fi<c->field_count; fi++)
+			{
+				FieldInfo *f=&c->fields[fi];
+				if (f->type.kind==TY_OBJECT)
+				{
+					ClassInfo *fc=types_find_class(tt,f->type.class_name);
+					if (fc && !fc->is_shared)
+					{
+						fc->is_shared=1;
+						changed=1;
+					}
+				}
+			}
+		}
+	}
+}
+
 FuncInfo *types_find_func(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->func_count; i++)
