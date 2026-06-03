@@ -688,6 +688,31 @@ static void test_spawn_args(void)
 	ASSERT_INT(g_sa_sum, 42);
 }
 
+static void *g_ch;
+static int64_t g_recv_sum;
+static void channel_producer(void)
+{
+	bzy_channel_send(g_ch,1);
+	bzy_channel_send(g_ch,2);
+	bzy_channel_send(g_ch,3);
+}
+static void channel_consumer(void)
+{
+	g_recv_sum = bzy_channel_recv(g_ch) + bzy_channel_recv(g_ch) + bzy_channel_recv(g_ch);
+}
+
+static void test_channel_roundtrip(void)
+{
+	g_recv_sum = 0;
+	bzy_sched_init();
+	g_ch = bzy_channel_new(2, 0);     /* cap 2: the 3rd send parks until the consumer drains. */
+	bzy_spawn(channel_producer);
+	bzy_spawn(channel_consumer);
+	bzy_sched_run();
+	ASSERT_INT(g_recv_sum, 6);
+	bzy_release(g_ch);
+}
+
 static void test_scheduler_roundrobin(void)
 {
 	g_breeze_n = 0;
@@ -747,6 +772,7 @@ int main(void)
 	RUN(test_regex_replace);
 	RUN(test_scheduler_roundrobin);
 	RUN(test_spawn_args);
+	RUN(test_channel_roundtrip);
 	SUMMARY();
 	return 0;
 }
