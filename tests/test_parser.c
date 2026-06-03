@@ -156,6 +156,17 @@ static void test_parse_double_vardecl(void)
 	ASSERT_INT(b->stmts[1]->decl_type.kind, TY_FLOAT);
 }
 
+static void test_parse_socket_vardecls(void)
+{
+	Unit *u = parse_unit_str("void main() { Listener l; Socket s; UdpSocket u; Datagram d; }");
+	Block *b = u->funcs[0]->body;
+	ASSERT_INT(b->stmts[0]->kind, ST_VARDECL);
+	ASSERT_INT(b->stmts[0]->decl_type.kind, TY_LISTENER);
+	ASSERT_INT(b->stmts[1]->decl_type.kind, TY_SOCKET);
+	ASSERT_INT(b->stmts[2]->decl_type.kind, TY_UDPSOCKET);
+	ASSERT_INT(b->stmts[3]->decl_type.kind, TY_DATAGRAM);
+}
+
 static void test_array_type_decls(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; Foo[] b; }");
@@ -409,6 +420,7 @@ int main(void)
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);
 	RUN(test_parse_double_vardecl);
+	RUN(test_parse_socket_vardecls);
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);
 	RUN(test_new_map);

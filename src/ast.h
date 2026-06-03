@@ -14,6 +14,10 @@ typedef enum
 	TY_ENTRY,                                 /* map Entry: 8-byte pointer; elem=K, elem2=V. */
 	TY_CHANNEL,                               /* channel<T>: 8-byte pointer; elem=T. */
 	TY_TIMER,                                 /* Timer: 8-byte pointer to a heap timer handle. */
+	TY_LISTENER,                              /* Listener: TCP accept handle. */
+	TY_SOCKET,                                /* Socket: TCP connection handle. */
+	TY_UDPSOCKET,                             /* UdpSocket: UDP datagram handle. */
+	TY_DATAGRAM,                              /* Datagram: a received UDP payload + sender. */
 	TY_OBJECT,
 	TY_STRING   /* Immutable string. */
 } TypeKind;
@@ -55,6 +59,10 @@ static inline int ty_bits(TypeKind k)
 	case TY_ENTRY:
 	case TY_CHANNEL:
 	case TY_TIMER:
+	case TY_LISTENER:
+	case TY_SOCKET:
+	case TY_UDPSOCKET:
+	case TY_DATAGRAM:
 	case TY_OBJECT:
 	case TY_STRING:
 		return 64;
@@ -94,7 +102,8 @@ static inline int ty_is_float(TypeKind k)
    this — not a bare `== TY_OBJECT` — wherever a retain/release decision is made. */
 static inline int ty_is_managed(TypeKind k)
 {
-	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER;
+	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
+		   || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */

@@ -506,6 +506,27 @@ static void test_system_shell_resolves_int(void)
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);   /* Wait form -> int (exit code). */
 }
 
+static void test_network_tcp_resolves(void)
+{
+	Func *f=build1("void main() { Listener l; l = Network.listen(0); Socket s; s = l.accept();"
+				   " byte[] b; b = s.read(64); int n; n = s.write(b); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LISTENER);   /* Network.listen -> Listener. */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_SOCKET);     /* listener.accept -> Socket. */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_ARRAY);      /* socket.read -> byte[]. */
+	ASSERT_INT(f->body->stmts[5]->value->type.elem->kind, TY_BYTE);
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* socket.write -> int. */
+}
+
+static void test_network_udp_resolves(void)
+{
+	Func *f=build1("void main() { UdpSocket u; u = Network.udp(0); Datagram d; d = u.receive();"
+				   " string h; h = d.host(); int p; p = d.port(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_UDPSOCKET);  /* Network.udp -> UdpSocket. */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_DATAGRAM);   /* udp.receive -> Datagram. */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING);     /* datagram.host -> string. */
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* datagram.port -> int. */
+}
+
 int main(void)
 {
 	printf("Resolver tests\n");
@@ -565,6 +586,8 @@ int main(void)
 	ast_free_all();
 	RUN(test_system_shell_resolves_int);
 	RUN(test_getclassname_resolves_string);
+	RUN(test_network_tcp_resolves);
+	RUN(test_network_udp_resolves);
 	SUMMARY();
 	return 0;
 }

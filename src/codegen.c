@@ -1547,6 +1547,156 @@ static void cg_timer_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_aligned_call(cg,"bzy_timer_cancel");
 }
 
+/* Network.* constructors: listen/connect/udp -> owned handle. No receiver; args
+   (port, or host+port) lower through cg_call_with_args (owned host temp released). */
+static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 8;   /* After "Network.". */
+	const char *fn;
+	if (strcmp(m,"listen")==0)
+	{
+		fn = "bzy_listener_new";
+	}
+	else if (strcmp(m,"connect")==0)
+	{
+		fn = "bzy_socket_connect";
+	}
+	else if (strcmp(m,"udp")==0)
+	{
+		fn = "bzy_udp_new";
+	}
+	else
+	{
+		fprintf(stderr,"Codegen: unknown Network method '%s'\n", m);
+		exit(1);
+	}
+
+	TypeRef ps[2];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+}
+
+/* Listener/Socket/UdpSocket/Datagram methods. The receiver (e->lhs) is the first
+   arg (rcx); the runtime symbol is chosen by receiver kind + method name, and the
+   timeout overloads select the _timeout symbol when the optional arg is present.
+   cg_call_with_args releases owned arg temporaries and preserves the result. */
+static void cg_net_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	TypeKind rk = e->lhs->type.kind;
+	const char *n = e->name;
+	const char *fn = NULL;
+	if (rk==TY_LISTENER)
+	{
+		if (strcmp(n,"accept")==0)
+		{
+			fn = e->arg_count==1 ? "bzy_listener_accept_timeout" : "bzy_listener_accept";
+		}
+		else if (strcmp(n,"tryAccept")==0)
+		{
+			fn = "bzy_listener_try_accept";
+		}
+		else if (strcmp(n,"port")==0)
+		{
+			fn = "bzy_listener_port";
+		}
+		else
+		{
+			fn = "bzy_listener_close";
+		}
+	}
+	else if (rk==TY_SOCKET)
+	{
+		if (strcmp(n,"read")==0)
+		{
+			fn = e->arg_count==2 ? "bzy_socket_read_timeout" : "bzy_socket_read";
+		}
+		else if (strcmp(n,"tryRead")==0)
+		{
+			fn = "bzy_socket_try_read";
+		}
+		else if (strcmp(n,"readText")==0)
+		{
+			fn = e->arg_count==2 ? "bzy_socket_read_text_timeout" : "bzy_socket_read_text";
+		}
+		else if (strcmp(n,"tryReadText")==0)
+		{
+			fn = "bzy_socket_try_read_text";
+		}
+		else if (strcmp(n,"write")==0)
+		{
+			fn = "bzy_socket_write";
+		}
+		else if (strcmp(n,"writeText")==0)
+		{
+			fn = "bzy_socket_write_text";
+		}
+		else
+		{
+			fn = "bzy_socket_close";
+		}
+	}
+	else if (rk==TY_UDPSOCKET)
+	{
+		if (strcmp(n,"sendTo")==0)
+		{
+			fn = "bzy_udp_send_to";
+		}
+		else if (strcmp(n,"sendTextTo")==0)
+		{
+			fn = "bzy_udp_send_text_to";
+		}
+		else if (strcmp(n,"receive")==0)
+		{
+			fn = e->arg_count==1 ? "bzy_udp_receive_timeout" : "bzy_udp_receive";
+		}
+		else if (strcmp(n,"tryReceive")==0)
+		{
+			fn = "bzy_udp_try_receive";
+		}
+		else if (strcmp(n,"port")==0)
+		{
+			fn = "bzy_udp_port";
+		}
+		else
+		{
+			fn = "bzy_udp_close";
+		}
+	}
+	else   /* TY_DATAGRAM. */
+	{
+		if (strcmp(n,"data")==0)
+		{
+			fn = "bzy_dgram_data";
+		}
+		else if (strcmp(n,"text")==0)
+		{
+			fn = "bzy_dgram_text";
+		}
+		else if (strcmp(n,"host")==0)
+		{
+			fn = "bzy_dgram_host";
+		}
+		else
+		{
+			fn = "bzy_dgram_port";
+		}
+	}
+
+	TypeRef ps[3];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+}
+
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
 /* System.shell(command[, wait]) -> bzy_system_shell(command, wait). command in
    rcx, wait in rdx (0 when the optional boolean is absent). The command string is
@@ -2017,6 +2167,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_timer_method(cg,tt,e);
 		}
+		else if (e->lhs->type.kind==TY_LISTENER || e->lhs->type.kind==TY_SOCKET
+				 || e->lhs->type.kind==TY_UDPSOCKET || e->lhs->type.kind==TY_DATAGRAM)
+		{
+			cg_net_method(cg,tt,e);
+		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
 			cg_sb_method(cg,tt,e);
@@ -2123,6 +2278,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"System.",7)==0)
 		{
 			cg_system(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Network.",8)==0)
+		{
+			cg_network(cg,tt,e);
 		}
 		else
 		{
@@ -3074,6 +3233,34 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_timer_after");
 	cg_emit(cg,"extern bzy_timer_every");
 	cg_emit(cg,"extern bzy_timer_cancel");
+	cg_emit(cg,"extern bzy_listener_new");
+	cg_emit(cg,"extern bzy_listener_accept");
+	cg_emit(cg,"extern bzy_listener_accept_timeout");
+	cg_emit(cg,"extern bzy_listener_try_accept");
+	cg_emit(cg,"extern bzy_listener_port");
+	cg_emit(cg,"extern bzy_listener_close");
+	cg_emit(cg,"extern bzy_socket_connect");
+	cg_emit(cg,"extern bzy_socket_read");
+	cg_emit(cg,"extern bzy_socket_read_timeout");
+	cg_emit(cg,"extern bzy_socket_try_read");
+	cg_emit(cg,"extern bzy_socket_read_text");
+	cg_emit(cg,"extern bzy_socket_read_text_timeout");
+	cg_emit(cg,"extern bzy_socket_try_read_text");
+	cg_emit(cg,"extern bzy_socket_write");
+	cg_emit(cg,"extern bzy_socket_write_text");
+	cg_emit(cg,"extern bzy_socket_close");
+	cg_emit(cg,"extern bzy_udp_new");
+	cg_emit(cg,"extern bzy_udp_port");
+	cg_emit(cg,"extern bzy_udp_send_to");
+	cg_emit(cg,"extern bzy_udp_send_text_to");
+	cg_emit(cg,"extern bzy_udp_receive");
+	cg_emit(cg,"extern bzy_udp_receive_timeout");
+	cg_emit(cg,"extern bzy_udp_try_receive");
+	cg_emit(cg,"extern bzy_udp_close");
+	cg_emit(cg,"extern bzy_dgram_data");
+	cg_emit(cg,"extern bzy_dgram_text");
+	cg_emit(cg,"extern bzy_dgram_host");
+	cg_emit(cg,"extern bzy_dgram_port");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

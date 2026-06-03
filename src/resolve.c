@@ -472,6 +472,45 @@ static void resolve_system(Expr *e)
 	die(e->line,"Unknown System method: ",m);
 }
 
+static void resolve_network(Expr *e)
+{
+	const char *m = e->name + 8;   /* After "Network.". */
+	if (strcmp(m,"listen")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"Network.listen(port) takes one integer port.",NULL);
+		}
+
+		e->type.kind=TY_LISTENER;
+		return;
+	}
+
+	if (strcmp(m,"connect")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"Network.connect(host, port) takes a string and an integer.",NULL);
+		}
+
+		e->type.kind=TY_SOCKET;
+		return;
+	}
+
+	if (strcmp(m,"udp")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"Network.udp(port) takes one integer port.",NULL);
+		}
+
+		e->type.kind=TY_UDPSOCKET;
+		return;
+	}
+
+	die(e->line,"Unknown Network method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -1216,6 +1255,263 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_LISTENER)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"accept")==0)
+			{
+				if (e->arg_count==1 && !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"Listener.accept(timeoutMs) takes one integer.",NULL);
+				}
+
+				if (e->arg_count>1)
+				{
+					die(e->line,"Listener.accept() / accept(timeoutMs).",NULL);
+				}
+
+				e->type.kind=TY_SOCKET;   /* null on timeout when a timeout is given. */
+			}
+			else if (strcmp(e->name,"tryAccept")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Listener.tryAccept() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_SOCKET;   /* null if none pending. */
+			}
+			else if (strcmp(e->name,"port")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Listener.port() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Listener.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown Listener method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_SOCKET)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"read")==0 || strcmp(e->name,"tryRead")==0)
+			{
+				int is_try = (e->name[0]=='t');
+				if (e->arg_count<1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"Socket.read(maxBytes[, timeoutMs]) takes integer(s).",NULL);
+				}
+
+				if (e->arg_count>1 && (is_try || !ty_is_int(e->args[1]->type.kind)))
+				{
+					die(e->line,"Socket.read second arg is an integer timeout (not on tryRead).",NULL);
+				}
+
+				if (e->arg_count>2)
+				{
+					die(e->line,"Socket.read takes at most maxBytes, timeoutMs.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_BYTE;
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);   /* byte[] (null on timeout/none). */
+			}
+			else if (strcmp(e->name,"readText")==0 || strcmp(e->name,"tryReadText")==0)
+			{
+				int is_try = (e->name[0]=='t');
+				if (e->arg_count<1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"Socket.readText(maxBytes[, timeoutMs]) takes integer(s).",NULL);
+				}
+
+				if (e->arg_count>1 && (is_try || !ty_is_int(e->args[1]->type.kind)))
+				{
+					die(e->line,"Socket.readText second arg is an integer timeout (not on tryReadText).",NULL);
+				}
+
+				if (e->arg_count>2)
+				{
+					die(e->line,"Socket.readText takes at most maxBytes, timeoutMs.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"write")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY)
+				{
+					die(e->line,"Socket.write(byte[]) takes one byte[].",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"writeText")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"Socket.writeText(string) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Socket.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown Socket method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_UDPSOCKET)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"sendTo")==0)
+			{
+				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_STRING
+						|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_ARRAY)
+				{
+					die(e->line,"UdpSocket.sendTo(host, port, byte[]).",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"sendTextTo")==0)
+			{
+				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_STRING
+						|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+				{
+					die(e->line,"UdpSocket.sendTextTo(host, port, string).",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"receive")==0)
+			{
+				if (e->arg_count==1 && !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"UdpSocket.receive(timeoutMs) takes one integer.",NULL);
+				}
+
+				if (e->arg_count>1)
+				{
+					die(e->line,"UdpSocket.receive() / receive(timeoutMs).",NULL);
+				}
+
+				e->type.kind=TY_DATAGRAM;   /* null on timeout when a timeout is given. */
+			}
+			else if (strcmp(e->name,"tryReceive")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"UdpSocket.tryReceive() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_DATAGRAM;   /* null if none ready. */
+			}
+			else if (strcmp(e->name,"port")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"UdpSocket.port() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"UdpSocket.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown UdpSocket method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_DATAGRAM)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"data")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Datagram.data() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_BYTE;
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"text")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Datagram.text() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"host")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Datagram.host() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"port")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Datagram.port() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else
+			{
+				die(e->line,"Unknown Datagram method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			resolve_args(st,e,tc);
@@ -1549,6 +1845,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"System.",7)==0)
 		{
 			resolve_system(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Network.",8)==0)
+		{
+			resolve_network(e);
 			break;
 		}
 
