@@ -156,6 +156,14 @@ void    bzy_sched_park(void);              /* Suspend the running breeze (off th
 void    bzy_sched_park_unlock(void *srwlock); /* Park; the scheduler releases the SRWLOCK after the switch. */
 void    bzy_sched_wake(void *breeze);      /* Re-enqueue a parked breeze. */
 
+/* Offload pool (6b-1): run a blocking task on a real OS-thread pool while the
+   calling breeze parks. fn(ctx) runs on a worker; ctx is the caller's stack node
+   (stable while parked); the worker only reads the caller's buffers. */
+void    bzy_offload_run(void (*fn)(void*), void *ctx);   /* Submit + park; returns when fn has run. */
+int64_t bzy_offload_inflight(void);   /* Breezes currently parked on an offload task. */
+void    bzy_offload_shutdown(void);   /* Drain/join the pool (no-op if never started). */
+void    bzy_sched_wake_external(void *breeze);   /* Wake a breeze from a non-scheduler thread. */
+
 void   *bzy_channel_new(int64_t cap, int64_t elem_managed); /* Owned (+1) bounded channel. */
 void    bzy_channel_send(void *ch, int64_t v);   /* Parks if full; moves a managed value in. */
 int64_t bzy_channel_recv(void *ch);              /* Parks if empty; returns an owned value. */

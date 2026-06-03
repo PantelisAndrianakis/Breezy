@@ -189,6 +189,11 @@ void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again, on this 
 	enqueue_on(t_wid, (Breeze*)breeze);
 }
 
+void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread (e.g. an offload worker). */
+{
+	enqueue_on(0, (Breeze*)breeze);   /* Worker 0's queue; stealing rebalances. No thread-local state needed. */
+}
+
 void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re-checks timers. */
 {
 	if (g_work_sem)
@@ -288,6 +293,13 @@ static void worker_loop(void)
 			}
 
 			/* No ready work and no pending timer. */
+			if (bzy_offload_inflight() > 0)
+			{
+				/* A breeze is parked on an offload task; a worker will wake it. */
+				WaitForSingleObject(g_work_sem, INFINITE);
+				continue;
+			}
+
 			if (g_nworkers == 1 && g_live > 0)
 			{
 				/* Single worker, breezes remain parked, nothing can ever wake them. */

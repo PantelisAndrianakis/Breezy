@@ -954,6 +954,28 @@ static void test_scheduler_roundrobin(void)
 	ASSERT_INT(g_breeze_log[3], 4);   /* ...b resumes. */
 }
 
+static int g_off_ran;
+static void off_fn(void *p) { int *v = (int*)p; *v += 1; g_off_ran = 1; }   /* Runs on an offload thread. */
+static int g_off_result;
+static void off_breeze(void)
+{
+	int v = 41;
+	bzy_offload_run(off_fn, &v);   /* Parks here; resumes after the worker mutated v. */
+	g_off_result = v;
+}
+
+static void test_offload_runs_and_resumes(void)
+{
+	g_off_ran = 0;
+	g_off_result = 0;
+	bzy_sched_init();
+	bzy_spawn(off_breeze);
+	bzy_sched_run();                 /* Returns only once the breeze finished (proves it resumed). */
+	ASSERT_INT(g_off_ran, 1);        /* The task ran on the pool. */
+	ASSERT_INT(g_off_result, 42);    /* The mutation is visible after resume. */
+	bzy_offload_shutdown();
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1010,6 +1032,7 @@ int main(void)
 	RUN(test_file_predicates);
 	RUN(test_file_read_write);
 	RUN(test_file_search);
+	RUN(test_offload_runs_and_resumes);
 	SUMMARY();
 	return 0;
 }
