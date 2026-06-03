@@ -7,7 +7,7 @@ void main()
 	l.add(4);
 	l.add(5);
 	sum = 0;
-	foreach (int x : l)
+	foreach (int x in l)
 	{
 		sum = sum + x;
 	}

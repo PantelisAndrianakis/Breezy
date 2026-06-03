@@ -4,7 +4,7 @@ void main()
 	int sum;
 	s = "ABC";
 	sum = 0;
-	foreach (int b : s)
+	foreach (int b in s)
 	{
 		sum = sum + b;
 	}

@@ -341,7 +341,7 @@ up = path.toUpper();            // /API/USERS  (path itself unchanged)
 string[] parts;
 parts = "red,green,blue".split(",");
 print(parts.length);            // 3
-foreach (string p : parts)
+foreach (string p in parts)
 {
     print(p);                   // red / green / blue
 }
@@ -395,7 +395,7 @@ print(nums.contains(20));  // true
 
 int sum;
 sum = 0;
-foreach (int n : nums)
+foreach (int n in nums)
 {
     sum = sum + n;
 }
@@ -505,13 +505,13 @@ for (int j = 0; j <= 10; j++)
 }
 
 // foreach over arrays, strings, maps, and collections.
-foreach (int n : nums)
+foreach (int n in nums)
 {
     sum = sum + n;
 }
 
 // break / continue work in while, for, and foreach.
-foreach (int n : nums)
+foreach (int n in nums)
 {
     if (n == 0)
     {
@@ -598,10 +598,10 @@ void main()
 ```
 source.bzy → Breezy compiler → output.asm → NASM → output.o ─┐
                                                              ├─ GCC ─→ native binary
-                              Breezy runtime (libbreezy.a) ──┘
+                              Breezy runtime (lib_breezy.a) ─┘
 ```
 
-The Breezy compiler is written in C99 with no external dependencies. It parses to a typed AST, performs escape and reference analysis, then lowers to NASM x86-64 assembly. The compiled program links against a small **Breezy runtime** (`libbreezy.a`) providing the allocator, ARC + cycle collector, the breeze scheduler, channels, and the async I/O facade - plus whatever native C libraries you declared.
+The Breezy compiler is written in C99 with no external dependencies. It parses to a typed AST, performs escape and reference analysis, then lowers to NASM x86-64 assembly. The compiled program links against a small **Breezy runtime** (`lib_breezy.a`) providing the allocator, ARC + cycle collector, the breeze scheduler, channels, and the async I/O facade - plus whatever native C libraries you declared.
 
 **Linux (ELF64):**
 ```sh

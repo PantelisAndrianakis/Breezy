@@ -12,7 +12,7 @@ void main()
 	}
 
 	sum = 0;
-	foreach (int x : a)
+	foreach (int x in a)
 	{
 		sum = sum + x;
 	}

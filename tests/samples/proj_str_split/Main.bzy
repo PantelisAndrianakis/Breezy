@@ -7,7 +7,7 @@ void main()
 	parts = csv.split(",");
 	print(parts.length);            // 3
 
-	foreach (string p : parts)
+	foreach (string p in parts)
 	{
 		print(p);                   // red / green / blue
 	}

@@ -9,7 +9,7 @@ void main()
 	m.put("c", 3);
 	sum = 0;
 	count = 0;
-	foreach (string k : m)
+	foreach (string k in m)
 	{
 		sum = sum + m.get(k);
 		count = count + 1;

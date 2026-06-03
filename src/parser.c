@@ -760,7 +760,7 @@ static Stmt *parse_foreach(Parser *p)
 	parse_type(p,&s->decl_type);
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(s->decl_name,name.text);
-	expect(p,TOKEN_COLON);
+	expect(p,TOKEN_IN);
 	s->expr=parse_expr(p);
 	expect(p,TOKEN_RPAREN);
 	s->then_blk=parse_block(p);

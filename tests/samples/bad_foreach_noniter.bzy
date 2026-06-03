@@ -2,7 +2,7 @@ void main()
 {
 	int n;
 	n = 5;
-	foreach (int x : n)
+	foreach (int x in n)
 	{
 		print(x);
 	}

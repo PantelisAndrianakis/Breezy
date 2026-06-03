@@ -9,7 +9,7 @@ void main()
 	s.add(10);
 	sum = 0;
 	count = 0;
-	foreach (int x : s)
+	foreach (int x in s)
 	{
 		sum = sum + x;
 		count = count + 1;

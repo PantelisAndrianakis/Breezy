@@ -194,7 +194,7 @@ static void test_incdec_type(void)
 static void test_foreach_array_elem_type(void)
 {
 	Func *f=build1("void main() { int[] a; int s; a = new int[3]; s = 0; "
-				   "foreach (int x : a) { s = s + x; } }")->funcs[0];
+				   "foreach (int x in a) { s = s + x; } }")->funcs[0];
 	Stmt *fe=f->body->stmts[4];
 	ASSERT_INT(fe->kind, ST_FOREACH);
 	ASSERT_INT(fe->decl_type.kind, TY_INT);
@@ -205,7 +205,7 @@ static void test_foreach_array_elem_type(void)
 static void test_foreach_map_key_type(void)
 {
 	Func *f=build1("void main() { map<string,int> m; m = new map<string,int>(); "
-				   "foreach (string k : m) { print(k); } }")->funcs[0];
+				   "foreach (string k in m) { print(k); } }")->funcs[0];
 	Stmt *fe=f->body->stmts[2];
 	ASSERT_INT(fe->kind, ST_FOREACH);
 	ASSERT_INT(fe->decl_type.kind, TY_STRING);

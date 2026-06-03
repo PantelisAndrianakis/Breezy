@@ -296,7 +296,7 @@ static void test_try_catch_parse(void)
 
 static void test_foreach_stmt(void)
 {
-	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x : a) { print(x); } }");
+	Unit *u = parse_unit_str("void m() { int[] a; foreach (int x in a) { print(x); } }");
 	Stmt *fe = u->funcs[0]->body->stmts[1];
 	ASSERT_INT(fe->kind, ST_FOREACH);
 	ASSERT_INT(fe->decl_type.kind, TY_INT);
