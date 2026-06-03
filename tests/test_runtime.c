@@ -15,6 +15,7 @@ void *__bzy_vtable_parents[1] = { 0 };
 long long __bzy_vtable_parent_count = 0;
 char __vtable_IndexOutOfBounds[8] = { 0 };
 char __vtable_IOException[8] = { 0 };
+char __vtable_NumberFormatException[8] = { 0 };
 
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],
@@ -1304,6 +1305,22 @@ static void test_logger_drains_and_closes(void)
 	remove("log_unit.tmp");
 }
 
+static void test_string_parse_values(void)
+{
+	void *si = bzy_str_new("42", 2);
+	void *sl = bzy_str_new("9000000000", 10);   /* > 2^31, fits in long. */
+	void *sd = bzy_str_new("3.5", 3);
+	void *sb = bzy_str_new("TRUE", 4);
+	ASSERT_INT((int)bzy_str_to_int(si), 42);
+	ASSERT(bzy_str_to_long(sl) == 9000000000LL);
+	ASSERT(bzy_str_to_double(sd) == 3.5);
+	ASSERT_INT((int)bzy_str_to_bool(sb), 1);     /* Case-insensitive. */
+	bzy_release(si);
+	bzy_release(sl);
+	bzy_release(sd);
+	bzy_release(sb);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1370,6 +1387,7 @@ int main(void)
 	RUN(test_filechannel_positioned_io);
 	RUN(test_filewriter_buffered_flush);
 	RUN(test_logger_drains_and_closes);
+	RUN(test_string_parse_values);
 	SUMMARY();
 	return 0;
 }

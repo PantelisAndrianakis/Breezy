@@ -543,6 +543,16 @@ static void test_logger_resolves(void)
 	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);      /* g.log(...) -> void. */
 }
 
+static void test_string_parse_types(void)
+{
+	Func *f=build1("void main() { int a; a = \"1\".toInt(); long b; b = \"2\".toLong();"
+				   " double c; c = \"3.0\".toDouble(); boolean d; d = \"true\".toBool(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_LONG);
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_DOUBLE);
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_BOOL);
+}
+
 static void test_null_resolves(void)
 {
 	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); boolean b; b = (s == null);"
@@ -625,6 +635,7 @@ int main(void)
 	RUN(test_filechannel_resolves);
 	RUN(test_filewriter_resolves);
 	RUN(test_logger_resolves);
+	RUN(test_string_parse_types);
 	RUN(test_null_resolves);
 	SUMMARY();
 	return 0;

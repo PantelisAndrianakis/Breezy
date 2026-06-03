@@ -1,0 +1,29 @@
+// Parse good and bad strings. A valid parse returns the number; a malformed one
+// throws NumberFormatException, which the try/catch turns into a default. Prints
+// 42, then 7 (the default after "oops" fails to parse), then true.
+void main()
+{
+	int a;
+	try
+	{
+		a = "42".toInt();
+	}
+	catch (Exception e)
+	{
+		a = -1;
+	}
+	print(a);            // 42
+
+	int b;
+	try
+	{
+		b = "oops".toInt();
+	}
+	catch (Exception e)
+	{
+		b = 7;
+	}
+	print(b);            // 7
+
+	print("TRUE".toBool());   // true (case-insensitive)
+}

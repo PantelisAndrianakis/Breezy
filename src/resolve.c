@@ -407,6 +407,22 @@ static void resolve_string_method(Expr *e)
 		e->type.kind = TY_ARRAY;
 		e->type.elem = typeref_box(elem);
 	}
+	else if (strcmp(nm,"toInt")==0 || strcmp(nm,"toLong")==0 || strcmp(nm,"toByte")==0
+			 || strcmp(nm,"toShort")==0 || strcmp(nm,"toFloat")==0 || strcmp(nm,"toDouble")==0
+			 || strcmp(nm,"toBool")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"This string parse method takes no arguments.",NULL);
+		}
+
+		e->type.kind = strcmp(nm,"toInt")==0    ? TY_INT :
+					   strcmp(nm,"toLong")==0   ? TY_LONG :
+					   strcmp(nm,"toByte")==0   ? TY_BYTE :
+					   strcmp(nm,"toShort")==0  ? TY_SHORT :
+					   strcmp(nm,"toFloat")==0  ? TY_FLOAT :
+					   strcmp(nm,"toDouble")==0 ? TY_DOUBLE : TY_BOOL;
+	}
 	else
 	{
 		die(e->line,"Unknown string method: ",nm);

@@ -46,6 +46,18 @@ void types_register_builtins(TypeTable *tt)
 	io->object_size = 32;
 	io->vtable_size = 0;
 	io->method_count = 0;
+
+	ClassInfo *nf = &tt->classes[tt->class_count++];
+	memset(nf, 0, sizeof(*nf));
+	strcpy(nf->name, "NumberFormatException");
+	nf->parent = c;                      /* Subclass of Exception. */
+	strcpy(nf->fields[0].name, "message");
+	nf->fields[0].type.kind = TY_STRING;
+	nf->fields[0].offset = 24;
+	nf->field_count = 1;
+	nf->object_size = 32;
+	nf->vtable_size = 0;
+	nf->method_count = 0;
 }
 
 ClassInfo *types_find_class(TypeTable *tt, const char *name)

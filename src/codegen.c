@@ -1499,6 +1499,13 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"charAt")==0           ? "bzy_str_char_at" :
 		strcmp(nm,"repeat")==0           ? "bzy_str_repeat" :
 		strcmp(nm,"split")==0            ? "bzy_str_split" :
+		strcmp(nm,"toInt")==0            ? "bzy_str_to_int" :
+		strcmp(nm,"toLong")==0           ? "bzy_str_to_long" :
+		strcmp(nm,"toByte")==0           ? "bzy_str_to_byte" :
+		strcmp(nm,"toShort")==0          ? "bzy_str_to_short" :
+		strcmp(nm,"toFloat")==0          ? "bzy_str_to_float" :
+		strcmp(nm,"toDouble")==0         ? "bzy_str_to_double" :
+		strcmp(nm,"toBool")==0           ? "bzy_str_to_bool" :
 		"bzy_str_index_of";
 	TypeRef ps[2];
 	for (int i=0; i<e->arg_count; i++)
@@ -1508,6 +1515,38 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+
+	/* The parse methods throw NumberFormatException on malformed input: emit the
+	   post-call check, preserving the result (int/bool in rax, fp in xmm0). */
+	int is_parse = strcmp(nm,"toInt")==0 || strcmp(nm,"toLong")==0 || strcmp(nm,"toByte")==0
+				   || strcmp(nm,"toShort")==0 || strcmp(nm,"toFloat")==0
+				   || strcmp(nm,"toDouble")==0 || strcmp(nm,"toBool")==0;
+	if (is_parse)
+	{
+		int fp = ty_is_float(e->type.kind);
+		if (fp)
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		}
+
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea rcx, [rel .L%d]", k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov rdx, rbp");
+		cg_aligned_call(cg,"bzy_number_check");
+		if (fp)
+		{
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
 }
 
 /* scheduleAfter(f, delayMs) / scheduleEvery(f, delayMs, periodMs): pass the
@@ -3536,6 +3575,14 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_last_index_of");
 	cg_emit(cg,"extern bzy_str_repeat");
 	cg_emit(cg,"extern bzy_str_split");
+	cg_emit(cg,"extern bzy_str_to_int");
+	cg_emit(cg,"extern bzy_str_to_long");
+	cg_emit(cg,"extern bzy_str_to_byte");
+	cg_emit(cg,"extern bzy_str_to_short");
+	cg_emit(cg,"extern bzy_str_to_float");
+	cg_emit(cg,"extern bzy_str_to_double");
+	cg_emit(cg,"extern bzy_str_to_bool");
+	cg_emit(cg,"extern bzy_number_check");
 	cg_emit(cg,"extern bzy_vec_new");
 	cg_emit(cg,"extern bzy_vec_len");
 	cg_emit(cg,"extern bzy_vec_push_back");
@@ -3604,6 +3651,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"global __bzy_vtable_parent_count");
 	cg_emit(cg,"global __vtable_IndexOutOfBounds");   /* Referenced by the runtime bzy_oob. */
 	cg_emit(cg,"global __vtable_IOException");        /* Referenced by the runtime bzy_io_check. */
+	cg_emit(cg,"global __vtable_NumberFormatException");   /* Referenced by the runtime bzy_number_check. */
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)

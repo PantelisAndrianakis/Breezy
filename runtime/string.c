@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 /* Immutable string layout (one allocation):
    0: vtable ptr  8: refcount  16: gcinfo  24: length  32: bytes[length+1].
@@ -481,4 +482,156 @@ void bzy_sb_append(void *sb, void *s)
 void *bzy_sb_to_string(void *sb)
 {
 	return bzy_str_new(*SB_BUF(sb), *SB_LEN(sb));
+}
+
+/* String -> number parsing. A parse op sets g_parse_error on malformed input; the
+   codegen-emitted bzy_number_check then throws NumberFormatException, locating the
+   call site with pc/frame (the bzy_io_check / bzy_oob pattern). */
+
+extern char __vtable_NumberFormatException[];   /* Emitted per-program by codegen. */
+
+static __thread const char *g_parse_error;       /* Set by a parse op; consumed by bzy_number_check. */
+
+static void parse_fail(const char *msg)
+{
+	g_parse_error = msg;                          /* Static strings only (stable lifetime). */
+}
+
+void bzy_number_check(int64_t pc, int64_t frame)
+{
+	if (!g_parse_error)
+	{
+		return;
+	}
+
+	void *msg = bzy_str_new(g_parse_error, (int64_t)strlen(g_parse_error));
+	g_parse_error = NULL;
+	void *exc = bzy_alloc(32);
+	*(void**)exc = (void*)__vtable_NumberFormatException;
+	*(void**)((char*)exc + 24) = msg;             /* Exception.message. */
+	bzy_throw(exc, pc, frame);                     /* Never returns. */
+}
+
+/* Parse the whole string as a base-10 long. *ok=0 on failure (empty / trailing
+   garbage / overflow). Leading whitespace is skipped by strtoll. */
+static long long parse_ll(void *s, int *ok)
+{
+	const char *d = bzy_str_data(s);
+	char *end;
+	errno = 0;
+	long long v = strtoll(d, &end, 10);
+	*ok = (end != d && *end == '\0' && errno == 0);
+	return v;
+}
+
+int64_t bzy_str_to_long(void *s)
+{
+	int ok;
+	long long v = parse_ll(s, &ok);
+	if (!ok)
+	{
+		parse_fail("String.toLong: not a long integer.");
+		return 0;
+	}
+
+	return (int64_t)v;
+}
+
+int64_t bzy_str_to_int(void *s)
+{
+	int ok;
+	long long v = parse_ll(s, &ok);
+	if (!ok || v < -2147483647LL - 1 || v > 2147483647LL)
+	{
+		parse_fail("String.toInt: not a 32-bit integer.");
+		return 0;
+	}
+
+	return (int64_t)v;
+}
+
+int64_t bzy_str_to_short(void *s)
+{
+	int ok;
+	long long v = parse_ll(s, &ok);
+	if (!ok || v < -32768 || v > 32767)
+	{
+		parse_fail("String.toShort: not a 16-bit integer.");
+		return 0;
+	}
+
+	return (int64_t)v;
+}
+
+int64_t bzy_str_to_byte(void *s)
+{
+	int ok;
+	long long v = parse_ll(s, &ok);
+	if (!ok || v < -128 || v > 127)
+	{
+		parse_fail("String.toByte: not an 8-bit integer.");
+		return 0;
+	}
+
+	return (int64_t)v;
+}
+
+double bzy_str_to_double(void *s)
+{
+	const char *d = bzy_str_data(s);
+	char *end;
+	double v = strtod(d, &end);
+	if (end == d || *end != '\0')
+	{
+		parse_fail("String.toDouble: not a number.");
+		return 0;
+	}
+
+	return v;
+}
+
+float bzy_str_to_float(void *s)
+{
+	const char *d = bzy_str_data(s);
+	char *end;
+	float v = strtof(d, &end);
+	if (end == d || *end != '\0')
+	{
+		parse_fail("String.toFloat: not a number.");
+		return 0;
+	}
+
+	return v;
+}
+
+static int str_ieq(const char *a, const char *b)
+{
+	for (; *a && *b; a++, b++)
+	{
+		int ca = (*a >= 'A' && *a <= 'Z') ? *a + 32 : *a;
+		int cb = (*b >= 'A' && *b <= 'Z') ? *b + 32 : *b;
+		if (ca != cb)
+		{
+			return 0;
+		}
+	}
+
+	return *a == '\0' && *b == '\0';
+}
+
+int64_t bzy_str_to_bool(void *s)
+{
+	const char *d = bzy_str_data(s);
+	if (str_ieq(d, "true"))
+	{
+		return 1;
+	}
+
+	if (str_ieq(d, "false"))
+	{
+		return 0;
+	}
+
+	parse_fail("String.toBool: not a boolean.");
+	return 0;
 }

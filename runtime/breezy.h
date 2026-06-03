@@ -48,6 +48,20 @@ int64_t bzy_str_char_at(void *s, int64_t i);           /* Byte at i as int, or -
 int64_t bzy_str_last_index_of(void *s, void *needle);  /* Last byte index of needle, or -1 (empty -> len). */
 void   *bzy_str_repeat(void *s, int64_t n);            /* s repeated n times (n<=0 -> ""); owned. */
 void   *bzy_str_split(void *s, void *sep);             /* Split on sep -> owned string[] (empty sep -> [s]). */
+
+/* String -> number parsing. On malformed input (empty, trailing garbage, or out of
+   range) each sets a thread-local error; the codegen-emitted bzy_number_check then
+   throws NumberFormatException. Leading whitespace is tolerated. toBool accepts
+   "true"/"false" case-insensitively. */
+int64_t bzy_str_to_int(void *s);
+int64_t bzy_str_to_long(void *s);
+int64_t bzy_str_to_byte(void *s);
+int64_t bzy_str_to_short(void *s);
+float   bzy_str_to_float(void *s);
+double  bzy_str_to_double(void *s);
+int64_t bzy_str_to_bool(void *s);
+void    bzy_number_check(int64_t pc, int64_t frame);   /* Throw NumberFormatException if a parse failed. */
+
 void    bzy_print_str(void *s);                      /* Write the bytes + '\n'. */
 
 void   *bzy_sb_new(void);                            /* Owned (+1) empty StringBuilder. */
