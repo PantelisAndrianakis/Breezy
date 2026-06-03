@@ -1480,6 +1480,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		MethodInfo *m=types_find_method(c,e->name);
 		if (!m)
 		{
+			if (strcmp(e->name,"getClassName")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"getClassName() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_STRING;   /* Builtin: dynamic class name, lowered directly in codegen. */
+				break;
+			}
+
 			die(e->line,"Unknown method: ",e->name);
 		}
 
