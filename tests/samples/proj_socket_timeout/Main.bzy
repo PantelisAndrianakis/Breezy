@@ -1,0 +1,24 @@
+// No client connects: accept(timeoutMs) times out (null) and tryAccept finds
+// nothing (null). Prints 2 - both blocking-control paths return a detectable
+// null and the program never hangs (the timeout cancels the pending accept).
+void main()
+{
+	Listener l;
+	l = Network.listen(0);
+	int misses;
+	misses = 0;
+	Socket a;
+	a = l.accept(30);          // Parks up to 30ms, then times out -> null.
+	if (a == null)
+	{
+		misses += 1;
+	}
+	Socket b;
+	b = l.tryAccept();         // Nothing pending -> null, no park.
+	if (b == null)
+	{
+		misses += 1;
+	}
+	print(misses);             // 2
+	l.close();
+}

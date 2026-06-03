@@ -19,7 +19,8 @@ typedef enum
 	TY_UDPSOCKET,                             /* UdpSocket: UDP datagram handle. */
 	TY_DATAGRAM,                              /* Datagram: a received UDP payload + sender. */
 	TY_OBJECT,
-	TY_STRING   /* Immutable string. */
+	TY_STRING,  /* Immutable string. */
+	TY_NULL     /* The `null` literal: a bare 0 assignable to any managed reference. */
 } TypeKind;
 typedef struct TypeRef
 {
@@ -65,6 +66,7 @@ static inline int ty_bits(TypeKind k)
 	case TY_DATAGRAM:
 	case TY_OBJECT:
 	case TY_STRING:
+	case TY_NULL:
 		return 64;
 	case TY_VOID:
 		return 0;
@@ -115,7 +117,7 @@ static inline int ty_rank(TypeKind k)
 typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
-	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX
+	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL
 } ExprKind;
 
 typedef struct Expr Expr;

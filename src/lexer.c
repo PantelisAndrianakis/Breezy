@@ -20,7 +20,7 @@ static const struct
 	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
 	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"string",TOKEN_STRING},
 	{"map",TOKEN_MAP},{"channel",TOKEN_CHANNEL},
-	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{NULL,0}
+	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{"null",TOKEN_NULL},{NULL,0}
 };
 
 void lexer_init(Lexer *l, const char *src)
@@ -478,6 +478,8 @@ const char *token_type_name(TokenType t)
 		return "true";
 	case TOKEN_FALSE:
 		return "false";
+	case TOKEN_NULL:
+		return "null";
 	case TOKEN_PLUS:
 		return "+";
 	case TOKEN_MINUS:

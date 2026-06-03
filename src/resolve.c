@@ -124,6 +124,11 @@ static int typeref_equal(const TypeRef *x, const TypeRef *y)
 
 static int assignable(const TypeRef *to, const TypeRef *from)
 {
+	if (from->kind==TY_NULL && ty_is_managed(to->kind))
+	{
+		return 1;   /* null assigns to any managed reference. */
+	}
+
 	if (to->kind==TY_ARRAY && from->kind==TY_ARRAY)
 	{
 		return typeref_equal(to,from);   /* Invariant: int[]!=long[], Dog[]!=Animal[]. */
@@ -798,6 +803,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_BOOL:
 		e->type.kind=TY_BOOL;
 		break;
+	case EX_NULL:
+		e->type.kind=TY_NULL;
+		break;
 	case EX_FLOAT:
 		e->type.kind = (e->int_suffix[0]=='f') ? TY_FLOAT : TY_DOUBLE;
 		break;
@@ -1049,7 +1057,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Mixed signedness in comparison; add a cast.",NULL);
 			}
 
-			if (!both_int && !(a==TY_BOOL && b==TY_BOOL) && !(a==TY_OBJECT && b==TY_OBJECT))
+			int a_null=(a==TY_NULL), b_null=(b==TY_NULL);
+			int managed_vs_null=(a_null && ty_is_managed(b)) || (b_null && ty_is_managed(a)) || (a_null && b_null);
+			if (!both_int && !(a==TY_BOOL && b==TY_BOOL) && !(a==TY_OBJECT && b==TY_OBJECT) && !managed_vs_null)
 			{
 				die(e->line,"'==' operands are not comparable.",NULL);
 			}

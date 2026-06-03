@@ -257,6 +257,12 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+	if (check(p,TOKEN_NULL))
+	{
+		Expr *e=expr_new(EX_NULL,line);
+		advance(p);
+		return e;
+	}
 	if (check(p,TOKEN_THIS))
 	{
 		advance(p);

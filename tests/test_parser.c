@@ -25,6 +25,12 @@ static void test_bool_literal(void)
 	ASSERT_INT(f->int_val, 0);
 }
 
+static void test_null_literal(void)
+{
+	Expr *e = parse_str("null");
+	ASSERT_INT(e->kind, EX_NULL);
+}
+
 static void test_cast(void)
 {
 	Expr *e = parse_str("(byte)x");
@@ -406,6 +412,7 @@ int main(void)
 	printf("Parser (expr) tests\n");
 	RUN(test_int_literal);
 	RUN(test_bool_literal);
+	RUN(test_null_literal);
 	RUN(test_cast);
 	RUN(test_float_literal);
 	RUN(test_float_cast);

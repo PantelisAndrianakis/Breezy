@@ -517,6 +517,14 @@ static void test_network_tcp_resolves(void)
 	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* socket.write -> int. */
 }
 
+static void test_null_resolves(void)
+{
+	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); boolean b; b = (s == null);"
+				   " byte[] x; x = null; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* (s == null) -> bool. */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_NULL);   /* null assigns to a managed byte[]. */
+}
+
 static void test_network_udp_resolves(void)
 {
 	Func *f=build1("void main() { UdpSocket u; u = Network.udp(0); Datagram d; d = u.receive();"
@@ -588,6 +596,7 @@ int main(void)
 	RUN(test_getclassname_resolves_string);
 	RUN(test_network_tcp_resolves);
 	RUN(test_network_udp_resolves);
+	RUN(test_null_resolves);
 	SUMMARY();
 	return 0;
 }

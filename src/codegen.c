@@ -1979,6 +1979,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_BOOL:
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
+	case EX_NULL:
+		cg_emit(cg,"    mov rax, 0");   /* null is a bare 0 pointer (never retained/released). */
+		break;
 	case EX_NEWARRAY:
 		cg_expr(cg,tt,e->lhs);             /* Count -> rax. */
 		cg_emit(cg,"    mov rcx, rax");
