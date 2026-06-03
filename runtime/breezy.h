@@ -200,6 +200,25 @@ int64_t bzy_socket_write(void *s, void *data);         /* byte[]; writes all; re
 int64_t bzy_socket_write_text(void *s, void *str);     /* string; writes all bytes; returns count. */
 void    bzy_socket_close(void *s);
 
+/* UDP sockets (6b-2): connectionless datagrams. receive() parks and returns a
+   Datagram carrying the payload + the sender's address (so a server can reply). */
+void   *bzy_udp_new(int64_t port);                           /* Bind 0.0.0.0:port (0 = ephemeral); owned. */
+int64_t bzy_udp_port(void *u);                               /* Bound port. */
+int64_t bzy_udp_send_to(void *u, void *host, int64_t port, void *data);   /* data: byte[]; returns count. */
+int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str);
+void   *bzy_udp_receive(void *u);                            /* Parks; owned Datagram. */
+void   *bzy_udp_receive_timeout(void *u, int64_t ms);        /* Parks up to ms; NULL on timeout. */
+void   *bzy_udp_try_receive(void *u);                        /* NULL if no datagram ready; never parks. */
+void    bzy_udp_close(void *u);
+
+/* Datagram: a received payload + its sender. object_size = 48,
+   0 vtable | 8 rc | 16 gcinfo | 24 data(byte[]) | 32 host(string) | 40 port(int64).
+   num_obj_fields = 2 (offsets 24, 32) -- data + host are managed children. */
+void   *bzy_dgram_data(void *d);   /* Owned byte[] (+1). */
+void   *bzy_dgram_text(void *d);   /* Owned string (+1) of the payload bytes. */
+void   *bzy_dgram_host(void *d);   /* Owned string (+1) sender IP. */
+int64_t bzy_dgram_port(void *d);   /* Sender port. */
+
 /* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */

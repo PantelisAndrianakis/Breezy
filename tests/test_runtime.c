@@ -1138,6 +1138,53 @@ static void test_tcp_accept_timeout_and_try(void)
 	bzy_iocp_shutdown();
 }
 
+static int g_udp_ok;
+static void *g_udp_server;     /* Shared UdpSocket handle. */
+static int64_t g_udp_server_port;
+
+static void udp_server(void)
+{
+	void *dg = bzy_udp_receive(g_udp_server);          /* Parks until a datagram arrives. */
+	void *payload = bzy_dgram_data(dg);
+	void *host = bzy_dgram_host(dg);
+	bzy_udp_send_to(g_udp_server, host, bzy_dgram_port(dg), payload);  /* Echo back. */
+	bzy_release(host);
+	bzy_release(payload);
+	bzy_release(dg);
+}
+
+static void udp_client(void)
+{
+	void *u = bzy_udp_new(0);
+	void *host = bzy_str_new("127.0.0.1", 9);
+	void *msg = bzy_str_new("hey", 3);
+	bzy_udp_send_text_to(u, host, g_udp_server_port, msg);
+	void *dg = bzy_udp_receive(u);
+	void *back = bzy_dgram_text(dg);
+	g_udp_ok = (strcmp(bzy_str_data(back), "hey") == 0);
+	bzy_release(back);
+	bzy_release(dg);
+	bzy_release(msg);
+	bzy_release(host);
+	bzy_udp_close(u);
+	bzy_release(u);
+}
+
+static void test_udp_loopback_echo(void)
+{
+	g_udp_ok = 0;
+	bzy_sched_init();
+	g_udp_server = bzy_udp_new(0);
+	g_udp_server_port = bzy_udp_port(g_udp_server);
+	bzy_spawn(udp_server);
+	bzy_spawn(udp_client);
+	bzy_sched_run();
+	ASSERT_INT(g_udp_ok, 1);
+	bzy_udp_close(g_udp_server);
+	bzy_release(g_udp_server);
+	bzy_iocp_shutdown();
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1200,6 +1247,7 @@ int main(void)
 	RUN(test_iocp_completion_wakes_breeze);
 	RUN(test_tcp_loopback_echo);
 	RUN(test_tcp_accept_timeout_and_try);
+	RUN(test_udp_loopback_echo);
 	SUMMARY();
 	return 0;
 }
