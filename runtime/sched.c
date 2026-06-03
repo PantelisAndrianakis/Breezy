@@ -2,6 +2,8 @@
 #include "coroutine.h"
 #include <stdlib.h>
 #include <stdio.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 typedef struct Breeze
 {
@@ -13,38 +15,59 @@ typedef struct Breeze
 	struct Breeze *next;
 } Breeze;
 
-static Breeze *g_head, *g_tail;   /* Ready FIFO. */
-static Breeze *g_running;         /* The breeze currently on the CPU (NULL = scheduler). */
-static BzyCoroutine *g_sched;     /* The scheduler coroutine (the program's main fiber). */
-static int64_t g_live;            /* Breezes created but not yet finished (for deadlock detection). */
-
-static void enqueue(Breeze *b)
+/* One ready FIFO per worker. A worker pushes/pops its own queue and steals from
+   siblings when it runs dry (6a-3 Task 2). The lock makes both safe. */
+typedef struct Worker
 {
+	Breeze *head, *tail;
+	SRWLOCK lock;
+} Worker;
+
+static Worker *g_workers;
+static int     g_nworkers = 1;
+static HANDLE  g_work_sem;          /* Released on every enqueue: "work may be available". */
+static volatile LONG g_live;        /* Breezes created but not finished (atomic). */
+static volatile LONG g_shutdown;    /* Set when g_live hits 0; unblocks idle workers so they exit. */
+
+static __thread BzyCoroutine *t_sched;       /* This thread's scheduler coroutine. */
+static __thread Breeze       *t_running;     /* Breeze currently on this CPU (NULL = scheduler). */
+static __thread int           t_wid;         /* This thread's worker index. */
+static __thread void         *t_park_unlock; /* SRWLOCK* the scheduler releases after a parking switch. */
+
+static void enqueue_on(int wid, Breeze *b)
+{
+	Worker *w = &g_workers[wid];
+	AcquireSRWLockExclusive(&w->lock);
 	b->next = NULL;
-	if (g_tail)
+	if (w->tail)
 	{
-		g_tail->next = b;
+		w->tail->next = b;
 	}
 	else
 	{
-		g_head = b;
+		w->head = b;
 	}
 
-	g_tail = b;
+	w->tail = b;
+	ReleaseSRWLockExclusive(&w->lock);
+	ReleaseSemaphore(g_work_sem, 1, NULL);
 }
 
-static Breeze *dequeue(void)
+static Breeze *dequeue_from(int wid)
 {
-	Breeze *b = g_head;
+	Worker *w = &g_workers[wid];
+	AcquireSRWLockExclusive(&w->lock);
+	Breeze *b = w->head;
 	if (b)
 	{
-		g_head = b->next;
-		if (!g_head)
+		w->head = b->next;
+		if (!w->head)
 		{
-			g_tail = NULL;
+			w->tail = NULL;
 		}
 	}
 
+	ReleaseSRWLockExclusive(&w->lock);
 	return b;
 }
 
@@ -61,85 +84,181 @@ static void breeze_run(void *p)
 	}
 
 	b->done = 1;
-	bzy_coroutine_switch(g_sched);   /* Back to the scheduler; this fiber is never resumed again. */
+	bzy_coroutine_switch(t_sched);   /* TLS: the scheduler of whatever thread runs us now. */
+}
+
+void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => auto (logical core count). */
+{
+	if (n <= 0)
+	{
+		SYSTEM_INFO si;
+		GetSystemInfo(&si);
+		n = (int)si.dwNumberOfProcessors;
+	}
+
+	if (n < 1)
+	{
+		n = 1;
+	}
+
+	int old = g_nworkers;
+	g_workers = realloc(g_workers, (size_t)n * sizeof(Worker));
+	for (int i = old; i < n; i++)
+	{
+		g_workers[i].head = NULL;
+		g_workers[i].tail = NULL;
+		InitializeSRWLock(&g_workers[i].lock);
+	}
+
+	g_nworkers = n;
 }
 
 void bzy_sched_init(void)
 {
-	bzy_coroutine_main_init();
-	g_sched = bzy_coroutine_self();
+	t_sched = bzy_coroutine_thread_enter();
+	t_wid = 0;
+	g_live = 0;
+	g_shutdown = 0;
+	g_nworkers = 0;
+	g_workers = NULL;
+	bzy_sched_set_workers(1);        /* Worker 0 exists before any spawn; Task 2 raises this. */
+	g_work_sem = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
+}
+
+static Breeze *make_breeze(void)
+{
+	Breeze *b = calloc(1, sizeof(*b));
+	b->coroutine = bzy_coroutine_create(breeze_run, b);
+	InterlockedIncrement(&g_live);
+	return b;
 }
 
 void bzy_spawn(void (*entry)(void))
 {
-	Breeze *b = calloc(1, sizeof(*b));
+	Breeze *b = make_breeze();
 	b->entry = entry;
-	b->coroutine = bzy_coroutine_create(breeze_run, b);
-	g_live++;
-	enqueue(b);
+	enqueue_on(t_wid, b);            /* Enqueue locally; work-stealing balances (Task 2). */
 }
 
 void bzy_spawn_args(void (*thunk)(void*), void *arg)
 {
-	Breeze *b = calloc(1, sizeof(*b));
+	Breeze *b = make_breeze();
 	b->thunk = thunk;
 	b->arg = arg;
-	b->coroutine = bzy_coroutine_create(breeze_run, b);
-	g_live++;
-	enqueue(b);
+	enqueue_on(t_wid, b);
 }
 
 void *bzy_sched_current(void)      /* Opaque handle to the running breeze (for waiter lists). */
 {
-	return g_running;
+	return t_running;
 }
 
-void bzy_sched_park(void)          /* Suspend the running breeze; it stays off the ready queue. */
+void bzy_sched_park(void)          /* Suspend the running breeze; a wake() must re-enqueue it. */
 {
-	bzy_coroutine_switch(g_sched);  /* A wake() must re-enqueue it, else it is lost. */
+	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again. */
+void bzy_sched_park_unlock(void *srwlock)   /* Park, then have the scheduler release the lock after we switch out. */
 {
-	enqueue((Breeze*)breeze);
+	t_park_unlock = srwlock;        /* Closes the wake-before-park race: the waker cannot take the lock,
+	                                   and so cannot observe us as a waiter, until we are safely off the CPU. */
+	bzy_coroutine_switch(t_sched);
+}
+
+void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again, on this worker; stealing rebalances. */
+{
+	enqueue_on(t_wid, (Breeze*)breeze);
 }
 
 void bzy_yield(void)
 {
-	Breeze *b = g_running;
+	Breeze *b = t_running;
 	if (!b)
 	{
 		return;                 /* Called from the scheduler itself: nothing to yield. */
 	}
 
-	enqueue(b);                 /* Re-queue at the tail (round-robin). */
-	bzy_coroutine_switch(g_sched);
+	enqueue_on(t_wid, b);       /* Re-queue at the tail (round-robin). */
+	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_run(void)
+/* Find a breeze: own queue first, then steal from siblings. NULL if none anywhere. */
+static Breeze *find_work(void)
+{
+	Breeze *b = dequeue_from(t_wid);
+	if (b)
+	{
+		return b;
+	}
+
+	for (int i = 1; i < g_nworkers; i++)
+	{
+		int victim = (t_wid + i) % g_nworkers;
+		b = dequeue_from(victim);
+		if (b)
+		{
+			return b;
+		}
+	}
+
+	return NULL;
+}
+
+/* The scheduler loop, run by every worker thread. */
+static void worker_loop(void)
 {
 	for (;;)
 	{
-		Breeze *b = dequeue();
+		Breeze *b = find_work();
 		if (!b)
 		{
-			if (g_live > 0)
+			if (g_shutdown)
 			{
-				fprintf(stderr, "deadlock: all breezes blocked\n");   /* Parked with no one to wake them. */
+				break;
+			}
+
+			if (g_nworkers == 1 && g_live > 0)
+			{
+				/* Single worker, breezes remain, none ready: nobody can ever wake them. */
+				fprintf(stderr, "deadlock: all breezes blocked\n");
 				abort();
 			}
 
-			break;
+			WaitForSingleObject(g_work_sem, INFINITE);   /* Block until an enqueue or shutdown. */
+			continue;
 		}
 
-		g_running = b;
-		bzy_coroutine_switch(b->coroutine);   /* A parked breeze switches back here without re-enqueueing. */
-		g_running = NULL;
+		t_running = b;
+		bzy_coroutine_switch(b->coroutine);
+		t_running = NULL;
+
+		if (t_park_unlock)
+		{
+			ReleaseSRWLockExclusive((PSRWLOCK)t_park_unlock);   /* Hand-off: the breeze parked holding this. */
+			t_park_unlock = NULL;
+		}
+
 		if (b->done)
 		{
 			bzy_coroutine_delete(b->coroutine);
 			free(b);
-			g_live--;
+			if (InterlockedDecrement(&g_live) == 0)
+			{
+				g_shutdown = 1;
+				ReleaseSemaphore(g_work_sem, g_nworkers, NULL);   /* Wake every idle worker to exit. */
+			}
 		}
 	}
+}
+
+void bzy_sched_run(void)
+{
+	/* Task 1: single worker — this thread is worker 0. Task 2 spins up 1..n-1. */
+	worker_loop();
+
+	CloseHandle(g_work_sem);
+	g_work_sem = NULL;
+	free(g_workers);
+	g_workers = NULL;
+	g_nworkers = 0;
 }

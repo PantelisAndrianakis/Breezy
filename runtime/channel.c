@@ -1,13 +1,22 @@
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
-/* Bounded buffered channel (object_size = 96):
+/* Bounded buffered channel (object_size = 104):
    0 vtable | 8 rc | 16 gcinfo | 24 cap | 32 count | 40 head | 48 ring(int64_t*) |
-   56 elem_managed | 64 send_head | 72 send_tail | 80 recv_head | 88 recv_tail.
+   56 elem_managed | 64 send_head | 72 send_tail | 80 recv_head | 88 recv_tail |
+   96 lock(SRWLOCK).
    The ring is a raw malloc'd buffer (not a managed child), so the finalizer
    frees it and releases any buffered managed elements; the cycle collector
    treats the channel as a leaf (num_obj_fields = 0).
+
+   The SRWLOCK guards the ring + both waiter lists so a channel is safe to share
+   across worker threads (6a-3). A parked breeze releases the lock through the
+   scheduler (bzy_sched_park_unlock) so a waker on another core cannot observe it
+   as a waiter until it is fully switched out, and every wake happens after the
+   lock is dropped (channel lock -> queue lock is the only nesting order).
 
    Waiters are stack-local nodes on the parked breeze's coroutine stack (stable
    while parked); the counterpart unlinks and reads one, then wakes its breeze.
@@ -56,6 +65,10 @@ static CWaiter **C_RHEAD(void *c)
 static CWaiter **C_RTAIL(void *c)
 {
 	return (CWaiter**)((char*)c + 88);
+}
+static SRWLOCK  *C_LOCK(void *c)
+{
+	return (SRWLOCK*)((char*)c + 96);
 }
 
 static void wq_push(CWaiter **head, CWaiter **tail, CWaiter *w)
@@ -138,7 +151,7 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 		cap = 1;   /* v1 requires a buffer of at least one slot. */
 	}
 
-	void *c = bzy_alloc(96);
+	void *c = bzy_alloc(104);
 	*(void**)c = channel_vtable();
 	*C_CAP(c) = cap;
 	*C_COUNT(c) = 0;
@@ -149,23 +162,29 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 	*C_STAIL(c) = NULL;
 	*C_RHEAD(c) = NULL;
 	*C_RTAIL(c) = NULL;
+	InitializeSRWLock(C_LOCK(c));
 	return c;
 }
 
 void bzy_channel_send(void *c, int64_t v)
 {
+	AcquireSRWLockExclusive(C_LOCK(c));
+
 	/* A receiver is already waiting (channel was empty): hand the value over. */
 	CWaiter *r = wq_pop(C_RHEAD(c), C_RTAIL(c));
 	if (r)
 	{
 		*r->deliver = v;                    /* Move: the +1 passes straight to the receiver. */
-		bzy_sched_wake(r->breeze);
+		void *rb = r->breeze;
+		ReleaseSRWLockExclusive(C_LOCK(c));
+		bzy_sched_wake(rb);                 /* Wake outside the channel lock (may cross cores). */
 		return;
 	}
 
 	if (*C_COUNT(c) < *C_CAP(c))
 	{
 		ring_push(c, v);                    /* Buffer (owns the +1 until recv takes it). */
+		ReleaseSRWLockExclusive(C_LOCK(c));
 		return;
 	}
 
@@ -175,20 +194,30 @@ void bzy_channel_send(void *c, int64_t v)
 	w.val = v;
 	w.deliver = NULL;
 	wq_push(C_SHEAD(c), C_STAIL(c), &w);
-	bzy_sched_park();                       /* Resumes after a receiver moved w.val into the ring. */
+	bzy_sched_park_unlock(C_LOCK(c));       /* Lock dropped by the scheduler once we are off the CPU. */
+	/* Resumes after a receiver moved w.val into the ring; the work is already done. */
 }
 
 int64_t bzy_channel_recv(void *c)
 {
+	AcquireSRWLockExclusive(C_LOCK(c));
+
 	if (*C_COUNT(c) > 0)
 	{
 		int64_t v = ring_pop(c);
 		/* A sender is parked because the ring was full: move its value in, wake it. */
 		CWaiter *s = wq_pop(C_SHEAD(c), C_STAIL(c));
+		void *sb = NULL;
 		if (s)
 		{
 			ring_push(c, s->val);
-			bzy_sched_wake(s->breeze);
+			sb = s->breeze;
+		}
+
+		ReleaseSRWLockExclusive(C_LOCK(c));
+		if (sb)
+		{
+			bzy_sched_wake(sb);             /* Wake outside the channel lock. */
 		}
 
 		return v;                           /* Owned move-out. */
@@ -201,6 +230,6 @@ int64_t bzy_channel_recv(void *c)
 	w.val = 0;
 	w.deliver = &result;
 	wq_push(C_RHEAD(c), C_RTAIL(c), &w);
-	bzy_sched_park();                       /* Resumes after a sender delivered into result. */
-	return result;                          /* Owned. */
+	bzy_sched_park_unlock(C_LOCK(c));       /* Lock dropped by the scheduler once we are off the CPU. */
+	return result;                          /* Owned; a sender delivered into result. */
 }

@@ -134,10 +134,12 @@ void   *bzy_regex_find(void *pat, void *text);              /* Leftmost match su
 void   *bzy_regex_replace(void *pat, void *text, void *repl); /* All matches replaced (owned). */
 
 void    bzy_sched_init(void);              /* Promote the OS thread to the scheduler coroutine. */
+void    bzy_sched_set_workers(int n);      /* Set the worker-thread count before run (n<=0 => core count). */
 void    bzy_spawn(void (*entry)(void));    /* Enqueue a new breeze running entry (no args, 6a-1). */
 void    bzy_spawn_args(void (*thunk)(void*), void *arg); /* Enqueue a breeze that runs thunk(arg). */
 void   *bzy_sched_current(void);           /* Opaque handle to the running breeze. */
 void    bzy_sched_park(void);              /* Suspend the running breeze (off the ready queue). */
+void    bzy_sched_park_unlock(void *srwlock); /* Park; the scheduler releases the SRWLOCK after the switch. */
 void    bzy_sched_wake(void *breeze);      /* Re-enqueue a parked breeze. */
 
 void   *bzy_channel_new(int64_t cap, int64_t elem_managed); /* Owned (+1) bounded channel. */
