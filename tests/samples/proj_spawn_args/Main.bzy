@@ -1,0 +1,11 @@
+void worker(int id, string tag)
+{
+	print(id);
+	print(tag);
+}
+
+void main()
+{
+	spawn worker(7, "hi");
+	yield();
+}

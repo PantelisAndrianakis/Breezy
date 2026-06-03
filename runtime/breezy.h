@@ -115,6 +115,7 @@ void   *bzy_regex_replace(void *pat, void *text, void *repl); /* All matches rep
 
 void    bzy_sched_init(void);              /* Promote the OS thread to the scheduler coroutine. */
 void    bzy_spawn(void (*entry)(void));    /* Enqueue a new breeze running entry (no args, 6a-1). */
+void    bzy_spawn_args(void (*thunk)(void*), void *arg); /* Enqueue a breeze that runs thunk(arg). */
 void    bzy_yield(void);                   /* Cooperatively yield to the scheduler (no-op outside a breeze). */
 void    bzy_sched_run(void);               /* Run ready breezes until the queue drains. */
 

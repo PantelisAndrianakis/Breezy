@@ -5,7 +5,9 @@
 typedef struct Breeze
 {
 	BzyCoroutine *coroutine;
-	void (*entry)(void);
+	void (*entry)(void);        /* Zero-arg spawn (6a-1). */
+	void (*thunk)(void*);       /* Arg'd spawn: codegen-emitted per-target thunk. */
+	void *arg;                  /* Arg block for the thunk. */
 	int done;
 	struct Breeze *next;
 } Breeze;
@@ -47,7 +49,15 @@ static Breeze *dequeue(void)
 static void breeze_run(void *p)
 {
 	Breeze *b = (Breeze*)p;
-	b->entry();
+	if (b->thunk)
+	{
+		b->thunk(b->arg);            /* Arg'd spawn: the thunk loads args, calls the target, frees the block. */
+	}
+	else
+	{
+		b->entry();
+	}
+
 	b->done = 1;
 	bzy_coroutine_switch(g_sched);   /* Back to the scheduler; this fiber is never resumed again. */
 }
@@ -62,6 +72,15 @@ void bzy_spawn(void (*entry)(void))
 {
 	Breeze *b = calloc(1, sizeof(*b));
 	b->entry = entry;
+	b->coroutine = bzy_coroutine_create(breeze_run, b);
+	enqueue(b);
+}
+
+void bzy_spawn_args(void (*thunk)(void*), void *arg)
+{
+	Breeze *b = calloc(1, sizeof(*b));
+	b->thunk = thunk;
+	b->arg = arg;
 	b->coroutine = bzy_coroutine_create(breeze_run, b);
 	enqueue(b);
 }

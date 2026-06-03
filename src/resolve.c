@@ -1483,14 +1483,27 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"spawn expects a call to a named function",NULL);
 		}
 
-		if (fi->param_count != 0)
-		{
-			die(s->line,"spawn target must take no arguments",NULL);
-		}
-
 		if (fi->ret_type.kind != TY_VOID)
 		{
 			die(s->line,"spawn target must return void",NULL);
+		}
+
+		if (s->expr->arg_count > 4)
+		{
+			die(s->line,"spawn target takes at most 4 arguments",NULL);
+		}
+
+		if (s->expr->arg_count != fi->param_count)
+		{
+			die(s->line,"spawn argument count does not match the target",NULL);
+		}
+
+		for (int i=0; i<s->expr->arg_count; i++)
+		{
+			if (!assignable(&fi->param_types[i], &s->expr->args[i]->type))
+			{
+				die(s->line,"spawn argument type mismatch; add a cast",NULL);
+			}
 		}
 
 		break;

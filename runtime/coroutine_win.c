@@ -17,7 +17,18 @@ static BzyCoroutine g_main;
 
 void bzy_coroutine_main_init(void)
 {
-	g_main.fiber = ConvertThreadToFiber(NULL);
+	if (g_current)
+	{
+		return;   /* Idempotent: the thread is already promoted to a coroutine. */
+	}
+
+	void *fiber = ConvertThreadToFiber(NULL);
+	if (!fiber)
+	{
+		fiber = GetCurrentFiber();   /* Already a fiber (ERROR_ALREADY_FIBER). */
+	}
+
+	g_main.fiber = fiber;
 	g_main.fn = NULL;
 	g_main.arg = NULL;
 	g_current = &g_main;

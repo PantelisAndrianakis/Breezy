@@ -349,6 +349,14 @@ static void test_spawn_resolves(void)
 	ASSERT_INT(s->expr->kind, EX_CALL);
 }
 
+static void test_spawn_args_resolve(void)
+{
+	Func *f=build1("void worker(int id, string tag) { } void main() { spawn worker(7, \"hi\"); }")->funcs[1];
+	Stmt *s=f->body->stmts[0];
+	ASSERT_INT(s->kind, ST_SPAWN);
+	ASSERT_INT(s->expr->arg_count, 2);
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -453,6 +461,7 @@ int main(void)
 	RUN(test_foreach_pair_resolves);
 	RUN(test_map_entries_types);
 	RUN(test_spawn_resolves);
+	RUN(test_spawn_args_resolve);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

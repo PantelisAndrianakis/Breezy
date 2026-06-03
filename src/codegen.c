@@ -16,6 +16,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->cur_continue_label=-1;
 	cg->exception_fn_count=0;
 	cg->exception_try_count=0;
+	cg->breeze_thunk_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -2156,6 +2157,77 @@ static void cg_try(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_emit(cg,".L%d:", after);
 }
 
+/* Record that target fi needs a __breeze_<label> thunk (deduped); emitted once
+   in cg_program after the function bodies. */
+static void cg_request_breeze_thunk(Codegen *cg, FuncInfo *fi)
+{
+	for (int i=0; i<cg->breeze_thunk_count; i++)
+	{
+		if (cg->breeze_thunks[i] == fi)
+		{
+			return;
+		}
+	}
+
+	if (cg->breeze_thunk_count < 64)
+	{
+		cg->breeze_thunks[cg->breeze_thunk_count++] = fi;
+	}
+}
+
+/* The per-target spawn thunk: rcx = arg block. Loads each arg into its Win64
+   parameter register by class (int -> rcx/rdx/r8/r9, fp -> xmm0..3 by position),
+   calls the target, releases managed args (the target borrowed them), frees the
+   block, and returns to breeze_run. */
+static void cg_emit_breeze_thunk(Codegen *cg, FuncInfo *fi)
+{
+	const char *ireg[4] = { "rcx", "rdx", "r8", "r9" };
+	cg_emit(cg,"__breeze_%s:", fi->asm_label);
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, 48");                 /* 16-aligned: block save at [rbp-8] + shadow. */
+	cg_emit(cg,"    mov [rbp - 8], rcx");          /* Save the block pointer. */
+	for (int i=0; i<fi->param_count; i++)
+	{
+		TypeKind k = fi->param_types[i].kind;
+		cg_emit(cg,"    mov rax, [rbp - 8]");
+		if (ty_is_float(k))
+		{
+			cg_emit(cg, k==TY_FLOAT ? "    movd xmm%d, [rax + %d]" : "    movq xmm%d, [rax + %d]", i, i*8);
+		}
+		else
+		{
+			cg_emit(cg,"    mov %s, [rax + %d]", ireg[i], i*8);
+		}
+	}
+
+	/* rsp is 16-aligned at rbp-48 throughout; each call reserves its own 32-byte
+	   shadow manually (cg_aligned_call can't be used -- it keys on the per-function
+	   sp_save slot, which this hand-rolled frame does not own). */
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call %s", fi->asm_label);
+	cg_emit(cg,"    add rsp, 32");
+	for (int i=0; i<fi->param_count; i++)
+	{
+		if (ty_is_managed(fi->param_types[i].kind))
+		{
+			cg_emit(cg,"    mov rcx, [rbp - 8]");
+			cg_emit(cg,"    mov rcx, [rcx + %d]", i*8);
+			cg_emit(cg,"    sub rsp, 32");
+			cg_emit(cg,"    call bzy_release");
+			cg_emit(cg,"    add rsp, 32");
+		}
+	}
+
+	cg_emit(cg,"    mov rcx, [rbp - 8]");
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call free");
+	cg_emit(cg,"    add rsp, 32");
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -2324,8 +2396,50 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_SPAWN:
 	{
 		FuncInfo *fi = types_find_func(tt, s->expr->name);
-		cg_emit(cg,"    lea rcx, [rel %s]", fi->asm_label);   /* The breeze entry function. */
-		cg_aligned_call(cg,"bzy_spawn");
+		if (s->expr->arg_count == 0)
+		{
+			cg_emit(cg,"    lea rcx, [rel %s]", fi->asm_label);   /* The breeze entry function. */
+			cg_aligned_call(cg,"bzy_spawn");
+			break;
+		}
+
+		/* Arg'd spawn: malloc a block of n 8-byte slots, fill it with the args
+		   (managed args owned by the breeze), then bzy_spawn_args(thunk, block).
+		   The block pointer lives on the native stack so it survives the arg
+		   evaluations (which clobber rax and use val_save). */
+		int n = s->expr->arg_count;
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov rcx, %d", n * 8);
+		cg_aligned_call(cg,"malloc");
+		cg_emit(cg,"    mov [rsp], rax");                  /* Save the block pointer. */
+		for (int i=0; i<n; i++)
+		{
+			TypeKind k = s->expr->args[i]->type.kind;
+			if (ty_is_managed(k))
+			{
+				cg_expr_owned(cg,tt,s->expr->args[i]);     /* +1 owned: the breeze owns the arg. */
+			}
+			else
+			{
+				cg_expr(cg,tt,s->expr->args[i]);           /* Plain value (no retain). */
+			}
+
+			cg_emit(cg,"    mov rdx, [rsp]");
+			if (ty_is_float(k))
+			{
+				cg_emit(cg, k==TY_FLOAT ? "    movd [rdx + %d], xmm0" : "    movq [rdx + %d], xmm0", i*8);
+			}
+			else
+			{
+				cg_emit(cg,"    mov [rdx + %d], rax", i*8);
+			}
+		}
+
+		cg_emit(cg,"    lea rcx, [rel __breeze_%s]", fi->asm_label);
+		cg_emit(cg,"    mov rdx, [rsp]");
+		cg_aligned_call(cg,"bzy_spawn_args");
+		cg_emit(cg,"    add rsp, 16");
+		cg_request_breeze_thunk(cg, fi);
 		break;
 	}
 	}
@@ -2528,6 +2642,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"bits 64");
 	cg_emit(cg,"default rel");
 	cg_emit(cg,"extern malloc");
+	cg_emit(cg,"extern free");
 	cg_emit(cg,"extern bzy_alloc");
 	cg_emit(cg,"extern bzy_retain");
 	cg_emit(cg,"extern bzy_release");
@@ -2559,6 +2674,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_entry_key");
 	cg_emit(cg,"extern bzy_entry_val");
 	cg_emit(cg,"extern bzy_spawn");
+	cg_emit(cg,"extern bzy_spawn_args");
 	cg_emit(cg,"extern bzy_yield");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
@@ -2666,6 +2782,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			MethodInfo *mi=types_find_method(c,m->name);
 			cg_emit_func(cg,tt,mi->asm_label,m,c->name);
 		}
+	}
+
+	for (int i=0; i<cg->breeze_thunk_count; i++)   /* spawn-with-args thunks (in .text). */
+	{
+		cg_emit_breeze_thunk(cg, cg->breeze_thunks[i]);
 	}
 
 	cg_emit(cg,"");

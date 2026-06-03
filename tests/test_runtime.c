@@ -668,6 +668,26 @@ static void worker_b(void)
 	g_breeze_log[g_breeze_n++] = 4;
 }
 
+static int64_t g_sa_sum;
+static void sa_thunk(void *blk)
+{
+	int64_t *a = (int64_t*)blk;
+	g_sa_sum = a[0] + a[1];
+	free(blk);
+}
+
+static void test_spawn_args(void)
+{
+	g_sa_sum = 0;
+	bzy_sched_init();
+	int64_t *blk = malloc(2 * sizeof(int64_t));
+	blk[0] = 30;
+	blk[1] = 12;
+	bzy_spawn_args(sa_thunk, blk);
+	bzy_sched_run();
+	ASSERT_INT(g_sa_sum, 42);
+}
+
 static void test_scheduler_roundrobin(void)
 {
 	g_breeze_n = 0;
@@ -726,6 +746,7 @@ int main(void)
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
 	RUN(test_scheduler_roundrobin);
+	RUN(test_spawn_args);
 	SUMMARY();
 	return 0;
 }
