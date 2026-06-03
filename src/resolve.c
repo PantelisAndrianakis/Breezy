@@ -826,14 +826,42 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	}
 	case EX_NEW:
+	{
 		if (strcmp(e->name,"StringBuilder")!=0 && !types_find_class(g_types,e->name))
 		{
 			die(e->line,"unknown class: ",e->name);
 		}
 
+		ClassInfo *nc=types_find_class(g_types,e->name);
+		for (int i=0; i<e->arg_count; i++)
+		{
+			resolve_expr(st,e->args[i],tc);
+		}
+
+		if (nc && nc->has_ctor)
+		{
+			if (e->arg_count != nc->ctor_param_count)
+			{
+				die(e->line,"constructor argument count mismatch",NULL);
+			}
+
+			for (int i=0; i<e->arg_count; i++)
+			{
+				if (!assignable(&nc->ctor_param_types[i], &e->args[i]->type))
+				{
+					die(e->line,"constructor argument type mismatch; add a cast",NULL);
+				}
+			}
+		}
+		else if (e->arg_count != 0)
+		{
+			die(e->line,"this class has no constructor; use new Class()",NULL);
+		}
+
 		e->type.kind=TY_OBJECT;
 		strcpy(e->type.class_name,e->name);
 		break;
+	}
 	case EX_UNARY:
 		resolve_expr(st,e->lhs,tc);
 		if (!ty_is_int(e->lhs->type.kind) && !ty_is_float(e->lhs->type.kind))
@@ -1821,6 +1849,11 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 			for (int k=0; k<u->klass->method_count; k++)
 			{
 				resolve_func(tt,u->klass->methods[k],u->klass->name);
+			}
+
+			if (u->klass->ctor)
+			{
+				resolve_func(tt,u->klass->ctor,u->klass->name);
 			}
 		}
 	}

@@ -198,6 +198,7 @@ typedef struct
 	int field_count;
 	Func *methods[32];
 	int method_count;
+	Func *ctor;               /* The constructor (params + body), or NULL; ret_type is TY_VOID. */
 } ClassDecl;
 
 typedef struct

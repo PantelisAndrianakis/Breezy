@@ -32,6 +32,11 @@ typedef struct ClassInfo
 	int method_count;
 	int vtable_size;
 	int object_size;
+	int has_ctor;                  /* 1 if the class declares a constructor. */
+	Func *ctor_ast;                /* The constructor's AST (params + body). */
+	int ctor_param_count;
+	TypeRef ctor_param_types[8];
+	char ctor_asm_label[160];
 } ClassInfo;
 typedef struct
 {

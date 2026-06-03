@@ -40,6 +40,9 @@ check if_else     tests/samples/if_else.bzy    "1"
 check while       tests/samples/while.bzy      "10"
 check multi_fn    tests/samples/multi_fn.bzy   "42"
 check inheritance tests/samples/proj_inherit  "2"
+check ctor        tests/samples/proj_ctor      $'3
+4
+7'
 check leak        tests/samples/proj_leak      "1"
 check cycle       tests/samples/proj_cycle     "0"
 check scalars     tests/samples/proj_scalars   $'0\n0\n5000000000\n4000000000\ntrue\n-1\nfalse\ntrue'

@@ -1160,6 +1160,82 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    add rsp, 16");
 }
 
+/* Run a constructor on a freshly-built object: the object is in rax on entry and
+   becomes arg slot 0 (this, borrowed), the user args follow. Spills this first so
+   arg evaluation can't clobber it (mirrors cg_call_with_args' self handling). The
+   object is left in rax as the result of `new`. */
+static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
+						 Expr **args, int argc, const TypeRef *params, int param_count)
+{
+	int total = 1 + argc;
+	if (total > 4)
+	{
+		fprintf(stderr,"codegen: constructor with more than 3 arguments unsupported\n");
+		exit(1);
+	}
+
+	int block = ((total*8 + 15)/16)*16;
+	cg_emit(cg,"    sub rsp, %d", block);
+	cg_emit(cg,"    mov [rsp + 0], rax");        /* this (borrowed). */
+
+	TypeKind slot_kind[4];
+	int owned_tmp[4];
+	int owned_n = 0;
+	slot_kind[0] = TY_OBJECT;
+	int slot = 1;
+	for (int i=0; i<argc; i++)
+	{
+		TypeKind pk = (i < param_count) ? params[i].kind : args[i]->type.kind;
+		cg_expr(cg,tt,args[i]);
+		cg_coerce(cg,pk,args[i]->type.kind);
+		slot_kind[slot] = pk;
+		if (ty_is_float(pk))
+		{
+			cg_emit(cg,"    movsd qword [rsp + %d], xmm0", slot*8);
+		}
+		else
+		{
+			if (expr_is_owned(args[i]))
+			{
+				owned_tmp[owned_n++] = slot;
+			}
+
+			cg_emit(cg,"    mov [rsp + %d], rax", slot*8);
+		}
+
+		slot++;
+	}
+
+	for (int s=0; s<total; s++)
+	{
+		if (slot_kind[s]==TY_FLOAT)
+		{
+			cg_emit(cg,"    movss xmm%d, dword [rsp + %d]", s, s*8);
+		}
+		else if (slot_kind[s]==TY_DOUBLE)
+		{
+			cg_emit(cg,"    movsd xmm%d, qword [rsp + %d]", s, s*8);
+		}
+		else
+		{
+			cg_emit(cg,"    mov %s, [rsp + %d]", ARG_REG[s], s*8);
+		}
+	}
+
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call %s", label);
+	cg_emit(cg,"    add rsp, 32");
+
+	for (int i=0; i<owned_n; i++)
+	{
+		cg_emit(cg,"    mov rcx, [rsp + %d]", owned_tmp[i]*8);
+		cg_release_rcx(cg);
+	}
+
+	cg_emit(cg,"    mov rax, [rsp + 0]");        /* The object is the result of `new`. */
+	cg_emit(cg,"    add rsp, %d", block);
+}
+
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (strcmp(e->name,"StringBuilder")==0)
@@ -1181,19 +1257,24 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_emit(cg,"    mov qword [rax + %d], 0", off);
 		}
-
-		return;
+	}
+	else
+	{
+		cg_emit(cg,"    mov rcx, %d", c->object_size);
+		cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
+		cg_emit(cg,"    and rsp, -16");
+		cg_emit(cg,"    sub rsp, 32");
+		cg_emit(cg,"    call bzy_alloc");
+		cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
+		cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
+		cg_emit(cg,"    mov [rax], rbx");
+		/* The refcount and fields are zeroed by bzy_alloc, so rax holds an owned reference. */
 	}
 
-	cg_emit(cg,"    mov rcx, %d", c->object_size);
-	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-	cg_emit(cg,"    and rsp, -16");
-	cg_emit(cg,"    sub rsp, 32");
-	cg_emit(cg,"    call bzy_alloc");
-	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
-	cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
-	cg_emit(cg,"    mov [rax], rbx");
-	/* The refcount and fields are zeroed by bzy_alloc, so rax holds an owned reference. */
+	if (c->has_ctor)
+	{
+		cg_ctor_call(cg,tt,c->ctor_asm_label,e->args,e->arg_count,c->ctor_param_types,c->ctor_param_count);
+	}
 }
 
 static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
@@ -2993,6 +3074,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			Func *m=u->klass->methods[k];
 			MethodInfo *mi=types_find_method(c,m->name);
 			cg_emit_func(cg,tt,mi->asm_label,m,c->name);
+		}
+
+		if (u->klass->ctor)
+		{
+			cg_emit_func(cg,tt,c->ctor_asm_label,u->klass->ctor,c->name);
 		}
 	}
 

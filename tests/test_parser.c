@@ -322,6 +322,14 @@ static void test_new_channel_parse(void)
 	ASSERT_INT(s->value->arg_count, 1);
 }
 
+static void test_ctor_parse(void)
+{
+	Unit *u = parse_unit_str("class P { int x; P(int v) { this.x = v; } }");
+	ASSERT(u->klass->ctor != NULL);
+	ASSERT_INT(u->klass->ctor->param_count, 1);
+	ASSERT_INT(u->klass->ctor->params[0].type.kind, TY_INT);
+}
+
 static void test_spawn_parse(void)
 {
 	Unit *u = parse_unit_str("void m() { spawn worker(); }");
@@ -410,6 +418,7 @@ int main(void)
 	RUN(test_foreach_stmt);
 	RUN(test_channel_type_parse);
 	RUN(test_new_channel_parse);
+	RUN(test_ctor_parse);
 	RUN(test_spawn_parse);
 	RUN(test_foreach_pair_parse);
 	RUN(test_parse_if_else);

@@ -216,4 +216,17 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 			mi->param_types[k]=m->params[k].type;
 		}
 	}
+
+	if (d->ctor)
+	{
+		c->has_ctor=1;
+		c->ctor_ast=d->ctor;
+		c->ctor_param_count=d->ctor->param_count;
+		for (int k=0; k<d->ctor->param_count; k++)
+		{
+			c->ctor_param_types[k]=d->ctor->params[k].type;
+		}
+
+		snprintf(c->ctor_asm_label,sizeof(c->ctor_asm_label),"__ctor_%s",c->name);
+	}
 }

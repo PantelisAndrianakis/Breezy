@@ -304,9 +304,14 @@ static Expr *parse_primary(Parser *p)
 		}
 
 		expect(p,TOKEN_LPAREN);
-		expect(p,TOKEN_RPAREN);
 		Expr *e=expr_new(EX_NEW,line);
 		strcpy(e->name,et.class_name);        /* object: et is an IDENT class */
+		if (!check(p,TOKEN_RPAREN))
+		{
+			e->arg_count=parse_args(p,e->args);   /* Constructor arguments. */
+		}
+
+		expect(p,TOKEN_RPAREN);
 		return e;
 	}
 	if (check(p,TOKEN_IDENT) && is_namespace(p->cur.text) && p->peek.type==TOKEN_DOT)
@@ -1023,6 +1028,37 @@ static ClassDecl *parse_class(Parser *p)
 	expect(p,TOKEN_LBRACE);
 	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 	{
+		/* Constructor: the class name immediately followed by '(' (no return type). */
+		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,c->name)==0 && p->peek.type==TOKEN_LPAREN)
+		{
+			advance(p);                 /* class name */
+			Func *f=func_new();
+			f->ret_type.kind=TY_VOID;
+			strcpy(f->name,c->name);
+			expect(p,TOKEN_LPAREN);
+			if (!check(p,TOKEN_RPAREN))
+			{
+				do
+				{
+					if (f->param_count>=8)
+					{
+						fprintf(stderr,"too many params\n");
+						exit(1);
+					}
+					Param *pm=&f->params[f->param_count++];
+					parse_type(p,&pm->type);
+					Token pn=expect(p,TOKEN_IDENT);
+					strcpy(pm->name,pn.text);
+				}
+				while (match(p,TOKEN_COMMA));
+			}
+
+			expect(p,TOKEN_RPAREN);
+			f->body=parse_block(p);
+			c->ctor=f;
+			continue;
+		}
+
 		TypeRef ty;
 		if (!parse_type(p,&ty))
 		{
