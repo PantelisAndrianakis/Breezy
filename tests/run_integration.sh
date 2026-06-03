@@ -52,6 +52,7 @@ check array_cycle tests/samples/proj_array_cycle $'0'
 check_abort array_oob tests/samples/bad_array_oob.bzy
 check stringbuilder tests/samples/proj_sb        $'ababab'
 check map         tests/samples/proj_map       $'11\n2\nfalse\n2'
+check map_contains tests/samples/proj_map_contains $'true\nfalse\ntrue\nfalse'
 check map_obj     tests/samples/proj_map_obj   $'6\n9'
 check map_cycle   tests/samples/proj_map_cycle $'0'
 check incdec      tests/samples/proj_incdec    $'42\n40'

@@ -199,6 +199,17 @@ static void test_map_int_keys(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_map_contains_value(void)
+{
+	void *m = bzy_map_new(0, 0);          /* int->int, value unmanaged. */
+	bzy_map_put(m, 1, 100);
+	bzy_map_put(m, 2, 200);
+	ASSERT_INT(bzy_map_contains_value(m, 200, 0), 1);   /* val_kind 0 = int. */
+	ASSERT_INT(bzy_map_contains_value(m, 999, 0), 0);
+	ASSERT_INT(bzy_map_val_at(m, bzy_map_iter(m, 0)) >= 100, 1);  /* val_at reads a slot. */
+	bzy_release(m);
+}
+
 static void test_map_string_keys_and_grow(void)
 {
 	int64_t before = bzy_live_count();
@@ -653,6 +664,7 @@ int main(void)
 	RUN(test_array_value_roundtrip);
 	RUN(test_array_object_elements_released);
 	RUN(test_map_int_keys);
+	RUN(test_map_contains_value);
 	RUN(test_map_string_keys_and_grow);
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);

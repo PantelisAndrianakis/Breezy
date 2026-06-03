@@ -7,6 +7,6 @@ void main()
 	d.put("a", d.get("a") + 10);   // Overwrite via get + put.
 	print(d.get("a"));             // 11
 	print(d.get("b"));             // 2
-	print(d.has("c"));             // false
+	print(d.containsKey("c"));     // false
 	print(d.size);                 // 2
 }

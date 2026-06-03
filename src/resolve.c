@@ -981,11 +981,20 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type = *V;
 			}
-			else if (strcmp(e->name,"has")==0)
+			else if (strcmp(e->name,"containsKey")==0)
 			{
 				if (e->arg_count!=1 || !assignable(K,&e->args[0]->type))
 				{
-					die(e->line,"map.has(key) type mismatch",NULL);
+					die(e->line,"map.containsKey(key) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"containsValue")==0)
+			{
+				if (e->arg_count!=1 || !assignable(V,&e->args[0]->type))
+				{
+					die(e->line,"map.containsValue(value) type mismatch",NULL);
 				}
 
 				e->type.kind=TY_BOOL;

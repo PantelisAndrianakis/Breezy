@@ -625,12 +625,44 @@ static void cg_sb_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+static int cg_elem_kind(TypeKind k);   /* Defined below; used by containsValue. */
+
 /* Map methods lower to runtime calls (no vtable dispatch). The receiver is
    borrowed; key/value arguments that are owned temporaries are released after
    the call (the runtime retains its own copies). get returns a +1 managed value
-   when V is managed; for value V / has the result is a plain integer in rax. */
+   when V is managed; for a value V / containsKey / containsValue the result is a
+   plain integer in rax. */
 static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	if (strcmp(e->name,"containsValue")==0)
+	{
+		TypeKind vk = e->lhs->type.elem2->kind;
+		cg_expr(cg,tt,e->lhs);                  /* map */
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr(cg,tt,e->args[0]);              /* value (rax, or xmm0 if FP) */
+		if (ty_is_float(vk))
+		{
+			cg_emit(cg, vk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+		}
+
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_emit(cg,"    mov rdx, [rsp + 8]");
+		cg_emit(cg,"    mov r8, %d", cg_elem_kind(vk));   /* 3 = string -> content eq. */
+		cg_aligned_call(cg,"bzy_map_contains_value");
+		if (expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov [rsp], rax");            /* Preserve the bool across release. */
+			cg_emit(cg,"    mov rcx, [rsp + 8]");
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rsp]");
+		}
+
+		cg_emit(cg,"    add rsp, 16");
+		return;
+	}
+
 	if (strcmp(e->name,"put")==0)
 	{
 		cg_expr(cg,tt,e->lhs);                 /* map */
@@ -662,7 +694,7 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	/* get / has / remove: receiver + one key argument. */
 	const char *fn = strcmp(e->name,"get")==0 ? "bzy_map_get"
-					 : strcmp(e->name,"has")==0 ? "bzy_map_has"
+					 : strcmp(e->name,"containsKey")==0 ? "bzy_map_has"
 					 : "bzy_map_remove";
 	cg_expr(cg,tt,e->lhs);                      /* map */
 	cg_emit(cg,"    sub rsp, 16");
@@ -2462,6 +2494,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_get");
 	cg_emit(cg,"extern bzy_map_has");
 	cg_emit(cg,"extern bzy_map_remove");
+	cg_emit(cg,"extern bzy_map_contains_value");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

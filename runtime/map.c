@@ -287,6 +287,33 @@ int64_t bzy_map_key_at(void *m, int64_t slot)
 	return keys_data(m)[slot];   /* Borrowed: the map keeps the reference. */
 }
 
+int64_t bzy_map_val_at(void *m, int64_t slot)
+{
+	return vals_data(m)[slot];   /* Borrowed: the map keeps the reference. */
+}
+
+/* val_kind: 3 = string (content equality), anything else = raw 8-byte equality. */
+int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
+{
+	int64_t cap = *M_CAP(m);
+	uint8_t *ctrl = *M_CTRL(m);
+	int64_t *vals = vals_data(m);
+	for (int64_t i = 0; i < cap; i++)
+	{
+		if ((ctrl[i] & 0x80) != 0)   /* Skip EMPTY/DELETED (top bit set). */
+		{
+			continue;
+		}
+
+		if (val_kind == 3 ? (bzy_str_eq((void*)vals[i], (void*)needle) != 0) : (vals[i] == needle))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 {
 	for (int64_t i = 0; i < cap; i++)

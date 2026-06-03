@@ -303,6 +303,14 @@ static void test_clock_date_types(void)
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING);   /* getDateString(t, fmt) */
 }
 
+static void test_map_contains(void)
+{
+	Func *f=build1("void main() { map<string,int> m; boolean a; boolean b;"
+				   " a = m.containsKey(\"x\"); b = m.containsValue(5); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* containsKey -> bool */
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL);   /* containsValue -> bool */
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -402,6 +410,7 @@ int main(void)
 	RUN(test_math_types);
 	RUN(test_clock_type);
 	RUN(test_clock_date_types);
+	RUN(test_map_contains);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

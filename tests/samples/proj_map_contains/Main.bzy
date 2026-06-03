@@ -1,0 +1,11 @@
+void main()
+{
+	map<string,int> m;
+	m = new map<string,int>();
+	m.put("a", 1);
+	m.put("b", 2);
+	print(m.containsKey("a"));     // true
+	print(m.containsKey("z"));     // false
+	print(m.containsValue(2));     // true
+	print(m.containsValue(9));     // false
+}
