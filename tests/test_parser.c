@@ -305,6 +305,16 @@ static void test_foreach_stmt(void)
 	ASSERT_INT(fe->then_blk->count, 1);
 }
 
+static void test_foreach_pair_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { map<string,int> x; foreach (string k, int v in x) { } }");
+	Stmt *s = u->funcs[0]->body->stmts[1];
+	ASSERT_INT(s->kind, ST_FOREACH);
+	ASSERT_STR(s->decl_name, "k");
+	ASSERT_STR(s->fe_val_name, "v");
+	ASSERT_INT(s->fe_val_type.kind, TY_INT);
+}
+
 static void test_parse_if_else(void)
 {
 	Unit *u = parse_unit_str("void m() { if (x < 1) { x = 1; } else { x = 2; } }");
@@ -372,6 +382,7 @@ int main(void)
 	RUN(test_throw_stmt);
 	RUN(test_try_catch_parse);
 	RUN(test_foreach_stmt);
+	RUN(test_foreach_pair_parse);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);

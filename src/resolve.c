@@ -1289,6 +1289,22 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		s->fe_index_offset=sym_add(st,"",s->decl_type)->offset;
 		s->fe_len_offset=sym_add(st,"",s->decl_type)->offset;
 		s->fe_aux_offset=sym_add(st,"",s->decl_type)->offset;
+		if (s->fe_val_type.kind != TY_VOID)
+		{
+			if (ik != TY_MAP)
+			{
+				die(s->line,"the key, value foreach form requires a map",NULL);
+			}
+
+			if (!assignable(&s->decl_type, s->expr->type.elem)
+					|| !assignable(&s->fe_val_type, s->expr->type.elem2))
+			{
+				die(s->line,"foreach key/value types do not match the map",NULL);
+			}
+
+			s->fe_val_offset=sym_add(st,s->fe_val_name,s->fe_val_type)->offset;
+		}
+
 		g_loop_depth++;
 		g_break_depth++;
 		resolve_block(st,s->then_blk,tc);

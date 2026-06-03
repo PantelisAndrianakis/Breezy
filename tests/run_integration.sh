@@ -63,6 +63,7 @@ check for_loop    tests/samples/proj_for       $'55\n15'
 check foreach_array  tests/samples/proj_foreach_array  $'30'
 check foreach_string tests/samples/proj_foreach_string $'198'
 check foreach_map    tests/samples/proj_foreach_map    $'6\n3'
+check foreach_pair   tests/samples/proj_foreach_pair   $'60\n3'
 check_fail foreach_noniter tests/samples/bad_foreach_noniter.bzy
 check box_int    tests/samples/proj_box_int    $'7\ntrue\nfalse'
 check box_string tests/samples/proj_box_string $'true\nfalse'

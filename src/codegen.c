@@ -1885,6 +1885,24 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_index_offset);
 		cg_aligned_call(cg,"bzy_map_key_at");    /* Key (borrowed) in rax. */
 		cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+		if (s->fe_val_type.kind != TY_VOID)
+		{
+			TypeKind vt = s->fe_val_type.kind;
+			cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_coll_offset);
+			cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_index_offset);
+			cg_aligned_call(cg,"bzy_map_val_at");   /* Value bits (borrowed) in rax. */
+			if (ty_is_float(vt))
+			{
+				char mem[32];
+				cg_emit(cg, vt==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+				sprintf(mem,"[rbp - %d]", s->fe_val_offset);
+				cg_store_fp(cg,vt,mem);
+			}
+			else
+			{
+				cg_emit(cg,"    mov [rbp - %d], rax", s->fe_val_offset);
+			}
+		}
 	}
 	else if (ik==TY_STRING)
 	{
@@ -2508,6 +2526,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
+	cg_emit(cg,"extern bzy_map_val_at");
 	cg_emit(cg,"extern bzy_str_eq");
 	cg_emit(cg,"extern bzy_str_contains");
 	cg_emit(cg,"extern bzy_str_starts_with");

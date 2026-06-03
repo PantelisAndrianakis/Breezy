@@ -1,0 +1,20 @@
+void main()
+{
+	map<string,int> m;
+	m = new map<string,int>();
+	m.put("a", 10);
+	m.put("b", 20);
+	m.put("c", 30);
+
+	int sum;
+	sum = 0;
+	int keylen;
+	keylen = 0;
+	foreach (string k, int v in m)
+	{
+		sum += v;
+		keylen += k.length();
+	}
+	print(sum);          // 60
+	print(keylen);       // 3  (one char per key)
+}

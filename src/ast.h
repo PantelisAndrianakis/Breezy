@@ -141,6 +141,9 @@ struct Stmt
 	int      fe_index_offset; /* ST_FOREACH: index / map slot cursor. */
 	int      fe_len_offset;   /* ST_FOREACH (string): precomputed length. */
 	int      fe_aux_offset;   /* ST_FOREACH (string): precomputed data pointer. */
+	TypeRef  fe_val_type;     /* ST_FOREACH pair form: value var type (kind TY_VOID if absent). */
+	char     fe_val_name[64]; /* ST_FOREACH pair form: value var name. */
+	int      fe_val_offset;   /* ST_FOREACH pair form: value var stack slot. */
 	Stmt    *for_init;        /* ST_FOR: init clause (var-decl or assignment/expr). */
 	Stmt    *for_post;        /* ST_FOR: post clause (assignment or ++/--). */
 	Expr    *target;          /* ST_ASSIGN lvalue (EX_IDENT|EX_FIELD) */

@@ -760,6 +760,15 @@ static Stmt *parse_foreach(Parser *p)
 	parse_type(p,&s->decl_type);
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(s->decl_name,name.text);
+	s->fe_val_type.kind=TY_VOID;
+	s->fe_val_name[0]='\0';
+	if (match(p,TOKEN_COMMA))
+	{
+		parse_type(p,&s->fe_val_type);
+		Token vn=expect(p,TOKEN_IDENT);
+		strcpy(s->fe_val_name,vn.text);
+	}
+
 	expect(p,TOKEN_IN);
 	s->expr=parse_expr(p);
 	expect(p,TOKEN_RPAREN);
