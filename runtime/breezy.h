@@ -151,6 +151,19 @@ void    bzy_sched_wake(void *breeze);      /* Re-enqueue a parked breeze. */
 void   *bzy_channel_new(int64_t cap, int64_t elem_managed); /* Owned (+1) bounded channel. */
 void    bzy_channel_send(void *ch, int64_t v);   /* Parks if full; moves a managed value in. */
 int64_t bzy_channel_recv(void *ch);              /* Parks if empty; returns an owned value. */
+
+/* Timers (6a-4): a shared min-heap of Timer objects keyed by absolute deadline.
+   Timer is a managed leaf object (same layout idiom as channel). */
+void   *bzy_timer_schedule(void (*entry)(void), int64_t first_deadline, int64_t period); /* Owned (+1). */
+void   *bzy_timer_after(void (*entry)(void), int64_t delay_ms);                          /* Owned (+1). */
+void   *bzy_timer_every(void (*entry)(void), int64_t delay_ms, int64_t period_ms);       /* Owned (+1). */
+void    bzy_timer_cancel(void *t);
+int64_t bzy_timer_next_deadline(void);   /* Nearest non-cancelled deadline, or -1 if none pending. */
+void   *bzy_timer_pop_due(int64_t now);  /* Removes & returns the earliest due entry (heap ref transferred), or NULL. */
+void    bzy_timer_reinsert(void *t, int64_t now);  /* Periodic re-insert: advance deadline past now, re-push. */
+int64_t bzy_timer_count(void);           /* Entries currently in the heap (test/diagnostic). */
+void    bzy_timer_reset(void);           /* Drop every entry (test hygiene). */
+void    bzy_sched_nudge(void);           /* Wake one idle worker to re-evaluate its timer wait (no-op pre-run). */
 void    bzy_yield(void);                   /* Cooperatively yield to the scheduler (no-op outside a breeze). */
 void    bzy_sched_run(void);               /* Run ready breezes until the queue drains. */
 

@@ -784,6 +784,68 @@ static void test_channel_roundtrip(void)
 	bzy_release(g_ch);
 }
 
+static int g_timer_hits;            /* A timer target for tests that only need a side effect. */
+static void timer_test_target(void) { g_timer_hits++; }
+
+static void test_timer_heap_orders_by_deadline(void)
+{
+	bzy_timer_reset();
+	void *a = bzy_timer_schedule(timer_test_target, 300, 0);
+	void *b = bzy_timer_schedule(timer_test_target, 100, 0);
+	void *c = bzy_timer_schedule(timer_test_target, 200, 0);
+	ASSERT_INT(bzy_timer_count(), 3);
+	ASSERT_INT(bzy_timer_next_deadline(), 100);   /* Min, regardless of insertion order. */
+
+	ASSERT(bzy_timer_pop_due(50) == NULL);         /* Nothing due before 100. */
+	void *d1 = bzy_timer_pop_due(150);
+	ASSERT(d1 == b);                               /* Earliest deadline pops first. */
+	bzy_release(d1);                               /* One-shot: drop the heap's transferred ref. */
+	ASSERT_INT(bzy_timer_next_deadline(), 200);
+
+	bzy_release(a); bzy_release(b); bzy_release(c);/* Drop the caller refs returned by schedule. */
+	bzy_timer_reset();
+}
+
+static void test_timer_periodic_coalesces_missed_ticks(void)
+{
+	bzy_timer_reset();
+	void *t = bzy_timer_schedule(timer_test_target, 100, 10);  /* first=100, period=10. */
+	void *due = bzy_timer_pop_due(135);
+	ASSERT(due == t);
+	bzy_timer_reinsert(t, 135);                    /* 100->110->120->130->140 (first slot > 135). */
+	ASSERT_INT(bzy_timer_next_deadline(), 140);    /* Coalesced: one future slot, not a backlog. */
+	bzy_release(t);
+	bzy_timer_reset();
+}
+
+static void test_timer_cancel_is_skipped(void)
+{
+	bzy_timer_reset();
+	void *t = bzy_timer_schedule(timer_test_target, 100, 0);
+	bzy_timer_cancel(t);
+	ASSERT_INT(bzy_timer_next_deadline(), -1);     /* Cancelled entries are evicted lazily, not returned. */
+	ASSERT(bzy_timer_pop_due(1000) == NULL);
+	bzy_release(t);                                /* Caller ref; heap ref already dropped on eviction. */
+	ASSERT_INT(bzy_timer_count(), 0);
+	bzy_timer_reset();
+}
+
+static void test_timer_refcount_lifecycle(void)
+{
+	bzy_timer_reset();
+	int64_t before = bzy_live_count();
+	void *t = bzy_timer_schedule(timer_test_target, 100, 0);
+	ASSERT_INT(bzy_live_count(), before + 1);      /* One live Timer object. */
+	ASSERT_INT(*(int64_t*)((char*)t + 8), 2);      /* refcount 2: caller + heap. */
+	void *due = bzy_timer_pop_due(150);
+	ASSERT(due == t);
+	bzy_release(due);                              /* Heap ref gone -> rc 1. */
+	ASSERT_INT(*(int64_t*)((char*)t + 8), 1);
+	bzy_release(t);                                /* Caller ref gone -> freed. */
+	ASSERT_INT(bzy_live_count(), before);
+	bzy_timer_reset();
+}
+
 static void test_file_predicates(void)
 {
 	FILE *f = fopen("bzy_test_tmp.txt", "wb");
@@ -926,6 +988,10 @@ int main(void)
 	RUN(test_shared_atomic_refcount);
 	RUN(test_scheduler_multicore);
 	RUN(test_channel_roundtrip);
+	RUN(test_timer_heap_orders_by_deadline);
+	RUN(test_timer_periodic_coalesces_missed_ticks);
+	RUN(test_timer_cancel_is_skipped);
+	RUN(test_timer_refcount_lifecycle);
 	RUN(test_file_predicates);
 	RUN(test_file_read_write);
 	RUN(test_file_search);
