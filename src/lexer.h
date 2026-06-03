@@ -5,17 +5,17 @@ typedef enum
 {
 	TOKEN_EOF = 0, TOKEN_IDENT, TOKEN_INT_LIT,
 	TOKEN_VOID, TOKEN_INT, TOKEN_IF, TOKEN_ELSE, TOKEN_WHILE, TOKEN_FOREACH, TOKEN_FOR, TOKEN_IN, TOKEN_RETURN, TOKEN_THROW, TOKEN_TRY, TOKEN_CATCH, TOKEN_SPAWN,
-	TOKEN_BREAK, TOKEN_CONTINUE,                         /* loop control */
-	TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT,             /* switch */
+	TOKEN_BREAK, TOKEN_CONTINUE,                         /* Loop control. */
+	TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT,             /* Switch. */
 	TOKEN_CLASS, TOKEN_EXTENDS, TOKEN_NEW, TOKEN_THIS,
-	TOKEN_BYTE, TOKEN_SHORT, TOKEN_LONG,                 /* signed width keywords  */
-	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* unsigned width keywords */
-	TOKEN_BOOLEAN, TOKEN_TRUE, TOKEN_FALSE,              /* boolean type + literals */
-	TOKEN_FLOAT, TOKEN_DOUBLE, TOKEN_FLOAT_LIT,          /* float/double types + literal */
-	TOKEN_STR_LIT,                                       /* "..." string literal */
-	TOKEN_STRING,                                        /* `string` type keyword */
-	TOKEN_MAP,                                           /* `map` type keyword */
-	TOKEN_CHANNEL,                                       /* `channel` type keyword */
+	TOKEN_BYTE, TOKEN_SHORT, TOKEN_LONG,                 /* Signed width keywords. */
+	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* Unsigned width keywords. */
+	TOKEN_BOOLEAN, TOKEN_TRUE, TOKEN_FALSE,              /* Boolean type + literals. */
+	TOKEN_FLOAT, TOKEN_DOUBLE, TOKEN_FLOAT_LIT,          /* Float/double types + literal. */
+	TOKEN_STR_LIT,                                       /* "..." string literal. */
+	TOKEN_STRING,                                        /* `string` type keyword. */
+	TOKEN_MAP,                                           /* `map` type keyword. */
+	TOKEN_CHANNEL,                                       /* `channel` type keyword. */
 	TOKEN_LBRACKET, TOKEN_RBRACKET,                      /* [ ] */
 	TOKEN_PLUS, TOKEN_MINUS, TOKEN_STAR, TOKEN_SLASH,
 	TOKEN_PLUSPLUS, TOKEN_MINUSMINUS,                    /* ++ -- */

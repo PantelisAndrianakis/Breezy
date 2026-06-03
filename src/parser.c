@@ -29,7 +29,7 @@ static Token expect(Parser *p, TokenType tt)
 {
 	if (p->cur.type != tt)
 	{
-		fprintf(stderr, "line %d: expected '%s', got '%s'\n",
+		fprintf(stderr, "line %d: Expected '%s', got '%s'\n",
 				p->cur.line, token_type_name(tt), token_type_name(p->cur.type));
 		exit(1);
 	}
@@ -130,9 +130,9 @@ static Expr *parse_unary(Parser *p)
 	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID)
 	{
 		int line=p->cur.line;
-		advance(p);                 /* consume '('. */
+		advance(p);                 /* Consume '('. */
 		Expr *e=expr_new(EX_CAST,line);
-		parse_type(p,&e->type);     /* cast target lives in the result type slot. */
+		parse_type(p,&e->type);     /* Cast target lives in the result type slot. */
 		expect(p,TOKEN_RPAREN);
 		e->lhs=parse_unary(p);
 		return e;
@@ -209,7 +209,7 @@ static int parse_args(Parser *p, Expr **out)
 	{
 		if (n >= 8)
 		{
-			fprintf(stderr,"line %d: too many args\n",p->cur.line);
+			fprintf(stderr,"line %d: Too many args.\n",p->cur.line);
 			exit(1);
 		}
 		out[n++] = parse_expr(p);
@@ -296,7 +296,7 @@ static Expr *parse_primary(Parser *p)
 		{
 			advance(p);                       /* '[' */
 			Expr *e=expr_new(EX_NEWARRAY,line);
-			e->lhs=parse_expr(p);             /* the count */
+			e->lhs=parse_expr(p);             /* The count. */
 			expect(p,TOKEN_RBRACKET);
 			e->type.kind=TY_ARRAY;
 			e->type.elem=typeref_box(et);
@@ -305,7 +305,7 @@ static Expr *parse_primary(Parser *p)
 
 		expect(p,TOKEN_LPAREN);
 		Expr *e=expr_new(EX_NEW,line);
-		strcpy(e->name,et.class_name);        /* object: et is an IDENT class */
+		strcpy(e->name,et.class_name);        /* Object: et is an IDENT class. */
 		if (!check(p,TOKEN_RPAREN))
 		{
 			e->arg_count=parse_args(p,e->args);   /* Constructor arguments. */
@@ -318,7 +318,7 @@ static Expr *parse_primary(Parser *p)
 	{
 		char ns[64];
 		strcpy(ns,p->cur.text);
-		advance(p);                 /* namespace */
+		advance(p);                 /* Namespace. */
 		expect(p,TOKEN_DOT);
 		Token m=expect(p,TOKEN_IDENT);
 		if (check(p,TOKEN_LPAREN))
@@ -363,7 +363,7 @@ static Expr *parse_primary(Parser *p)
 		expect(p,TOKEN_RPAREN);
 		return e;
 	}
-	fprintf(stderr,"line %d: unexpected token '%s'\n", line, token_type_name(p->cur.type));
+	fprintf(stderr,"line %d: Unexpected token '%s'\n", line, token_type_name(p->cur.type));
 	exit(1);
 }
 
@@ -442,7 +442,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	{
 		if (!is_generic_template(p->cur.text))
 		{
-			fprintf(stderr,"line %d: unknown generic template '%s' (user-defined generics are not supported)\n",
+			fprintf(stderr,"line %d: Unknown generic template '%s' (user-defined generics are not supported).\n",
 					p->cur.line, p->cur.text);
 			exit(1);
 		}
@@ -688,7 +688,7 @@ static Stmt *parse_simple_stmt(Parser *p)
 	{
 		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
 		{
-			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			fprintf(stderr,"line %d: Invalid assignment target.\n",line);
 			exit(1);
 		}
 
@@ -703,7 +703,7 @@ static Stmt *parse_simple_stmt(Parser *p)
 	{
 		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
 		{
-			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			fprintf(stderr,"line %d: Invalid assignment target.\n",line);
 			exit(1);
 		}
 
@@ -796,7 +796,7 @@ static Stmt *parse_switch(Parser *p)
 		{
 			if (!seen_label)
 			{
-				fprintf(stderr,"line %d: statement before first case in switch\n",p->cur.line);
+				fprintf(stderr,"line %d: Statement before first case in switch.\n",p->cur.line);
 				exit(1);
 			}
 
@@ -854,7 +854,7 @@ static Stmt *parse_assign_or_expr(Parser *p)
 	{
 		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
 		{
-			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			fprintf(stderr,"line %d: Invalid assignment target.\n",line);
 			exit(1);
 		}
 		Stmt *s=stmt_new(ST_ASSIGN,line);
@@ -868,7 +868,7 @@ static Stmt *parse_assign_or_expr(Parser *p)
 	{
 		if (first->kind!=EX_IDENT && first->kind!=EX_FIELD && first->kind!=EX_INDEX)
 		{
-			fprintf(stderr,"line %d: invalid assignment target\n",line);
+			fprintf(stderr,"line %d: Invalid assignment target.\n",line);
 			exit(1);
 		}
 
@@ -972,7 +972,7 @@ static Stmt *parse_statement(Parser *p)
 		s->expr=parse_expr(p);
 		if (s->expr->kind != EX_CALL)
 		{
-			fprintf(stderr,"line %d: spawn expects a function call\n", line);
+			fprintf(stderr,"line %d: Spawn expects a function call.\n", line);
 			exit(1);
 		}
 
@@ -1007,7 +1007,7 @@ static Func *parse_function(Parser *p)
 		{
 			if (f->param_count>=8)
 			{
-				fprintf(stderr,"too many params\n");
+				fprintf(stderr,"Too many params.\n");
 				exit(1);
 			}
 			Param *pm=&f->params[f->param_count++];
@@ -1040,7 +1040,7 @@ static ClassDecl *parse_class(Parser *p)
 		/* Constructor: the class name immediately followed by '(' (no return type). */
 		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,c->name)==0 && p->peek.type==TOKEN_LPAREN)
 		{
-			advance(p);                 /* class name */
+			advance(p);                 /* Class name. */
 			Func *f=func_new();
 			f->ret_type.kind=TY_VOID;
 			strcpy(f->name,c->name);
@@ -1051,7 +1051,7 @@ static ClassDecl *parse_class(Parser *p)
 				{
 					if (f->param_count>=8)
 					{
-						fprintf(stderr,"too many params\n");
+						fprintf(stderr,"Too many params.\n");
 						exit(1);
 					}
 					Param *pm=&f->params[f->param_count++];
@@ -1071,7 +1071,7 @@ static ClassDecl *parse_class(Parser *p)
 		TypeRef ty;
 		if (!parse_type(p,&ty))
 		{
-			fprintf(stderr,"line %d: expected member type\n",p->cur.line);
+			fprintf(stderr,"line %d: Expected member type.\n",p->cur.line);
 			exit(1);
 		}
 		Token mname=expect(p,TOKEN_IDENT);
@@ -1087,7 +1087,7 @@ static ClassDecl *parse_class(Parser *p)
 				{
 					if (f->param_count>=8)
 					{
-						fprintf(stderr,"too many params\n");
+						fprintf(stderr,"Too many params.\n");
 						exit(1);
 					}
 					Param *pm=&f->params[f->param_count++];
@@ -1101,7 +1101,7 @@ static ClassDecl *parse_class(Parser *p)
 			f->body=parse_block(p);
 			if (c->method_count>=32)
 			{
-				fprintf(stderr,"too many methods\n");
+				fprintf(stderr,"Too many methods.\n");
 				exit(1);
 			}
 			c->methods[c->method_count++]=f;
@@ -1111,7 +1111,7 @@ static ClassDecl *parse_class(Parser *p)
 			expect(p,TOKEN_SEMICOLON);
 			if (c->field_count>=32)
 			{
-				fprintf(stderr,"too many fields\n");
+				fprintf(stderr,"Too many fields.\n");
 				exit(1);
 			}
 			c->fields[c->field_count].type=ty;
@@ -1132,7 +1132,7 @@ Unit *parse_unit(Parser *p)
 		{
 			if (u->klass)
 			{
-				fprintf(stderr,"line %d: only one class per file\n",p->cur.line);
+				fprintf(stderr,"line %d: Only one class per file.\n",p->cur.line);
 				exit(1);
 			}
 			u->klass=parse_class(p);
@@ -1141,7 +1141,7 @@ Unit *parse_unit(Parser *p)
 		{
 			if (u->func_count>=8)
 			{
-				fprintf(stderr,"too many top-level functions\n");
+				fprintf(stderr,"Too many top-level functions.\n");
 				exit(1);
 			}
 			u->funcs[u->func_count++]=parse_function(p);

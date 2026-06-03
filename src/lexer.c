@@ -207,7 +207,7 @@ Token lexer_next(Lexer *l)
 					d = '"';
 					break;
 				default:
-					fprintf(stderr, "line %d: bad string escape '\\%c'\n", l->line, e);
+					fprintf(stderr, "line %d: Bad string escape '\\%c'\n", l->line, e);
 					exit(1);
 				}
 			}
@@ -217,7 +217,7 @@ Token lexer_next(Lexer *l)
 
 		if (peek_ch(l) != '"')
 		{
-			fprintf(stderr, "line %d: unterminated string literal\n", l->line);
+			fprintf(stderr, "line %d: Unterminated string literal.\n", l->line);
 			exit(1);
 		}
 
@@ -375,13 +375,13 @@ Token lexer_next(Lexer *l)
 		}
 		else
 		{
-			fprintf(stderr,"line %d: unexpected '!'\n",l->line);
+			fprintf(stderr,"line %d: Unexpected '!'\n",l->line);
 			exit(1);
 		}
 
 		return t;
 	default:
-		fprintf(stderr,"line %d: unexpected char '%c'\n",l->line,c);
+		fprintf(stderr,"line %d: Unexpected char '%c'\n",l->line,c);
 		exit(1);
 	}
 }

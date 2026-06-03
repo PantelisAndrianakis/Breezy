@@ -7,8 +7,8 @@
    descriptor: desc[1] == -1 marks "iterate length elements from desc[2], stride
    desc[3]" (length read from the array's own field at offset 24). */
 
-static int64_t g_array_val_typeinfo[2] = { 0 /* finalizer */, 0 /* child count */ };
-static int64_t g_array_obj_typeinfo[4] = { 0 /* finalizer */, -1 /* SPAN */, 32 /* off */, 8 /* stride */ };
+static int64_t g_array_val_typeinfo[2] = { 0 /* Finalizer. */, 0 /* Child count. */ };
+static int64_t g_array_obj_typeinfo[4] = { 0 /* Finalizer. */, -1 /* SPAN. */, 32 /* Off. */, 8 /* Stride. */ };
 static int64_t g_array_val_vtable[2];
 static int64_t g_array_obj_vtable[2];
 
@@ -39,7 +39,7 @@ int64_t bzy_array_len(void *a)
 
 void bzy_oob_abort(int64_t index, int64_t length)
 {
-	fprintf(stderr, "array index %lld out of bounds for length %lld\n",
+	fprintf(stderr, "Array index %lld out of bounds for length %lld.\n",
 			(long long)index, (long long)length);
 	abort();
 }

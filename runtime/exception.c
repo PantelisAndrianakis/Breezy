@@ -179,7 +179,7 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 void bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame)
 {
 	char buf[96];
-	int len = snprintf(buf, sizeof(buf), "array index %lld out of bounds for length %lld",
+	int len = snprintf(buf, sizeof(buf), "Array index %lld out of bounds for length %lld.",
 					   (long long)index, (long long)length);
 	void *msg = bzy_str_new(buf, len);
 	void *exc = bzy_alloc(32);                       /* Owned (+1); fields zeroed. */

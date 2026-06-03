@@ -303,7 +303,7 @@ static void worker_loop(void)
 			if (g_nworkers == 1 && g_live > 0)
 			{
 				/* Single worker, breezes remain parked, nothing can ever wake them. */
-				fprintf(stderr, "deadlock: all breezes blocked\n");
+				fprintf(stderr, "Deadlock: all breezes blocked.\n");
 				abort();
 			}
 

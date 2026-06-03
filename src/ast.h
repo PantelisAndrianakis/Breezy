@@ -5,17 +5,17 @@ typedef enum
 {
 	TY_VOID,
 	TY_BOOL,
-	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG,    /* signed   */
-	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* unsigned */
-	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only */
-	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array */
-	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map */
-	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object */
-	TY_ENTRY,                                 /* map Entry: 8-byte pointer; elem=K, elem2=V */
-	TY_CHANNEL,                               /* channel<T>: 8-byte pointer; elem=T */
-	TY_TIMER,                                 /* Timer: 8-byte pointer to a heap timer handle */
+	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG,    /* Signed. */
+	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* Unsigned. */
+	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only. */
+	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array. */
+	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map. */
+	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object. */
+	TY_ENTRY,                                 /* map Entry: 8-byte pointer; elem=K, elem2=V. */
+	TY_CHANNEL,                               /* channel<T>: 8-byte pointer; elem=T. */
+	TY_TIMER,                                 /* Timer: 8-byte pointer to a heap timer handle. */
 	TY_OBJECT,
-	TY_STRING   /* immutable string. */
+	TY_STRING   /* Immutable string. */
 } TypeKind;
 typedef struct TypeRef
 {
@@ -114,20 +114,20 @@ struct Expr
 {
 	ExprKind kind;
 	int      line;
-	TypeRef  type;            /* resolver: result type */
-	int      anno_int;        /* resolver: stack offset / field offset / vtable slot */
-	char     anno_str[64];    /* resolver: static class for dispatch */
+	TypeRef  type;            /* Resolver: result type. */
+	int      anno_int;        /* Resolver: stack offset / field offset / vtable slot. */
+	char     anno_str[64];    /* Resolver: static class for dispatch. */
 	int      anno_stack;      /* EX_NEW: 1 if stack-allocated, else 0 (heap). */
 	int      anno_stack_off;  /* EX_NEW: rbp offset of the stack object when anno_stack. */
 	long long int_val;        /* EX_INT (64-bit: 'long' is 32-bit on Win64). */
 	char     int_suffix[4];   /* EX_INT/EX_FLOAT: literal suffix from the lexer ("", "L", "u", "uL", "Lu", "f"). */
 	double   float_val;       /* EX_FLOAT: parsed literal value. */
 	char     str_val[256];    /* EX_STR: decoded string-literal bytes. */
-	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD */
-	int      op;              /* EX_BINARY/EX_UNARY: a TokenType */
-	Expr    *lhs;             /* binary left / unary operand / method-call|field receiver */
-	Expr    *rhs;             /* binary right */
-	Expr    *args[8];         /* call / method call */
+	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD. */
+	int      op;              /* EX_BINARY/EX_UNARY: a TokenType. */
+	Expr    *lhs;             /* Binary left / unary operand / method-call|field receiver. */
+	Expr    *rhs;             /* Binary right. */
+	Expr    *args[8];         /* Call / method call. */
 	int      arg_count;
 };
 
@@ -139,10 +139,10 @@ struct Stmt
 {
 	StmtKind kind;
 	int      line;
-	TypeRef  decl_type;       /* ST_VARDECL */
+	TypeRef  decl_type;       /* ST_VARDECL. */
 	char     decl_name[64];
-	Expr    *decl_init;       /* may be NULL */
-	int      decl_offset;     /* resolver: stack slot for this local */
+	Expr    *decl_init;       /* May be NULL. */
+	int      decl_offset;     /* Resolver: stack slot for this local. */
 	int      fe_coll_offset;  /* ST_FOREACH: container pointer slot. */
 	int      fe_index_offset; /* ST_FOREACH: index / map slot cursor. */
 	int      fe_len_offset;   /* ST_FOREACH (string): precomputed length. */
@@ -152,13 +152,13 @@ struct Stmt
 	int      fe_val_offset;   /* ST_FOREACH pair form: value var stack slot. */
 	Stmt    *for_init;        /* ST_FOR: init clause (var-decl or assignment/expr). */
 	Stmt    *for_post;        /* ST_FOR: post clause (assignment or ++/--). */
-	Expr    *target;          /* ST_ASSIGN lvalue (EX_IDENT|EX_FIELD) */
-	Expr    *value;           /* ST_ASSIGN rhs */
-	Expr    *cond;            /* ST_IF / ST_WHILE */
-	Block   *then_blk;        /* then-branch / while-body */
-	Block   *else_blk;        /* else-branch (NULL if none) */
-	Expr    *ret_val;         /* ST_RETURN (may be NULL) */
-	Expr    *expr;            /* ST_EXPR */
+	Expr    *target;          /* ST_ASSIGN lvalue (EX_IDENT|EX_FIELD). */
+	Expr    *value;           /* ST_ASSIGN rhs. */
+	Expr    *cond;            /* ST_IF / ST_WHILE. */
+	Block   *then_blk;        /* Then-branch / while-body. */
+	Block   *else_blk;        /* Else-branch (NULL if none). */
+	Expr    *ret_val;         /* ST_RETURN (may be NULL). */
+	Expr    *expr;            /* ST_EXPR. */
 };
 
 struct Block
@@ -180,7 +180,7 @@ typedef struct
 	Param   params[8];
 	int param_count;
 	Block  *body;
-	int     frame_size;       /* resolver */
+	int     frame_size;       /* Resolver. */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
 	int     stack_alloc_bytes;      /* Escape pass: total frame bytes reserved for stack objects. */
@@ -205,8 +205,8 @@ typedef struct
 
 typedef struct
 {
-	ClassDecl *klass;         /* non-NULL if this file declares a class */
-	Func      *funcs[8];      /* file-scope functions */
+	ClassDecl *klass;         /* Non-NULL if this file declares a class. */
+	Func      *funcs[8];      /* File-scope functions. */
 	int        func_count;
 } Unit;
 

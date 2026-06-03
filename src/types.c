@@ -203,7 +203,7 @@ void types_register_unit_names(TypeTable *tt, Unit *u)
 	{
 		if (tt->class_count>=MAX_CLASSES)
 		{
-			fprintf(stderr,"too many classes\n");
+			fprintf(stderr,"Too many classes.\n");
 			exit(1);
 		}
 
@@ -216,7 +216,7 @@ void types_register_unit_names(TypeTable *tt, Unit *u)
 	{
 		if (tt->func_count>=MAX_FUNCS)
 		{
-			fprintf(stderr,"too many funcs\n");
+			fprintf(stderr,"Too many funcs.\n");
 			exit(1);
 		}
 
@@ -237,7 +237,7 @@ static void link_parent(TypeTable *tt, ClassInfo *c, ClassDecl *d)
 	c->parent=types_find_class(tt,d->parent_name);
 	if (!c->parent)
 	{
-		fprintf(stderr,"class %s: unknown parent '%s'\n",c->name,d->parent_name);
+		fprintf(stderr,"Class %s: unknown parent '%s'\n",c->name,d->parent_name);
 		exit(1);
 	}
 }

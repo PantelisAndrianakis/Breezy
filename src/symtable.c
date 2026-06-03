@@ -13,7 +13,7 @@ Symbol *sym_add(SymTable *st, const char *name, TypeRef type)
 {
 	if (st->count>=MAX_SYMS)
 	{
-		fprintf(stderr,"too many locals\n");
+		fprintf(stderr,"Too many locals.\n");
 		exit(1);
 	}
 

@@ -92,7 +92,7 @@ void bzy_file_create_file(void *path)
 	FILE *f = fopen(bzy_str_data(path), "wb");
 	if (!f)
 	{
-		io_fail("File.createFile: could not create file");
+		io_fail("File.createFile: could not create file.");
 		return;
 	}
 
@@ -107,7 +107,7 @@ void bzy_file_create_folder(void *path)
 	size_t n = strlen(p);
 	if (n >= sizeof(buf))
 	{
-		io_fail("File.createFolder: path too long");
+		io_fail("File.createFolder: path too long.");
 		return;
 	}
 
@@ -121,13 +121,13 @@ void bzy_file_create_folder(void *path)
 #ifdef _WIN32
 			if (!CreateDirectoryA(buf, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
 			{
-				io_fail("File.createFolder: could not create folder");
+				io_fail("File.createFolder: could not create folder.");
 				return;
 			}
 #else
 			if (mkdir(buf, 0777) != 0 && errno != EEXIST)
 			{
-				io_fail("File.createFolder: could not create folder");
+				io_fail("File.createFolder: could not create folder.");
 				return;
 			}
 #endif
@@ -142,7 +142,7 @@ void bzy_file_delete(void *path)
 	int d = 0;
 	if (!file_stat(p, &d))
 	{
-		io_fail("File.delete: path does not exist");
+		io_fail("File.delete: path does not exist.");
 		return;
 	}
 
@@ -153,7 +153,7 @@ void bzy_file_delete(void *path)
 #endif
 	if (!ok)
 	{
-		io_fail("File.delete: could not delete path");
+		io_fail("File.delete: could not delete path.");
 	}
 }
 
@@ -244,13 +244,13 @@ void bzy_file_delete_recursive(void *path)
 	const char *p = bzy_str_data(path);
 	if (!file_stat(p, NULL))
 	{
-		io_fail("File.deleteRecursive: path does not exist");
+		io_fail("File.deleteRecursive: path does not exist.");
 		return;
 	}
 
 	if (!delete_tree(p))
 	{
-		io_fail("File.deleteRecursive: could not delete tree");
+		io_fail("File.deleteRecursive: could not delete tree.");
 	}
 }
 
@@ -286,7 +286,7 @@ static char *read_all(const char *path, int64_t *out_len, const char *who)
 static void *real_read_text(void *path)
 {
 	int64_t n = 0;
-	char *buf = read_all(bzy_str_data(path), &n, "File.readText: could not read file");
+	char *buf = read_all(bzy_str_data(path), &n, "File.readText: could not read file.");
 	if (!buf)
 	{
 		return NULL;
@@ -300,7 +300,7 @@ static void *real_read_text(void *path)
 static void *real_read_lines(void *path)
 {
 	int64_t n = 0;
-	char *buf = read_all(bzy_str_data(path), &n, "File.readLines: could not read file");
+	char *buf = read_all(bzy_str_data(path), &n, "File.readLines: could not read file.");
 	if (!buf)
 	{
 		return NULL;
@@ -367,18 +367,18 @@ static void write_file(void *path, void *content, const char *mode, const char *
 
 static void real_write_text(void *path, void *content)
 {
-	write_file(path, content, "wb", "File.writeText: could not write file");
+	write_file(path, content, "wb", "File.writeText: could not write file.");
 }
 
 static void real_append_text(void *path, void *content)
 {
-	write_file(path, content, "ab", "File.appendText: could not write file");
+	write_file(path, content, "ab", "File.appendText: could not write file.");
 }
 
 static void *real_read_bytes(void *path)
 {
 	int64_t n = 0;
-	char *buf = read_all(bzy_str_data(path), &n, "File.readBytes: could not read file");
+	char *buf = read_all(bzy_str_data(path), &n, "File.readBytes: could not read file.");
 	if (!buf)
 	{
 		return NULL;
@@ -400,7 +400,7 @@ static void real_write_bytes(void *path, void *data)
 	FILE *f = fopen(bzy_str_data(path), "wb");
 	if (!f)
 	{
-		io_fail("File.writeBytes: could not write file");
+		io_fail("File.writeBytes: could not write file.");
 		return;
 	}
 
@@ -580,17 +580,17 @@ static void *build_search(void *folder, const char *pattern, int recursive, cons
 
 void *bzy_file_list(void *folder)
 {
-	return build_search(folder, NULL, 0, "File.list: not a folder");
+	return build_search(folder, NULL, 0, "File.list: not a folder.");
 }
 
 void *bzy_file_search(void *folder, void *pattern)
 {
-	return build_search(folder, bzy_str_data(pattern), 0, "File.search: not a folder");
+	return build_search(folder, bzy_str_data(pattern), 0, "File.search: not a folder.");
 }
 
 void *bzy_file_search_recursive(void *folder, void *pattern)
 {
-	return build_search(folder, bzy_str_data(pattern), 1, "File.searchRecursive: not a folder");
+	return build_search(folder, bzy_str_data(pattern), 1, "File.searchRecursive: not a folder.");
 }
 
 /* Attribute bits match the Windows FILE_ATTRIBUTE_* constants:
@@ -602,7 +602,7 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 	DWORD a = GetFileAttributesA(p);
 	if (a == INVALID_FILE_ATTRIBUTES)
 	{
-		io_fail("File.setAttribute: path does not exist");
+		io_fail("File.setAttribute: path does not exist.");
 		return;
 	}
 
@@ -617,13 +617,13 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 
 	if (!SetFileAttributesA(p, a))
 	{
-		io_fail("File.setAttribute: could not set attributes");
+		io_fail("File.setAttribute: could not set attributes.");
 	}
 #else
 	struct stat st;
 	if (stat(p, &st) != 0)
 	{
-		io_fail("File.setAttribute: path does not exist");
+		io_fail("File.setAttribute: path does not exist.");
 		return;
 	}
 
@@ -632,7 +632,7 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 		mode_t m = on ? (st.st_mode & ~(mode_t)0222) : (st.st_mode | 0200);
 		if (chmod(p, m) != 0)
 		{
-			io_fail("File.setAttribute: could not set attributes");
+			io_fail("File.setAttribute: could not set attributes.");
 		}
 	}
 	/* HIDDEN/SYSTEM/ARCHIVE have no portable equivalent: no-op. */

@@ -117,7 +117,7 @@ int64_t bzy_rnd_get_ii(int64_t origin, int64_t bound)
 		return origin;
 	}
 
-	return origin + (int64_t)bounded((uint64_t)(bound - origin) + 1);   /* inclusive */
+	return origin + (int64_t)bounded((uint64_t)(bound - origin) + 1);   /* Inclusive. */
 }
 
 int64_t bzy_rnd_get_l(int64_t bound)

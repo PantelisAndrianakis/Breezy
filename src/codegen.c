@@ -34,7 +34,7 @@ int  cg_label(Codegen *cg)
 }
 
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
-static const char *ARG_REG[4] = { "rcx","rdx","r8","r9" };   /* Win64 */
+static const char *ARG_REG[4] = { "rcx","rdx","r8","r9" };   /* Win64. */
 
 /* Load a scalar from 'mem' into rax, sign- or zero-extending to 64 bits per its
    declared width. Objects and 64-bit integers load with a plain mov. */
@@ -174,23 +174,23 @@ static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
    value being stored survives address computation. */
 static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	cg_expr(cg,tt,e->lhs);                 /* base -> rax */
+	cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
 	cg_emit(cg,"    push rax");
-	cg_expr(cg,tt,e->rhs);                 /* index -> rax */
+	cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */
 	cg_emit(cg,"    mov rcx, rax");
 	cg_emit(cg,"    pop rax");             /* base */
-	cg_emit(cg,"    mov rdx, [rax + 24]"); /* length */
+	cg_emit(cg,"    mov rdx, [rax + 24]"); /* Length. */
 	int ok = cg_label(cg);
 	int pc = cg_label(cg);
 	cg_emit(cg,"    cmp rcx, rdx");
-	cg_emit(cg,"    jb .L%d", ok);         /* unsigned: catches negative and >= length */
+	cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
 	cg_emit(cg,"    lea r8, [rel .L%d]", pc);
 	cg_emit(cg,".L%d:", pc);               /* The throw-site PC (within this function/try). */
 	cg_emit(cg,"    mov r9, rbp");
 	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
 	cg_emit(cg,"    and rsp, -16");
 	cg_emit(cg,"    sub rsp, 32");
-	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns */
+	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
 	cg_emit(cg,".L%d:", ok);
 	cg_emit(cg,"    lea rbx, [rax + rcx*8 + 32]");
 }
@@ -271,9 +271,9 @@ static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr_owned(cg,tt,e->lhs);
 	cg_emit(cg,"    sub rsp, 32");
-	cg_emit(cg,"    mov [rsp], rax");          /* lhs */
+	cg_emit(cg,"    mov [rsp], rax");          /* lhs. */
 	cg_expr_owned(cg,tt,e->rhs);
-	cg_emit(cg,"    mov [rsp + 8], rax");      /* rhs */
+	cg_emit(cg,"    mov [rsp + 8], rax");      /* rhs. */
 	cg_emit(cg,"    mov rcx, [rsp]");
 	cg_emit(cg,"    mov rdx, [rsp + 8]");
 	cg_aligned_call(cg,"bzy_str_concat");      /* Owned (+1) result in rax. */
@@ -440,7 +440,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		break;
 	}
 	default:
-		fprintf(stderr,"codegen: bad binary op\n");
+		fprintf(stderr,"Codegen: bad binary op\n");
 		exit(1);
 	}
 }
@@ -459,7 +459,7 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	int total = (self?1:0) + argc;
 	if (total > 4)
 	{
-		fprintf(stderr,"codegen: >4 args unsupported\n");
+		fprintf(stderr,"Codegen: >4 args unsupported\n");
 		exit(1);
 	}
 
@@ -602,10 +602,10 @@ static void cg_sb_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (strcmp(e->name,"append")==0)
 	{
-		cg_expr(cg,tt,e->lhs);             /* sb pointer. */
+		cg_expr(cg,tt,e->lhs);             /* Sb pointer. */
 		cg_emit(cg,"    sub rsp, 16");
 		cg_emit(cg,"    mov [rsp], rax");
-		cg_expr(cg,tt,e->args[0]);         /* string argument. */
+		cg_expr(cg,tt,e->args[0]);         /* String argument. */
 		cg_emit(cg,"    mov [rsp + 8], rax");
 		cg_emit(cg,"    mov rcx, [rsp]");
 		cg_emit(cg,"    mov rdx, [rsp + 8]");
@@ -638,10 +638,10 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(e->name,"containsValue")==0)
 	{
 		TypeKind vk = e->lhs->type.elem2->kind;
-		cg_expr(cg,tt,e->lhs);                  /* map */
+		cg_expr(cg,tt,e->lhs);                  /* Map. */
 		cg_emit(cg,"    sub rsp, 16");
 		cg_emit(cg,"    mov [rsp], rax");
-		cg_expr(cg,tt,e->args[0]);              /* value (rax, or xmm0 if FP) */
+		cg_expr(cg,tt,e->args[0]);              /* Value (rax, or xmm0 if FP). */
 		if (ty_is_float(vk))
 		{
 			cg_emit(cg, vk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
@@ -666,7 +666,7 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(e->name,"getKeys")==0 || strcmp(e->name,"getValues")==0 || strcmp(e->name,"getEntries")==0)
 	{
-		cg_expr(cg,tt,e->lhs);                  /* map */
+		cg_expr(cg,tt,e->lhs);                  /* Map. */
 		cg_emit(cg,"    mov rcx, rax");
 		const char *fn = strcmp(e->name,"getKeys")==0 ? "bzy_map_keys"
 						 : strcmp(e->name,"getValues")==0 ? "bzy_map_values"
@@ -677,12 +677,12 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(e->name,"put")==0)
 	{
-		cg_expr(cg,tt,e->lhs);                 /* map */
+		cg_expr(cg,tt,e->lhs);                 /* Map. */
 		cg_emit(cg,"    sub rsp, 32");
 		cg_emit(cg,"    mov [rsp], rax");
-		cg_expr(cg,tt,e->args[0]);             /* key */
+		cg_expr(cg,tt,e->args[0]);             /* Key. */
 		cg_emit(cg,"    mov [rsp + 8], rax");
-		cg_expr(cg,tt,e->args[1]);             /* value */
+		cg_expr(cg,tt,e->args[1]);             /* Value. */
 		cg_emit(cg,"    mov [rsp + 16], rax");
 		cg_emit(cg,"    mov rcx, [rsp]");
 		cg_emit(cg,"    mov rdx, [rsp + 8]");
@@ -708,14 +708,14 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	const char *fn = strcmp(e->name,"get")==0 ? "bzy_map_get"
 					 : strcmp(e->name,"containsKey")==0 ? "bzy_map_has"
 					 : "bzy_map_remove";
-	cg_expr(cg,tt,e->lhs);                      /* map */
+	cg_expr(cg,tt,e->lhs);                      /* Map. */
 	cg_emit(cg,"    sub rsp, 16");
 	cg_emit(cg,"    mov [rsp], rax");
-	cg_expr(cg,tt,e->args[0]);                  /* key */
+	cg_expr(cg,tt,e->args[0]);                  /* Key. */
 	cg_emit(cg,"    mov [rsp + 8], rax");
 	cg_emit(cg,"    mov rcx, [rsp]");
 	cg_emit(cg,"    mov rdx, [rsp + 8]");
-	cg_aligned_call(cg,fn);                     /* result (get/has) in rax */
+	cg_aligned_call(cg,fn);                     /* Result (get/has) in rax. */
 	if (expr_is_owned(e->args[0]))
 	{
 		cg_emit(cg,"    mov [rsp], rax");        /* Preserve the result across the key release. */
@@ -732,7 +732,7 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
    FP K/V the bits are bridged rax -> xmm0 as the consumer expects. */
 static void cg_entry_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	cg_expr(cg,tt,e->lhs);                     /* entry pointer */
+	cg_expr(cg,tt,e->lhs);                     /* Entry pointer. */
 	cg_emit(cg,"    mov rcx, rax");
 	cg_aligned_call(cg, strcmp(e->name,"getKey")==0 ? "bzy_entry_key" : "bzy_entry_val");
 	if (ty_is_float(e->type.kind))
@@ -749,7 +749,7 @@ static void cg_channel_method(Codegen *cg, TypeTable *tt, Expr *e)
 	TypeKind et = e->lhs->type.elem->kind;
 	if (strcmp(e->name,"send")==0)
 	{
-		cg_expr(cg,tt,e->lhs);                  /* channel */
+		cg_expr(cg,tt,e->lhs);                  /* Channel. */
 		cg_emit(cg,"    sub rsp, 16");
 		cg_emit(cg,"    mov [rsp], rax");
 		if (ty_is_managed(et))
@@ -823,7 +823,7 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(e->name,"get")==0)
 	{
-		cg_expr(cg,tt,e->lhs);                 /* box ptr -> rax */
+		cg_expr(cg,tt,e->lhs);                 /* Box ptr -> rax. */
 		if (fp)
 		{
 			cg_load_fp(cg,tk,"[rax + 32]");
@@ -843,18 +843,18 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(e->name,"set")==0)
 	{
-		cg_expr(cg,tt,e->lhs);                 /* box ptr */
+		cg_expr(cg,tt,e->lhs);                 /* Box ptr. */
 		cg_emit(cg,"    sub rsp, 16");
 		cg_emit(cg,"    mov [rsp], rax");
 		if (fp)
 		{
-			cg_expr(cg,tt,e->args[0]);         /* value -> xmm0 */
+			cg_expr(cg,tt,e->args[0]);         /* Value -> xmm0. */
 			cg_emit(cg,"    mov rax, [rsp]");
 			cg_store_fp(cg,tk,"[rax + 32]");
 		}
 		else if (managed)
 		{
-			cg_expr(cg,tt,e->args[0]);         /* value ptr -> rax */
+			cg_expr(cg,tt,e->args[0]);         /* Value ptr -> rax. */
 			cg_emit(cg,"    mov [rsp + 8], rax");
 			cg_emit(cg,"    mov rcx, rax");
 			cg_aligned_call(cg,"bzy_retain");  /* Retain the new occupant. */
@@ -872,7 +872,7 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else
 		{
-			cg_expr(cg,tt,e->args[0]);         /* value -> rax */
+			cg_expr(cg,tt,e->args[0]);         /* Value -> rax. */
 			cg_emit(cg,"    mov rbx, [rsp]");
 			cg_emit(cg,"    mov [rbx + 32], rax");    /* Width-extended 8-byte slot. */
 		}
@@ -882,12 +882,12 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	/* contains: bool in rax. */
-	cg_expr(cg,tt,e->lhs);                     /* box ptr */
+	cg_expr(cg,tt,e->lhs);                     /* Box ptr. */
 	cg_emit(cg,"    sub rsp, 16");
 	cg_emit(cg,"    mov [rsp], rax");
 	if (fp)
 	{
-		cg_expr(cg,tt,e->args[0]);             /* arg -> xmm0 */
+		cg_expr(cg,tt,e->args[0]);             /* Arg -> xmm0. */
 		cg_emit(cg,"    mov rax, [rsp]");
 		cg_emit(cg, tk==TY_FLOAT ? "    movss xmm1, dword [rax + 32]" : "    movsd xmm1, qword [rax + 32]");
 		cg_emit(cg, tk==TY_FLOAT ? "    ucomiss xmm0, xmm1" : "    ucomisd xmm0, xmm1");
@@ -896,7 +896,7 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	else if (tk==TY_STRING)
 	{
-		cg_expr(cg,tt,e->args[0]);             /* arg ptr -> rax */
+		cg_expr(cg,tt,e->args[0]);             /* Arg ptr -> rax. */
 		cg_emit(cg,"    mov [rsp + 8], rax");
 		cg_emit(cg,"    mov rdx, rax");
 		cg_emit(cg,"    mov rax, [rsp]");
@@ -912,7 +912,7 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	else   /* Scalar int/bool, or object identity. */
 	{
-		cg_expr(cg,tt,e->args[0]);             /* arg -> rax */
+		cg_expr(cg,tt,e->args[0]);             /* Arg -> rax. */
 		cg_emit(cg,"    mov [rsp + 8], rax");
 		cg_emit(cg,"    mov rbx, rax");
 		cg_emit(cg,"    mov rax, [rsp]");
@@ -939,10 +939,10 @@ static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	TypeKind tk = e->lhs->type.elem->kind;
 	const char *nm = e->name;
-	cg_expr(cg,tt,e->lhs);                  /* set (map) ptr */
+	cg_expr(cg,tt,e->lhs);                  /* Set (map) ptr. */
 	cg_emit(cg,"    sub rsp, 16");
 	cg_emit(cg,"    mov [rsp], rax");
-	cg_expr(cg,tt,e->args[0]);              /* key */
+	cg_expr(cg,tt,e->args[0]);              /* Key. */
 	cg_emit(cg,"    mov [rsp + 8], rax");
 	cg_emit(cg,"    mov rcx, [rsp]");
 	cg_emit(cg,"    mov rdx, [rsp + 8]");
@@ -1088,7 +1088,7 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 		cg_emit(cg,"    mov rcx, [rsp]");
 		cg_aligned_call(cg,fn);
-		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))   /* indexOf/contains arg temp */
+		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))   /* indexOf/contains arg temp. */
 		{
 			cg_emit(cg,"    mov [rsp], rax");
 			cg_emit(cg,"    mov rcx, [rsp + 8]");
@@ -1106,7 +1106,7 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_expr(cg,tt,e->lhs);
 		cg_emit(cg,"    sub rsp, 32");
 		cg_emit(cg,"    mov [rsp], rax");
-		cg_expr(cg,tt,e->args[0]);                  /* index */
+		cg_expr(cg,tt,e->args[0]);                  /* Index. */
 		cg_emit(cg,"    mov [rsp + 8], rax");
 		if (fp)
 		{
@@ -1170,7 +1170,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 	int total = 1 + argc;
 	if (total > 4)
 	{
-		fprintf(stderr,"codegen: constructor with more than 3 arguments unsupported\n");
+		fprintf(stderr,"Codegen: constructor with more than 3 arguments unsupported\n");
 		exit(1);
 	}
 
@@ -1474,7 +1474,7 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	fprintf(stderr,"codegen: unsupported Math method '%s'\n", m);
+	fprintf(stderr,"Codegen: unsupported Math method '%s'\n", m);
 	exit(1);
 }
 
@@ -1787,10 +1787,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rax, %lld", e->int_val);
 		break;
 	case EX_NEWARRAY:
-		cg_expr(cg,tt,e->lhs);             /* count -> rax */
+		cg_expr(cg,tt,e->lhs);             /* Count -> rax. */
 		cg_emit(cg,"    mov rcx, rax");
 		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem->kind) ? 1 : 0);
-		cg_aligned_call(cg,"bzy_array_new");   /* owned (+1) array in rax */
+		cg_aligned_call(cg,"bzy_array_new");   /* Owned (+1) array in rax. */
 		break;
 	case EX_NEWMAP:
 		cg_emit(cg,"    mov rcx, %d", e->type.elem->kind==TY_STRING ? 1 : 0);
@@ -1812,7 +1812,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else if (strcmp(e->type.class_name,"Set")==0)
 		{
-			cg_emit(cg,"    mov rcx, %d", e->type.elem->kind==TY_STRING ? 1 : 0);   /* key_kind */
+			cg_emit(cg,"    mov rcx, %d", e->type.elem->kind==TY_STRING ? 1 : 0);   /* key_kind. */
 			cg_emit(cg,"    mov rdx, 0");                                            /* Values unmanaged. */
 			cg_aligned_call(cg,"bzy_map_new");
 		}
@@ -2076,12 +2076,12 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	{
 		if (fp)
 		{
-			cg_index_addr(cg,tt,target);   /* rbx = element address; xmm0 preserved */
+			cg_index_addr(cg,tt,target);   /* rbx = element address; xmm0 preserved. */
 			cg_store_fp(cg,target->type.kind,"[rbx]");
 		}
 		else
 		{
-			cg_emit(cg,"    push rax");      /* the integer value */
+			cg_emit(cg,"    push rax");      /* The integer value. */
 			cg_index_addr(cg,tt,target);
 			cg_emit(cg,"    pop rax");
 			cg_emit(cg,"    mov [rbx], rax");
@@ -2128,14 +2128,14 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 {
 	if (target->kind==EX_INDEX)
 	{
-		cg_expr_owned(cg,tt,value);          /* +1 new element -> rax */
+		cg_expr_owned(cg,tt,value);          /* +1 new element -> rax. */
 		cg_emit(cg,"    push rax");
-		cg_index_addr(cg,tt,target);         /* rbx = element address */
+		cg_index_addr(cg,tt,target);         /* rbx = element address. */
 		cg_emit(cg,"    pop rax");
-		cg_emit(cg,"    mov rdx, [rbx]");     /* old element */
-		cg_emit(cg,"    mov [rbx], rax");     /* store new (transfers the +1) */
+		cg_emit(cg,"    mov rdx, [rbx]");     /* Old element. */
+		cg_emit(cg,"    mov [rbx], rax");     /* Store new (transfers the +1). */
 		cg_emit(cg,"    mov rcx, rdx");
-		cg_release_rcx(cg);                   /* release old */
+		cg_release_rcx(cg);                   /* Release old. */
 		return;
 	}
 	if (target->kind==EX_IDENT)
@@ -2182,7 +2182,7 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_block(cg,tt,f,s->then_blk,in_main);
 	cg->cur_break_label=sb;
 	cg->cur_continue_label=sc;
-	cg_emit(cg,".L%d:", cont);            /* continue lands here -> post runs. */
+	cg_emit(cg,".L%d:", cont);            /* Continue lands here -> post runs. */
 	cg_stmt(cg,tt,f,s->for_post,in_main);
 	cg_emit(cg,"    jmp .L%d", top);
 	cg_emit(cg,".L%d:", end);

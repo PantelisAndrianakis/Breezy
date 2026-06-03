@@ -62,7 +62,7 @@ void    bzy_oob_abort(int64_t index, int64_t length);                      /* Pr
 void   *bzy_map_new(int64_t key_kind, int64_t val_is_managed); /* Owned (+1). */
 void    bzy_map_put(void *m, int64_t key, int64_t val);
 int64_t bzy_map_get(void *m, int64_t key);   /* 0/NULL if absent; retains a managed value. */
-int64_t bzy_map_has(void *m, int64_t key);   /* 1 / 0 */
+int64_t bzy_map_has(void *m, int64_t key);   /* 1 / 0. */
 void    bzy_map_remove(void *m, int64_t key);
 int64_t bzy_map_len(void *m);
 int64_t bzy_map_iter(void *m, int64_t from);   /* Next full slot index >= from, or -1. */
@@ -89,7 +89,7 @@ int64_t bzy_vec_peek_back(void *v);              /* Retains (owned); aborts if e
 int64_t bzy_vec_peek_front(void *v);
 void    bzy_vec_remove_at(void *v, int64_t i);   /* Bounds-checked; releases the removed managed element. */
 int64_t bzy_vec_index_of(void *v, int64_t needle); /* First index equal per elem_kind, or -1. */
-int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0 */
+int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0. */
 
 int64_t bzy_clock_millis(void);   /* Wall-clock milliseconds since the Unix epoch. */
 int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanoseconds. */
@@ -101,7 +101,7 @@ int64_t bzy_rnd_int(void);                             /* Full 32-bit signed ran
 int64_t bzy_rnd_long(void);                            /* Full 64-bit range. */
 float   bzy_rnd_float(void);                            /* [0, 1). */
 double  bzy_rnd_double(void);                           /* [0, 1). */
-double  bzy_rnd_gaussian(void);                         /* mean 0, stddev 1. */
+double  bzy_rnd_gaussian(void);                         /* Mean 0, stddev 1. */
 int64_t bzy_rnd_get_i(int64_t bound);                   /* [0, bound). */
 int64_t bzy_rnd_get_ii(int64_t origin, int64_t bound);  /* [origin, bound] inclusive. */
 int64_t bzy_rnd_get_l(int64_t bound);

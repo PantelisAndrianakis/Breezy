@@ -11,12 +11,12 @@ static void *track(void *p)
 {
 	if (!p)
 	{
-		fprintf(stderr, "ast: out of memory\n");
+		fprintf(stderr, "Ast: out of memory.\n");
 		exit(1);
 	}
 	if (g_node_count >= MAX_NODES)
 	{
-		fprintf(stderr, "ast: too many nodes\n");
+		fprintf(stderr, "Ast: too many nodes.\n");
 		exit(1);
 	}
 	g_nodes[g_node_count++] = p;

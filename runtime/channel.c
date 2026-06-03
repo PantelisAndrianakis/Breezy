@@ -134,7 +134,7 @@ static void bzy_channel_finalize(void *c)
 }
 
 /* Finalizer + zero traceable object children. */
-static int64_t g_channel_typeinfo[2] = { 0 /* finalizer (set on first use) */, 0 };
+static int64_t g_channel_typeinfo[2] = { 0 /* Finalizer (set on first use). */, 0 };
 static int64_t g_channel_vtable[2];
 
 static void *channel_vtable(void)
@@ -148,7 +148,7 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 {
 	if (cap < 1)
 	{
-		cap = 1;   /* v1 requires a buffer of at least one slot. */
+		cap = 1;   /* V1 requires a buffer of at least one slot. */
 	}
 
 	void *c = bzy_alloc(104);

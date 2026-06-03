@@ -106,7 +106,7 @@ static void bzy_map_finalize(void *m)
 }
 
 /* Runtime-owned vtable/descriptor (finalizer + 2 managed children at 48, 56). */
-static int64_t g_map_typeinfo[4] = { 0 /* finalizer (set on first use) */, 2, 48, 56 };
+static int64_t g_map_typeinfo[4] = { 0 /* Finalizer (set on first use). */, 2, 48, 56 };
 static int64_t g_map_vtable[2];
 
 static void *map_vtable(void)

@@ -9,7 +9,7 @@
    emits one. The descriptor has no finalizer and no object fields, so a string
    is reclaimed by a plain free and is invisible to the cycle collector. */
 
-static int64_t g_string_typeinfo[2] = { 0 /* finalizer */, 0 /* object-field count */ };
+static int64_t g_string_typeinfo[2] = { 0 /* Finalizer. */, 0 /* Object-field count. */ };
 static int64_t g_string_vtable[2];   /* [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused. */
 
 static void *string_vtable(void)
@@ -427,7 +427,7 @@ static void bzy_sb_finalize(void *sb)
 	free(*SB_BUF(sb));
 }
 
-static int64_t g_sb_typeinfo[2] = { 0 /* finalizer (set on first use) */, 0 /* object-field count */ };
+static int64_t g_sb_typeinfo[2] = { 0 /* Finalizer (set on first use). */, 0 /* Object-field count. */ };
 static int64_t g_sb_vtable[2];   /* [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused. */
 
 static void *sb_vtable(void)
@@ -439,7 +439,7 @@ static void *sb_vtable(void)
 
 void *bzy_sb_new(void)
 {
-	void *sb = bzy_alloc(48);   /* length/capacity/buf are zeroed by bzy_alloc. */
+	void *sb = bzy_alloc(48);   /* Length/capacity/buf are zeroed by bzy_alloc. */
 	*(void**)sb = sb_vtable();
 	return sb;
 }

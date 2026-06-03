@@ -53,7 +53,7 @@ static int collect_files(const char *path, char paths[][512])
 		{
 			if (n>=MAX_FILES)
 			{
-				fprintf(stderr,"too many files\n");
+				fprintf(stderr,"Too many files.\n");
 				exit(1);
 			}
 			snprintf(paths[n],512,"%s/%s",path,e->d_name);
@@ -63,7 +63,7 @@ static int collect_files(const char *path, char paths[][512])
 	closedir(d);
 	if (n==0)
 	{
-		fprintf(stderr,"no .bzy files in %s\n",path);
+		fprintf(stderr,"No .bzy files in %s\n",path);
 		exit(1);
 	}
 	return n;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
 	int total=np+nfiles;
 	if (total>MAX_FILES)
 	{
-		fprintf(stderr,"too many files (prelude + sources)\n");
+		fprintf(stderr,"Too many files (prelude + sources).\n");
 		exit(1);
 	}
 
@@ -129,12 +129,12 @@ int main(int argc, char *argv[])
 
 	if (system("nasm -f win64 out.asm -o out.obj")!=0)
 	{
-		fprintf(stderr,"nasm failed\n");
+		fprintf(stderr,"Nasm failed.\n");
 		return 1;
 	}
 	if (system("gcc out.obj -L. -l_breezy -o out.exe")!=0)
 	{
-		fprintf(stderr,"gcc link failed\n");
+		fprintf(stderr,"Gcc link failed.\n");
 		return 1;
 	}
 	printf("Built out.exe\n");
