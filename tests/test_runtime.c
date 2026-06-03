@@ -1000,6 +1000,24 @@ static void test_file_ops_offload_in_breeze(void)
 	bzy_offload_shutdown();
 }
 
+static int64_t g_shell_code;
+static void shell_breeze(void)
+{
+	void *cmd = bzy_str_new("exit 7", 6);   /* "cmd /c exit 7" -> exit code 7. */
+	g_shell_code = bzy_system_shell(cmd, 1); /* Wait -> returns the exit code; parks via offload. */
+	bzy_release(cmd);
+}
+
+static void test_system_shell_wait_exit_code(void)
+{
+	g_shell_code = -1;
+	bzy_sched_init();
+	bzy_spawn(shell_breeze);
+	bzy_sched_run();
+	ASSERT_INT((int)g_shell_code, 7);        /* The child's exit code came back through the offload park. */
+	bzy_offload_shutdown();
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1058,6 +1076,7 @@ int main(void)
 	RUN(test_file_search);
 	RUN(test_offload_runs_and_resumes);
 	RUN(test_file_ops_offload_in_breeze);
+	RUN(test_system_shell_wait_exit_code);
 	SUMMARY();
 	return 0;
 }

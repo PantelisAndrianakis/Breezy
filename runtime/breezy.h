@@ -164,6 +164,11 @@ int64_t bzy_offload_inflight(void);   /* Breezes currently parked on an offload 
 void    bzy_offload_shutdown(void);   /* Drain/join the pool (no-op if never started). */
 void    bzy_sched_wake_external(void *breeze);   /* Wake a breeze from a non-scheduler thread. */
 
+/* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
+   async, return the process id (0 on failure). wait!=0 -> block until exit and
+   return the exit code; that blocking path offloads so the breeze parks. */
+int64_t bzy_system_shell(void *command, int64_t wait);
+
 void   *bzy_channel_new(int64_t cap, int64_t elem_managed); /* Owned (+1) bounded channel. */
 void    bzy_channel_send(void *ch, int64_t v);   /* Parks if full; moves a managed value in. */
 int64_t bzy_channel_recv(void *ch);              /* Parks if empty; returns an owned value. */
