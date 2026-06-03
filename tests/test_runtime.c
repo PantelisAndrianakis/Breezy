@@ -228,6 +228,20 @@ static void test_map_keys_values(void)
 	bzy_release(m);
 }
 
+static void test_entry(void)
+{
+	int64_t before = bzy_live_count();
+	void *k = bzy_str_new("key", 3);
+	void *e = bzy_entry_new((int64_t)k, 42, 1, 0);   /* key managed, value plain int. */
+	bzy_release(k);                                  /* The entry retained its own key. */
+	void *gk = (void*)bzy_entry_key(e);              /* Owned (+1) string. */
+	ASSERT(strcmp(bzy_str_data(gk), "key") == 0);
+	ASSERT_INT(bzy_entry_val(e), 42);
+	bzy_release(gk);
+	bzy_release(e);                                  /* Frees the entry and its retained key. */
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_map_string_keys_and_grow(void)
 {
 	int64_t before = bzy_live_count();
@@ -684,6 +698,7 @@ int main(void)
 	RUN(test_map_int_keys);
 	RUN(test_map_contains_value);
 	RUN(test_map_keys_values);
+	RUN(test_entry);
 	RUN(test_map_string_keys_and_grow);
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);

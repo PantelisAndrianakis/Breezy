@@ -369,15 +369,37 @@ while (i < squares.length)
 
 ### Maps
 
-`map<K,V>` is an open-addressing hash table (Swiss-style control bytes) keyed by `int` or `string`, with any value type. `put` / `get` / `has` / `remove` / `.size`; managed keys and values are retained and released automatically, and a map caught in a reference cycle is reclaimed by the cycle collector.
+`map<K,V>` is an open-addressing hash table (Swiss-style control bytes) keyed by `int` or `string`, with any value type. `put` / `get` / `containsKey` / `containsValue` / `remove` / `.size`; managed keys and values are retained and released automatically, and a map caught in a reference cycle is reclaimed by the cycle collector.
 
 ```breezy
 map<string,int> counts;
 counts = new map<string,int>();
 counts.put("apples", 3);
 counts.put("apples", counts.get("apples") + 1);
-print(counts.has("pears"));    // false
-print(counts.size);            // 1
+print(counts.containsKey("pears"));    // false
+print(counts.containsValue(4));        // true
+print(counts.size);                    // 1
+```
+
+**Views and iteration.** `getKeys()` / `getValues()` return owned `K[]` / `V[]` snapshots, and `getEntries()` returns an `Entry[]` whose elements expose `getKey()` / `getValue()`. You can also iterate keys and values together with the `foreach (k, v in m)` pair form (the keys-only `foreach (k in m)` form still works).
+
+```breezy
+foreach (string name, int count in counts)
+{
+    print(name);
+    print(count);
+}
+
+foreach (int v in counts.getValues())
+{
+    print(v);
+}
+
+foreach (Entry e in counts.getEntries())
+{
+    print(e.getKey());
+    print(e.getValue());
+}
 ```
 
 ### Generic Collections — No Boxing
@@ -677,6 +699,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `Regex` (`matches`/`test`/`find`/`replace`; Thompson NFA / Pike VM, linear-time, ReDoS-safe)
 - [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)
+- [x] Map views: `containsKey` (replaces `has`) / `containsValue`, `getKeys`/`getValues` → `K[]`/`V[]`, `getEntries` → `Entry[]` (`getKey`/`getValue`), `foreach (k, v in m)`
 
 **Concurrency & I/O (Part 6)**
 - [ ] Breeze scheduler (M:N, one thread per core)

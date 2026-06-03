@@ -663,11 +663,14 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	if (strcmp(e->name,"getKeys")==0 || strcmp(e->name,"getValues")==0)
+	if (strcmp(e->name,"getKeys")==0 || strcmp(e->name,"getValues")==0 || strcmp(e->name,"getEntries")==0)
 	{
 		cg_expr(cg,tt,e->lhs);                  /* map */
 		cg_emit(cg,"    mov rcx, rax");
-		cg_aligned_call(cg, strcmp(e->name,"getKeys")==0 ? "bzy_map_keys" : "bzy_map_values");
+		const char *fn = strcmp(e->name,"getKeys")==0 ? "bzy_map_keys"
+						 : strcmp(e->name,"getValues")==0 ? "bzy_map_values"
+						 : "bzy_map_entries";
+		cg_aligned_call(cg,fn);
 		return;                                 /* Owned array (+1) in rax. */
 	}
 
@@ -721,6 +724,20 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_emit(cg,"    add rsp, 16");
+}
+
+/* Entry.getKey()/getValue() lower to bzy_entry_key/val. The result is a +1
+   owned managed value when K/V is managed, else a plain integer in rax; for an
+   FP K/V the bits are bridged rax -> xmm0 as the consumer expects. */
+static void cg_entry_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	cg_expr(cg,tt,e->lhs);                     /* entry pointer */
+	cg_emit(cg,"    mov rcx, rax");
+	cg_aligned_call(cg, strcmp(e->name,"getKey")==0 ? "bzy_entry_key" : "bzy_entry_val");
+	if (ty_is_float(e->type.kind))
+	{
+		cg_emit(cg, e->type.kind==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+	}
 }
 
 /* Encode an element type as the collection runtime's elem_kind: 0 int/bool,
@@ -1643,6 +1660,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_map_method(cg,tt,e);
 		}
+		else if (e->lhs->type.kind==TY_ENTRY)
+		{
+			cg_entry_method(cg,tt,e);
+		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
 			cg_sb_method(cg,tt,e);
@@ -2523,6 +2544,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_contains_value");
 	cg_emit(cg,"extern bzy_map_keys");
 	cg_emit(cg,"extern bzy_map_values");
+	cg_emit(cg,"extern bzy_map_entries");
+	cg_emit(cg,"extern bzy_entry_key");
+	cg_emit(cg,"extern bzy_entry_val");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

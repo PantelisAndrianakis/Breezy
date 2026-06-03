@@ -65,6 +65,11 @@ int64_t bzy_map_val_at(void *m, int64_t slot); /* Value at slot (borrowed; no re
 int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind); /* 1 if any value equals needle. */
 void   *bzy_map_keys(void *m);     /* Owned K[] snapshot (managed keys retained). */
 void   *bzy_map_values(void *m);   /* Owned V[] snapshot (managed values retained). */
+void   *bzy_map_entries(void *m);  /* Owned Entry[] snapshot. */
+
+void   *bzy_entry_new(int64_t key, int64_t val, int64_t key_managed, int64_t val_managed); /* Owned (+1). */
+int64_t bzy_entry_key(void *e);    /* Key (managed -> +1 owned). */
+int64_t bzy_entry_val(void *e);    /* Value (managed -> +1 owned). */
 
 void   *bzy_vec_new(int64_t elem_kind);          /* Owned (+1). 0 int,1 float,2 double,3 string,4 object. */
 int64_t bzy_vec_len(void *v);

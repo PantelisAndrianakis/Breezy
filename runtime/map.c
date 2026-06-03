@@ -362,6 +362,24 @@ void *bzy_map_values(void *m)
 	return a;
 }
 
+void *bzy_map_entries(void *m)
+{
+	void *a = bzy_array_new(*M_SIZE(m), 1);   /* Object array (entries are managed). */
+	void **out = (void**)((char*)a + 32);
+	int64_t cap = *M_CAP(m), *keys = keys_data(m), *vals = vals_data(m);
+	uint8_t *ctrl = *M_CTRL(m);
+	int64_t kman = (*M_KKIND(m) == 1) ? 1 : 0, vman = *M_VMAN(m), n = 0;
+	for (int64_t i = 0; i < cap; i++)
+	{
+		if ((ctrl[i] & 0x80) == 0)
+		{
+			out[n++] = bzy_entry_new(keys[i], vals[i], kman, vman);   /* +1, transferred to the array. */
+		}
+	}
+
+	return a;
+}
+
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 {
 	for (int64_t i = 0; i < cap; i++)

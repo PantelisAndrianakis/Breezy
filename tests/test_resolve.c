@@ -330,6 +330,17 @@ static void test_foreach_pair_resolves(void)
 	ASSERT(s->fe_val_offset != 0);   /* value slot was assigned */
 }
 
+static void test_map_entries_types(void)
+{
+	Func *f=build1("void main() { map<string,int> m;"
+				   " foreach (Entry e in m.getEntries()) { string k; int v; k = e.getKey(); v = e.getValue(); } }")->funcs[0];
+	Stmt *fe=f->body->stmts[1];
+	ASSERT_INT(fe->kind, ST_FOREACH);
+	ASSERT_INT(fe->expr->type.kind, TY_ARRAY);          /* getEntries() -> Entry[] */
+	ASSERT_INT(fe->expr->type.elem->kind, TY_ENTRY);
+	ASSERT_INT(fe->decl_type.kind, TY_ENTRY);           /* loop var enriched to Entry<K,V> */
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -432,6 +443,7 @@ int main(void)
 	RUN(test_map_contains);
 	RUN(test_map_keys_values_types);
 	RUN(test_foreach_pair_resolves);
+	RUN(test_map_entries_types);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

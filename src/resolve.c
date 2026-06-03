@@ -825,6 +825,29 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_ENTRY)
+		{
+			if (e->arg_count!=0)
+			{
+				die(e->line,"Entry methods take no arguments",NULL);
+			}
+
+			if (strcmp(e->name,"getKey")==0)
+			{
+				e->type = *e->lhs->type.elem;    /* K */
+			}
+			else if (strcmp(e->name,"getValue")==0)
+			{
+				e->type = *e->lhs->type.elem2;   /* V */
+			}
+			else
+			{
+				die(e->line,"unknown Entry method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			resolve_args(st,e,tc);
@@ -1027,6 +1050,21 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_ARRAY;
 				e->type.elem=typeref_box(*V);
+			}
+			else if (strcmp(e->name,"getEntries")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"map.getEntries() takes no arguments",NULL);
+				}
+
+				TypeRef ent;
+				memset(&ent,0,sizeof(ent));
+				ent.kind=TY_ENTRY;
+				ent.elem=typeref_box(*K);
+				ent.elem2=typeref_box(*V);
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(ent);
 			}
 			else
 			{
@@ -1281,6 +1319,11 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (!assignable(&s->decl_type,&elem))
 		{
 			die(s->line,"foreach loop variable type does not match the element type",NULL);
+		}
+
+		if (elem.kind==TY_ENTRY)
+		{
+			s->decl_type = elem;   /* Adopt the iterable's Entry<K,V> so getKey/getValue type. */
 		}
 
 		Symbol *lv=sym_add(st,s->decl_name,s->decl_type);
