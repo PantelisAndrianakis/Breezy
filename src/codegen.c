@@ -1760,6 +1760,49 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* FileWriter methods: receiver (e->lhs) in rcx, the one string/byte[] arg in rdx.
+   All return void and are fallible -- an offloaded flush can fail -- so each emits a
+   post-call bzy_io_check that throws IOException on a write error. */
+static void cg_filewriter_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	if (strcmp(n,"write")==0)
+	{
+		fn = "bzy_filewriter_write";
+	}
+	else if (strcmp(n,"writeLine")==0)
+	{
+		fn = "bzy_filewriter_write_line";
+	}
+	else if (strcmp(n,"writeBytes")==0)
+	{
+		fn = "bzy_filewriter_write_bytes";
+	}
+	else if (strcmp(n,"flush")==0)
+	{
+		fn = "bzy_filewriter_flush";
+	}
+	else
+	{
+		fn = "bzy_filewriter_close";
+	}
+
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count);
+
+	int k = cg_label(cg);
+	cg_emit(cg,"    lea rcx, [rel .L%d]", k);   /* pc = the call site. */
+	cg_emit(cg,".L%d:", k);
+	cg_emit(cg,"    mov rdx, rbp");             /* frame. */
+	cg_aligned_call(cg,"bzy_io_check");
+}
+
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
 /* System.shell(command[, wait]) -> bzy_system_shell(command, wait). command in
    rcx, wait in rdx (0 when the optional boolean is absent). The command string is
@@ -1849,6 +1892,54 @@ static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
+
+	/* openWrite/openAppend carry an implicit append flag + an optional bufferBytes,
+	   so they don't fit the generic cg_call_with_args path; lower them by hand
+	   (mirrors cg_system) then emit the fallible io_check (owned-object result). */
+	if (strcmp(m,"openWrite")==0 || strcmp(m,"openAppend")==0)
+	{
+		long long append = (strcmp(m,"openAppend")==0) ? 1 : 0;
+		if (e->arg_count==2)
+		{
+			cg_expr(cg,tt,e->args[1]);            /* bufferBytes -> rax. */
+			cg_emit(cg,"    push rax");
+			cg_expr(cg,tt,e->args[0]);            /* path -> rax. */
+			cg_emit(cg,"    mov rcx, rax");
+			cg_emit(cg,"    pop r8");
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[0]);            /* path -> rax. */
+			cg_emit(cg,"    mov rcx, rax");
+			cg_emit(cg,"    mov r8, 0");           /* bufferBytes = 0 -> runtime default. */
+		}
+
+		cg_emit(cg,"    mov rdx, %lld", append);
+		int owned = expr_is_owned(e->args[0]);
+		if (owned)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rcx", cg->val_save);   /* Save path for release (rcx dies in the call). */
+		}
+
+		cg_aligned_call(cg,"bzy_filewriter_open");   /* Owned FileWriter -> rax. */
+		if (owned)
+		{
+			cg_emit(cg,"    mov rcx, [rbp - %d]", cg->val_save);
+			cg_emit(cg,"    push rax");                 /* Preserve the writer across the path release. */
+			cg_release_rcx(cg);
+			cg_emit(cg,"    pop rax");
+		}
+
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the writer across io_check. */
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea rcx, [rel .L%d]", k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov rdx, rbp");
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
 	const char *fn;
 	int fallible;
 	if (strcmp(m,"exists")==0)
@@ -2246,6 +2337,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
 			cg_filechannel_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_FILEWRITER)
+		{
+			cg_filewriter_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
@@ -3343,6 +3438,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_filechannel_truncate");
 	cg_emit(cg,"extern bzy_filechannel_sync");
 	cg_emit(cg,"extern bzy_filechannel_close");
+	cg_emit(cg,"extern bzy_filewriter_open");
+	cg_emit(cg,"extern bzy_filewriter_write");
+	cg_emit(cg,"extern bzy_filewriter_write_line");
+	cg_emit(cg,"extern bzy_filewriter_write_bytes");
+	cg_emit(cg,"extern bzy_filewriter_flush");
+	cg_emit(cg,"extern bzy_filewriter_close");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

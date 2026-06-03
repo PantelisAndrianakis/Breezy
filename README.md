@@ -350,6 +350,8 @@ void main()
 
 > **Implemented today (Part 6b-5):** **random-access file I/O — the storage foundation for a database.** `File.openChannel(path)` returns a `FileChannel` with **positioned** reads and writes: `readAt(offset, maxBytes) -> byte[]` and `writeAt(offset, byte[]) -> int` issue overlapped reads/writes on the **same IOCP completion port** as the sockets, so the breeze parks on each op and resumes on completion — true async positioned I/O with no thread hand-off. An explicit `sync()` forces durability (`FlushFileBuffers`, off the scheduler core) — the WAL commit barrier — and `size()`/`truncate(size)` round out the surface. That's the missing half a storage engine needs: positioned page reads/writes plus an explicit durability point. Combined with the IOCP sockets and the zone model, an on-disk, networked store is buildable in Breezy today. (Windows/IOCP today; the Linux `pread`/`pwrite`/`io_uring` backend lands with Part 8; no mmap or file locking yet.)
 
+> **Implemented today (Part 6b-3):** **buffered file writes.** `File.openWrite(path)` (truncate) / `File.openAppend(path)` return a `FileWriter` whose `write`/`writeLine`/`writeBytes` accumulate into a userspace buffer — a plain `memcpy`, no syscall — so a tick loop emitting many small lines coalesces them into a handful of disk writes. The buffer flushes when it fills, on an explicit `flush()`, or on `close()`, and each real flush runs on the offload pool so the writing breeze parks instead of blocking its core. The buffer size is configurable (`File.openWrite(path, bufferBytes)`, default 64 KiB). Still to come within Part 6b: the channel-fed logger (6b-4).
+
 ### The zone model (and why it's fast)
 
 The recommended architecture shards your state into **zones** (say, per tenant, account, or region), each owned by a single breeze that exclusively owns its data. **No locks inside a zone.** Cross-zone interactions go through channels. This scales a service across all your cores by *zone*, with near-zero contention - and it lets the compiler keep reference counts **non-atomic** on the hot path, paying the atomic cost only for objects that actually cross breezes.
@@ -390,10 +392,15 @@ void handle(Socket c)
 
 ### File writing done right
 
-Writes are **buffered by default** - small writes coalesce into far fewer syscalls. And logging is a channel, not a syscall: game breezes `send` log lines to a dedicated logger breeze that flushes them off the hot path. **A tick never waits on disk.**
+A `FileWriter` **buffers writes** - small writes coalesce in a userspace buffer and flush in far fewer syscalls, and each flush runs off the scheduler core. (Logging on top of this is a channel, not a syscall: game breezes `send` log lines to a dedicated logger breeze that flushes them off the hot path - so **a tick never waits on disk**. The channel-fed logger is the next sub-part.)
 
 ```breezy
-log.send("request " + reqId + " from " + user + " completed");  // Enqueue, don't block.
+FileWriter log;
+log = File.openAppend("game.log");   // 64 KiB buffer by default.
+log.writeLine("tick " + n + " done");  // memcpy into the buffer - no syscall.
+// ... many ticks later ...
+log.flush();                          // Coalesced write, off the scheduler core.
+log.close();
 ```
 
 ---
@@ -903,7 +910,8 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Offload thread pool + async file I/O — `File.*` data ops park the breeze instead of blocking the scheduler (6b-1)
 - [x] Network sockets via IOCP — `Network.listen`/`connect`/`udp`; TCP `Listener`/`Socket` + UDP `UdpSocket`/`Datagram` park a breeze on the completion port (6b-2)
 - [x] Random-access `FileChannel` — `File.openChannel`; positioned `readAt`/`writeAt` over IOCP + explicit `sync()`; the database storage foundation (6b-5)
-- [ ] Async I/O facade: buffered writes (6b-3), channel-fed logger (6b-4); epoll backend with Part 8, `io_uring` later
+- [x] Buffered file writes — `File.openWrite`/`openAppend` → `FileWriter`; small writes coalesce in a userspace buffer, flush on the offload pool (6b-3)
+- [ ] Async I/O facade: channel-fed logger (6b-4); epoll backend with Part 8, `io_uring` later
 
 **Interop (Part 7)**
 - [ ] `extern` C FFI with `blocking` dispatch

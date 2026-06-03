@@ -571,6 +571,15 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"FileWriter")==0)
+	{
+		out->kind=TY_FILEWRITER;
+		out->class_name[0]='\0';
+		out->elem=NULL;
+		out->elem2=NULL;
+		advance(p);
+		return 1;
+	}
 	if (check(p,TOKEN_IDENT))
 	{
 		out->kind=TY_OBJECT;

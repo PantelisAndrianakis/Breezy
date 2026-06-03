@@ -531,6 +531,22 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"openWrite")==0 || strcmp(m,"openAppend")==0)
+	{
+		if (e->arg_count<1 || e->arg_count>2 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"File.openWrite/openAppend(path[, bufferBytes]) takes a path and an optional integer.",NULL);
+		}
+
+		if (e->arg_count==2 && !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"File.openWrite/openAppend buffer size must be an integer.",NULL);
+		}
+
+		e->type.kind=TY_FILEWRITER;
+		return;
+	}
+
 	/* Path -> boolean predicates. */
 	if (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0)
 	{
@@ -1588,6 +1604,44 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown FileChannel method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_FILEWRITER)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"write")==0 || strcmp(e->name,"writeLine")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"FileWriter.write/writeLine(string) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"writeBytes")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY)
+				{
+					die(e->line,"FileWriter.writeBytes(byte[]) takes one byte[].",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"flush")==0 || strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"FileWriter.flush()/close() take no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown FileWriter method: ",e->name);
 			}
 
 			break;

@@ -1,0 +1,24 @@
+// Stream 102 lines through a 64-byte buffer (so the small writes coalesce into a
+// handful of offloaded flushes rather than 102 syscalls), close, then read the file
+// back and count the lines. Prints 102 - every buffered line reached disk.
+void main()
+{
+	FileWriter w;
+	w = File.openWrite("fw_sample.txt", 64);
+	w.writeLine("header");
+	int i;
+	i = 0;
+	while (i < 100)
+	{
+		w.writeLine("row");
+		i = i + 1;
+	}
+
+	w.writeLine("footer");
+	w.close();
+
+	string[] lines;
+	lines = File.readLines("fw_sample.txt");
+	print(lines.length);            // 102
+	File.delete("fw_sample.txt");
+}

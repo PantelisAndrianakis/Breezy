@@ -527,6 +527,14 @@ static void test_filechannel_resolves(void)
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_LONG);          /* size -> long. */
 }
 
+static void test_filewriter_resolves(void)
+{
+	Func *f=build1("void main() { FileWriter w; w = File.openWrite(\"out.txt\");"
+				   " w.write(\"hi\"); w.writeLine(\"x\"); w.flush(); w.close(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_FILEWRITER);   /* File.openWrite -> FileWriter. */
+	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);          /* w.write(...) -> void. */
+}
+
 static void test_null_resolves(void)
 {
 	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); boolean b; b = (s == null);"
@@ -607,6 +615,7 @@ int main(void)
 	RUN(test_network_tcp_resolves);
 	RUN(test_network_udp_resolves);
 	RUN(test_filechannel_resolves);
+	RUN(test_filewriter_resolves);
 	RUN(test_null_resolves);
 	SUMMARY();
 	return 0;
