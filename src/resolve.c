@@ -516,6 +516,23 @@ static void resolve_network(Expr *e)
 	die(e->line,"Unknown Network method: ",m);
 }
 
+static void resolve_log(Expr *e)
+{
+	const char *m = e->name + 4;   /* After "Log.". */
+	if (strcmp(m,"open")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Log.open(path) takes one path argument.",NULL);
+		}
+
+		e->type.kind=TY_LOGGER;
+		return;
+	}
+
+	die(e->line,"Unknown Log method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -1647,6 +1664,35 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_LOGGER)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"log")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"Logger.log(string) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Logger.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown Logger method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			resolve_args(st,e,tc);
@@ -1986,6 +2032,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Network.",8)==0)
 		{
 			resolve_network(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Log.",4)==0)
+		{
+			resolve_log(e);
 			break;
 		}
 

@@ -535,6 +535,14 @@ static void test_filewriter_resolves(void)
 	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);          /* w.write(...) -> void. */
 }
 
+static void test_logger_resolves(void)
+{
+	Func *f=build1("void main() { Logger g; g = Log.open(\"app.log\");"
+				   " g.log(\"hi\"); g.close(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LOGGER);   /* Log.open -> Logger. */
+	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);      /* g.log(...) -> void. */
+}
+
 static void test_null_resolves(void)
 {
 	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); boolean b; b = (s == null);"
@@ -616,6 +624,7 @@ int main(void)
 	RUN(test_network_udp_resolves);
 	RUN(test_filechannel_resolves);
 	RUN(test_filewriter_resolves);
+	RUN(test_logger_resolves);
 	RUN(test_null_resolves);
 	SUMMARY();
 	return 0;

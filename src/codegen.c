@@ -1581,6 +1581,43 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
 }
 
+/* Log.open(path) -> owned Logger. Single string arg; fallible (the FileWriter open
+   can fail) so a post-call bzy_io_check throws IOException, result preserved. */
+static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 4;   /* After "Log.". */
+	if (strcmp(m,"open")!=0)
+	{
+		fprintf(stderr,"Codegen: unknown Log method '%s'\n", m);
+		exit(1);
+	}
+
+	cg_expr(cg,tt,e->args[0]);                   /* path -> rax. */
+	cg_emit(cg,"    mov rcx, rax");
+	int owned = expr_is_owned(e->args[0]);
+	if (owned)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rcx", cg->val_save);   /* Save path for release. */
+	}
+
+	cg_aligned_call(cg,"bzy_logger_open");       /* Owned Logger -> rax. */
+	if (owned)
+	{
+		cg_emit(cg,"    mov rcx, [rbp - %d]", cg->val_save);
+		cg_emit(cg,"    push rax");
+		cg_release_rcx(cg);
+		cg_emit(cg,"    pop rax");
+	}
+
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the Logger across io_check. */
+	int k = cg_label(cg);
+	cg_emit(cg,"    lea rcx, [rel .L%d]", k);
+	cg_emit(cg,".L%d:", k);
+	cg_emit(cg,"    mov rdx, rbp");
+	cg_aligned_call(cg,"bzy_io_check");
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
 /* Listener/Socket/UdpSocket/Datagram methods. The receiver (e->lhs) is the first
    arg (rcx); the runtime symbol is chosen by receiver kind + method name, and the
    timeout overloads select the _timeout symbol when the optional arg is present.
@@ -1801,6 +1838,30 @@ static void cg_filewriter_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,".L%d:", k);
 	cg_emit(cg,"    mov rdx, rbp");             /* frame. */
 	cg_aligned_call(cg,"bzy_io_check");
+}
+
+/* Logger methods. log(string): receiver in rcx, the string moved (+1, owned) into
+   rdx and NOT released after -- the channel takes ownership. close(): receiver only. */
+static void cg_logger_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	if (strcmp(e->name,"log")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                  /* Logger. */
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		cg_expr_owned(cg,tt,e->args[0]);        /* +1 owned string; moves into the channel. */
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_emit(cg,"    mov rdx, [rsp + 8]");
+		cg_aligned_call(cg,"bzy_logger_log");   /* Channel takes ownership: no release here. */
+		cg_emit(cg,"    add rsp, 16");
+		return;
+	}
+
+	/* close */
+	cg_expr(cg,tt,e->lhs);
+	cg_emit(cg,"    mov rcx, rax");
+	cg_aligned_call(cg,"bzy_logger_close");
 }
 
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
@@ -2342,6 +2403,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_filewriter_method(cg,tt,e);
 		}
+		else if (e->lhs->type.kind==TY_LOGGER)
+		{
+			cg_logger_method(cg,tt,e);
+		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
 			cg_sb_method(cg,tt,e);
@@ -2452,6 +2517,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Network.",8)==0)
 		{
 			cg_network(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Log.",4)==0)
+		{
+			cg_log(cg,tt,e);
 		}
 		else
 		{
@@ -3444,6 +3513,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_filewriter_write_bytes");
 	cg_emit(cg,"extern bzy_filewriter_flush");
 	cg_emit(cg,"extern bzy_filewriter_close");
+	cg_emit(cg,"extern bzy_logger_open");
+	cg_emit(cg,"extern bzy_logger_log");
+	cg_emit(cg,"extern bzy_logger_close");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
