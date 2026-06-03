@@ -1075,6 +1075,69 @@ static void test_iocp_completion_wakes_breeze(void)
 	bzy_iocp_shutdown();
 }
 
+static int g_tcp_ok;
+static void *g_tcp_listener;       /* Shared Listener handle (set by server, read by client). */
+
+static void tcp_server(void)
+{
+	void *cli = bzy_listener_accept(g_tcp_listener);   /* Parks until the client connects. */
+	void *in = bzy_socket_read(cli, 64);               /* Parks until bytes arrive. */
+	bzy_socket_write(cli, in);                          /* Echo the same byte[] back. */
+	bzy_release(in);
+	bzy_socket_close(cli);
+	bzy_release(cli);
+}
+
+static void tcp_client(void)
+{
+	void *host = bzy_str_new("127.0.0.1", 9);
+	void *s = bzy_socket_connect(host, bzy_listener_port(g_tcp_listener));
+	bzy_release(host);
+	void *msg = bzy_str_new("ping", 4);
+	bzy_socket_write_text(s, msg);
+	void *back = bzy_socket_read_text(s, 64);
+	g_tcp_ok = (strcmp(bzy_str_data(back), "ping") == 0);
+	bzy_release(msg);
+	bzy_release(back);
+	bzy_socket_close(s);
+	bzy_release(s);
+}
+
+static void test_tcp_loopback_echo(void)
+{
+	g_tcp_ok = 0;
+	bzy_sched_init();
+	g_tcp_listener = bzy_listener_new(0);   /* Ephemeral port; bound before any breeze runs. */
+	bzy_spawn(tcp_server);
+	bzy_spawn(tcp_client);
+	bzy_sched_run();
+	ASSERT_INT(g_tcp_ok, 1);                /* The client got its bytes echoed back. */
+	bzy_listener_close(g_tcp_listener);
+	bzy_release(g_tcp_listener);
+	bzy_iocp_shutdown();
+}
+
+static int g_tcp_null_ok;
+static void tcp_timeout_breeze(void)
+{
+	void *l = bzy_listener_new(0);
+	void *t = bzy_listener_accept_timeout(l, 30);   /* No client connects: must time out -> NULL. */
+	void *y = bzy_listener_try_accept(l);           /* Nothing pending: must be NULL, no park. */
+	g_tcp_null_ok = (t == NULL && y == NULL);
+	bzy_listener_close(l);
+	bzy_release(l);
+}
+
+static void test_tcp_accept_timeout_and_try(void)
+{
+	g_tcp_null_ok = 0;
+	bzy_sched_init();
+	bzy_spawn(tcp_timeout_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_tcp_null_ok, 1);
+	bzy_iocp_shutdown();
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1135,6 +1198,8 @@ int main(void)
 	RUN(test_file_ops_offload_in_breeze);
 	RUN(test_system_shell_wait_exit_code);
 	RUN(test_iocp_completion_wakes_breeze);
+	RUN(test_tcp_loopback_echo);
+	RUN(test_tcp_accept_timeout_and_try);
 	SUMMARY();
 	return 0;
 }

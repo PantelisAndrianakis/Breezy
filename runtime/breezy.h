@@ -181,6 +181,25 @@ int   bzy_iocp_op_err(IocpOp *op);            /* 0 on success else a Winsock err
 int64_t bzy_iocp_inflight(void);         /* Breezes currently parked on a network op. */
 void  bzy_iocp_shutdown(void);           /* Stop the completion thread + close the port (no-op if unused). */
 
+/* TCP sockets (6b-2): managed leaf objects holding a SOCKET fd; the finalizer
+   closesocket()s. accept/connect/read park the calling breeze on the IOCP. */
+void   *bzy_listener_new(int64_t port);       /* Bind+listen on 0.0.0.0:port (0 = ephemeral); owned (+1). */
+void   *bzy_listener_accept(void *l);         /* Parks; returns an owned Socket for the next connection. */
+void   *bzy_listener_accept_timeout(void *l, int64_t ms);  /* Parks up to ms; NULL on timeout. */
+void   *bzy_listener_try_accept(void *l);     /* NULL if no connection pending; never parks. */
+int64_t bzy_listener_port(void *l);           /* The actual bound port (resolves 0 -> assigned). */
+void    bzy_listener_close(void *l);
+void   *bzy_socket_connect(void *host, int64_t port);  /* Parks; owned (+1) connected Socket. */
+void   *bzy_socket_read(void *s, int64_t maxbytes);    /* Parks; owned byte[] (length 0 = peer closed). */
+void   *bzy_socket_read_timeout(void *s, int64_t maxbytes, int64_t ms);  /* NULL on timeout. */
+void   *bzy_socket_try_read(void *s, int64_t maxbytes); /* NULL if no data ready; len 0 = EOF. */
+void   *bzy_socket_read_text(void *s, int64_t maxbytes);/* Parks; owned string of what was read. */
+void   *bzy_socket_read_text_timeout(void *s, int64_t maxbytes, int64_t ms);  /* NULL on timeout. */
+void   *bzy_socket_try_read_text(void *s, int64_t maxbytes);  /* NULL if no data ready. */
+int64_t bzy_socket_write(void *s, void *data);         /* byte[]; writes all; returns count. */
+int64_t bzy_socket_write_text(void *s, void *str);     /* string; writes all bytes; returns count. */
+void    bzy_socket_close(void *s);
+
 /* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */
