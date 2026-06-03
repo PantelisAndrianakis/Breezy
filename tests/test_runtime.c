@@ -764,6 +764,36 @@ static void test_file_read_write(void)
 	bzy_release(rb);
 }
 
+static void test_file_search(void)
+{
+	void *dir = bzy_str_new("bzy_search_dir", 14);
+	bzy_file_create_folder(dir);
+	void *fa = bzy_str_new("bzy_search_dir/a.txt", 20);
+	void *fb = bzy_str_new("bzy_search_dir/b.txt", 20);
+	void *fc = bzy_str_new("bzy_search_dir/c.log", 20);
+	bzy_file_create_file(fa);
+	bzy_file_create_file(fb);
+	bzy_file_create_file(fc);
+
+	void *pat = bzy_str_new("*.txt", 5);
+	void *res = bzy_file_search(dir, pat);
+	ASSERT_INT(bzy_array_len(res), 2);            /* a.txt, b.txt */
+	void *all = bzy_file_list(dir);
+	ASSERT_INT(bzy_array_len(all), 3);            /* a.txt, b.txt, c.log */
+
+	bzy_file_delete(fa);
+	bzy_file_delete(fb);
+	bzy_file_delete(fc);
+	bzy_file_delete(dir);
+	bzy_release(dir);
+	bzy_release(fa);
+	bzy_release(fb);
+	bzy_release(fc);
+	bzy_release(pat);
+	bzy_release(res);
+	bzy_release(all);
+}
+
 static void test_scheduler_roundrobin(void)
 {
 	g_breeze_n = 0;
@@ -826,6 +856,7 @@ int main(void)
 	RUN(test_channel_roundtrip);
 	RUN(test_file_predicates);
 	RUN(test_file_read_write);
+	RUN(test_file_search);
 	SUMMARY();
 	return 0;
 }

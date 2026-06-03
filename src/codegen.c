@@ -1531,9 +1531,24 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 		fn="bzy_file_read_bytes";
 		fallible=1;
 	}
-	else
+	else if (strcmp(m,"writeBytes")==0)
 	{
 		fn="bzy_file_write_bytes";
+		fallible=1;
+	}
+	else if (strcmp(m,"list")==0)
+	{
+		fn="bzy_file_list";
+		fallible=1;
+	}
+	else if (strcmp(m,"search")==0)
+	{
+		fn="bzy_file_search";
+		fallible=1;
+	}
+	else
+	{
+		fn="bzy_file_search_recursive";
 		fallible=1;
 	}
 
@@ -2918,6 +2933,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_file_append_text");
 	cg_emit(cg,"extern bzy_file_read_bytes");
 	cg_emit(cg,"extern bzy_file_write_bytes");
+	cg_emit(cg,"extern bzy_file_list");
+	cg_emit(cg,"extern bzy_file_search");
+	cg_emit(cg,"extern bzy_file_search_recursive");
 	cg_emit(cg,"global __bzy_exception_funcs");
 	cg_emit(cg,"global __bzy_exception_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");

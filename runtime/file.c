@@ -414,3 +414,181 @@ void bzy_file_write_bytes(void *path, void *data)
 
 	fclose(f);
 }
+
+/* Glob match supporting '*' (any run) and '?' (one char). Case-sensitive. */
+static int glob_match(const char *p, const char *s)
+{
+	while (*p)
+	{
+		if (*p == '*')
+		{
+			while (*p == '*')
+			{
+				p++;
+			}
+
+			if (!*p)
+			{
+				return 1;
+			}
+
+			for (; *s; s++)
+			{
+				if (glob_match(p, s))
+				{
+					return 1;
+				}
+			}
+
+			return glob_match(p, s);   /* s at end. */
+		}
+
+		if (*p == '?')
+		{
+			if (!*s)
+			{
+				return 0;
+			}
+		}
+		else if (*p != *s)
+		{
+			return 0;
+		}
+
+		p++;
+		s++;
+	}
+
+	return *s == '\0';
+}
+
+/* A growable list of owned bzy strings (full paths) collected during a walk. */
+typedef struct
+{
+	void **items;
+	int64_t count;
+	int64_t cap;
+} PathList;
+
+static void pl_push(PathList *pl, void *s)
+{
+	if (pl->count == pl->cap)
+	{
+		pl->cap = pl->cap ? pl->cap * 2 : 16;
+		pl->items = (void**)realloc(pl->items, (size_t)pl->cap * sizeof(void*));
+	}
+
+	pl->items[pl->count++] = s;
+}
+
+/* Enumerate folder; push full paths whose name matches pattern (NULL = all);
+   recurse into subdirectories when recursive. */
+static void walk_dir(const char *folder, const char *pattern, int recursive, PathList *pl)
+{
+#ifdef _WIN32
+	char pat[1024];
+	snprintf(pat, sizeof(pat), "%s\\*", folder);
+	WIN32_FIND_DATAA fd;
+	HANDLE h = FindFirstFileA(pat, &fd);
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return;
+	}
+
+	do
+	{
+		const char *name = fd.cFileName;
+		if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+		{
+			continue;
+		}
+
+		char full[1024];
+		snprintf(full, sizeof(full), "%s\\%s", folder, name);
+		int isdir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+		if (!pattern || glob_match(pattern, name))
+		{
+			pl_push(pl, bzy_str_new(full, (int64_t)strlen(full)));
+		}
+
+		if (recursive && isdir)
+		{
+			walk_dir(full, pattern, 1, pl);
+		}
+	}
+	while (FindNextFileA(h, &fd));
+	FindClose(h);
+#else
+	DIR *dir = opendir(folder);
+	if (!dir)
+	{
+		return;
+	}
+
+	struct dirent *e;
+	while ((e = readdir(dir)) != NULL)
+	{
+		const char *name = e->d_name;
+		if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+		{
+			continue;
+		}
+
+		char full[1024];
+		snprintf(full, sizeof(full), "%s/%s", folder, name);
+		struct stat st;
+		int isdir = (stat(full, &st) == 0 && S_ISDIR(st.st_mode)) ? 1 : 0;
+		if (!pattern || glob_match(pattern, name))
+		{
+			pl_push(pl, bzy_str_new(full, (int64_t)strlen(full)));
+		}
+
+		if (recursive && isdir)
+		{
+			walk_dir(full, pattern, 1, pl);
+		}
+	}
+
+	closedir(dir);
+#endif
+}
+
+/* Validate the folder, walk it, and hand the collected paths to an owned string[]. */
+static void *build_search(void *folder, const char *pattern, int recursive, const char *who)
+{
+	const char *f = bzy_str_data(folder);
+	int isdir = 0;
+	if (!file_stat(f, &isdir) || !isdir)
+	{
+		io_fail(who);
+		return NULL;
+	}
+
+	PathList pl = { NULL, 0, 0 };
+	walk_dir(f, pattern, recursive, &pl);
+
+	void *arr = bzy_array_new(pl.count, 1);
+	void **elems = (void**)((char*)arr + 32);
+	for (int64_t i = 0; i < pl.count; i++)
+	{
+		elems[i] = pl.items[i];   /* Owned; transferred to the array. */
+	}
+
+	free(pl.items);
+	return arr;
+}
+
+void *bzy_file_list(void *folder)
+{
+	return build_search(folder, NULL, 0, "File.list: not a folder");
+}
+
+void *bzy_file_search(void *folder, void *pattern)
+{
+	return build_search(folder, bzy_str_data(pattern), 0, "File.search: not a folder");
+}
+
+void *bzy_file_search_recursive(void *folder, void *pattern)
+{
+	return build_search(folder, bzy_str_data(pattern), 1, "File.searchRecursive: not a folder");
+}

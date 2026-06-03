@@ -548,6 +548,28 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
+	/* Search: folder [+ pattern] -> string[] of full paths. */
+	if (strcmp(m,"list")==0 || strcmp(m,"search")==0 || strcmp(m,"searchRecursive")==0)
+	{
+		int want = (strcmp(m,"list")==0) ? 1 : 2;
+		if (e->arg_count != want)
+		{
+			die(e->line,"File.list/search argument count",NULL);
+		}
+
+		for (int i=0; i<want; i++)
+		{
+			file_arg_string(e,i);
+		}
+
+		TypeRef el;
+		memset(&el,0,sizeof(el));
+		el.kind = TY_STRING;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(el);
+		return;
+	}
+
 	die(e->line,"unknown File method: ",m);
 }
 

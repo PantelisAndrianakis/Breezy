@@ -1,0 +1,29 @@
+void main()
+{
+	File.createFolder("bzy_srch/sub");
+	File.writeText("bzy_srch/a.txt", "a");
+	File.writeText("bzy_srch/b.txt", "b");
+	File.writeText("bzy_srch/c.log", "c");
+	File.writeText("bzy_srch/sub/d.txt", "d");
+
+	print(File.list("bzy_srch").length);              // 4: a.txt, b.txt, c.log, sub
+
+	int txt;
+	txt = 0;
+	foreach (string p in File.search("bzy_srch", "*.txt"))
+	{
+		txt += 1;
+	}
+	print(txt);                                       // 2 (a.txt, b.txt; non-recursive)
+
+	int deep;
+	deep = 0;
+	foreach (string p in File.searchRecursive("bzy_srch", "*.txt"))
+	{
+		deep += 1;
+	}
+	print(deep);                                      // 3 (a.txt, b.txt, sub/d.txt)
+
+	File.deleteRecursive("bzy_srch");
+	print(File.exists("bzy_srch"));                   // false
+}

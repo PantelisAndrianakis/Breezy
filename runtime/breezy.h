@@ -122,6 +122,9 @@ void    bzy_file_write_text(void *path, void *content);   /* Create/overwrite. *
 void    bzy_file_append_text(void *path, void *content);  /* Create/append. */
 void   *bzy_file_read_bytes(void *path);        /* Owned byte[] (one byte per slot). */
 void    bzy_file_write_bytes(void *path, void *data);     /* data : byte[]. */
+void   *bzy_file_list(void *folder);            /* Owned string[] of full paths in folder. */
+void   *bzy_file_search(void *folder, void *pattern);          /* Glob match, non-recursive. */
+void   *bzy_file_search_recursive(void *folder, void *pattern);/* Glob match over the subtree. */
 
 int64_t bzy_regex_matches(void *pat, void *text);            /* Full match -> 1/0. */
 int64_t bzy_regex_test(void *pat, void *text);              /* Search -> 1/0. */

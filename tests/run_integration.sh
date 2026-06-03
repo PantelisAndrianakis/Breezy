@@ -103,6 +103,7 @@ check rethrow     tests/samples/proj_rethrow       "bee"
 check catch_oob   tests/samples/proj_catch_oob     $'array index 5 out of bounds for length 3\n99'
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
+check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'
 check spawn       tests/samples/proj_spawn         $'1\n2\n9\n3\n4'
 check spawn_args  tests/samples/proj_spawn_args    $'7\nhi'
 check channel     tests/samples/proj_channel       $'60'
