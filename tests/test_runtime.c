@@ -1274,6 +1274,36 @@ static void test_filewriter_buffered_flush(void)
 	remove("fw_unit.tmp");
 }
 
+static int g_log_ok;
+static void log_breeze(void)
+{
+	void *path = bzy_str_new("log_unit.tmp", 12);
+	void *lg = bzy_logger_open(path);
+	for (int i = 0; i < 50; i++)
+	{
+		bzy_logger_log(lg, bzy_str_new("line", 4));   /* Owned string moved into the channel. */
+	}
+
+	bzy_logger_close(lg);                              /* Drains the 50 lines, flushes, joins the breeze. */
+	bzy_release(lg);
+
+	void *back = bzy_file_read_lines(path);            /* 50 "line\n" entries. */
+	g_log_ok = (bzy_array_len(back) == 50);
+	bzy_release(back);
+	bzy_release(path);
+}
+
+static void test_logger_drains_and_closes(void)
+{
+	g_log_ok = 0;
+	bzy_sched_init();
+	bzy_spawn(log_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_log_ok, 1);                           /* All 50 logged lines reached disk before close returned. */
+	bzy_offload_shutdown();
+	remove("log_unit.tmp");
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1339,6 +1369,7 @@ int main(void)
 	RUN(test_udp_loopback_echo);
 	RUN(test_filechannel_positioned_io);
 	RUN(test_filewriter_buffered_flush);
+	RUN(test_logger_drains_and_closes);
 	SUMMARY();
 	return 0;
 }

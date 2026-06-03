@@ -243,6 +243,14 @@ void  bzy_filewriter_write_bytes(void *w, void *data); /* Buffer a byte[]'s byte
 void  bzy_filewriter_flush(void *w);                   /* Flush buffered bytes to disk (offloaded). */
 void  bzy_filewriter_close(void *w);                   /* Flush + close (offloaded). */
 
+/* Channel-fed logger (6b-4): bundles a bounded channel<string>, a FileWriter, and a
+   dedicated logger breeze that drains the channel and writes each line. log() moves a
+   string into the channel (parks only if the logger is far behind); close() sends a
+   sentinel, then parks until the breeze has drained+flushed+closed and signalled. */
+void *bzy_logger_open(void *path);            /* Owned (+1); opens path in append mode, spawns the breeze. */
+void  bzy_logger_log(void *logger, void *str);/* Move the string into the channel (ownership transfers). */
+void  bzy_logger_close(void *logger);         /* Drain, flush, close the file, join the logger breeze. */
+
 /* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */
