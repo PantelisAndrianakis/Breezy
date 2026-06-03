@@ -544,6 +544,52 @@ masked = Regex.replace("[0-9]+", "a1b22c333", "#");   // -> "a#b#c#"
 - Syntax: literals, `.`, `*` `+` `?`, alternation `|`, grouping `()`, anchors `^` `$`, classes `[a-z]`/`[^...]`, escapes `\d \D \w \W \s \S`, and bounded repetition `{n}` / `{n,}` / `{n,m}`.
 - Patterns are runtime strings, so they can be built and passed dynamically.
 
+### File
+
+`File` is a static namespace for filesystem work. Predicates (`exists`/`isFile`/`isFolder`) return `boolean`; everything else throws an `IOException` on failure, so errors surface where they happen instead of silently corrupting state.
+
+```breezy
+File.createFolder("data/logs");           // mkdir -p
+File.writeText("data/note.txt", "hello\nworld\n");
+File.appendText("data/note.txt", "again\n");
+
+print(File.exists("data/note.txt"));      // true
+print(File.readText("data/note.txt"));    // the file's contents
+foreach (string line in File.readLines("data/note.txt")) { print(line); }
+
+// Glob search (in-folder and recursive), returning full paths.
+foreach (string p in File.search("data", "*.txt")) { print(p); }
+string[] all;
+all = File.searchRecursive("data", "*");
+
+// Binary I/O.
+byte[] bytes;
+bytes = File.readBytes("data/note.txt");
+File.writeBytes("data/copy.bin", bytes);
+
+// Windows attributes (read-only / hidden / system / archive).
+File.setAttribute("data/note.txt", File.READONLY, true);
+print(File.hasAttribute("data/note.txt", File.READONLY));   // true
+File.setAttribute("data/note.txt", File.READONLY, false);
+
+try
+{
+    File.delete("data/missing.txt");
+}
+catch (IOException e)
+{
+    print("delete failed");
+}
+
+File.deleteRecursive("data");             // remove the tree
+```
+
+- **Create/delete:** `createFile`, `createFolder` (creates intermediate folders), `delete` (a file or empty folder), `deleteRecursive` (a folder tree).
+- **Read/write:** `readText`/`readLines` and `writeText`/`appendText` for text; `readBytes`/`writeBytes` for `byte[]`.
+- **Search:** `list(folder)`, `search(folder, glob)`, `searchRecursive(folder, glob)` → `string[]` of full paths (glob `*`/`?`).
+- **Attributes:** `setAttribute(path, attr, on)` / `hasAttribute(path, attr)` with the `File.READONLY` / `File.HIDDEN` / `File.SYSTEM` / `File.ARCHIVE` constants.
+- Calls are **synchronous** today; hot-path file I/O moves onto the offload pool (Part 6b) without changing this surface.
+
 ---
 
 ## Control Flow
@@ -745,6 +791,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)
 - [x] Map views: `containsKey` (replaces `has`) / `containsValue`, `getKeys`/`getValues` → `K[]`/`V[]`, `getEntries` → `Entry[]` (`getKey`/`getValue`), `foreach (k, v in m)`
+- [x] `File` namespace: exists/create/delete, read/write text + binary, glob search, Windows attributes (throws `IOException`)
 
 **Concurrency & I/O (Part 6)**
 - [x] Breezes + cooperative scheduler — `spawn` / `yield` (single thread; Windows Fibers behind a portable seam)

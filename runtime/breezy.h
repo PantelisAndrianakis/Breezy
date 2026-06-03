@@ -125,6 +125,8 @@ void    bzy_file_write_bytes(void *path, void *data);     /* data : byte[]. */
 void   *bzy_file_list(void *folder);            /* Owned string[] of full paths in folder. */
 void   *bzy_file_search(void *folder, void *pattern);          /* Glob match, non-recursive. */
 void   *bzy_file_search_recursive(void *folder, void *pattern);/* Glob match over the subtree. */
+void    bzy_file_set_attribute(void *path, int64_t attr, int64_t on);  /* Windows FILE_ATTRIBUTE_* bits. */
+int64_t bzy_file_has_attribute(void *path, int64_t attr);              /* 1 if the attribute bit is set. */
 
 int64_t bzy_regex_matches(void *pat, void *text);            /* Full match -> 1/0. */
 int64_t bzy_regex_test(void *pat, void *text);              /* Search -> 1/0. */

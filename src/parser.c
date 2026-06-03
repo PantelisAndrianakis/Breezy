@@ -316,11 +316,23 @@ static Expr *parse_primary(Parser *p)
 		advance(p);                 /* namespace */
 		expect(p,TOKEN_DOT);
 		Token m=expect(p,TOKEN_IDENT);
-		expect(p,TOKEN_LPAREN);
-		Expr *e=expr_new(EX_CALL,line);
-		snprintf(e->name,sizeof e->name,"%s.%s",ns,m.text);
-		e->arg_count=parse_args(p,e->args);
-		expect(p,TOKEN_RPAREN);
+		if (check(p,TOKEN_LPAREN))
+		{
+			expect(p,TOKEN_LPAREN);
+			Expr *e=expr_new(EX_CALL,line);
+			snprintf(e->name,sizeof e->name,"%s.%s",ns,m.text);
+			e->arg_count=parse_args(p,e->args);
+			expect(p,TOKEN_RPAREN);
+			return e;
+		}
+
+		/* No call parens: a namespace constant, e.g. File.READONLY. Build a field
+		   access (lhs = the namespace identifier); resolve folds it to a literal. */
+		Expr *id=expr_new(EX_IDENT,line);
+		strcpy(id->name,ns);
+		Expr *e=expr_new(EX_FIELD,line);
+		e->lhs=id;
+		strcpy(e->name,m.text);
 		return e;
 	}
 	if (check(p,TOKEN_IDENT))

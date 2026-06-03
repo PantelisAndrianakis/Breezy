@@ -570,6 +570,40 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"setAttribute")==0)
+	{
+		if (e->arg_count != 3)
+		{
+			die(e->line,"File.setAttribute takes (path, attr, on)",NULL);
+		}
+
+		file_arg_string(e,0);
+		if (!ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind != TY_BOOL)
+		{
+			die(e->line,"File.setAttribute(path, attr, on): attr is int, on is boolean",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+		return;
+	}
+
+	if (strcmp(m,"hasAttribute")==0)
+	{
+		if (e->arg_count != 2)
+		{
+			die(e->line,"File.hasAttribute takes (path, attr)",NULL);
+		}
+
+		file_arg_string(e,0);
+		if (!ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"File.hasAttribute(path, attr): attr is int",NULL);
+		}
+
+		e->type.kind = TY_BOOL;
+		return;
+	}
+
 	die(e->line,"unknown File method: ",m);
 }
 
@@ -919,6 +953,39 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_FIELD:
 	{
+		/* Namespace constant access (File.READONLY etc.): the lhs is the namespace
+		   identifier, not a variable. Rewrite the node to an integer literal. */
+		if (e->lhs->kind==EX_IDENT && strcmp(e->lhs->name,"File")==0)
+		{
+			long long v = -1;
+			if (strcmp(e->name,"READONLY")==0)
+			{
+				v = 1;
+			}
+			else if (strcmp(e->name,"HIDDEN")==0)
+			{
+				v = 2;
+			}
+			else if (strcmp(e->name,"SYSTEM")==0)
+			{
+				v = 4;
+			}
+			else if (strcmp(e->name,"ARCHIVE")==0)
+			{
+				v = 32;
+			}
+			else
+			{
+				die(e->line,"unknown File constant: ",e->name);
+			}
+
+			e->kind = EX_INT;
+			e->int_val = v;
+			e->int_suffix[0] = '\0';
+			e->type.kind = TY_INT;
+			break;
+		}
+
 		resolve_expr(st,e->lhs,tc);
 		if (e->lhs->type.kind==TY_ARRAY)
 		{

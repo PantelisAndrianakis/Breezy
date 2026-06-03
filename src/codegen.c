@@ -1546,10 +1546,20 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 		fn="bzy_file_search";
 		fallible=1;
 	}
-	else
+	else if (strcmp(m,"searchRecursive")==0)
 	{
 		fn="bzy_file_search_recursive";
 		fallible=1;
+	}
+	else if (strcmp(m,"setAttribute")==0)
+	{
+		fn="bzy_file_set_attribute";
+		fallible=1;
+	}
+	else
+	{
+		fn="bzy_file_has_attribute";
+		fallible=0;
 	}
 
 	TypeRef ps[4];
@@ -2936,6 +2946,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_file_list");
 	cg_emit(cg,"extern bzy_file_search");
 	cg_emit(cg,"extern bzy_file_search_recursive");
+	cg_emit(cg,"extern bzy_file_set_attribute");
+	cg_emit(cg,"extern bzy_file_has_attribute");
 	cg_emit(cg,"global __bzy_exception_funcs");
 	cg_emit(cg,"global __bzy_exception_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");

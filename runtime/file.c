@@ -592,3 +592,76 @@ void *bzy_file_search_recursive(void *folder, void *pattern)
 {
 	return build_search(folder, bzy_str_data(pattern), 1, "File.searchRecursive: not a folder");
 }
+
+/* Attribute bits match the Windows FILE_ATTRIBUTE_* constants:
+   READONLY=1, HIDDEN=2, SYSTEM=4, ARCHIVE=32. */
+void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
+{
+	const char *p = bzy_str_data(path);
+#ifdef _WIN32
+	DWORD a = GetFileAttributesA(p);
+	if (a == INVALID_FILE_ATTRIBUTES)
+	{
+		io_fail("File.setAttribute: path does not exist");
+		return;
+	}
+
+	if (on)
+	{
+		a |= (DWORD)attr;
+	}
+	else
+	{
+		a &= ~(DWORD)attr;
+	}
+
+	if (!SetFileAttributesA(p, a))
+	{
+		io_fail("File.setAttribute: could not set attributes");
+	}
+#else
+	struct stat st;
+	if (stat(p, &st) != 0)
+	{
+		io_fail("File.setAttribute: path does not exist");
+		return;
+	}
+
+	if (attr & 1)   /* READONLY: the only portable attribute. */
+	{
+		mode_t m = on ? (st.st_mode & ~(mode_t)0222) : (st.st_mode | 0200);
+		if (chmod(p, m) != 0)
+		{
+			io_fail("File.setAttribute: could not set attributes");
+		}
+	}
+	/* HIDDEN/SYSTEM/ARCHIVE have no portable equivalent: no-op. */
+#endif
+}
+
+int64_t bzy_file_has_attribute(void *path, int64_t attr)
+{
+	const char *p = bzy_str_data(path);
+#ifdef _WIN32
+	DWORD a = GetFileAttributesA(p);
+	if (a == INVALID_FILE_ATTRIBUTES)
+	{
+		return 0;
+	}
+
+	return (a & (DWORD)attr) ? 1 : 0;
+#else
+	struct stat st;
+	if (stat(p, &st) != 0)
+	{
+		return 0;
+	}
+
+	if (attr & 1)
+	{
+		return (st.st_mode & 0222) ? 0 : 1;   /* READONLY = no write bits. */
+	}
+
+	return 0;
+#endif
+}

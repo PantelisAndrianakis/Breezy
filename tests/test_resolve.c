@@ -372,6 +372,14 @@ static void test_file_basic_types(void)
 	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);    /* createFile -> void */
 }
 
+static void test_file_attr_types(void)
+{
+	Func *f=build1("void main() { int a; a = File.READONLY; File.setAttribute(\"x\", File.HIDDEN, true); boolean b; b = File.hasAttribute(\"x\", File.READONLY); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);   /* File.READONLY -> int */
+	ASSERT_INT(f->body->stmts[1]->value->int_val, 1);
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL);  /* hasAttribute -> bool */
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -479,6 +487,7 @@ int main(void)
 	RUN(test_spawn_args_resolve);
 	RUN(test_channel_send_recv_types);
 	RUN(test_file_basic_types);
+	RUN(test_file_attr_types);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);
