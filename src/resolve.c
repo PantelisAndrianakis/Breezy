@@ -450,6 +450,28 @@ static int file_is_byte_array(TypeRef *t)
 	return t->kind == TY_ARRAY && t->elem && t->elem->kind == TY_BYTE;
 }
 
+static void resolve_system(Expr *e)
+{
+	const char *m = e->name + 7;   /* After "System.". */
+	if (strcmp(m,"shell")==0)
+	{
+		if (e->arg_count<1 || e->arg_count>2 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"System.shell(command[, wait]) takes a string and an optional boolean.",NULL);
+		}
+
+		if (e->arg_count==2 && e->args[1]->type.kind!=TY_BOOL)
+		{
+			die(e->line,"System.shell wait argument must be a boolean.",NULL);
+		}
+
+		e->type.kind=TY_INT;   /* Async: pid. Wait: exit code. */
+		return;
+	}
+
+	die(e->line,"Unknown System method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -1510,6 +1532,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"File.",5)==0)
 		{
 			resolve_file(e);
+			break;
+		}
+
+		if (strncmp(e->name,"System.",7)==0)
+		{
+			resolve_system(e);
 			break;
 		}
 

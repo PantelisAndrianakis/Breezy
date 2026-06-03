@@ -1548,6 +1548,49 @@ static void cg_timer_method(Codegen *cg, TypeTable *tt, Expr *e)
 }
 
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
+/* System.shell(command[, wait]) -> bzy_system_shell(command, wait). command in
+   rcx, wait in rdx (0 when the optional boolean is absent). The command string is
+   only read by the runtime, so an owned temporary is released after the call. */
+static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 7;   /* After "System.". */
+	if (strcmp(m,"shell")!=0)
+	{
+		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
+		exit(1);
+	}
+
+	if (e->arg_count==2)
+	{
+		cg_expr(cg,tt,e->args[1]);            /* wait (boolean) -> rax. */
+		cg_emit(cg,"    push rax");
+		cg_expr(cg,tt,e->args[0]);            /* command (string) -> rax. */
+		cg_emit(cg,"    mov rcx, rax");
+		cg_emit(cg,"    pop rdx");
+	}
+	else
+	{
+		cg_expr(cg,tt,e->args[0]);            /* command -> rax. */
+		cg_emit(cg,"    mov rcx, rax");
+		cg_emit(cg,"    mov rdx, 0");          /* wait = 0 (async). */
+	}
+
+	int owned = expr_is_owned(e->args[0]);
+	if (owned)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rcx", cg->val_save);   /* Save command for release. */
+	}
+
+	cg_aligned_call(cg,"bzy_system_shell");   /* Result (pid / exit code) in rax. */
+	if (owned)
+	{
+		cg_emit(cg,"    mov rcx, [rbp - %d]", cg->val_save);
+		cg_emit(cg,"    push rax");            /* Preserve the int result across the release. */
+		cg_release_rcx(cg);
+		cg_emit(cg,"    pop rax");
+	}
+}
+
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Clock.". */
@@ -2055,6 +2098,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"File.",5)==0)
 		{
 			cg_file(cg,tt,e);
+		}
+		else if (strncmp(e->name,"System.",7)==0)
+		{
+			cg_system(cg,tt,e);
 		}
 		else
 		{
@@ -3044,6 +3091,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_clock_nanos");
 	cg_emit(cg,"extern bzy_clock_date");
 	cg_emit(cg,"extern bzy_clock_date_fmt");
+	cg_emit(cg,"extern bzy_system_shell");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");
 	cg_emit(cg,"extern bzy_rnd_long");

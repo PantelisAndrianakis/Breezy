@@ -1,0 +1,8 @@
+// Run "cmd /c exit 5" and wait for it; System.shell returns the child's exit
+// code (5). The wait parks this breeze on the offload pool while the child runs.
+void main()
+{
+	int code;
+	code = System.shell("exit 5", true);
+	print(code);            // 5
+}

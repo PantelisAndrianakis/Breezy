@@ -493,6 +493,13 @@ static void test_schedule_every_returns_timer(void)
 	ASSERT_INT(u->funcs[1]->body->stmts[1]->value->type.kind, TY_TIMER);
 }
 
+static void test_system_shell_resolves_int(void)
+{
+	Func *f=build1("void main() { int p; p = System.shell(\"dir\"); int c; c = System.shell(\"dir\", true); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);   /* Async form -> int (pid). */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);   /* Wait form -> int (exit code). */
+}
+
 int main(void)
 {
 	printf("Resolver tests\n");
@@ -550,6 +557,7 @@ int main(void)
 	RUN(test_schedule_after_returns_timer);
 	RUN(test_schedule_every_returns_timer);
 	ast_free_all();
+	RUN(test_system_shell_resolves_int);
 	SUMMARY();
 	return 0;
 }

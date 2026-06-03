@@ -634,6 +634,27 @@ File.deleteRecursive("data");             // remove the tree
 - **Attributes:** `setAttribute(path, attr, on)` / `hasAttribute(path, attr)` with the `File.READONLY` / `File.HIDDEN` / `File.SYSTEM` / `File.ARCHIVE` constants.
 - The read/write **data** ops now run on the **offload pool** (Part 6b-1): called inside a breeze they park it while a worker does the blocking syscall, so the scheduler core never stalls — the blocking-looking surface is unchanged. Metadata ops (exists/create/delete/search/attributes) stay synchronous.
 
+### System
+
+`System` is a static namespace for launching OS commands, modelled on VB.NET's `Shell`.
+
+```breezy
+// Async (VB.NET Shell-style): launch via the shell, return the process id (0 on
+// failure), do not wait, do not capture output.
+int pid;
+pid = System.shell("notepad");
+
+// Wait: block until the process exits and return its exit code. The wait parks
+// the calling breeze on the offload pool, so the scheduler core keeps running
+// other breezes while the child does its work.
+int code;
+code = System.shell("robocopy src dst /MIR", true);
+```
+
+- `System.shell(command) -> int` — runs `cmd /c <command>` asynchronously and returns the OS process id (`0` if the launch failed). Output is **not** captured (the child inherits the console).
+- `System.shell(command, wait) -> int` — when `wait` is `true`, blocks until the process exits and returns its **exit code**; the wait is routed through the offload pool so the breeze parks instead of stalling its core.
+- Windows only for now (`CreateProcess`); a POSIX backend lands with the Linux target. No output capture, stdin, or timeout yet.
+
 ---
 
 ## Control Flow
