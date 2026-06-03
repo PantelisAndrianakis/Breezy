@@ -846,6 +846,20 @@ static void test_timer_refcount_lifecycle(void)
 	bzy_timer_reset();
 }
 
+static int g_sched_timer_ran;
+static void sched_timer_target(void) { g_sched_timer_ran = 1; }
+
+static void test_scheduler_runs_one_shot_timer(void)
+{
+	bzy_timer_reset();
+	g_sched_timer_ran = 0;
+	bzy_sched_init();                                  /* Single worker, deterministic. */
+	/* No breezes spawned: only a pending one-shot keeps the scheduler alive. */
+	bzy_timer_schedule(sched_timer_target, bzy_clock_millis() + 5, 0);
+	bzy_sched_run();                                   /* Fires the timer, runs the breeze, then exits. */
+	ASSERT_INT(g_sched_timer_ran, 1);                  /* Returning at all proves it did not deadlock-abort. */
+}
+
 static void test_file_predicates(void)
 {
 	FILE *f = fopen("bzy_test_tmp.txt", "wb");
@@ -992,6 +1006,7 @@ int main(void)
 	RUN(test_timer_periodic_coalesces_missed_ticks);
 	RUN(test_timer_cancel_is_skipped);
 	RUN(test_timer_refcount_lifecycle);
+	RUN(test_scheduler_runs_one_shot_timer);
 	RUN(test_file_predicates);
 	RUN(test_file_read_write);
 	RUN(test_file_search);

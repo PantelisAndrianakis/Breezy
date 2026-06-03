@@ -175,6 +175,14 @@ void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again, on this 
 	enqueue_on(t_wid, (Breeze*)breeze);
 }
 
+void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re-checks timers. */
+{
+	if (g_work_sem)
+	{
+		ReleaseSemaphore(g_work_sem, 1, NULL);
+	}
+}
+
 void bzy_yield(void)
 {
 	Breeze *b = t_running;
@@ -222,14 +230,58 @@ static void worker_loop(void)
 				break;
 			}
 
+			/* Fire every timer due now: spawn its target, re-insert periodics. */
+			int64_t now = bzy_clock_millis();
+			int fired = 0;
+			void *t;
+			while ((t = bzy_timer_pop_due(now)) != NULL)
+			{
+				void (*entry)(void) = *(void(**)(void))((char*)t + 40);   /* Timer.entry. */
+				int64_t period = *(int64_t*)((char*)t + 32);              /* Timer.period. */
+				bzy_spawn(entry);
+				fired++;
+				if (period > 0)
+				{
+					bzy_timer_reinsert(t, now);   /* Periodic: keep the heap's ref. */
+				}
+				else
+				{
+					bzy_release(t);               /* One-shot: drop the heap's ref. */
+				}
+			}
+
+			if (fired)
+			{
+				continue;                         /* Pick up the freshly spawned breezes. */
+			}
+
+			int64_t nd = bzy_timer_next_deadline();
+			if (nd >= 0)
+			{
+				int64_t wait = nd - bzy_clock_millis();
+				if (wait < 1)
+				{
+					wait = 1;
+				}
+
+				if (wait > 0x7fffffff)
+				{
+					wait = 0x7fffffff;
+				}
+
+				WaitForSingleObject(g_work_sem, (DWORD)wait);   /* Sleep until the next deadline (or an enqueue). */
+				continue;
+			}
+
+			/* No ready work and no pending timer. */
 			if (g_nworkers == 1 && g_live > 0)
 			{
-				/* Single worker, breezes remain, none ready: nobody can ever wake them. */
+				/* Single worker, breezes remain parked, nothing can ever wake them. */
 				fprintf(stderr, "deadlock: all breezes blocked\n");
 				abort();
 			}
 
-			WaitForSingleObject(g_work_sem, INFINITE);   /* Block until an enqueue or shutdown. */
+			WaitForSingleObject(g_work_sem, INFINITE);
 			continue;
 		}
 
@@ -247,8 +299,10 @@ static void worker_loop(void)
 		{
 			bzy_coroutine_delete(b->coroutine);
 			free(b);
-			if (InterlockedDecrement(&g_live) == 0)
+			if (InterlockedDecrement(&g_live) == 0 && bzy_timer_next_deadline() < 0)
 			{
+				/* No breezes and no timer can ever fire again: shut down. A pending
+				   timer keeps the program alive — workers fall into the timer wait. */
 				g_shutdown = 1;
 				ReleaseSemaphore(g_work_sem, g_nworkers, NULL);   /* Wake every idle worker to exit. */
 			}

@@ -225,6 +225,3 @@ void bzy_timer_reset(void)
 	g_n = 0;
 	ReleaseSRWLockExclusive(&g_lock);
 }
-
-/* TEMP stub — replaced by the real bzy_sched_nudge in runtime/sched.c (Task 2). */
-__attribute__((weak)) void bzy_sched_nudge(void) {}
