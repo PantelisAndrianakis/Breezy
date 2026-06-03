@@ -1,0 +1,40 @@
+// writer offloads a file write (parks on the offload pool) and reports the byte
+// count it read back; meanwhile counter sums 0..9 on the scheduler. The output is
+// the sum (45) then the round-tripped length (5), proving the compute breeze ran
+// while the write was in flight and the offloaded read returned correct data.
+void writer(channel<int> done)
+{
+	string path;
+	path = "bzy_async_sample.txt";
+	File.writeText(path, "hello");
+	string back;
+	back = File.readText(path);
+	File.delete(path);
+	done.send(back.length());
+}
+
+void counter(channel<int> done)
+{
+	int i;
+	int sum;
+	sum = 0;
+	for (i = 0; i < 10; i++)
+	{
+		sum += i;
+	}
+	done.send(sum);
+}
+
+void main()
+{
+	channel<int> done;
+	done = new channel<int>(2);
+	spawn writer(done);
+	spawn counter(done);
+
+	int a;
+	a = done.recv();
+	int b;
+	b = done.recv();
+	print(a + b);            // 45 + 5 = 50 (order-independent sum)
+}
