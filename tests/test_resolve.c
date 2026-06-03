@@ -517,6 +517,16 @@ static void test_network_tcp_resolves(void)
 	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* socket.write -> int. */
 }
 
+static void test_filechannel_resolves(void)
+{
+	Func *f=build1("void main() { FileChannel c; c = File.openChannel(\"db.dat\");"
+				   " byte[] b; b = c.readAt(0, 16); long s; s = c.size(); c.sync(); c.close(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_FILECHANNEL);   /* File.openChannel -> FileChannel. */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_ARRAY);         /* readAt -> byte[]. */
+	ASSERT_INT(f->body->stmts[3]->value->type.elem->kind, TY_BYTE);
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_LONG);          /* size -> long. */
+}
+
 static void test_null_resolves(void)
 {
 	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); boolean b; b = (s == null);"
@@ -596,6 +606,7 @@ int main(void)
 	RUN(test_getclassname_resolves_string);
 	RUN(test_network_tcp_resolves);
 	RUN(test_network_udp_resolves);
+	RUN(test_filechannel_resolves);
 	RUN(test_null_resolves);
 	SUMMARY();
 	return 0;

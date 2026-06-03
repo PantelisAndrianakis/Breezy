@@ -1,0 +1,51 @@
+// A fixed-size (4-byte) record store on a FileChannel: write three records at
+// computed offsets, force them to disk, then read record #1 straight back by its
+// offset (1 * 4). Prints 10 - the sum of the bytes {1,2,3,4} of the middle record,
+// proving positioned write + sync + positioned read round-trip.
+void main()
+{
+	FileChannel c;
+	c = File.openChannel("records.dat");
+
+	byte[] r0;
+	r0 = new byte[4];
+	r0[0] = (byte)9;
+	r0[1] = (byte)9;
+	r0[2] = (byte)9;
+	r0[3] = (byte)9;
+	c.writeAt(0, r0);
+
+	byte[] r1;
+	r1 = new byte[4];
+	r1[0] = (byte)1;
+	r1[1] = (byte)2;
+	r1[2] = (byte)3;
+	r1[3] = (byte)4;
+	c.writeAt(4, r1);
+
+	byte[] r2;
+	r2 = new byte[4];
+	r2[0] = (byte)5;
+	r2[1] = (byte)6;
+	r2[2] = (byte)7;
+	r2[3] = (byte)8;
+	c.writeAt(8, r2);
+
+	c.sync();                       // Durability barrier.
+
+	byte[] got;
+	got = c.readAt(4, 4);           // Read record #1 back by offset.
+	int sum;
+	sum = 0;
+	int i;
+	i = 0;
+	while (i < got.length)
+	{
+		sum = sum + got[i];
+		i = i + 1;
+	}
+
+	print(sum);                     // 10  (1 + 2 + 3 + 4)
+	c.close();
+	File.delete("records.dat");
+}

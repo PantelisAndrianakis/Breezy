@@ -1697,6 +1697,69 @@ static void cg_net_method(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
 }
 
+/* FileChannel methods: receiver (e->lhs) in rcx, args in rdx/r8. readAt returns an
+   owned byte[]; writeAt/size return int/long; truncate/sync/close return void.
+   readAt/writeAt/truncate/sync are fallible -> post-call bzy_io_check. */
+static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	int fallible = 1;
+	if (strcmp(n,"readAt")==0)
+	{
+		fn = "bzy_filechannel_read_at";
+	}
+	else if (strcmp(n,"writeAt")==0)
+	{
+		fn = "bzy_filechannel_write_at";
+	}
+	else if (strcmp(n,"truncate")==0)
+	{
+		fn = "bzy_filechannel_truncate";
+	}
+	else if (strcmp(n,"sync")==0)
+	{
+		fn = "bzy_filechannel_sync";
+	}
+	else if (strcmp(n,"size")==0)
+	{
+		fn = "bzy_filechannel_size";
+		fallible = 0;
+	}
+	else
+	{
+		fn = "bzy_filechannel_close";
+		fallible = 0;
+	}
+
+	TypeRef ps[2];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	int obj = ty_is_managed(e->type.kind);   /* readAt -> byte[] (owned); others scalar/void. */
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count);
+
+	if (fallible)
+	{
+		if (obj)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the byte[] across the check. */
+		}
+
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea rcx, [rel .L%d]", k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov rdx, rbp");
+		cg_aligned_call(cg,"bzy_io_check");
+		if (obj)
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
+}
+
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
 /* System.shell(command[, wait]) -> bzy_system_shell(command, wait). command in
    rcx, wait in rdx (0 when the optional boolean is absent). The command string is
@@ -1846,6 +1909,11 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 	else if (strcmp(m,"readBytes")==0)
 	{
 		fn="bzy_file_read_bytes";
+		fallible=1;
+	}
+	else if (strcmp(m,"openChannel")==0)
+	{
+		fn="bzy_filechannel_open";
 		fallible=1;
 	}
 	else if (strcmp(m,"writeBytes")==0)
@@ -2174,6 +2242,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				 || e->lhs->type.kind==TY_UDPSOCKET || e->lhs->type.kind==TY_DATAGRAM)
 		{
 			cg_net_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_FILECHANNEL)
+		{
+			cg_filechannel_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
@@ -3264,6 +3336,13 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_dgram_text");
 	cg_emit(cg,"extern bzy_dgram_host");
 	cg_emit(cg,"extern bzy_dgram_port");
+	cg_emit(cg,"extern bzy_filechannel_open");
+	cg_emit(cg,"extern bzy_filechannel_read_at");
+	cg_emit(cg,"extern bzy_filechannel_write_at");
+	cg_emit(cg,"extern bzy_filechannel_size");
+	cg_emit(cg,"extern bzy_filechannel_truncate");
+	cg_emit(cg,"extern bzy_filechannel_sync");
+	cg_emit(cg,"extern bzy_filechannel_close");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

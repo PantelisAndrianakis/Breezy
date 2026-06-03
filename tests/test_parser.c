@@ -173,6 +173,13 @@ static void test_parse_socket_vardecls(void)
 	ASSERT_INT(b->stmts[3]->decl_type.kind, TY_DATAGRAM);
 }
 
+static void test_parse_filechannel_vardecl(void)
+{
+	Unit *u = parse_unit_str("void main() { FileChannel c; }");
+	ASSERT_INT(u->funcs[0]->body->stmts[0]->kind, ST_VARDECL);
+	ASSERT_INT(u->funcs[0]->body->stmts[0]->decl_type.kind, TY_FILECHANNEL);
+}
+
 static void test_array_type_decls(void)
 {
 	Unit *u = parse_unit_str("void m() { int[] a; Foo[] b; }");
@@ -428,6 +435,7 @@ int main(void)
 	RUN(test_parse_timer_vardecl);
 	RUN(test_parse_double_vardecl);
 	RUN(test_parse_socket_vardecls);
+	RUN(test_parse_filechannel_vardecl);
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);
 	RUN(test_new_map);

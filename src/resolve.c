@@ -520,6 +520,17 @@ static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
 
+	if (strcmp(m,"openChannel")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"File.openChannel(path) takes one path argument.",NULL);
+		}
+
+		e->type.kind=TY_FILECHANNEL;
+		return;
+	}
+
 	/* Path -> boolean predicates. */
 	if (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0)
 	{
@@ -1517,6 +1528,66 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown Datagram method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_FILECHANNEL)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"readAt")==0)
+			{
+				if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || !ty_is_int(e->args[1]->type.kind))
+				{
+					die(e->line,"FileChannel.readAt(offset, maxBytes) takes two integers.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_BYTE;
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);   /* byte[]. */
+			}
+			else if (strcmp(e->name,"writeAt")==0)
+			{
+				if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || e->args[1]->type.kind!=TY_ARRAY)
+				{
+					die(e->line,"FileChannel.writeAt(offset, byte[]) takes an integer and a byte[].",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"size")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"FileChannel.size() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"truncate")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"FileChannel.truncate(size) takes one integer.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"sync")==0 || strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"FileChannel.sync()/close() take no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown FileChannel method: ",e->name);
 			}
 
 			break;

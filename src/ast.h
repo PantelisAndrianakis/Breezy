@@ -18,6 +18,7 @@ typedef enum
 	TY_SOCKET,                                /* Socket: TCP connection handle. */
 	TY_UDPSOCKET,                             /* UdpSocket: UDP datagram handle. */
 	TY_DATAGRAM,                              /* Datagram: a received UDP payload + sender. */
+	TY_FILECHANNEL,                           /* FileChannel: random-access file handle. */
 	TY_OBJECT,
 	TY_STRING,  /* Immutable string. */
 	TY_NULL     /* The `null` literal: a bare 0 assignable to any managed reference. */
@@ -64,6 +65,7 @@ static inline int ty_bits(TypeKind k)
 	case TY_SOCKET:
 	case TY_UDPSOCKET:
 	case TY_DATAGRAM:
+	case TY_FILECHANNEL:
 	case TY_OBJECT:
 	case TY_STRING:
 	case TY_NULL:
@@ -105,7 +107,8 @@ static inline int ty_is_float(TypeKind k)
 static inline int ty_is_managed(TypeKind k)
 {
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
-		   || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM;
+		   || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
+		   || k == TY_FILECHANNEL;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
