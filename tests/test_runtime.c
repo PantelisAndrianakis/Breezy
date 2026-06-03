@@ -210,6 +210,24 @@ static void test_map_contains_value(void)
 	bzy_release(m);
 }
 
+static void test_map_keys_values(void)
+{
+	void *m = bzy_map_new(0, 0);
+	bzy_map_put(m, 10, 1);
+	bzy_map_put(m, 20, 2);
+	void *ks = bzy_map_keys(m);                 /* int[] (value array). */
+	void *vs = bzy_map_values(m);
+	ASSERT_INT(bzy_array_len(ks), 2);
+	ASSERT_INT(bzy_array_len(vs), 2);
+	int64_t ksum = *(int64_t*)((char*)ks + 32) + *(int64_t*)((char*)ks + 40);
+	int64_t vsum = *(int64_t*)((char*)vs + 32) + *(int64_t*)((char*)vs + 40);
+	ASSERT_INT(ksum, 30);
+	ASSERT_INT(vsum, 3);
+	bzy_release(ks);
+	bzy_release(vs);
+	bzy_release(m);
+}
+
 static void test_map_string_keys_and_grow(void)
 {
 	int64_t before = bzy_live_count();
@@ -665,6 +683,7 @@ int main(void)
 	RUN(test_array_object_elements_released);
 	RUN(test_map_int_keys);
 	RUN(test_map_contains_value);
+	RUN(test_map_keys_values);
 	RUN(test_map_string_keys_and_grow);
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);

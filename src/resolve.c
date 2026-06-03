@@ -1008,6 +1008,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_VOID;
 			}
+			else if (strcmp(e->name,"getKeys")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"map.getKeys() takes no arguments",NULL);
+				}
+
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(*K);
+			}
+			else if (strcmp(e->name,"getValues")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"map.getValues() takes no arguments",NULL);
+				}
+
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(*V);
+			}
 			else
 			{
 				die(e->line,"unknown map method: ",e->name);

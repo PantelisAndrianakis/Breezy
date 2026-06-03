@@ -663,6 +663,14 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(e->name,"getKeys")==0 || strcmp(e->name,"getValues")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                  /* map */
+		cg_emit(cg,"    mov rcx, rax");
+		cg_aligned_call(cg, strcmp(e->name,"getKeys")==0 ? "bzy_map_keys" : "bzy_map_values");
+		return;                                 /* Owned array (+1) in rax. */
+	}
+
 	if (strcmp(e->name,"put")==0)
 	{
 		cg_expr(cg,tt,e->lhs);                 /* map */
@@ -2495,6 +2503,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_has");
 	cg_emit(cg,"extern bzy_map_remove");
 	cg_emit(cg,"extern bzy_map_contains_value");
+	cg_emit(cg,"extern bzy_map_keys");
+	cg_emit(cg,"extern bzy_map_values");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");

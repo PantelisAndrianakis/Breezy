@@ -1,0 +1,27 @@
+void main()
+{
+	map<string,int> m;
+	m = new map<string,int>();
+	m.put("a", 10);
+	m.put("b", 20);
+	m.put("c", 30);
+
+	int total;
+	total = 0;
+	foreach (int v in m.getValues())
+	{
+		total += v;
+	}
+	print(total);                  // 60
+
+	int found;
+	found = 0;
+	foreach (string k in m.getKeys())
+	{
+		if (m.containsKey(k))
+		{
+			found += 1;
+		}
+	}
+	print(found);                  // 3
+}

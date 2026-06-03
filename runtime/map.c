@@ -314,6 +314,54 @@ int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
 	return 0;
 }
 
+void *bzy_map_keys(void *m)
+{
+	int64_t managed = (*M_KKIND(m) == 1) ? 1 : 0;
+	void *a = bzy_array_new(*M_SIZE(m), managed);   /* Owned (+1). */
+	int64_t *out = (int64_t*)((char*)a + 32);
+	int64_t cap = *M_CAP(m), *keys = keys_data(m);
+	uint8_t *ctrl = *M_CTRL(m);
+	int64_t n = 0;
+	for (int64_t i = 0; i < cap; i++)
+	{
+		if ((ctrl[i] & 0x80) == 0)
+		{
+			if (managed)
+			{
+				bzy_retain((void*)keys[i]);
+			}
+
+			out[n++] = keys[i];
+		}
+	}
+
+	return a;
+}
+
+void *bzy_map_values(void *m)
+{
+	int64_t managed = *M_VMAN(m);
+	void *a = bzy_array_new(*M_SIZE(m), managed);
+	int64_t *out = (int64_t*)((char*)a + 32);
+	int64_t cap = *M_CAP(m), *vals = vals_data(m);
+	uint8_t *ctrl = *M_CTRL(m);
+	int64_t n = 0;
+	for (int64_t i = 0; i < cap; i++)
+	{
+		if ((ctrl[i] & 0x80) == 0)
+		{
+			if (managed)
+			{
+				bzy_retain((void*)vals[i]);
+			}
+
+			out[n++] = vals[i];
+		}
+	}
+
+	return a;
+}
+
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 {
 	for (int64_t i = 0; i < cap; i++)
