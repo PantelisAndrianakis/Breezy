@@ -344,7 +344,9 @@ void main()
 
 > **Implemented today (Part 6a-4):** **timers** — `scheduleAfter(f, delayMs)` runs the zero-argument `void` function `f` once after a delay; `scheduleEvery(f, delayMs, periodMs)` runs it repeatedly. Both return a `Timer` you can `.cancel()`. The scheduler keeps a min-heap of pending timers: when it has no ready breeze it sleeps until the next deadline (no busy-wait) and a pending timer keeps the program alive; periodic timers are fixed-rate and coalesce missed ticks (a stall fires once, not a burst). Also **crash-safe breezes** — an uncaught exception in one breeze prints its stack trace and ends just that breeze; the rest of the program keeps running (the process still exits non-zero so the failure is visible).
 
-> **Implemented today (Part 6b-1):** **file I/O no longer blocks the scheduler.** A bounded **offload thread pool** (one OS thread per logical core; `BZY_OFFLOAD_THREADS=N` overrides) handles the blocking work: when a breeze calls a `File.*` read/write (`readText`/`readLines`/`readBytes`/`writeText`/`appendText`/`writeBytes`), the breeze **parks**, a pool worker performs the syscall, and the breeze resumes with the result — so a compute breeze keeps progressing while a large file write is in flight, even on a single scheduler worker. The same pool will carry `blocking` C/DB calls in Part 7. (Fast metadata ops — `exists`/`isFile`/`create*`/`delete*`/`list`/`search*` — stay synchronous.) Still to come within Part 6b: **network** sockets via IOCP/epoll (6b-2), buffered writes (6b-3), and a channel-fed logger (6b-4).
+> **Implemented today (Part 6b-1):** **file I/O no longer blocks the scheduler.** A bounded **offload thread pool** (one OS thread per logical core; `BZY_OFFLOAD_THREADS=N` overrides) handles the blocking work: when a breeze calls a `File.*` read/write (`readText`/`readLines`/`readBytes`/`writeText`/`appendText`/`writeBytes`), the breeze **parks**, a pool worker performs the syscall, and the breeze resumes with the result — so a compute breeze keeps progressing while a large file write is in flight, even on a single scheduler worker. The same pool will carry `blocking` C/DB calls in Part 7. (Fast metadata ops — `exists`/`isFile`/`create*`/`delete*`/`list`/`search*` — stay synchronous.) Still to come within Part 6b: buffered writes (6b-3) and a channel-fed logger (6b-4).
+
+> **Implemented today (Part 6b-2):** **network sockets that park a breeze instead of blocking a core.** A process-wide Windows **IOCP** completion port + a dedicated completion thread back every socket op: a breeze issues the read/accept/connect and **parks**; the kernel does the work; the completion thread wakes it on the result — so one scheduler core serves many connections. The **`Network`** namespace constructs handles: `Network.listen(port) -> Listener`, `Network.connect(host, port) -> Socket`, `Network.udp(port) -> UdpSocket`. **TCP**: `Listener.accept()`/`tryAccept()`/`accept(timeoutMs)`/`port()`/`close()` and `Socket.read(max)`/`readText(max)`/`write(byte[])`/`writeText(string)`/`close()` (plus `try*` and `timeoutMs` read variants). **UDP**: `UdpSocket.sendTo`/`sendTextTo`/`receive()`/`tryReceive()`/`receive(timeoutMs)`/`port()`/`close()` returning a `Datagram` (`data()`/`text()`/`host()`/`port()`). Reads are **partial** (whatever ≥1 byte arrived; length 0 = peer closed), writes are **full** (loop until every byte is sent). (Windows/IOCP + IPv4 today; the Linux epoll backend lands with Part 8; no TLS yet.) Still to come within Part 6b: buffered writes (6b-3) and a channel-fed logger (6b-4).
 
 ### The zone model (and why it's fast)
 
@@ -359,6 +361,30 @@ Every I/O call in Breezy *looks* blocking and *behaves* non-blocking. One facade
 - **Network** rides epoll (Linux) / IOCP (Windows) / kqueue (BSD). A breeze waiting on a socket parks and frees the core for others.
 - **Files** can't be polled reliably, so file reads/writes are dispatched to a small **offload thread pool** - the breeze yields, a worker does the blocking work, the breeze resumes. (On modern Linux, an `io_uring` backend slots in under the same API for true async file I/O.)
 - **Blocking C calls** (a synchronous `mysql_query`) use that *same* offload pool, so one slow database round-trip can't freeze every client on a core.
+
+A TCP echo server, written as if it blocked — but every `accept`/`read`/`write` parks the breeze on the IOCP completion port and frees the core:
+
+```breezy
+void main()
+{
+	Listener l;
+	l = Network.listen(8080);
+	while (true)
+	{
+		Socket c;
+		c = l.accept();           // Parks until a client connects.
+		spawn handle(c);          // Serve each client on its own breeze.
+	}
+}
+
+void handle(Socket c)
+{
+	string line;
+	line = c.readText(1024);      // Parks until bytes arrive.
+	c.writeText(line);            // Echo it back (full write).
+	c.close();
+}
+```
 
 ### File writing done right
 
@@ -873,7 +899,8 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Multi-core scheduler (one thread per core, work-stealing) + atomic refcounts for shared objects
 - [x] Timers — scheduled & periodic breezes (`scheduleAfter` / `scheduleEvery`, `Timer.cancel`) + crash-safe breezes (uncaught throw continues)
 - [x] Offload thread pool + async file I/O — `File.*` data ops park the breeze instead of blocking the scheduler (6b-1)
-- [ ] Async I/O facade: network sockets via epoll/IOCP (6b-2), buffered writes (6b-3), channel-fed logger (6b-4); `io_uring` later
+- [x] Network sockets via IOCP — `Network.listen`/`connect`/`udp`; TCP `Listener`/`Socket` + UDP `UdpSocket`/`Datagram` park a breeze on the completion port (6b-2)
+- [ ] Async I/O facade: buffered writes (6b-3), channel-fed logger (6b-4); epoll backend with Part 8, `io_uring` later
 
 **Interop (Part 7)**
 - [ ] `extern` C FFI with `blocking` dispatch

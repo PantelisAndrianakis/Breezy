@@ -1,0 +1,38 @@
+// A server breeze listens on an OS-assigned port, accepts one client, echoes the
+// bytes it receives, and closes. A client breeze connects to that port, sends
+// "ping", reads the echo, and reports its length. Output is 4 (the echoed length),
+// proving the accept/connect/read/write round-trip parks and resumes correctly.
+void server(Listener l, channel<int> portCh)
+{
+	portCh.send(l.port());        // Hand the bound port to the client.
+	Socket c;
+	c = l.accept();               // Parks until the client connects.
+	byte[] buf;
+	buf = c.read(64);             // Parks until bytes arrive.
+	c.write(buf);                 // Echo back.
+	c.close();
+	l.close();
+}
+
+void client(channel<int> portCh)
+{
+	int port;
+	port = portCh.recv();         // Wait for the server's bound port.
+	Socket s;
+	s = Network.connect("127.0.0.1", port);
+	s.writeText("ping");
+	string back;
+	back = s.readText(64);
+	print(back.length());         // 4
+	s.close();
+}
+
+void main()
+{
+	Listener l;
+	l = Network.listen(0);            // Ephemeral port.
+	channel<int> portCh;
+	portCh = new channel<int>(1);
+	spawn server(l, portCh);
+	spawn client(portCh);
+}
