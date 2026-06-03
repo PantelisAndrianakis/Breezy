@@ -293,9 +293,10 @@ static void worker_loop(void)
 			}
 
 			/* No ready work and no pending timer. */
-			if (bzy_offload_inflight() > 0)
+			if (bzy_offload_inflight() > 0 || bzy_iocp_inflight() > 0)
 			{
-				/* A breeze is parked on an offload task; a worker will wake it. */
+				/* A breeze is parked on an offload or network op; a worker or the
+				   completion thread will wake it. Wait instead of declaring deadlock. */
 				WaitForSingleObject(g_work_sem, INFINITE);
 				continue;
 			}

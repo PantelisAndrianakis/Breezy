@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <windows.h>
 
 /* Exception registry stubs: no compiled Breezy program is linked into this unit-test binary. */
 void *__bzy_exception_funcs[1] = { 0 };
@@ -785,7 +788,10 @@ static void test_channel_roundtrip(void)
 }
 
 static int g_timer_hits;            /* A timer target for tests that only need a side effect. */
-static void timer_test_target(void) { g_timer_hits++; }
+static void timer_test_target(void)
+{
+	g_timer_hits++;
+}
 
 static void test_timer_heap_orders_by_deadline(void)
 {
@@ -802,7 +808,9 @@ static void test_timer_heap_orders_by_deadline(void)
 	bzy_release(d1);                               /* One-shot: drop the heap's transferred ref. */
 	ASSERT_INT(bzy_timer_next_deadline(), 200);
 
-	bzy_release(a); bzy_release(b); bzy_release(c);/* Drop the caller refs returned by schedule. */
+	bzy_release(a);
+	bzy_release(b);
+	bzy_release(c);/* Drop the caller refs returned by schedule. */
 	bzy_timer_reset();
 }
 
@@ -847,7 +855,10 @@ static void test_timer_refcount_lifecycle(void)
 }
 
 static int g_sched_timer_ran;
-static void sched_timer_target(void) { g_sched_timer_ran = 1; }
+static void sched_timer_target(void)
+{
+	g_sched_timer_ran = 1;
+}
 
 static void test_scheduler_runs_one_shot_timer(void)
 {
@@ -955,7 +966,12 @@ static void test_scheduler_roundrobin(void)
 }
 
 static int g_off_ran;
-static void off_fn(void *p) { int *v = (int*)p; *v += 1; g_off_ran = 1; }   /* Runs on an offload thread. */
+static void off_fn(void *p)
+{
+	int *v = (int*)p;    /* Runs on an offload thread. */
+	*v += 1;
+	g_off_ran = 1;
+}
 static int g_off_result;
 static void off_breeze(void)
 {
@@ -1018,6 +1034,47 @@ static void test_system_shell_wait_exit_code(void)
 	bzy_offload_shutdown();
 }
 
+static char g_iocp_opbuf[BZY_IOCP_OP_SIZE];
+static int  g_iocp_resumed;
+static unsigned long g_iocp_bytes;
+
+static DWORD WINAPI poke_completion(void *unused)
+{
+	(void)unused;
+	Sleep(20);                                   /* Let the breeze issue + park. */
+	IocpOp *op = (IocpOp*)g_iocp_opbuf;
+	/* Post a fake completion carrying 7 bytes to the breeze's overlapped. */
+	extern void *bzy_iocp_test_port(void);       /* Test hook (declared in iocp.c). */
+	PostQueuedCompletionStatus((HANDLE)bzy_iocp_test_port(), 7, 0,
+							   (OVERLAPPED*)bzy_iocp_op_overlapped(op));
+	return 0;
+}
+
+static void iocp_breeze(void)
+{
+	IocpOp *op = (IocpOp*)g_iocp_opbuf;
+	bzy_iocp_ensure();
+	bzy_iocp_op_reset(op);                        /* Records the running breeze. */
+	HANDLE th = CreateThread(NULL, 0, poke_completion, NULL, 0, NULL);
+	bzy_iocp_park(op);                            /* Resumes when poke_completion posts. */
+	WaitForSingleObject(th, INFINITE);
+	CloseHandle(th);
+	g_iocp_bytes = bzy_iocp_op_bytes(op);
+	g_iocp_resumed = 1;
+}
+
+static void test_iocp_completion_wakes_breeze(void)
+{
+	g_iocp_resumed = 0;
+	g_iocp_bytes = 0;
+	bzy_sched_init();
+	bzy_spawn(iocp_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_iocp_resumed, 1);                /* The breeze resumed after the completion. */
+	ASSERT_INT((int)g_iocp_bytes, 7);             /* The posted byte count transferred through. */
+	bzy_iocp_shutdown();
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1077,6 +1134,7 @@ int main(void)
 	RUN(test_offload_runs_and_resumes);
 	RUN(test_file_ops_offload_in_breeze);
 	RUN(test_system_shell_wait_exit_code);
+	RUN(test_iocp_completion_wakes_breeze);
 	SUMMARY();
 	return 0;
 }

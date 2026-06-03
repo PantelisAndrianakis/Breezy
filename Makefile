@@ -20,7 +20,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/prelude.c
 
-RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/exception.c runtime/regex.c runtime/coroutine_win.c runtime/scheduler.c runtime/map_entry.c runtime/channel.c runtime/file.c runtime/timer.c runtime/offload.c runtime/system.c runtime/reflect.c
+RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/exception.c runtime/regex.c runtime/coroutine_win.c runtime/scheduler.c runtime/map_entry.c runtime/channel.c runtime/file.c runtime/timer.c runtime/offload.c runtime/system.c runtime/reflect.c runtime/iocp.c
 RT_HDR  = runtime/breezy.h runtime/coroutine.h
 
 .PHONY: all clean test integration release
@@ -78,11 +78,12 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -c runtime/offload.c -o runtime/offload.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/system.c -o runtime/system.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/reflect.c -o runtime/reflect.o
+	$(CC) $(CFLAGS) -Iruntime -c runtime/iocp.c -o runtime/iocp.o
 	$(CC) $(CFLAGS) -Iruntime -c runtime/entry.c -o runtime/entry.o
-	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o runtime/map.o runtime/vector.o runtime/clock.o runtime/random.o runtime/exception.o runtime/regex.o runtime/coroutine_win.o runtime/scheduler.o runtime/map_entry.o runtime/channel.o runtime/file.o runtime/timer.o runtime/offload.o runtime/system.o runtime/reflect.o runtime/entry.o
+	ar rcs lib_breezy.a runtime/alloc.o runtime/print.o runtime/string.o runtime/array.o runtime/map.o runtime/vector.o runtime/clock.o runtime/random.o runtime/exception.o runtime/regex.o runtime/coroutine_win.o runtime/scheduler.o runtime/map_entry.o runtime/channel.o runtime/file.o runtime/timer.o runtime/offload.o runtime/system.o runtime/reflect.o runtime/iocp.o runtime/entry.o
 
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
-	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC)
+	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC) -lws2_32
 
 test: test_lexer test_ast test_parser test_types test_resolve test_ownership test_escape test_runtime breezy
 	./test_lexer

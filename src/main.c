@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"Nasm failed.\n");
 		return 1;
 	}
-	if (system("gcc out.obj -L. -l_breezy -o out.exe")!=0)
+	if (system("gcc out.obj -L. -l_breezy -lws2_32 -o out.exe")!=0)
 	{
 		fprintf(stderr,"Gcc link failed.\n");
 		return 1;

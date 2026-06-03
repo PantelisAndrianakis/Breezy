@@ -165,6 +165,22 @@ int64_t bzy_offload_inflight(void);   /* Breezes currently parked on an offload 
 void    bzy_offload_shutdown(void);   /* Drain/join the pool (no-op if never started). */
 void    bzy_sched_wake_external(void *breeze);   /* Wake a breeze from a non-scheduler thread. */
 
+/* IOCP core (6b-2). IocpOp is opaque here; its full definition (with the embedded
+   OVERLAPPED) lives in runtime/iocp.c. Callers allocate it on their stack via the
+   BZY_IOCP_OP_SIZE byte blob and treat it through these functions. */
+typedef struct IocpOp IocpOp;
+#define BZY_IOCP_OP_SIZE 64      /* sizeof(struct IocpOp); static_assert'd in iocp.c. */
+
+void  bzy_iocp_ensure(void);             /* Lazily create the port + completion thread (idempotent). */
+void  bzy_iocp_associate(void *handle);  /* Associate a SOCKET (as void*) with the completion port. */
+void  bzy_iocp_op_reset(IocpOp *op);     /* Zero the OVERLAPPED, init the hand-off lock, set the breeze. */
+void *bzy_iocp_op_overlapped(IocpOp *op);/* &op->ov, to pass to WSARecv/WSASend/etc. */
+void  bzy_iocp_park(IocpOp *op);         /* Park until the completion thread wakes this op. */
+unsigned long bzy_iocp_op_bytes(IocpOp *op);  /* Bytes transferred (valid after resume). */
+int   bzy_iocp_op_err(IocpOp *op);            /* 0 on success else a Winsock error (valid after resume). */
+int64_t bzy_iocp_inflight(void);         /* Breezes currently parked on a network op. */
+void  bzy_iocp_shutdown(void);           /* Stop the completion thread + close the port (no-op if unused). */
+
 /* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */
