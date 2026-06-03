@@ -976,6 +976,30 @@ static void test_offload_runs_and_resumes(void)
 	bzy_offload_shutdown();
 }
 
+static int g_file_ok;
+static void file_breeze(void)
+{
+	void *p = bzy_str_new("bzy_off_tmp.txt", 15);
+	void *c = bzy_str_new("hello", 5);
+	bzy_file_write_text(p, c);              /* Offloaded: we are inside a breeze. */
+	void *back = bzy_file_read_text(p);     /* Offloaded. */
+	g_file_ok = (strcmp(bzy_str_data(back), "hello") == 0);
+	remove("bzy_off_tmp.txt");
+	bzy_release(p);
+	bzy_release(c);
+	bzy_release(back);
+}
+
+static void test_file_ops_offload_in_breeze(void)
+{
+	g_file_ok = 0;
+	bzy_sched_init();
+	bzy_spawn(file_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_file_ok, 1);               /* Offloaded write+read round-trips correctly. */
+	bzy_offload_shutdown();
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1033,6 +1057,7 @@ int main(void)
 	RUN(test_file_read_write);
 	RUN(test_file_search);
 	RUN(test_offload_runs_and_resumes);
+	RUN(test_file_ops_offload_in_breeze);
 	SUMMARY();
 	return 0;
 }

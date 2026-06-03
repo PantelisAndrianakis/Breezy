@@ -14,7 +14,7 @@
 
 extern char __vtable_IOException[];   /* Emitted per-program by codegen. */
 
-static const char *g_io_error;        /* Set by a failed op; cleared by bzy_io_check. */
+static __thread const char *g_io_error;   /* Per-thread: an offload worker sets its own; the wrapper transfers it. */
 
 static void io_fail(const char *msg)
 {
@@ -283,7 +283,7 @@ static char *read_all(const char *path, int64_t *out_len, const char *who)
 	return buf;
 }
 
-void *bzy_file_read_text(void *path)
+static void *real_read_text(void *path)
 {
 	int64_t n = 0;
 	char *buf = read_all(bzy_str_data(path), &n, "File.readText: could not read file");
@@ -297,7 +297,7 @@ void *bzy_file_read_text(void *path)
 	return s;
 }
 
-void *bzy_file_read_lines(void *path)
+static void *real_read_lines(void *path)
 {
 	int64_t n = 0;
 	char *buf = read_all(bzy_str_data(path), &n, "File.readLines: could not read file");
@@ -365,17 +365,17 @@ static void write_file(void *path, void *content, const char *mode, const char *
 	fclose(f);
 }
 
-void bzy_file_write_text(void *path, void *content)
+static void real_write_text(void *path, void *content)
 {
 	write_file(path, content, "wb", "File.writeText: could not write file");
 }
 
-void bzy_file_append_text(void *path, void *content)
+static void real_append_text(void *path, void *content)
 {
 	write_file(path, content, "ab", "File.appendText: could not write file");
 }
 
-void *bzy_file_read_bytes(void *path)
+static void *real_read_bytes(void *path)
 {
 	int64_t n = 0;
 	char *buf = read_all(bzy_str_data(path), &n, "File.readBytes: could not read file");
@@ -395,7 +395,7 @@ void *bzy_file_read_bytes(void *path)
 	return arr;
 }
 
-void bzy_file_write_bytes(void *path, void *data)
+static void real_write_bytes(void *path, void *data)
 {
 	FILE *f = fopen(bzy_str_data(path), "wb");
 	if (!f)
@@ -664,4 +664,88 @@ int64_t bzy_file_has_attribute(void *path, int64_t attr)
 
 	return 0;
 #endif
+}
+
+/* Offload helpers: run a blocking file op on the pool while the breeze parks, then
+   transfer the worker's io-error into this (breeze) thread so the codegen-emitted
+   bzy_io_check sees it. Outside a breeze (bzy_sched_current()==NULL) run inline.
+   The caller owns path/data/result across the park; the worker only reads them. */
+
+typedef struct
+{
+	void *(*fn)(void*);
+	void *a0;
+	void *result;
+	const char *err;
+} Off1;
+static void off1_run(void *p)
+{
+	Off1 *c = (Off1*)p;
+	c->result = c->fn(c->a0);
+	c->err = g_io_error;     /* Capture on the worker thread; */
+	g_io_error = NULL;       /* leave the worker thread's flag clean. */
+}
+static void *offload1(void *(*fn)(void*), void *a0)
+{
+	if (!bzy_sched_current())
+	{
+		return fn(a0);                 /* No breeze: run inline. */
+	}
+
+	Off1 c = { fn, a0, NULL, NULL };
+	bzy_offload_run(off1_run, &c);
+	g_io_error = c.err;                /* Transfer onto the breeze thread for bzy_io_check. */
+	return c.result;
+}
+
+typedef struct
+{
+	void (*fn)(void*,void*);
+	void *a0;
+	void *a1;
+	const char *err;
+} Off2v;
+static void off2v_run(void *p)
+{
+	Off2v *c = (Off2v*)p;
+	c->fn(c->a0, c->a1);
+	c->err = g_io_error;
+	g_io_error = NULL;
+}
+static void offload2v(void (*fn)(void*,void*), void *a0, void *a1)
+{
+	if (!bzy_sched_current())
+	{
+		fn(a0, a1);
+		return;
+	}
+
+	Off2v c = { fn, a0, a1, NULL };
+	bzy_offload_run(off2v_run, &c);
+	g_io_error = c.err;
+}
+
+void *bzy_file_read_text(void *path)
+{
+	return offload1(real_read_text, path);
+}
+void *bzy_file_read_lines(void *path)
+{
+	return offload1(real_read_lines, path);
+}
+void *bzy_file_read_bytes(void *path)
+{
+	return offload1(real_read_bytes, path);
+}
+void  bzy_file_write_text(void *path, void *c)
+{
+	offload2v(real_write_text, path, c);
+}
+void  bzy_file_append_text(void *path, void *c)
+{
+	offload2v(real_append_text, path, c);
+}
+void  bzy_file_write_bytes(void *path, void *d)
+{
+	offload2v(real_write_bytes, path, d);
 }
