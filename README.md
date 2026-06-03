@@ -91,6 +91,45 @@ void main()
 }
 ```
 
+**Constructors.** A `ClassName(params) { ... }` member initializes fields at construction; call it with `new Class(args)`.
+
+```breezy
+class Point
+{
+    int x;
+    int y;
+    Point(int x, int y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+Point p;
+p = new Point(3, 4);   // x=3, y=4
+```
+
+### Built-in Vector Types
+
+Eight ready-made vector types ship with the language — `Vector2i` / `Vector2l` / `Vector2f` / `Vector2d` (fields `x`, `y`) and `Vector3i` / `Vector3l` / `Vector3f` / `Vector3d` (fields `x`, `y`, `z`) — each with a constructor, `equals` (component-wise), and `calculateDistance` (euclidean). They're ordinary classes, so a non-escaping vector local is stack-allocated (no heap, no reference counting).
+
+```breezy
+Vector3f a;
+a = new Vector3f(0.0f, 0.0f, 0.0f);
+Vector3f b;
+b = new Vector3f(2.0f, 3.0f, 6.0f);
+print(a.calculateDistance(b));   // 7   (float result for *f)
+print(a.equals(b));              // false
+
+Vector2i p;
+p = new Vector2i(3, 4);
+Vector2i q;
+q = new Vector2i(0, 0);
+print(q.calculateDistance(p));   // 5   (double result for integer vectors)
+```
+
+`calculateDistance` returns `float` for the `*f` variants and `double` for the integer and `*d` variants (integer distances are irrational, so they promote to `double`); `equals` is exact component-wise comparison.
+
 ### No Primitive Wrapper Classes
 
 `int` is a raw 32-bit machine integer (use `long` for 64-bit). There is no `Integer`, no boxing, no unboxing. What you write is what runs.
@@ -792,6 +831,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)
 - [x] Map views: `containsKey` (replaces `has`) / `containsValue`, `getKeys`/`getValues` → `K[]`/`V[]`, `getEntries` → `Entry[]` (`getKey`/`getValue`), `foreach (k, v in m)`
 - [x] `File` namespace: exists/create/delete, read/write text + binary, glob search, Windows attributes (throws `IOException`)
+- [x] Constructor arguments (`new Class(args)`) + eight built-in vector types (`Vector2/3 × i/l/f/d`: `equals`, `calculateDistance`)
 
 **Concurrency & I/O (Part 6)**
 - [x] Breezes + cooperative scheduler — `spawn` / `yield` (single thread; Windows Fibers behind a portable seam)

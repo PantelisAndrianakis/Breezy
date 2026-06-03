@@ -1,0 +1,19 @@
+void main()
+{
+	Vector3i a;
+	a = new Vector3i(0, 0, 0);
+	Vector3i b;
+	b = new Vector3i(2, 3, 6);
+	print(a.calculateDistance(b));    // 7  (sqrt(4+9+36)=7)
+	print(a.equals(b));               // false
+	Vector3i c;
+	c = new Vector3i(2, 3, 6);
+	print(b.equals(c));               // true
+
+	Vector3d da;
+	da = new Vector3d(1.0, 2.0, 2.0);
+	Vector3d db;
+	db = new Vector3d(1.0, 2.0, 2.0);
+	print(da.equals(db));             // true
+	print(da.calculateDistance(db));  // 0
+}

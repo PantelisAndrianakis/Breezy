@@ -112,6 +112,7 @@ check spawn       tests/samples/proj_spawn         $'1\n2\n9\n3\n4'
 check spawn_args  tests/samples/proj_spawn_args    $'7\nhi'
 check channel     tests/samples/proj_channel       $'60'
 check vec2        tests/samples/proj_vec2          $'5\nfalse\ntrue\n5'
+check vec3        tests/samples/proj_vec3          $'7\nfalse\ntrue\ntrue\n0'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy
