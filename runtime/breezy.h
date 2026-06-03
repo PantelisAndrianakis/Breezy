@@ -104,4 +104,9 @@ int64_t bzy_regex_test(void *pat, void *text);              /* Search -> 1/0. */
 void   *bzy_regex_find(void *pat, void *text);              /* Leftmost match substring (owned; "" if none). */
 void   *bzy_regex_replace(void *pat, void *text, void *repl); /* All matches replaced (owned). */
 
+void    bzy_sched_init(void);              /* Promote the OS thread to the scheduler coroutine. */
+void    bzy_spawn(void (*entry)(void));    /* Enqueue a new breeze running entry (no args, 6a-1). */
+void    bzy_yield(void);                   /* Cooperatively yield to the scheduler (no-op outside a breeze). */
+void    bzy_sched_run(void);               /* Run ready breezes until the queue drains. */
+
 #endif

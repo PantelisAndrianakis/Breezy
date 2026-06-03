@@ -610,6 +610,35 @@ static void test_regex_replace(void)
 	ASSERT_INT(memcmp(bzy_str_data(r), "x-y-z", 5), 0);
 }
 
+static int g_breeze_log[8];
+static int g_breeze_n;
+static void worker_a(void)
+{
+	g_breeze_log[g_breeze_n++] = 1;
+	bzy_yield();
+	g_breeze_log[g_breeze_n++] = 3;
+}
+static void worker_b(void)
+{
+	g_breeze_log[g_breeze_n++] = 2;
+	bzy_yield();
+	g_breeze_log[g_breeze_n++] = 4;
+}
+
+static void test_scheduler_roundrobin(void)
+{
+	g_breeze_n = 0;
+	bzy_sched_init();
+	bzy_spawn(worker_a);
+	bzy_spawn(worker_b);
+	bzy_sched_run();
+	ASSERT_INT(g_breeze_n, 4);
+	ASSERT_INT(g_breeze_log[0], 1);   /* a runs first... */
+	ASSERT_INT(g_breeze_log[1], 2);   /* ...yields, b runs... */
+	ASSERT_INT(g_breeze_log[2], 3);   /* ...a resumes... */
+	ASSERT_INT(g_breeze_log[3], 4);   /* ...b resumes. */
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -650,6 +679,7 @@ int main(void)
 	RUN(test_clock_date);
 	RUN(test_regex_find);
 	RUN(test_regex_replace);
+	RUN(test_scheduler_roundrobin);
 	SUMMARY();
 	return 0;
 }
