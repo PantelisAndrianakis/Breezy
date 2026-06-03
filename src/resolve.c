@@ -436,6 +436,25 @@ static void resolve_regex(Expr *e)
 	e->type.kind = predicate ? TY_BOOL : TY_STRING;
 }
 
+static void resolve_file(Expr *e)
+{
+	const char *m = e->name + 5;   /* After "File.". */
+	int predicate = (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0);
+	int mutate = (strcmp(m,"createFile")==0 || strcmp(m,"createFolder")==0
+				  || strcmp(m,"delete")==0 || strcmp(m,"deleteRecursive")==0);
+	if (!predicate && !mutate)
+	{
+		die(e->line,"unknown File method: ",m);
+	}
+
+	if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+	{
+		die(e->line,"File method expects one string path argument",NULL);
+	}
+
+	e->type.kind = predicate ? TY_BOOL : TY_VOID;
+}
+
 static void resolve_random(Expr *e)
 {
 	const char *m = e->name + 7;   /* After "Random.". */
@@ -1202,6 +1221,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Regex.",6)==0)
 		{
 			resolve_regex(e);
+			break;
+		}
+
+		if (strncmp(e->name,"File.",5)==0)
+		{
+			resolve_file(e);
 			break;
 		}
 

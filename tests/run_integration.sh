@@ -101,6 +101,7 @@ check catch_multi tests/samples/proj_catch_multi   $'bee\n99'
 check catch_subclass tests/samples/proj_catch_subclass $'missing\n0'
 check rethrow     tests/samples/proj_rethrow       "bee"
 check catch_oob   tests/samples/proj_catch_oob     $'array index 5 out of bounds for length 3\n99'
+check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check spawn       tests/samples/proj_spawn         $'1\n2\n9\n3\n4'
 check spawn_args  tests/samples/proj_spawn_args    $'7\nhi'
 check channel     tests/samples/proj_channel       $'60'

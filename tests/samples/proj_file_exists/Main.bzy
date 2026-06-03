@@ -1,0 +1,18 @@
+void main()
+{
+	File.createFile("bzy_sample_tmp.txt");
+	print(File.exists("bzy_sample_tmp.txt"));   // true
+	print(File.isFolder("bzy_sample_tmp.txt")); // false
+	File.delete("bzy_sample_tmp.txt");
+	print(File.exists("bzy_sample_tmp.txt"));   // false
+
+	try
+	{
+		File.delete("bzy_definitely_missing.txt");
+		print("no throw");
+	}
+	catch (IOException e)
+	{
+		print("caught");
+	}
+}

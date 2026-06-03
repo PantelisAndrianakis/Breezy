@@ -11,6 +11,7 @@ long long __bzy_exception_func_count = 0;
 void *__bzy_vtable_parents[1] = { 0 };
 long long __bzy_vtable_parent_count = 0;
 char __vtable_IndexOutOfBounds[8] = { 0 };
+char __vtable_IOException[8] = { 0 };
 
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],
@@ -713,6 +714,22 @@ static void test_channel_roundtrip(void)
 	bzy_release(g_ch);
 }
 
+static void test_file_predicates(void)
+{
+	FILE *f = fopen("bzy_test_tmp.txt", "wb");
+	fputs("hi", f);
+	fclose(f);
+	void *p = bzy_str_new("bzy_test_tmp.txt", 16);
+	ASSERT_INT(bzy_file_exists(p), 1);
+	ASSERT_INT(bzy_file_is_file(p), 1);
+	ASSERT_INT(bzy_file_is_folder(p), 0);
+	void *none = bzy_str_new("bzy_no_such.txt", 15);
+	ASSERT_INT(bzy_file_exists(none), 0);
+	remove("bzy_test_tmp.txt");
+	bzy_release(p);
+	bzy_release(none);
+}
+
 static void test_scheduler_roundrobin(void)
 {
 	g_breeze_n = 0;
@@ -773,6 +790,7 @@ int main(void)
 	RUN(test_scheduler_roundrobin);
 	RUN(test_spawn_args);
 	RUN(test_channel_roundtrip);
+	RUN(test_file_predicates);
 	SUMMARY();
 	return 0;
 }

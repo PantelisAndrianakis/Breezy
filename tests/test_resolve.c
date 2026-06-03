@@ -365,6 +365,13 @@ static void test_spawn_args_resolve(void)
 	ASSERT_INT(s->expr->arg_count, 2);
 }
 
+static void test_file_basic_types(void)
+{
+	Func *f=build1("void main() { boolean b; b = File.exists(\"x\"); File.createFile(\"y\"); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_BOOL);   /* exists -> bool */
+	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);    /* createFile -> void */
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -471,6 +478,7 @@ int main(void)
 	RUN(test_spawn_resolves);
 	RUN(test_spawn_args_resolve);
 	RUN(test_channel_send_recv_types);
+	RUN(test_file_basic_types);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

@@ -107,6 +107,15 @@ double  bzy_rnd_get_dd(double origin, double bound);
 void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] slot with [0,255]. */
 
 void    bzy_throw(void *exc, int64_t pc, int64_t frame); /* Unwind the rbp chain; never returns. */
+void    bzy_io_check(int64_t pc, int64_t frame);         /* Throw IOException if the last File op failed. */
+
+int64_t bzy_file_exists(void *path);      /* 1 if the path exists. */
+int64_t bzy_file_is_file(void *path);     /* 1 if it exists and is a regular file. */
+int64_t bzy_file_is_folder(void *path);   /* 1 if it exists and is a directory. */
+void    bzy_file_create_file(void *path);       /* Create an empty file. */
+void    bzy_file_create_folder(void *path);     /* mkdir -p. */
+void    bzy_file_delete(void *path);            /* Delete a file or empty folder. */
+void    bzy_file_delete_recursive(void *path);  /* Delete a folder tree. */
 
 int64_t bzy_regex_matches(void *pat, void *text);            /* Full match -> 1/0. */
 int64_t bzy_regex_test(void *pat, void *text);              /* Search -> 1/0. */

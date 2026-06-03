@@ -1462,6 +1462,79 @@ static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
 }
 
+/* File.* builtins. Selects the bzy_file_* symbol, lowers via cg_call_with_args,
+   and for fallible ops emits a post-call bzy_io_check(pc, frame) that throws an
+   IOException if the op set the runtime error (the value result, if any, is
+   preserved across the check). Predicates never fail and get no check. */
+static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 5;   /* After "File.". */
+	const char *fn;
+	int fallible;
+	if (strcmp(m,"exists")==0)
+	{
+		fn="bzy_file_exists";
+		fallible=0;
+	}
+	else if (strcmp(m,"isFile")==0)
+	{
+		fn="bzy_file_is_file";
+		fallible=0;
+	}
+	else if (strcmp(m,"isFolder")==0)
+	{
+		fn="bzy_file_is_folder";
+		fallible=0;
+	}
+	else if (strcmp(m,"createFile")==0)
+	{
+		fn="bzy_file_create_file";
+		fallible=1;
+	}
+	else if (strcmp(m,"createFolder")==0)
+	{
+		fn="bzy_file_create_folder";
+		fallible=1;
+	}
+	else if (strcmp(m,"delete")==0)
+	{
+		fn="bzy_file_delete";
+		fallible=1;
+	}
+	else
+	{
+		fn="bzy_file_delete_recursive";
+		fallible=1;
+	}
+
+	TypeRef ps[4];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	int obj = ty_is_managed(e->type.kind);
+	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0, obj, 0, ps, e->arg_count);
+
+	if (fallible)
+	{
+		if (obj)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the result. */
+		}
+
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea rcx, [rel .L%d]", k);                  /* pc = the call site. */
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov rdx, rbp");                            /* frame. */
+		cg_aligned_call(cg,"bzy_io_check");
+		if (obj)
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
+}
+
 /* Random.* builtins. Selects the typed bzy_rnd_* symbol from the method + arg
    types and delegates to cg_call_with_args (int/fp routing + owned-temp release). */
 static void cg_random(Codegen *cg, TypeTable *tt, Expr *e)
@@ -1791,6 +1864,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Regex.",6)==0)
 		{
 			cg_regex(cg,tt,e);
+		}
+		else if (strncmp(e->name,"File.",5)==0)
+		{
+			cg_file(cg,tt,e);
 		}
 		else
 		{
@@ -2597,6 +2674,10 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	}
 
 	int frame = locals + scratch + stack_objs;
+	if (frame % 16 != 0)
+	{
+		frame = (frame/16 + 1)*16;   /* Keep rsp 16-aligned after the prologue so calls are aligned. */
+	}
 
 	cg_emit(cg,"global %s", label);
 	cg_emit(cg,"%s:", label);
@@ -2793,11 +2874,20 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_regex_find");
 	cg_emit(cg,"extern bzy_regex_replace");
 	cg_emit(cg,"extern bzy_throw");
+	cg_emit(cg,"extern bzy_io_check");
+	cg_emit(cg,"extern bzy_file_exists");
+	cg_emit(cg,"extern bzy_file_is_file");
+	cg_emit(cg,"extern bzy_file_is_folder");
+	cg_emit(cg,"extern bzy_file_create_file");
+	cg_emit(cg,"extern bzy_file_create_folder");
+	cg_emit(cg,"extern bzy_file_delete");
+	cg_emit(cg,"extern bzy_file_delete_recursive");
 	cg_emit(cg,"global __bzy_exception_funcs");
 	cg_emit(cg,"global __bzy_exception_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");
 	cg_emit(cg,"global __bzy_vtable_parent_count");
 	cg_emit(cg,"global __vtable_IndexOutOfBounds");   /* Referenced by the runtime bzy_oob. */
+	cg_emit(cg,"global __vtable_IOException");        /* Referenced by the runtime bzy_io_check. */
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
