@@ -130,7 +130,7 @@ void *bzy_alloc(int64_t size)
 
 	*RC(o) = 1;        /* The refcount starts at one. */
 	*GI(o) = 0;        /* BLACK, not buffered, crc zero. */
-	g_live++;
+	__atomic_add_fetch(&g_live, 1, __ATOMIC_RELAXED);   /* Objects alloc on any worker thread. */
 	return o;
 }
 
@@ -138,6 +138,14 @@ void bzy_retain(void *obj)
 {
 	if (!obj)
 	{
+		return;
+	}
+
+	if (*GI(obj) & BZY_GCINFO_SHARED)
+	{
+		/* Cross-core object: atomic increment, and no cycle color (shared objects
+		   are not cycle-buffered; the bit is fixed at allocation, never racing). */
+		__atomic_add_fetch(RC(obj), 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -174,7 +182,7 @@ static void free_object(void *obj)
 		return;
 	}
 
-	g_live--;
+	__atomic_sub_fetch(&g_live, 1, __ATOMIC_RELAXED);
 	free(obj);
 }
 
@@ -182,6 +190,19 @@ void bzy_release(void *obj)
 {
 	if (!obj)
 	{
+		return;
+	}
+
+	if (*GI(obj) & BZY_GCINFO_SHARED)
+	{
+		/* Cross-core object: atomic decrement. At zero no other breeze can hold a
+		   reference, so the ordinary free path is safe; shared objects are never
+		   cycle-buffered, so their children (also shared) just recurse here. */
+		if (__atomic_sub_fetch(RC(obj), 1, __ATOMIC_ACQ_REL) == 0)
+		{
+			free_object(obj);
+		}
+
 		return;
 	}
 
@@ -220,7 +241,7 @@ void bzy_release(void *obj)
 
 int64_t bzy_live_count(void)
 {
-	return g_live;
+	return __atomic_load_n(&g_live, __ATOMIC_RELAXED);
 }
 
 int64_t bzy_roots_buffered(void)
@@ -334,7 +355,7 @@ void bzy_collect_cycles(void)
 			{
 				/* A node freed while still buffered (deferred by free_object):
 				   reclaim its memory now that it leaves the roots buffer. */
-				g_live--;
+				__atomic_sub_fetch(&g_live, 1, __ATOMIC_RELAXED);
 				free(s);
 			}
 		}
@@ -372,7 +393,7 @@ void bzy_collect_cycles(void)
 			fin(g_white[i]);
 		}
 
-		g_live--;
+		__atomic_sub_fetch(&g_live, 1, __ATOMIC_RELAXED);
 		free(g_white[i]);
 	}
 

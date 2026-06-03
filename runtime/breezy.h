@@ -8,6 +8,12 @@
    gcinfo packs the cycle-collector state: bits 0-1 color, bit 2 buffered,
    bits 8+ the cyclic refcount (crc) scratch used during trial deletion. */
 
+/* Set in gcinfo (bit 3) at allocation for classes whose instances may cross a
+   core boundary; bzy_retain/bzy_release then use atomic refcount ops. Bits 0-2
+   hold color/buffered and bits 8+ hold the crc, so bit 3 is free and survives
+   every existing gcinfo update. Codegen emits this literal at `new` (cg_new). */
+#define BZY_GCINFO_SHARED (1ll << 3)
+
 void   *bzy_alloc(int64_t size);   /* Allocate, zero, set refcount to 1, bump live count; caller sets the vtable. */
 void    bzy_retain(void *obj);     /* Increment the refcount (NULL-safe). */
 void    bzy_release(void *obj);    /* Decrement the refcount; free acyclic garbage, buffer cycle candidates (NULL-safe). */

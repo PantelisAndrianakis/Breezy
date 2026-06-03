@@ -719,6 +719,37 @@ static void mc_collector(void)
 	g_mc_sum = s;
 }
 
+static void *g_sh_obj;
+static void sh_hammer(void)
+{
+	for (int i = 0; i < 1000; i++)
+	{
+		bzy_retain(g_sh_obj);    /* Atomic: g_sh_obj carries the SHARED bit. */
+		bzy_release(g_sh_obj);
+	}
+}
+
+static void test_shared_atomic_refcount(void)
+{
+	/* Eight breezes across four workers hammer retain/release on one shared
+	   object. main holds a reference throughout, so it is never freed mid-run;
+	   if the ops were not atomic the refcount would drift off 1. */
+	int64_t base = bzy_live_count();
+	bzy_sched_init();
+	bzy_sched_set_workers(4);
+	g_sh_obj = bzy_alloc(24);                                /* rc = 1, no vtable (leaf). */
+	*(int64_t*)((char*)g_sh_obj + 16) |= BZY_GCINFO_SHARED;  /* Mark it shared (codegen does this at `new`). */
+	for (int i = 0; i < 8; i++)
+	{
+		bzy_spawn(sh_hammer);
+	}
+
+	bzy_sched_run();
+	ASSERT_INT(*(int64_t*)((char*)g_sh_obj + 8), 1);         /* Every retain matched its release. */
+	bzy_release(g_sh_obj);                                   /* Drop main's ref -> free. */
+	ASSERT_INT(bzy_live_count(), base);
+}
+
 static void test_scheduler_multicore(void)
 {
 	/* Four workers, 50 senders, one collector: the sum is order-independent and
@@ -892,6 +923,7 @@ int main(void)
 	RUN(test_regex_replace);
 	RUN(test_scheduler_roundrobin);
 	RUN(test_spawn_args);
+	RUN(test_shared_atomic_refcount);
 	RUN(test_scheduler_multicore);
 	RUN(test_channel_roundtrip);
 	RUN(test_file_predicates);

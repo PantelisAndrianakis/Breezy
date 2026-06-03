@@ -115,6 +115,8 @@ check spawn_args  tests/samples/proj_spawn_args    $'7\nhi'
 unset BZY_WORKERS
 check channel     tests/samples/proj_channel       $'60'
 check mc_sum      tests/samples/proj_mc_sum        $'100'
+check mc_shared   tests/samples/proj_mc_shared     $'42'
+check mc_stress   tests/samples/proj_mc_stress     $'124500'
 check vec2        tests/samples/proj_vec2          $'5\nfalse\ntrue\n5'
 check vec3        tests/samples/proj_vec3          $'7\nfalse\ntrue\ntrue\n0'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy

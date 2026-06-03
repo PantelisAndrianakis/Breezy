@@ -1,0 +1,39 @@
+// Four producers fan into one channel; main reduces every receipt to a sum.
+// Each producer sends 0..249 (sum 31125); four of them => 124500, regardless
+// of how the work is stolen and interleaved across cores.
+void producer(channel<int> out, int count)
+{
+	int i;
+	for (i = 0; i < count; i++)
+	{
+		out.send(i);
+	}
+}
+
+void main()
+{
+	channel<int> c;
+	c = new channel<int>(16);
+
+	int producers;
+	producers = 4;
+	int per;
+	per = 250;
+
+	int p;
+	for (p = 0; p < producers; p++)
+	{
+		spawn producer(c, per);
+	}
+
+	int total;
+	total = producers * per;
+	int sum;
+	sum = 0;
+	int got;
+	for (got = 0; got < total; got++)
+	{
+		sum += c.recv();
+	}
+	print(sum);                  // 124500
+}

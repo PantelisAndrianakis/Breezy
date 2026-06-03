@@ -1269,6 +1269,12 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
 		cg_emit(cg,"    mov [rax], rbx");
 		/* The refcount and fields are zeroed by bzy_alloc, so rax holds an owned reference. */
+		if (c->is_shared)
+		{
+			/* Channel-reachable class: mark gcinfo so retain/release go atomic.
+			   8 = BZY_GCINFO_SHARED (bit 3) in runtime/breezy.h. */
+			cg_emit(cg,"    or qword [rax + 16], 8");
+		}
 	}
 
 	if (c->has_ctor)

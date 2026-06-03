@@ -332,7 +332,7 @@ void main()
 }
 ```
 
-> **Implemented today (Part 6a-2):** bounded `channel<T>` with `send`/`recv` (parking on full/empty), `spawn` with up to 4 arguments, and a deadlock check (if every breeze ends up blocked the program aborts with a diagnostic). Managed values **move** across a channel - the owned reference transfers from sender to receiver with no extra retain. Still to come: **multi-core** scheduling with atomic refcounts for objects that cross breezes (6a-3), and the I/O integration that parks a breeze on a blocking call (Part 6b).
+> **Implemented today (Part 6a-3):** bounded `channel<T>` with `send`/`recv` (parking on full/empty), `spawn` with up to 4 arguments, and **multi-core scheduling** - one worker thread per logical core, each with its own run queue and **work-stealing** so breezes spread across all your cores automatically. Set `BZY_WORKERS=N` to control the worker count (`BZY_WORKERS=1` gives the deterministic single-thread cooperative scheduler; ordering across breezes is otherwise not guaranteed). Objects that can cross a channel use **atomic** reference counts (decided at compile time); everything else stays non-atomic. Managed values **move** across a channel - the owned reference transfers from sender to receiver with no extra retain. Still to come: timers (6a-4) and the I/O integration that parks a breeze on a blocking call (Part 6b).
 
 ### The zone model (and why it's fast)
 
@@ -836,7 +836,8 @@ The language design is settled. The compiler and runtime are being built from sc
 **Concurrency & I/O (Part 6)**
 - [x] Breezes + cooperative scheduler — `spawn` / `yield` (single thread; Windows Fibers behind a portable seam)
 - [x] `spawn` with arguments (up to 4, any type) + bounded `channel<T>` (`send`/`recv` with parking, deadlock detection)
-- [ ] Multi-core scheduler (one thread per core) + atomic refcounts for shared objects
+- [x] Multi-core scheduler (one thread per core, work-stealing) + atomic refcounts for shared objects
+- [ ] Timers — scheduled & periodic breezes (`scheduleAfter` / `scheduleEvery`)
 - [ ] Async I/O facade (epoll/IOCP + offload pool; `io_uring` later)
 
 **Interop (Part 7)**

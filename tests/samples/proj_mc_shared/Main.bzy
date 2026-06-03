@@ -1,0 +1,30 @@
+// A shared object (channel<Box> makes Box use atomic refcounts) travels to a
+// worker on another core, is mutated, and comes back. Output is deterministic.
+class Box
+{
+	int v;
+	Box(int v) { this.v = v; }
+}
+
+void worker(channel<Box> inbox, channel<Box> outbox)
+{
+	Box b;
+	b = inbox.recv();
+	b.v = b.v + 1;
+	outbox.send(b);
+}
+
+void main()
+{
+	channel<Box> a;
+	a = new channel<Box>(1);
+	channel<Box> b;
+	b = new channel<Box>(1);
+
+	spawn worker(a, b);
+
+	a.send(new Box(41));
+	Box r;
+	r = b.recv();
+	print(r.v);                  // 42
+}
