@@ -1699,6 +1699,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    call bzy_collect_cycles");
 			cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 		}
+		else if (strcmp(e->name,"yield")==0)
+		{
+			cg_aligned_call(cg,"bzy_yield");
+		}
 		else if (strcmp(e->name,"length")==0)
 		{
 			cg_expr(cg,tt,e->args[0]);
@@ -2317,6 +2321,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_aligned_call(cg,"bzy_throw");          /* bzy_throw(exc, pc, rbp) -- never returns. */
 		break;
 	}
+	case ST_SPAWN:
+	{
+		FuncInfo *fi = types_find_func(tt, s->expr->name);
+		cg_emit(cg,"    lea rcx, [rel %s]", fi->asm_label);   /* The breeze entry function. */
+		cg_aligned_call(cg,"bzy_spawn");
+		break;
+	}
 	}
 }
 
@@ -2547,6 +2558,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_entries");
 	cg_emit(cg,"extern bzy_entry_key");
 	cg_emit(cg,"extern bzy_entry_val");
+	cg_emit(cg,"extern bzy_spawn");
+	cg_emit(cg,"extern bzy_yield");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
@@ -2625,7 +2638,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			const char *label;
 			if (strcmp(f->name,"main")==0)
 			{
-				label="main";
+				label="bzy_user_main";   /* The runtime entry.o owns C main and runs this as breeze 0. */
 			}
 			else
 			{

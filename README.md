@@ -237,6 +237,33 @@ void main()
 
 A breeze stack is tens of KB, not the megabytes an OS thread costs. **10,000 concurrent connections ≈ a few hundred MB of stacks**, instead of tens of GB.
 
+> **Implemented today (Part 6a-1):** the breeze runtime and a **single-thread cooperative scheduler** are live. `spawn f();` enqueues a breeze running the zero-argument `void` function `f`; `yield();` hands control back to the scheduler so ready breezes interleave. `main` itself is breeze 0, so it interleaves with what it spawns, and a program that never `spawn`s runs unchanged. Stacks are Windows Fibers behind a portable seam (Linux lands in Part 8). Still to come: **channels** (`chan<T>`, cross-breeze communication — 6a-2), **multi-core** scheduling with atomic refcounts for shared objects (6a-3), and the I/O integration that parks a breeze on a blocking call (Part 6b). Today `yield()` is explicit; the auto-yield-on-I/O shown above is the roadmap.
+
+```breezy
+void a()
+{
+    print(1);
+    yield();        // Hand off to the scheduler; resumes here later.
+    print(3);
+}
+
+void b()
+{
+    print(2);
+    yield();
+    print(4);
+}
+
+void main()        // Breeze 0.
+{
+    spawn a();
+    spawn b();
+    yield();
+    print(9);
+}
+// Deterministic FIFO interleaving: 1 2 9 3 4
+```
+
 ### Channels
 
 Breezes communicate by passing values over channels - *share memory by communicating*:
@@ -702,8 +729,9 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Map views: `containsKey` (replaces `has`) / `containsValue`, `getKeys`/`getValues` → `K[]`/`V[]`, `getEntries` → `Entry[]` (`getKey`/`getValue`), `foreach (k, v in m)`
 
 **Concurrency & I/O (Part 6)**
-- [ ] Breeze scheduler (M:N, one thread per core)
-- [ ] Channels
+- [x] Breezes + cooperative scheduler — `spawn` / `yield` (single thread; Windows Fibers behind a portable seam)
+- [ ] Multi-core scheduler (one thread per core) + atomic refcounts for shared objects
+- [ ] Channels (`chan<T>`)
 - [ ] Async I/O facade (epoll/IOCP + offload pool; `io_uring` later)
 
 **Interop (Part 7)**

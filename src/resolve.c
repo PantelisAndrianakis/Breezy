@@ -1195,6 +1195,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (strcmp(e->name,"yield")==0)
+		{
+			if (e->arg_count!=0)
+			{
+				die(e->line,"yield() takes no arguments",NULL);
+			}
+
+			e->type.kind=TY_VOID;
+			break;
+		}
+
 		{
 			FuncInfo *fi=types_find_func(g_types,e->name);
 			if (!fi)
@@ -1463,6 +1474,27 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	}
 	case ST_CATCH:
 		break;   /* Resolved as part of the enclosing try. */
+	case ST_SPAWN:
+	{
+		resolve_expr(st,s->expr,tc);
+		FuncInfo *fi = types_find_func(g_types, s->expr->name);
+		if (!fi || s->expr->kind != EX_CALL)
+		{
+			die(s->line,"spawn expects a call to a named function",NULL);
+		}
+
+		if (fi->param_count != 0)
+		{
+			die(s->line,"spawn target must take no arguments",NULL);
+		}
+
+		if (fi->ret_type.kind != TY_VOID)
+		{
+			die(s->line,"spawn target must return void",NULL);
+		}
+
+		break;
+	}
 	}
 }
 

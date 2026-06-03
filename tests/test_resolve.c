@@ -341,6 +341,14 @@ static void test_map_entries_types(void)
 	ASSERT_INT(fe->decl_type.kind, TY_ENTRY);           /* loop var enriched to Entry<K,V> */
 }
 
+static void test_spawn_resolves(void)
+{
+	Func *f=build1("void worker() { } void main() { spawn worker(); }")->funcs[1];
+	Stmt *s=f->body->stmts[0];
+	ASSERT_INT(s->kind, ST_SPAWN);
+	ASSERT_INT(s->expr->kind, EX_CALL);
+}
+
 static void test_switch_resolves(void)
 {
 	Func *f=build1("void main() { int x; x = 1; switch (x) { case 1: print(x); break; case 2: break; default: break; } }")->funcs[0];
@@ -444,6 +452,7 @@ int main(void)
 	RUN(test_map_keys_values_types);
 	RUN(test_foreach_pair_resolves);
 	RUN(test_map_entries_types);
+	RUN(test_spawn_resolves);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

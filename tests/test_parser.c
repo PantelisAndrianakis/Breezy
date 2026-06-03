@@ -305,6 +305,15 @@ static void test_foreach_stmt(void)
 	ASSERT_INT(fe->then_blk->count, 1);
 }
 
+static void test_spawn_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { spawn worker(); }");
+	Stmt *s = u->funcs[0]->body->stmts[0];
+	ASSERT_INT(s->kind, ST_SPAWN);
+	ASSERT_INT(s->expr->kind, EX_CALL);
+	ASSERT_STR(s->expr->name, "worker");
+}
+
 static void test_foreach_pair_parse(void)
 {
 	Unit *u = parse_unit_str("void m() { map<string,int> x; foreach (string k, int v in x) { } }");
@@ -382,6 +391,7 @@ int main(void)
 	RUN(test_throw_stmt);
 	RUN(test_try_catch_parse);
 	RUN(test_foreach_stmt);
+	RUN(test_spawn_parse);
 	RUN(test_foreach_pair_parse);
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);

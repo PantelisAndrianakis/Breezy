@@ -1,0 +1,21 @@
+void a()
+{
+	print(1);
+	yield();
+	print(3);
+}
+
+void b()
+{
+	print(2);
+	yield();
+	print(4);
+}
+
+void main()
+{
+	spawn a();
+	spawn b();
+	yield();           // let the workers run; main is breeze 0
+	print(9);
+}

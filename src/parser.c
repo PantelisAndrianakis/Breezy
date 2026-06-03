@@ -916,6 +916,21 @@ static Stmt *parse_statement(Parser *p)
 	{
 		return parse_try(p);
 	}
+	if (check(p,TOKEN_SPAWN))
+	{
+		int line=p->cur.line;
+		advance(p);
+		Stmt *s=stmt_new(ST_SPAWN,line);
+		s->expr=parse_expr(p);
+		if (s->expr->kind != EX_CALL)
+		{
+			fprintf(stderr,"line %d: spawn expects a function call\n", line);
+			exit(1);
+		}
+
+		expect(p,TOKEN_SEMICOLON);
+		return s;
+	}
 	return parse_assign_or_expr(p);
 }
 
