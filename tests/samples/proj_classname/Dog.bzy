@@ -1,0 +1,7 @@
+class Dog extends Animal
+{
+	int legs()
+	{
+		return 4;
+	}
+}

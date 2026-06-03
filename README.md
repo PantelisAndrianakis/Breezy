@@ -91,6 +91,14 @@ void main()
 }
 ```
 
+**Runtime class name.** Every object has a built-in `getClassName() -> string` returning its **dynamic** class name (lightweight reflection). Because one class lives per file with no packages, the simple name is the full name.
+
+```breezy
+Animal a;
+a = new Dog();
+print(a.getClassName());   // Dog  (the most-derived type, read from the live vtable)
+```
+
 **Constructors.** A `ClassName(params) { ... }` member initializes fields at construction; call it with `new Class(args)`.
 
 ```breezy

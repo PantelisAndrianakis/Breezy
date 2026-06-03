@@ -1,0 +1,8 @@
+// a is statically Animal but dynamically Dog; getClassName reads the object's
+// actual vtable, so it prints the most-derived name, "Dog".
+void main()
+{
+	Animal a;
+	a = new Dog();
+	print(a.getClassName());   // Dog
+}
