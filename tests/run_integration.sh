@@ -113,11 +113,14 @@ export BZY_WORKERS=1
 check spawn       tests/samples/proj_spawn         $'1\n2\n9\n3\n4'
 check spawn_args  tests/samples/proj_spawn_args    $'7\nhi'
 check timer_crash tests/samples/proj_timer_crash   $'42'
+check_abort timer_deadlock tests/samples/bad_timer_deadlock
 unset BZY_WORKERS
 check channel     tests/samples/proj_channel       $'60'
 check mc_sum      tests/samples/proj_mc_sum        $'100'
 check mc_shared   tests/samples/proj_mc_shared     $'42'
 check mc_stress   tests/samples/proj_mc_stress     $'124500'
+check timer_after tests/samples/proj_timer_after   $'1\n2'
+check timer_order tests/samples/proj_timer_order   $'1\n2\n3'
 check vec2        tests/samples/proj_vec2          $'5\nfalse\ntrue\n5'
 check vec3        tests/samples/proj_vec3          $'7\nfalse\ntrue\ntrue\n0'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
@@ -127,4 +130,6 @@ check_fail bool_int_cast  tests/samples/bad_bool_cast.bzy
 check_fail float_needs_cast tests/samples/bad_int_to_float.bzy
 check_fail dbl_to_float     tests/samples/bad_double_to_float.bzy
 check_fail float_int_mix    tests/samples/bad_float_int_mix.bzy
+check_fail schedule_nonvoid tests/samples/bad_schedule_nonvoid
+check_fail schedule_args    tests/samples/bad_schedule_args
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

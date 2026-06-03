@@ -332,7 +332,9 @@ void main()
 }
 ```
 
-> **Implemented today (Part 6a-3):** bounded `channel<T>` with `send`/`recv` (parking on full/empty), `spawn` with up to 4 arguments, and **multi-core scheduling** - one worker thread per logical core, each with its own run queue and **work-stealing** so breezes spread across all your cores automatically. Set `BZY_WORKERS=N` to control the worker count (`BZY_WORKERS=1` gives the deterministic single-thread cooperative scheduler; ordering across breezes is otherwise not guaranteed). Objects that can cross a channel use **atomic** reference counts (decided at compile time); everything else stays non-atomic. Managed values **move** across a channel - the owned reference transfers from sender to receiver with no extra retain. Still to come: timers (6a-4) and the I/O integration that parks a breeze on a blocking call (Part 6b).
+> **Implemented today (Part 6a-3):** bounded `channel<T>` with `send`/`recv` (parking on full/empty), `spawn` with up to 4 arguments, and **multi-core scheduling** - one worker thread per logical core, each with its own run queue and **work-stealing** so breezes spread across all your cores automatically. Set `BZY_WORKERS=N` to control the worker count (`BZY_WORKERS=1` gives the deterministic single-thread cooperative scheduler; ordering across breezes is otherwise not guaranteed). Objects that can cross a channel use **atomic** reference counts (decided at compile time); everything else stays non-atomic. Managed values **move** across a channel - the owned reference transfers from sender to receiver with no extra retain. Still to come: the I/O integration that parks a breeze on a blocking call (Part 6b).
+
+> **Implemented today (Part 6a-4):** **timers** — `scheduleAfter(f, delayMs)` runs the zero-argument `void` function `f` once after a delay; `scheduleEvery(f, delayMs, periodMs)` runs it repeatedly. Both return a `Timer` you can `.cancel()`. The scheduler keeps a min-heap of pending timers: when it has no ready breeze it sleeps until the next deadline (no busy-wait) and a pending timer keeps the program alive; periodic timers are fixed-rate and coalesce missed ticks (a stall fires once, not a burst). Also **crash-safe breezes** — an uncaught exception in one breeze prints its stack trace and ends just that breeze; the rest of the program keeps running (the process still exits non-zero so the failure is visible). Still to come: the I/O integration that parks a breeze on a blocking call (Part 6b).
 
 ### The zone model (and why it's fast)
 
@@ -387,6 +389,7 @@ The `blocking` keyword tells the runtime a call may block, so it's dispatched to
 | `map<K,V>` | Hash map: open addressing with Swiss-style control bytes (`int`/`string` keys) |
 | `List<T>` `Stack<T>` `Queue<T>` `Deque<T>` `Set<T>` | Monomorphized generic collections (no boxing); `.size`, `.contains(T)`, `foreach` |
 | `channel<T>` | Bounded buffered channel for passing values between breezes (`send`/`recv`, parking) |
+| `Timer` | Handle for a scheduled/periodic breeze (`scheduleAfter`/`scheduleEvery`); `.cancel()` |
 | `ClassName` | Heap-allocated object, memory managed automatically (ARC + cycles) |
 | `void` | No value; used as a function return type |
 
@@ -837,7 +840,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Breezes + cooperative scheduler — `spawn` / `yield` (single thread; Windows Fibers behind a portable seam)
 - [x] `spawn` with arguments (up to 4, any type) + bounded `channel<T>` (`send`/`recv` with parking, deadlock detection)
 - [x] Multi-core scheduler (one thread per core, work-stealing) + atomic refcounts for shared objects
-- [ ] Timers — scheduled & periodic breezes (`scheduleAfter` / `scheduleEvery`)
+- [x] Timers — scheduled & periodic breezes (`scheduleAfter` / `scheduleEvery`, `Timer.cancel`) + crash-safe breezes (uncaught throw continues)
 - [ ] Async I/O facade (epoll/IOCP + offload pool; `io_uring` later)
 
 **Interop (Part 7)**

@@ -1,0 +1,10 @@
+// A schedule target must take no arguments; an arg'd target is rejected.
+void tick(int x)
+{
+	print(x);
+}
+
+void main()
+{
+	scheduleAfter(tick, 100);
+}

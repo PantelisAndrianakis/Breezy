@@ -1,0 +1,10 @@
+// A schedule target must return void; an int-returning target is rejected.
+int tick()
+{
+	return 1;
+}
+
+void main()
+{
+	scheduleAfter(tick, 100);
+}

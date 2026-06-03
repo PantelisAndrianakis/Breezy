@@ -1,0 +1,19 @@
+// far is scheduled first but with a larger delay (40ms); early (20ms) is scheduled
+// second.  The min-heap must fire early(2) before far(3), regardless of insertion
+// order.  main prints 1 first.  Output: 1, 2, 3.
+void early()
+{
+	print(2);
+}
+
+void far()
+{
+	print(3);
+}
+
+void main()
+{
+	scheduleAfter(far, 40);
+	scheduleAfter(early, 20);
+	print(1);
+}

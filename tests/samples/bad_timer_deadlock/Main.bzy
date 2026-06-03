@@ -1,0 +1,8 @@
+// main recvs on an empty channel with no sender and no timer: unwakeable.
+// The scheduler must report a deadlock and abort (it must NOT hang).
+void main()
+{
+	channel<int> c;
+	c = new channel<int>(1);
+	print(c.recv());
+}

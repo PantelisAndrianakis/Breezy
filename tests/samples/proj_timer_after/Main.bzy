@@ -1,0 +1,12 @@
+// main prints 1 and returns; the pending one-shot keeps the scheduler alive,
+// fires ~10ms later, and prints 2.  Output: 1 then 2.
+void tick()
+{
+	print(2);
+}
+
+void main()
+{
+	scheduleAfter(tick, 10);
+	print(1);
+}
