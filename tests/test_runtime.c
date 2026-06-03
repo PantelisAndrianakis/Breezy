@@ -702,6 +702,45 @@ static void channel_consumer(void)
 	g_recv_sum = bzy_channel_recv(g_ch) + bzy_channel_recv(g_ch) + bzy_channel_recv(g_ch);
 }
 
+static void *g_mc_ch;
+static int64_t g_mc_sum;
+static void mc_worker(void)
+{
+	bzy_channel_send(g_mc_ch, 1);
+}
+static void mc_collector(void)
+{
+	int64_t s = 0;
+	for (int i = 0; i < 50; i++)
+	{
+		s += bzy_channel_recv(g_mc_ch);
+	}
+
+	g_mc_sum = s;
+}
+
+static void test_scheduler_multicore(void)
+{
+	/* Four workers, 50 senders, one collector: the sum is order-independent and
+	   must come out to 50 every run. Exercises cross-thread channel send/recv,
+	   work-stealing, and the park-unlock hand-off under real parallelism. */
+	int64_t base = bzy_live_count();
+	g_mc_sum = 0;
+	bzy_sched_init();
+	bzy_sched_set_workers(4);
+	g_mc_ch = bzy_channel_new(8, 0);
+	for (int i = 0; i < 50; i++)
+	{
+		bzy_spawn(mc_worker);
+	}
+
+	bzy_spawn(mc_collector);
+	bzy_sched_run();
+	ASSERT_INT(g_mc_sum, 50);
+	bzy_release(g_mc_ch);
+	ASSERT_INT(bzy_live_count(), base);
+}
+
 static void test_channel_roundtrip(void)
 {
 	g_recv_sum = 0;
@@ -853,6 +892,7 @@ int main(void)
 	RUN(test_regex_replace);
 	RUN(test_scheduler_roundrobin);
 	RUN(test_spawn_args);
+	RUN(test_scheduler_multicore);
 	RUN(test_channel_roundtrip);
 	RUN(test_file_predicates);
 	RUN(test_file_read_write);

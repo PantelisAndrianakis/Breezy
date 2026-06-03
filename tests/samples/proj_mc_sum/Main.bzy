@@ -1,0 +1,28 @@
+// 100 breezes each send 1 into a shared channel; main sums the receipts.
+// The total is 100 regardless of how the workers interleave across cores.
+void worker(channel<int> out)
+{
+	out.send(1);
+}
+
+void main()
+{
+	channel<int> c;
+	c = new channel<int>(8);
+
+	int n;
+	n = 100;
+	int i;
+	for (i = 0; i < n; i++)
+	{
+		spawn worker(c);
+	}
+
+	int sum;
+	sum = 0;
+	for (i = 0; i < n; i++)
+	{
+		sum += c.recv();
+	}
+	print(sum);                  // 100
+}

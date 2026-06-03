@@ -101,6 +101,11 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 		n = 1;
 	}
 
+	if (n > 64)
+	{
+		n = 64;   /* WaitForMultipleObjects caps at MAXIMUM_WAIT_OBJECTS (64). */
+	}
+
 	int old = g_nworkers;
 	g_workers = realloc(g_workers, (size_t)n * sizeof(Worker));
 	for (int i = old; i < n; i++)
@@ -251,10 +256,38 @@ static void worker_loop(void)
 	}
 }
 
+static DWORD WINAPI worker_thread_main(void *arg)
+{
+	t_wid = (int)(intptr_t)arg;
+	t_sched = bzy_coroutine_thread_enter();   /* This thread becomes its own scheduler coroutine. */
+	worker_loop();
+	return 0;
+}
+
 void bzy_sched_run(void)
 {
-	/* Task 1: single worker — this thread is worker 0. Task 2 spins up 1..n-1. */
-	worker_loop();
+	HANDLE *threads = NULL;
+	if (g_nworkers > 1)
+	{
+		threads = calloc((size_t)(g_nworkers - 1), sizeof(HANDLE));
+		for (int i = 1; i < g_nworkers; i++)
+		{
+			threads[i - 1] = CreateThread(NULL, 0, worker_thread_main, (void*)(intptr_t)i, 0, NULL);
+		}
+	}
+
+	worker_loop();   /* This thread is worker 0. */
+
+	if (threads)
+	{
+		WaitForMultipleObjects((DWORD)(g_nworkers - 1), threads, TRUE, INFINITE);
+		for (int i = 0; i < g_nworkers - 1; i++)
+		{
+			CloseHandle(threads[i]);
+		}
+
+		free(threads);
+	}
 
 	CloseHandle(g_work_sem);
 	g_work_sem = NULL;
