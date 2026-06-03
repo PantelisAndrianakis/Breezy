@@ -1,0 +1,22 @@
+void producer(channel<int> out)
+{
+	out.send(10);
+	out.send(20);
+	out.send(30);
+}
+
+void main()
+{
+	channel<int> c;
+	c = new channel<int>(2);     // capacity 2: the 3rd send parks until main drains
+	spawn producer(c);
+
+	int total;
+	total = 0;
+	int i;
+	for (i = 0; i < 3; i++)
+	{
+		total += c.recv();
+	}
+	print(total);                // 60
+}

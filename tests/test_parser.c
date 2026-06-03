@@ -305,6 +305,23 @@ static void test_foreach_stmt(void)
 	ASSERT_INT(fe->then_blk->count, 1);
 }
 
+static void test_channel_type_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { channel<int> c; }");
+	Stmt *s = u->funcs[0]->body->stmts[0];
+	ASSERT_INT(s->kind, ST_VARDECL);
+	ASSERT_INT(s->decl_type.kind, TY_CHANNEL);
+	ASSERT_INT(s->decl_type.elem->kind, TY_INT);
+}
+
+static void test_new_channel_parse(void)
+{
+	Unit *u = parse_unit_str("void m() { channel<int> c; c = new channel<int>(8); }");
+	Stmt *s = u->funcs[0]->body->stmts[1];
+	ASSERT_INT(s->value->kind, EX_NEWCHANNEL);
+	ASSERT_INT(s->value->arg_count, 1);
+}
+
 static void test_spawn_parse(void)
 {
 	Unit *u = parse_unit_str("void m() { spawn worker(); }");
@@ -391,6 +408,8 @@ int main(void)
 	RUN(test_throw_stmt);
 	RUN(test_try_catch_parse);
 	RUN(test_foreach_stmt);
+	RUN(test_channel_type_parse);
+	RUN(test_new_channel_parse);
 	RUN(test_spawn_parse);
 	RUN(test_foreach_pair_parse);
 	RUN(test_parse_if_else);

@@ -15,6 +15,7 @@ typedef enum
 	TOKEN_STR_LIT,                                       /* "..." string literal */
 	TOKEN_STRING,                                        /* `string` type keyword */
 	TOKEN_MAP,                                           /* `map` type keyword */
+	TOKEN_CHANNEL,                                       /* `channel` type keyword */
 	TOKEN_LBRACKET, TOKEN_RBRACKET,                      /* [ ] */
 	TOKEN_PLUS, TOKEN_MINUS, TOKEN_STAR, TOKEN_SLASH,
 	TOKEN_PLUSPLUS, TOKEN_MINUSMINUS,                    /* ++ -- */

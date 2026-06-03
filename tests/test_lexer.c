@@ -164,6 +164,13 @@ static void test_spawn_keyword(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_SPAWN);
 }
 
+static void test_channel_keyword(void)
+{
+	Lexer l;
+	lexer_init(&l, "channel");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_CHANNEL);
+}
+
 static void test_try_catch_keywords(void)
 {
 	Lexer l;
@@ -275,6 +282,7 @@ int main(void)
 	RUN(test_for_keyword);
 	RUN(test_throw_keyword);
 	RUN(test_spawn_keyword);
+	RUN(test_channel_keyword);
 	RUN(test_try_catch_keywords);
 	RUN(test_switch_keywords);
 	RUN(test_block_comment);

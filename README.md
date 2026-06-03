@@ -237,7 +237,7 @@ void main()
 
 A breeze stack is tens of KB, not the megabytes an OS thread costs. **10,000 concurrent connections ≈ a few hundred MB of stacks**, instead of tens of GB.
 
-> **Implemented today (Part 6a-1):** the breeze runtime and a **single-thread cooperative scheduler** are live. `spawn f();` enqueues a breeze running the zero-argument `void` function `f`; `yield();` hands control back to the scheduler so ready breezes interleave. `main` itself is breeze 0, so it interleaves with what it spawns, and a program that never `spawn`s runs unchanged. Stacks are Windows Fibers behind a portable seam (Linux lands in Part 8). Still to come: **channels** (`chan<T>`, cross-breeze communication — 6a-2), **multi-core** scheduling with atomic refcounts for shared objects (6a-3), and the I/O integration that parks a breeze on a blocking call (Part 6b). Today `yield()` is explicit; the auto-yield-on-I/O shown above is the roadmap.
+> **Implemented today (Part 6a-1):** the breeze runtime and a **single-thread cooperative scheduler** are live. `spawn f();` enqueues a breeze running the zero-argument `void` function `f`; `yield();` hands control back to the scheduler so ready breezes interleave. `main` itself is breeze 0, so it interleaves with what it spawns, and a program that never `spawn`s runs unchanged. Stacks are Windows Fibers behind a portable seam (Linux lands in Part 8). Still to come: **channels** (`channel<T>`, cross-breeze communication — 6a-2), **multi-core** scheduling with atomic refcounts for shared objects (6a-3), and the I/O integration that parks a breeze on a blocking call (Part 6b). Today `yield()` is explicit; the auto-yield-on-I/O shown above is the roadmap.
 
 ```breezy
 void a()
@@ -266,16 +266,34 @@ void main()        // Breeze 0.
 
 ### Channels
 
-Breezes communicate by passing values over channels - *share memory by communicating*:
+Breezes communicate by passing values over channels - *share memory by communicating*. A `channel<T>` is **bounded buffered**: `new channel<T>(N)` reserves a ring of `N` slots, `send` parks the breeze when the ring is full, and `recv` parks when it is empty - so a slow consumer applies **backpressure** to its producer instead of letting an unbounded queue grow until the server runs out of memory. A spawned worker takes its channel (and up to four arguments of any type) directly.
 
 ```breezy
-chan<Packet> inbox;
-inbox = new chan<Packet>();
+void producer(channel<int> out)
+{
+    out.send(10);
+    out.send(20);
+    out.send(30);
+}
 
-spawn producer(inbox);
-Packet p;
-p = inbox.recv();
+void main()
+{
+    channel<int> c;
+    c = new channel<int>(2);     // capacity 2: the 3rd send parks until main drains
+    spawn producer(c);
+
+    int total;
+    total = 0;
+    int i;
+    for (i = 0; i < 3; i++)
+    {
+        total += c.recv();       // parks while the channel is empty
+    }
+    print(total);                // 60
+}
 ```
+
+> **Implemented today (Part 6a-2):** bounded `channel<T>` with `send`/`recv` (parking on full/empty), `spawn` with up to 4 arguments, and a deadlock check (if every breeze ends up blocked the program aborts with a diagnostic). Managed values **move** across a channel - the owned reference transfers from sender to receiver with no extra retain. Still to come: **multi-core** scheduling with atomic refcounts for objects that cross breezes (6a-3), and the I/O integration that parks a breeze on a blocking call (Part 6b).
 
 ### The zone model (and why it's fast)
 
@@ -329,7 +347,7 @@ The `blocking` keyword tells the runtime a call may block, so it's dispatched to
 | `T[]` | Heap-allocated array of any type, bounds-checked |
 | `map<K,V>` | Hash map: open addressing with Swiss-style control bytes (`int`/`string` keys) |
 | `List<T>` `Stack<T>` `Queue<T>` `Deque<T>` `Set<T>` | Monomorphized generic collections (no boxing); `.size`, `.contains(T)`, `foreach` |
-| `chan<T>` | Channel for passing values between breezes |
+| `channel<T>` | Bounded buffered channel for passing values between breezes (`send`/`recv`, parking) |
 | `ClassName` | Heap-allocated object, memory managed automatically (ARC + cycles) |
 | `void` | No value; used as a function return type |
 
@@ -730,8 +748,8 @@ The language design is settled. The compiler and runtime are being built from sc
 
 **Concurrency & I/O (Part 6)**
 - [x] Breezes + cooperative scheduler — `spawn` / `yield` (single thread; Windows Fibers behind a portable seam)
+- [x] `spawn` with arguments (up to 4, any type) + bounded `channel<T>` (`send`/`recv` with parking, deadlock detection)
 - [ ] Multi-core scheduler (one thread per core) + atomic refcounts for shared objects
-- [ ] Channels (`chan<T>`)
 - [ ] Async I/O facade (epoll/IOCP + offload pool; `io_uring` later)
 
 **Interop (Part 7)**

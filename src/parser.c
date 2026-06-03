@@ -275,6 +275,15 @@ static Expr *parse_primary(Parser *p)
 			e->type=et;                       /* Carries elem (key) + elem2 (value). */
 			return e;
 		}
+		if (et.kind==TY_CHANNEL)
+		{
+			expect(p,TOKEN_LPAREN);
+			Expr *e=expr_new(EX_NEWCHANNEL,line);
+			e->type=et;                       /* Carries elem (T). */
+			e->args[e->arg_count++]=parse_expr(p);   /* Capacity. */
+			expect(p,TOKEN_RPAREN);
+			return e;
+		}
 		if (et.kind==TY_GENERIC)
 		{
 			expect(p,TOKEN_LPAREN);
@@ -449,6 +458,19 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		out->elem2=typeref_box(val);
 		return 1;
 	}
+	if (check(p,TOKEN_CHANNEL))
+	{
+		advance(p);
+		expect(p,TOKEN_LT);
+		TypeRef el;
+		parse_type(p,&el);
+		expect(p,TOKEN_GT);
+		out->kind=TY_CHANNEL;
+		out->class_name[0]='\0';
+		out->elem=typeref_box(el);
+		out->elem2=NULL;
+		return 1;
+	}
 	if (scalar_type_kind(p->cur.type, &k))
 	{
 		out->kind=k;
@@ -516,8 +538,8 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
-	/* `map<...>` declarations start unambiguously with the map keyword. */
-	if (check(p,TOKEN_MAP))
+	/* `map<...>` / `channel<...>` declarations start unambiguously with the keyword. */
+	if (check(p,TOKEN_MAP) || check(p,TOKEN_CHANNEL))
 	{
 		return 1;
 	}

@@ -19,7 +19,7 @@ static const struct
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
 	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
 	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"string",TOKEN_STRING},
-	{"map",TOKEN_MAP},
+	{"map",TOKEN_MAP},{"channel",TOKEN_CHANNEL},
 	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{NULL,0}
 };
 
@@ -468,6 +468,8 @@ const char *token_type_name(TokenType t)
 		return "string";
 	case TOKEN_MAP:
 		return "map";
+	case TOKEN_CHANNEL:
+		return "channel";
 	case TOKEN_LBRACKET:
 		return "[";
 	case TOKEN_RBRACKET:

@@ -349,6 +349,14 @@ static void test_spawn_resolves(void)
 	ASSERT_INT(s->expr->kind, EX_CALL);
 }
 
+static void test_channel_send_recv_types(void)
+{
+	Func *f=build1("void main() { channel<int> c; c = new channel<int>(2); int x; c.send(5); x = c.recv(); }")->funcs[0];
+	Stmt *snd=f->body->stmts[3], *rcv=f->body->stmts[4];
+	ASSERT_INT(snd->expr->type.kind, TY_VOID);    /* send -> void (ST_EXPR) */
+	ASSERT_INT(rcv->value->type.kind, TY_INT);    /* recv -> elem type */
+}
+
 static void test_spawn_args_resolve(void)
 {
 	Func *f=build1("void worker(int id, string tag) { } void main() { spawn worker(7, \"hi\"); }")->funcs[1];
@@ -462,6 +470,7 @@ int main(void)
 	RUN(test_map_entries_types);
 	RUN(test_spawn_resolves);
 	RUN(test_spawn_args_resolve);
+	RUN(test_channel_send_recv_types);
 	RUN(test_random_types);
 	RUN(test_string_method_types);
 	RUN(test_regex_types);

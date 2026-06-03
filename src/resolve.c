@@ -554,6 +554,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		break;   /* e->type is already TY_MAP + key/value, set by the parser. */
+	case EX_NEWCHANNEL:
+		if (e->arg_count!=1)
+		{
+			die(e->line,"new channel<T>(capacity) takes one argument",NULL);
+		}
+
+		resolve_expr(st,e->args[0],tc);
+		if (!ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"channel capacity must be an integer",NULL);
+		}
+
+		if (e->type.elem->kind==TY_OBJECT
+				&& !is_stringbuilder(e->type.elem)
+				&& !types_find_class(g_types,e->type.elem->class_name))
+		{
+			die(e->line,"unknown channel element type: ",e->type.elem->class_name);
+		}
+
+		break;   /* e->type is already TY_CHANNEL + elem, set by the parser. */
 	case EX_NEWGEN:
 	{
 		const char *tmpl=e->type.class_name;
@@ -843,6 +863,36 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"unknown Entry method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_CHANNEL)
+		{
+			resolve_args(st,e,tc);
+			TypeRef *T=e->lhs->type.elem;
+			if (strcmp(e->name,"send")==0)
+			{
+				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+				{
+					die(e->line,"channel.send(value) type mismatch",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"recv")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"channel.recv() takes no arguments",NULL);
+				}
+
+				e->type = *T;
+			}
+			else
+			{
+				die(e->line,"unknown channel method: ",e->name);
 			}
 
 			break;

@@ -242,7 +242,7 @@ static int expr_is_owned(Expr *e)
 	   EX_STR literal is +1 from bzy_str_new. */
 	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
 		   || e->kind==EX_STR || e->kind==EX_BINARY || e->kind==EX_NEWARRAY
-		   || e->kind==EX_NEWMAP || e->kind==EX_NEWGEN;
+		   || e->kind==EX_NEWMAP || e->kind==EX_NEWGEN || e->kind==EX_NEWCHANNEL;
 }
 
 /* Retain the object pointer currently in rax; rax is preserved. */
@@ -738,6 +738,49 @@ static void cg_entry_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (ty_is_float(e->type.kind))
 	{
 		cg_emit(cg, e->type.kind==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+	}
+}
+
+/* channel.send / channel.recv lower to runtime calls. send moves a managed value
+   into the channel (the +1 transfers; no release after). recv returns an owned
+   value (moved out); an FP element is bridged rax -> xmm0 for the consumer. */
+static void cg_channel_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	TypeKind et = e->lhs->type.elem->kind;
+	if (strcmp(e->name,"send")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                  /* channel */
+		cg_emit(cg,"    sub rsp, 16");
+		cg_emit(cg,"    mov [rsp], rax");
+		if (ty_is_managed(et))
+		{
+			cg_expr_owned(cg,tt,e->args[0]);    /* +1 owned; moves into the channel. */
+		}
+		else
+		{
+			cg_expr(cg,tt,e->args[0]);
+		}
+
+		if (ty_is_float(et))
+		{
+			cg_emit(cg, et==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+		}
+
+		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov rcx, [rsp]");
+		cg_emit(cg,"    mov rdx, [rsp + 8]");
+		cg_aligned_call(cg,"bzy_channel_send"); /* Channel takes ownership: no release here. */
+		cg_emit(cg,"    add rsp, 16");
+		return;
+	}
+
+	/* recv */
+	cg_expr(cg,tt,e->lhs);
+	cg_emit(cg,"    mov rcx, rax");
+	cg_aligned_call(cg,"bzy_channel_recv");     /* Owned value bits in rax. */
+	if (ty_is_float(et))
+	{
+		cg_emit(cg, et==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
 	}
 }
 
@@ -1502,6 +1545,12 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem2->kind) ? 1 : 0);
 		cg_aligned_call(cg,"bzy_map_new");   /* Owned (+1) map in rax. */
 		break;
+	case EX_NEWCHANNEL:
+		cg_expr(cg,tt,e->args[0]);           /* Capacity -> rax. */
+		cg_emit(cg,"    mov rcx, rax");
+		cg_emit(cg,"    mov rdx, %d", ty_is_managed(e->type.elem->kind) ? 1 : 0);
+		cg_aligned_call(cg,"bzy_channel_new");   /* Owned (+1) channel in rax. */
+		break;
 	case EX_NEWGEN:
 		if (strcmp(e->type.class_name,"Box")==0)
 		{
@@ -1664,6 +1713,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_ENTRY)
 		{
 			cg_entry_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_CHANNEL)
+		{
+			cg_channel_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
@@ -2676,6 +2729,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_spawn");
 	cg_emit(cg,"extern bzy_spawn_args");
 	cg_emit(cg,"extern bzy_yield");
+	cg_emit(cg,"extern bzy_channel_new");
+	cg_emit(cg,"extern bzy_channel_send");
+	cg_emit(cg,"extern bzy_channel_recv");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
 	cg_emit(cg,"extern bzy_map_key_at");
