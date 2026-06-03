@@ -1,0 +1,35 @@
+void main()
+{
+	File.writeText("bzy_rw.txt", "alpha\nbeta\ngamma\n");
+	print(File.readText("bzy_rw.txt"));   // alpha / beta / gamma (with trailing newline)
+
+	int count;
+	count = 0;
+	int chars;
+	chars = 0;
+	foreach (string line in File.readLines("bzy_rw.txt"))
+	{
+		count += 1;
+		chars += line.length();
+	}
+	print(count);    // 3
+	print(chars);    // 5 + 4 + 5 = 14
+
+	File.appendText("bzy_rw.txt", "delta\n");
+	print(File.readLines("bzy_rw.txt").length);   // 4
+
+	// Binary round-trip.
+	byte[] data;
+	data = new byte[3];
+	data[0] = (byte)7;
+	data[1] = (byte)42;
+	data[2] = (byte)9;
+	File.writeBytes("bzy_rw.bin", data);
+	byte[] back;
+	back = File.readBytes("bzy_rw.bin");
+	print(back.length);   // 3
+	print(back[1]);       // 42
+
+	File.delete("bzy_rw.txt");
+	File.delete("bzy_rw.bin");
+}

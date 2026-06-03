@@ -730,6 +730,40 @@ static void test_file_predicates(void)
 	bzy_release(none);
 }
 
+static void test_file_read_write(void)
+{
+	void *p = bzy_str_new("bzy_rw_tmp.txt", 14);
+	void *content = bzy_str_new("alpha\nbeta\n", 11);
+	bzy_file_write_text(p, content);
+	void *back = bzy_file_read_text(p);
+	ASSERT(strcmp(bzy_str_data(back), "alpha\nbeta\n") == 0);
+	void *lines = bzy_file_read_lines(p);
+	ASSERT_INT(bzy_array_len(lines), 2);                 /* "alpha", "beta"; trailing \n drops empty. */
+	void *l0 = *(void**)((char*)lines + 32);
+	ASSERT(strcmp(bzy_str_data(l0), "alpha") == 0);
+
+	void *bp = bzy_str_new("bzy_rw_bin.bin", 14);
+	void *data = bzy_array_new(3, 0);
+	int64_t *s = (int64_t*)((char*)data + 32);
+	s[0] = 1;
+	s[1] = 254;
+	s[2] = 0;
+	bzy_file_write_bytes(bp, data);
+	void *rb = bzy_file_read_bytes(bp);
+	ASSERT_INT(bzy_array_len(rb), 3);
+	ASSERT_INT(*(int64_t*)((char*)rb + 32 + 8), 254);
+
+	remove("bzy_rw_tmp.txt");
+	remove("bzy_rw_bin.bin");
+	bzy_release(p);
+	bzy_release(content);
+	bzy_release(back);
+	bzy_release(lines);
+	bzy_release(bp);
+	bzy_release(data);
+	bzy_release(rb);
+}
+
 static void test_scheduler_roundrobin(void)
 {
 	g_breeze_n = 0;
@@ -791,6 +825,7 @@ int main(void)
 	RUN(test_spawn_args);
 	RUN(test_channel_roundtrip);
 	RUN(test_file_predicates);
+	RUN(test_file_read_write);
 	SUMMARY();
 	return 0;
 }

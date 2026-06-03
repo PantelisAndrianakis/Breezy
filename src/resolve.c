@@ -436,23 +436,119 @@ static void resolve_regex(Expr *e)
 	e->type.kind = predicate ? TY_BOOL : TY_STRING;
 }
 
+/* Require argument i to be a string. */
+static void file_arg_string(Expr *e, int i)
+{
+	if (i >= e->arg_count || e->args[i]->type.kind != TY_STRING)
+	{
+		die(e->line,"File method: argument must be a string",NULL);
+	}
+}
+
+static int file_is_byte_array(TypeRef *t)
+{
+	return t->kind == TY_ARRAY && t->elem && t->elem->kind == TY_BYTE;
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
-	int predicate = (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0);
-	int mutate = (strcmp(m,"createFile")==0 || strcmp(m,"createFolder")==0
-				  || strcmp(m,"delete")==0 || strcmp(m,"deleteRecursive")==0);
-	if (!predicate && !mutate)
+
+	/* path -> boolean predicates. */
+	if (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0)
 	{
-		die(e->line,"unknown File method: ",m);
+		if (e->arg_count != 1)
+		{
+			die(e->line,"File predicate takes one path argument",NULL);
+		}
+		file_arg_string(e,0);
+		e->type.kind = TY_BOOL;
+		return;
 	}
 
-	if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+	/* path -> void mutations. */
+	if (strcmp(m,"createFile")==0 || strcmp(m,"createFolder")==0
+			|| strcmp(m,"delete")==0 || strcmp(m,"deleteRecursive")==0)
 	{
-		die(e->line,"File method expects one string path argument",NULL);
+		if (e->arg_count != 1)
+		{
+			die(e->line,"File mutation takes one path argument",NULL);
+		}
+		file_arg_string(e,0);
+		e->type.kind = TY_VOID;
+		return;
 	}
 
-	e->type.kind = predicate ? TY_BOOL : TY_VOID;
+	if (strcmp(m,"readText")==0)
+	{
+		if (e->arg_count != 1)
+		{
+			die(e->line,"File.readText takes one path argument",NULL);
+		}
+		file_arg_string(e,0);
+		e->type.kind = TY_STRING;
+		return;
+	}
+
+	if (strcmp(m,"readLines")==0)
+	{
+		if (e->arg_count != 1)
+		{
+			die(e->line,"File.readLines takes one path argument",NULL);
+		}
+		file_arg_string(e,0);
+		TypeRef el;
+		memset(&el,0,sizeof(el));
+		el.kind = TY_STRING;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(el);
+		return;
+	}
+
+	if (strcmp(m,"readBytes")==0)
+	{
+		if (e->arg_count != 1)
+		{
+			die(e->line,"File.readBytes takes one path argument",NULL);
+		}
+		file_arg_string(e,0);
+		TypeRef el;
+		memset(&el,0,sizeof(el));
+		el.kind = TY_BYTE;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(el);
+		return;
+	}
+
+	if (strcmp(m,"writeText")==0 || strcmp(m,"appendText")==0)
+	{
+		if (e->arg_count != 2)
+		{
+			die(e->line,"File.writeText/appendText take (path, content)",NULL);
+		}
+		file_arg_string(e,0);
+		file_arg_string(e,1);
+		e->type.kind = TY_VOID;
+		return;
+	}
+
+	if (strcmp(m,"writeBytes")==0)
+	{
+		if (e->arg_count != 2)
+		{
+			die(e->line,"File.writeBytes takes (path, byte[])",NULL);
+		}
+		file_arg_string(e,0);
+		if (!file_is_byte_array(&e->args[1]->type))
+		{
+			die(e->line,"File.writeBytes: second argument must be byte[]",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+		return;
+	}
+
+	die(e->line,"unknown File method: ",m);
 }
 
 static void resolve_random(Expr *e)

@@ -116,6 +116,12 @@ void    bzy_file_create_file(void *path);       /* Create an empty file. */
 void    bzy_file_create_folder(void *path);     /* mkdir -p. */
 void    bzy_file_delete(void *path);            /* Delete a file or empty folder. */
 void    bzy_file_delete_recursive(void *path);  /* Delete a folder tree. */
+void   *bzy_file_read_text(void *path);         /* Owned string of the whole file. */
+void   *bzy_file_read_lines(void *path);        /* Owned string[]; split on \n, \r stripped. */
+void    bzy_file_write_text(void *path, void *content);   /* Create/overwrite. */
+void    bzy_file_append_text(void *path, void *content);  /* Create/append. */
+void   *bzy_file_read_bytes(void *path);        /* Owned byte[] (one byte per slot). */
+void    bzy_file_write_bytes(void *path, void *data);     /* data : byte[]. */
 
 int64_t bzy_regex_matches(void *pat, void *text);            /* Full match -> 1/0. */
 int64_t bzy_regex_test(void *pat, void *text);              /* Search -> 1/0. */

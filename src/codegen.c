@@ -1501,9 +1501,39 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 		fn="bzy_file_delete";
 		fallible=1;
 	}
-	else
+	else if (strcmp(m,"deleteRecursive")==0)
 	{
 		fn="bzy_file_delete_recursive";
+		fallible=1;
+	}
+	else if (strcmp(m,"readText")==0)
+	{
+		fn="bzy_file_read_text";
+		fallible=1;
+	}
+	else if (strcmp(m,"readLines")==0)
+	{
+		fn="bzy_file_read_lines";
+		fallible=1;
+	}
+	else if (strcmp(m,"writeText")==0)
+	{
+		fn="bzy_file_write_text";
+		fallible=1;
+	}
+	else if (strcmp(m,"appendText")==0)
+	{
+		fn="bzy_file_append_text";
+		fallible=1;
+	}
+	else if (strcmp(m,"readBytes")==0)
+	{
+		fn="bzy_file_read_bytes";
+		fallible=1;
+	}
+	else
+	{
+		fn="bzy_file_write_bytes";
 		fallible=1;
 	}
 
@@ -2882,6 +2912,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_file_create_folder");
 	cg_emit(cg,"extern bzy_file_delete");
 	cg_emit(cg,"extern bzy_file_delete_recursive");
+	cg_emit(cg,"extern bzy_file_read_text");
+	cg_emit(cg,"extern bzy_file_read_lines");
+	cg_emit(cg,"extern bzy_file_write_text");
+	cg_emit(cg,"extern bzy_file_append_text");
+	cg_emit(cg,"extern bzy_file_read_bytes");
+	cg_emit(cg,"extern bzy_file_write_bytes");
 	cg_emit(cg,"global __bzy_exception_funcs");
 	cg_emit(cg,"global __bzy_exception_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");

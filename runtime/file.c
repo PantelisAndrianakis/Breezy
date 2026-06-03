@@ -253,3 +253,164 @@ void bzy_file_delete_recursive(void *path)
 		io_fail("File.deleteRecursive: could not delete tree");
 	}
 }
+
+/* Read the whole file into a malloc'd buffer; *out_len gets the byte count.
+   Returns NULL (and sets io_fail) on error. The buffer is NUL-terminated. */
+static char *read_all(const char *path, int64_t *out_len, const char *who)
+{
+	FILE *f = fopen(path, "rb");
+	if (!f)
+	{
+		io_fail(who);
+		return NULL;
+	}
+
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (n < 0)
+	{
+		fclose(f);
+		io_fail(who);
+		return NULL;
+	}
+
+	char *buf = (char*)malloc((size_t)n + 1);
+	size_t got = fread(buf, 1, (size_t)n, f);
+	fclose(f);
+	buf[got] = '\0';
+	*out_len = (int64_t)got;
+	return buf;
+}
+
+void *bzy_file_read_text(void *path)
+{
+	int64_t n = 0;
+	char *buf = read_all(bzy_str_data(path), &n, "File.readText: could not read file");
+	if (!buf)
+	{
+		return NULL;
+	}
+
+	void *s = bzy_str_new(buf, n);
+	free(buf);
+	return s;
+}
+
+void *bzy_file_read_lines(void *path)
+{
+	int64_t n = 0;
+	char *buf = read_all(bzy_str_data(path), &n, "File.readLines: could not read file");
+	if (!buf)
+	{
+		return NULL;
+	}
+
+	int64_t lines = 0;
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (buf[i] == '\n')
+		{
+			lines++;
+		}
+	}
+
+	if (n > 0 && buf[n - 1] != '\n')
+	{
+		lines++;   /* Final segment with no trailing newline. */
+	}
+
+	void *arr = bzy_array_new(lines, 1);
+	void **elems = (void**)((char*)arr + 32);
+	int64_t start = 0, idx = 0;
+	for (int64_t i = 0; i <= n; i++)
+	{
+		if (i == n || buf[i] == '\n')
+		{
+			if (i == n && start == i)
+			{
+				break;   /* No dangling empty line after a trailing newline. */
+			}
+
+			int64_t end = i;
+			if (end > start && buf[end - 1] == '\r')
+			{
+				end--;   /* Strip CR for CRLF line endings. */
+			}
+
+			elems[idx++] = bzy_str_new(buf + start, end - start);   /* Owned; transferred. */
+			start = i + 1;
+		}
+	}
+
+	free(buf);
+	return arr;
+}
+
+static void write_file(void *path, void *content, const char *mode, const char *who)
+{
+	FILE *f = fopen(bzy_str_data(path), mode);
+	if (!f)
+	{
+		io_fail(who);
+		return;
+	}
+
+	int64_t len = bzy_str_len(content);
+	if (len > 0)
+	{
+		fwrite(bzy_str_data(content), 1, (size_t)len, f);
+	}
+
+	fclose(f);
+}
+
+void bzy_file_write_text(void *path, void *content)
+{
+	write_file(path, content, "wb", "File.writeText: could not write file");
+}
+
+void bzy_file_append_text(void *path, void *content)
+{
+	write_file(path, content, "ab", "File.appendText: could not write file");
+}
+
+void *bzy_file_read_bytes(void *path)
+{
+	int64_t n = 0;
+	char *buf = read_all(bzy_str_data(path), &n, "File.readBytes: could not read file");
+	if (!buf)
+	{
+		return NULL;
+	}
+
+	void *arr = bzy_array_new(n, 0);   /* Value array: one byte per 8-byte slot. */
+	int64_t *slots = (int64_t*)((char*)arr + 32);
+	for (int64_t i = 0; i < n; i++)
+	{
+		slots[i] = (unsigned char)buf[i];
+	}
+
+	free(buf);
+	return arr;
+}
+
+void bzy_file_write_bytes(void *path, void *data)
+{
+	FILE *f = fopen(bzy_str_data(path), "wb");
+	if (!f)
+	{
+		io_fail("File.writeBytes: could not write file");
+		return;
+	}
+
+	int64_t n = bzy_array_len(data);
+	int64_t *slots = (int64_t*)((char*)data + 32);
+	for (int64_t i = 0; i < n; i++)
+	{
+		unsigned char b = (unsigned char)slots[i];
+		fwrite(&b, 1, 1, f);
+	}
+
+	fclose(f);
+}
