@@ -1063,6 +1063,37 @@ static Block *parse_block(Parser *p)
 	return b;
 }
 
+static Func *parse_extern(Parser *p)
+{
+	expect(p,TOKEN_EXTERN);
+	Func *f=func_new();
+	f->is_extern=1;
+	parse_type(p,&f->ret_type);
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(f->name,name.text);
+	expect(p,TOKEN_LPAREN);
+	if (!check(p,TOKEN_RPAREN))
+	{
+		do
+		{
+			if (f->param_count>=8)
+			{
+				fprintf(stderr,"Too many params.\n");
+				exit(1);
+			}
+			Param *pm=&f->params[f->param_count++];
+			parse_type(p,&pm->type);
+			Token pn=expect(p,TOKEN_IDENT);
+			strcpy(pm->name,pn.text);
+		}
+		while (match(p,TOKEN_COMMA));
+	}
+	expect(p,TOKEN_RPAREN);
+	expect(p,TOKEN_SEMICOLON);   /* No body. */
+	f->body=NULL;
+	return f;
+}
+
 static Func *parse_function(Parser *p)
 {
 	Func *f=func_new();
@@ -1197,7 +1228,16 @@ Unit *parse_unit(Parser *p)
 	Unit *u=unit_new();
 	while (!check(p,TOKEN_EOF))
 	{
-		if (check(p,TOKEN_CLASS))
+		if (check(p,TOKEN_EXTERN))
+		{
+			if (u->func_count>=8)
+			{
+				fprintf(stderr,"Too many top-level functions.\n");
+				exit(1);
+			}
+			u->funcs[u->func_count++]=parse_extern(p);
+		}
+		else if (check(p,TOKEN_CLASS))
 		{
 			if (u->klass)
 			{

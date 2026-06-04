@@ -14,7 +14,7 @@ static const struct
 	{"while",TOKEN_WHILE},{"foreach",TOKEN_FOREACH},{"for",TOKEN_FOR},{"in",TOKEN_IN},{"return",TOKEN_RETURN},{"throw",TOKEN_THROW},{"try",TOKEN_TRY},{"catch",TOKEN_CATCH},{"spawn",TOKEN_SPAWN},
 	{"break",TOKEN_BREAK},{"continue",TOKEN_CONTINUE},
 	{"switch",TOKEN_SWITCH},{"case",TOKEN_CASE},{"default",TOKEN_DEFAULT},{"class",TOKEN_CLASS},
-	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},
+	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},{"extern",TOKEN_EXTERN},
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
 	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
@@ -434,6 +434,8 @@ const char *token_type_name(TokenType t)
 		return "spawn";
 	case TOKEN_CLASS:
 		return "class";
+	case TOKEN_EXTERN:
+		return "extern";
 	case TOKEN_EXTENDS:
 		return "extends";
 	case TOKEN_NEW:

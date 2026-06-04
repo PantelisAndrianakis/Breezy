@@ -123,6 +123,18 @@ static Unit *parse_unit_str(const char *s)
 	return parse_unit(&up);
 }
 
+static void test_parse_extern_decl(void)
+{
+	Unit *u = parse_unit_str("extern long strlen(string s); void main() { }");
+	Func *e = u->funcs[0];
+	ASSERT_INT(e->is_extern, 1);
+	ASSERT_INT(e->body == NULL, 1);
+	ASSERT_STR(e->name, "strlen");
+	ASSERT_INT(e->ret_type.kind, TY_LONG);
+	ASSERT_INT(e->param_count, 1);
+	ASSERT_INT(e->params[0].type.kind, TY_STRING);
+}
+
 static void test_parse_function_with_vardecl(void)
 {
 	Unit *u = parse_unit_str("void main() { int x; x = 42; }");
@@ -444,6 +456,7 @@ int main(void)
 	RUN(test_method_call);
 	RUN(test_field_access);
 	RUN(test_new);
+	RUN(test_parse_extern_decl);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);

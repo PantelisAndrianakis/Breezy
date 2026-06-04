@@ -8,6 +8,7 @@ typedef enum
 	TOKEN_BREAK, TOKEN_CONTINUE,                         /* Loop control. */
 	TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT,             /* Switch. */
 	TOKEN_CLASS, TOKEN_EXTENDS, TOKEN_NEW, TOKEN_THIS,
+	TOKEN_EXTERN,                                        /* `extern` C FFI declaration. */
 	TOKEN_BYTE, TOKEN_SHORT, TOKEN_LONG,                 /* Signed width keywords. */
 	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* Unsigned width keywords. */
 	TOKEN_BOOLEAN, TOKEN_TRUE, TOKEN_FALSE,              /* Boolean type + literals. */
