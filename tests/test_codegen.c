@@ -35,6 +35,10 @@ static void emit(const char *src, Target target)
 	}
 	for (int i = 0; i < total; i++)
 	{
+		types_register_interfaces(&tt, units[i]);
+	}
+	for (int i = 0; i < total; i++)
+	{
 		types_register_unit_members(&tt, units[i]);
 	}
 	resolve_program(&tt, units, total);

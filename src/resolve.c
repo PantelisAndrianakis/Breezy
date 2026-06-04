@@ -1991,6 +1991,49 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		ClassInfo *c=class_of(&e->lhs->type);
+		if (!c && e->lhs->type.kind==TY_OBJECT)
+		{
+			/* Interface-typed receiver: resolve against the interface's method set;
+			   dispatch uses the method's reserved global vtable slot. */
+			InterfaceInfo *itf=types_find_interface(g_types,e->lhs->type.class_name);
+			if (itf)
+			{
+				int k=-1;
+				for (int i=0; i<itf->method_count; i++)
+				{
+					if (strcmp(itf->methods[i],e->name)==0)
+					{
+						k=i;
+						break;
+					}
+				}
+
+				if (k<0)
+				{
+					die(e->line,"Unknown interface method: ",e->name);
+				}
+
+				resolve_args(st,e,tc);
+				if (e->arg_count != itf->param_counts[k])
+				{
+					die(e->line,"Interface method argument count mismatch.",NULL);
+				}
+
+				for (int i=0; i<e->arg_count; i++)
+				{
+					if (!assignable(&itf->param_types[k][i], &e->args[i]->type))
+					{
+						die(e->line,"Argument type mismatch; add a cast.",NULL);
+					}
+				}
+
+				e->type=itf->ret_types[k];
+				e->anno_int=itf->vslot[k];   /* The global interface slot. */
+				strcpy(e->anno_str,itf->name);
+				break;
+			}
+		}
+
 		if (!c)
 		{
 			die(e->line,"Method call on non-object.",NULL);
@@ -2164,7 +2207,8 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_VARDECL:
 	{
 		if (s->decl_type.kind==TY_OBJECT && !is_stringbuilder(&s->decl_type)
-				&& !types_find_class(g_types,s->decl_type.class_name))
+				&& !types_find_class(g_types,s->decl_type.class_name)
+				&& !types_is_interface(g_types,s->decl_type.class_name))
 		{
 			die(s->line,"Unknown type: ",s->decl_type.class_name);
 		}

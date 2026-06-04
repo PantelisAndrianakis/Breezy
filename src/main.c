@@ -155,6 +155,10 @@ int main(int argc, char *argv[])
 	}
 	for (int i=0; i<total; i++)
 	{
+		types_register_interfaces(&tt,units[i]);   /* Reserve vtable slots [0..K) before members. */
+	}
+	for (int i=0; i<total; i++)
+	{
 		types_register_unit_members(&tt,units[i]);
 	}
 	resolve_program(&tt,units,total);

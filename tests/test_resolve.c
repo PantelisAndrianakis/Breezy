@@ -13,9 +13,25 @@ static Unit *build1(const char *s)
 	parser_init(&ps,s);
 	u=parse_unit(&ps);
 	types_register_unit_names(&g_tt,u);
+	types_register_interfaces(&g_tt,u);
 	types_register_unit_members(&g_tt,u);
 	resolve_program(&g_tt,&u,1);
 	return u;
+}
+
+static void test_interface_call_resolves(void)
+{
+	Unit *u=build1("interface Speaker { string speak(); }"
+				   " class Dog implements Speaker { string speak() { return \"woof\"; } }"
+				   " void main() { Speaker s; s = new Dog(); string r; r = s.speak(); }");
+	Func *main=u->funcs[0];
+	Expr *call=main->body->stmts[3]->value;   /* r = s.speak() */
+	ASSERT_INT(call->type.kind, TY_STRING);   /* speak() -> string. */
+	ASSERT_INT(call->anno_int, 0);            /* Interface slot 0 (reserved [0..K), K=1). */
+	/* Dog's speak() sits at the same reserved interface slot. */
+	ClassInfo *dog=types_find_class(&g_tt,"Dog");
+	MethodInfo *sp=types_find_method(dog,"speak");
+	ASSERT_INT(sp->vtable_slot, 0);
 }
 
 static void test_extern_call_resolves(void)
@@ -449,6 +465,10 @@ static void test_method_call_slot_and_class(void)
 	}
 	for (int i=0; i<2; i++)
 	{
+		types_register_interfaces(&g_tt,units[i]);
+	}
+	for (int i=0; i<2; i++)
+	{
 		types_register_unit_members(&g_tt,units[i]);
 	}
 	resolve_program(&g_tt,units,2);
@@ -482,6 +502,10 @@ static void test_shared_set_inference(void)
 	for (int i=0; i<4; i++)
 	{
 		types_register_unit_names(&g_tt,units[i]);
+	}
+	for (int i=0; i<4; i++)
+	{
+		types_register_interfaces(&g_tt,units[i]);
 	}
 	for (int i=0; i<4; i++)
 	{
@@ -591,6 +615,7 @@ static void test_network_udp_resolves(void)
 int main(void)
 {
 	printf("Resolver tests\n");
+	RUN(test_interface_call_resolves);
 	RUN(test_extern_call_resolves);
 	RUN(test_extern_blocking_flag);
 	RUN(test_local_int_offset);

@@ -38,7 +38,19 @@ typedef struct ClassInfo
 	TypeRef ctor_param_types[8];
 	char ctor_asm_label[160];
 	int is_shared;                 /* 1 if instances may cross a core boundary -> atomic refcounts (6a-3). */
+	char implements[8][64];        /* Interface names this class implements. */
+	int implements_count;
 } ClassInfo;
+typedef struct
+{
+	char    name[64];
+	char    methods[16][64];       /* Method names, declaration order. */
+	TypeRef ret_types[16];
+	TypeRef param_types[16][8];
+	int     param_counts[16];
+	int     vslot[16];             /* The global vtable slot of each interface method. */
+	int     method_count;
+} InterfaceInfo;
 typedef struct
 {
 	char name[64];
@@ -56,12 +68,18 @@ typedef struct
 	int class_count;
 	FuncInfo  funcs[MAX_FUNCS];
 	int func_count;
+	InterfaceInfo interfaces[64];
+	int interface_count;
+	int iface_slots;               /* K: total interface methods = reserved vtable slots [0..K). */
 } TypeTable;
 
 void       types_init(TypeTable *tt);
 void       types_register_builtins(TypeTable *tt);
+void       types_register_interfaces(TypeTable *tt, Unit *u);   /* Before members: reserves slots [0..K). */
 void       types_register_unit_names(TypeTable *tt, Unit *u);
 void       types_register_unit_members(TypeTable *tt, Unit *u);
+InterfaceInfo *types_find_interface(TypeTable *tt, const char *name);
+int        types_is_interface(TypeTable *tt, const char *name);
 void       types_compute_shared_set(TypeTable *tt);   /* Conservative-static: mark channel-reachable classes shared (6a-3). */
 ClassInfo *types_find_class(TypeTable *tt, const char *name);
 FuncInfo  *types_find_func(TypeTable *tt, const char *name);

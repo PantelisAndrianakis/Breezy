@@ -7,6 +7,8 @@ void types_init(TypeTable *tt)
 {
 	tt->class_count = 0;
 	tt->func_count = 0;
+	tt->interface_count = 0;
+	tt->iface_slots = 0;
 }
 
 void types_register_builtins(TypeTable *tt)
@@ -238,6 +240,77 @@ void types_register_unit_names(TypeTable *tt, Unit *u)
 	}
 }
 
+InterfaceInfo *types_find_interface(TypeTable *tt, const char *name)
+{
+	for (int i=0; i<tt->interface_count; i++)
+	{
+		if (strcmp(tt->interfaces[i].name,name)==0)
+		{
+			return &tt->interfaces[i];
+		}
+	}
+
+	return NULL;
+}
+
+int types_is_interface(TypeTable *tt, const char *name)
+{
+	return types_find_interface(tt,name) != NULL;
+}
+
+/* Register each interface, assigning every method a global vtable slot in [0..K).
+   Must run for all units before any class members (so K = tt->iface_slots is final
+   before vtable-slot assignment shifts class methods above it). */
+void types_register_interfaces(TypeTable *tt, Unit *u)
+{
+	for (int i=0; i<u->interface_count; i++)
+	{
+		InterfaceDecl *d=u->interfaces[i];
+		if (tt->interface_count>=64)
+		{
+			fprintf(stderr,"Too many interfaces.\n");
+			exit(1);
+		}
+
+		InterfaceInfo *itf=&tt->interfaces[tt->interface_count++];
+		memset(itf,0,sizeof(*itf));
+		strcpy(itf->name,d->name);
+		itf->method_count=d->method_count;
+		for (int k=0; k<d->method_count; k++)
+		{
+			Func *m=d->methods[k];
+			strcpy(itf->methods[k],m->name);
+			itf->ret_types[k]=m->ret_type;
+			itf->param_counts[k]=m->param_count;
+			for (int p=0; p<m->param_count; p++)
+			{
+				itf->param_types[k][p]=m->params[p].type;
+			}
+
+			itf->vslot[k]=tt->iface_slots++;   /* Global reserved slot. */
+		}
+	}
+}
+
+/* The reserved global vtable slot for method `name` if `c` implements an interface
+   that declares it; -1 otherwise. */
+static int iface_slot_for(TypeTable *tt, ClassInfo *c, const char *name)
+{
+	for (int ii=0; ii<c->implements_count; ii++)
+	{
+		InterfaceInfo *itf=types_find_interface(tt,c->implements[ii]);
+		for (int k=0; itf && k<itf->method_count; k++)
+		{
+			if (strcmp(itf->methods[k],name)==0)
+			{
+				return itf->vslot[k];
+			}
+		}
+	}
+
+	return -1;
+}
+
 static void link_parent(TypeTable *tt, ClassInfo *c, ClassDecl *d)
 {
 	if (!d->has_parent)
@@ -290,6 +363,8 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 	ClassDecl *d=u->klass;
 	ClassInfo *c=types_find_class(tt,d->name);
 	link_parent(tt,c,d);
+	c->implements_count=d->implements_count;
+	memcpy(c->implements,d->implements,sizeof(c->implements));
 	if (c->parent)
 	{
 		c->field_count=c->parent->field_count;
@@ -297,6 +372,10 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		c->method_count=c->parent->method_count;
 		memcpy(c->methods,c->parent->methods,sizeof(MethodInfo)*c->method_count);
 		c->vtable_size=c->parent->vtable_size;
+	}
+	else
+	{
+		c->vtable_size=tt->iface_slots;   /* Reserve [0..K) for interface methods; own methods follow. */
 	}
 
 	for (int i=0; i<d->field_count; i++)
@@ -323,7 +402,8 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 			mi=&c->methods[c->method_count++];
 			memset(mi,0,sizeof(*mi));
 			strcpy(mi->name,m->name);
-			mi->vtable_slot=c->vtable_size++;
+			int islot=iface_slot_for(tt,c,m->name);   /* Interface method -> its reserved global slot. */
+			mi->vtable_slot=(islot>=0) ? islot : c->vtable_size++;
 		}
 
 		strcpy(mi->owner_class,c->name);
@@ -348,5 +428,37 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		}
 
 		snprintf(c->ctor_asm_label,sizeof(c->ctor_asm_label),"__ctor_%s",c->name);
+	}
+
+	/* Verify every implemented interface is fully + correctly satisfied. */
+	for (int ii=0; ii<c->implements_count; ii++)
+	{
+		InterfaceInfo *itf=types_find_interface(tt,c->implements[ii]);
+		if (!itf)
+		{
+			fprintf(stderr,"Class %s: unknown interface '%s'.\n",c->name,c->implements[ii]);
+			exit(1);
+		}
+
+		for (int k=0; k<itf->method_count; k++)
+		{
+			MethodInfo *mi=types_find_method(c,itf->methods[k]);
+			int ok = mi && mi->ret_type.kind==itf->ret_types[k].kind
+					 && mi->param_count==itf->param_counts[k];
+			for (int p=0; ok && p<mi->param_count; p++)
+			{
+				if (mi->param_types[p].kind != itf->param_types[k][p].kind)
+				{
+					ok=0;
+				}
+			}
+
+			if (!ok)
+			{
+				fprintf(stderr,"Class %s does not satisfy interface %s: method '%s' missing or signature mismatch.\n",
+						c->name,itf->name,itf->methods[k]);
+				exit(1);
+			}
+		}
 	}
 }
