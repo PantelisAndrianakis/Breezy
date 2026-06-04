@@ -2590,11 +2590,17 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	case EX_FIELD:
 	{
-		/* Enum constant (Color.RED): load the singleton slot and retain (owned). */
+		/* Enum constant (Color.RED): load the singleton slot and retain (owned).
+		   Preserve rax across the call via the stack, NOT val_save -- this load can
+		   appear as a method-call receiver, where cg_call_with_args parks the callee
+		   address in val_save while evaluating the receiver. */
 		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
 		{
 			cg_emit(cg,"    mov rax, [rel __enum_%s_%s]", e->lhs->name, e->name);
-			cg_retain_rax(cg);
+			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+			cg_emit(cg,"    push rax");
+			cg_aligned_call(cg,"bzy_retain");
+			cg_emit(cg,"    pop rax");
 			break;
 		}
 

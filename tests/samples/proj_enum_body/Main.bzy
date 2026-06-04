@@ -1,0 +1,10 @@
+void main()
+{
+	print(Op.ADD.apply(3, 4));    // 7
+	print(Op.SUB.apply(10, 3));   // 7
+	print(Op.MUL.apply(6, 7));    // 42
+	Op o;
+	o = Op.ADD;
+	print(o.name());              // ADD
+	print(o.getClassName());      // Op   (not Op$ADD)
+}
