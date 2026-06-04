@@ -59,4 +59,7 @@ check file_attr   tests/samples/proj_file_attr   $'true\nfalse\nfalse\nfalse'
 check filewriter  tests/samples/proj_filewriter  $'102'
 check logger      tests/samples/proj_logger      $'200'
 check filechannel tests/samples/proj_filechannel  $'10'
+# TCP sockets (epoll reactor): loopback accept/connect/read/write + timeout.
+check tcp_echo       tests/samples/proj_tcp_echo       $'4'
+check socket_timeout tests/samples/proj_socket_timeout $'2'
 if [ $fail -eq 0 ]; then echo "All Linux integration tests passed"; else echo "FAILURES"; exit 1; fi

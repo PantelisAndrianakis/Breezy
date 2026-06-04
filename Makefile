@@ -8,7 +8,7 @@ ifeq ($(findstring Linux,$(UNAME)),Linux)
   CORO_SRC      = runtime/coroutine_posix.c
   PLATFORM_LIBS = -lpthread
   STACKFLAG     =
-  PLATFORM_DEFS = -D_POSIX_C_SOURCE=200809L   # Expose clock_gettime / sem_timedwait under -std=c99.
+  PLATFORM_DEFS = -D_GNU_SOURCE   # Expose POSIX (clock_gettime/sem_timedwait) + GNU (accept4/SOCK_NONBLOCK/MSG_NOSIGNAL) under -std=c99.
 else
   CORO_SRC      = runtime/coroutine_win.c
   PLATFORM_LIBS =
@@ -41,7 +41,7 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
 RT_COMMON = alloc print string array map vector clock random exception regex \
             map_entry channel timer reflect args scheduler
 ifeq ($(findstring Linux,$(UNAME)),Linux)
-  RT_NAMES = $(RT_COMMON) coroutine_posix offload file filechannel logger reactor_epoll
+  RT_NAMES = $(RT_COMMON) coroutine_posix offload file filechannel logger reactor_epoll socket
 else
   RT_NAMES = $(RT_COMMON) coroutine_win file offload system iocp socket udp filechannel logger http
 endif
