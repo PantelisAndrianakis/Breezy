@@ -75,6 +75,7 @@ int main(int argc, char *argv[])
 	LinkConfig cfg;
 	memset(&cfg, 0, sizeof(cfg));
 	const char *src_arg = NULL;
+	Target target = TARGET_WINDOWS;   /* Build-host default. */
 	for (int i = 1; i < argc; i++)
 	{
 		if (strcmp(argv[i],"--link")==0 && i+1 < argc)
@@ -82,6 +83,23 @@ int main(int argc, char *argv[])
 			if (cfg.nlibs < CFG_MAX_LIBS)
 			{
 				snprintf(cfg.libs[cfg.nlibs++],CFG_LIB_LEN,"%s",argv[++i]);
+			}
+		}
+		else if (strcmp(argv[i],"--target")==0 && i+1 < argc)
+		{
+			const char *t = argv[++i];
+			if (strcmp(t,"linux")==0)
+			{
+				target = TARGET_LINUX;
+			}
+			else if (strcmp(t,"windows")==0)
+			{
+				target = TARGET_WINDOWS;
+			}
+			else
+			{
+				fprintf(stderr,"Unknown --target '%s' (use linux|windows).\n", t);
+				return 1;
 			}
 		}
 		else if (!src_arg)
@@ -92,7 +110,7 @@ int main(int argc, char *argv[])
 
 	if (!src_arg)
 	{
-		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [--link <lib>]...\n");
+		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [--link <lib>]... [--target linux|windows]\n");
 		return 1;
 	}
 
@@ -145,17 +163,29 @@ int main(int argc, char *argv[])
 	}
 	Codegen cg;
 	cg_init(&cg,out);
+	cg.target = target;
 	cg_program(&cg,&tt,units,total);
 	fclose(out);
 	printf("Wrote out.asm\n");
 
-	if (system("nasm -f win64 out.asm -o out.obj")!=0)
+	const char *nasm_cmd = (target == TARGET_LINUX)
+						   ? "nasm -f elf64 out.asm -o out.obj"
+						   : "nasm -f win64 out.asm -o out.obj";
+	if (system(nasm_cmd)!=0)
 	{
 		fprintf(stderr,"Nasm failed.\n");
 		return 1;
 	}
 	char link_cmd[2048];
-	int off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32 -lwinhttp");
+	int off;
+	if (target == TARGET_LINUX)
+	{
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -l_breezy");
+	}
+	else
+	{
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32 -lwinhttp");
+	}
 	for (int i = 0; i < cfg.nlib_paths; i++)
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -L%s",cfg.lib_paths[i]);

@@ -4,10 +4,13 @@
 #include "ast.h"
 #include "types.h"
 
+typedef enum { TARGET_WINDOWS, TARGET_LINUX } Target;
+
 typedef struct
 {
 	FILE *out;
 	int label_count;
+	Target target;     /* Emission target ABI/format (Win64 vs System V AMD64). */
 	int sp_save;       /* The rbp offset holding the saved rsp across a runtime call. */
 	int val_save;      /* The rbp offset that preserves an object value across a call. */
 	int argtmp_base;   /* The rbp offset of ARGTMP[0]; ARGTMP[i] is argtmp_base + i*8. */

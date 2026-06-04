@@ -4,6 +4,7 @@ breezy.exe
 out.asm
 out.obj
 out.exe
+out_cg_test.asm
 lib_breezy.a
 
 # Unit test binaries

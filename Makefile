@@ -45,6 +45,9 @@ test_ast: tests/test_ast.c src/ast.c
 test_config: tests/test_config.c src/config.c
 	$(CC) $(CFLAGS) -o test_config tests/test_config.c src/config.c
 
+test_codegen: tests/test_codegen.c $(OBJS)
+	$(CC) $(CFLAGS) -o test_codegen tests/test_codegen.c $(OBJS)
+
 test_parser: tests/test_parser.c src/lexer.c src/ast.c src/parser.c
 	$(CC) $(CFLAGS) -o test_parser tests/test_parser.c src/lexer.c src/ast.c src/parser.c
 
@@ -93,7 +96,7 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
-test: test_lexer test_ast test_config test_parser test_types test_resolve test_ownership test_escape test_runtime breezy
+test: test_lexer test_ast test_config test_parser test_types test_resolve test_ownership test_escape test_codegen test_runtime breezy
 	./test_lexer
 	./test_ast
 	./test_config
@@ -102,6 +105,7 @@ test: test_lexer test_ast test_config test_parser test_types test_resolve test_o
 	./test_resolve
 	./test_ownership
 	./test_escape
+	./test_codegen
 	./test_runtime
 	bash tests/run_integration.sh
 
@@ -109,4 +113,4 @@ integration: breezy lib_breezy.a
 	bash tests/run_integration.sh
 
 clean:
-	rm -f breezy test_lexer test_ast test_config test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe
+	rm -f breezy test_lexer test_ast test_config test_codegen test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe out_cg_test.asm

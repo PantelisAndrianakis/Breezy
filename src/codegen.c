@@ -18,6 +18,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
 	cg->blocking_thunk_count=0;
+	cg->target=TARGET_WINDOWS;   /* Driver overrides via --target. */
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -36,7 +37,14 @@ int  cg_label(Codegen *cg)
 
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi);
-static const char *ARG_REG[4] = { "rcx","rdx","r8","r9" };   /* Win64. */
+/* The i-th integer/pointer argument register for the current target's ABI.
+   Win64 uses 4 (rcx,rdx,r8,r9); System V AMD64 uses 6 (rdi,rsi,rdx,rcx,r8,r9). */
+static const char *cg_iarg(Codegen *cg, int i)
+{
+	static const char *win[4] = { "rcx", "rdx", "r8", "r9" };
+	static const char *sysv[6] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
+	return (cg->target == TARGET_LINUX) ? sysv[i] : win[i];
+}
 
 /* Load a scalar from 'mem' into rax, sign- or zero-extending to 64 bits per its
    declared width. Objects and 64-bit integers load with a plain mov. */
@@ -533,10 +541,10 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		}
 		else
 		{
-			cg_emit(cg,"    mov %s, [rsp + %d]", ARG_REG[s], s*8);
+			cg_emit(cg,"    mov %s, [rsp + %d]", cg_iarg(cg, s), s*8);
 			if (marshal_cstr && slot_kind[s]==TY_STRING)
 			{
-				cg_emit(cg,"    add %s, 32", ARG_REG[s]);   /* string object -> char* data (NUL-terminated). */
+				cg_emit(cg,"    add %s, 32", cg_iarg(cg, s));   /* string object -> char* data (NUL-terminated). */
 			}
 		}
 	}
@@ -1286,7 +1294,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 		}
 		else
 		{
-			cg_emit(cg,"    mov %s, [rsp + %d]", ARG_REG[s], s*8);
+			cg_emit(cg,"    mov %s, [rsp + %d]", cg_iarg(cg, s), s*8);
 		}
 	}
 
@@ -3564,7 +3572,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	int reg = 0;
 	if (this_class)
 	{
-		cg_emit(cg,"    mov [rbp - 8], %s", ARG_REG[reg]);
+		cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg, reg));
 		reg++;
 	}
 
@@ -3582,7 +3590,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		}
 		else
 		{
-			cg_emit(cg,"    mov [rbp - %d], %s", slot, ARG_REG[reg]);
+			cg_emit(cg,"    mov [rbp - %d], %s", slot, cg_iarg(cg, reg));
 		}
 
 		reg++;
