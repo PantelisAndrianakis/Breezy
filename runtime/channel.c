@@ -1,8 +1,7 @@
 #include "breezy.h"
+#include "platform.h"
 #include <stdint.h>
 #include <stdlib.h>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 
 /* Bounded buffered channel (object_size = 104):
    0 vtable | 8 rc | 16 gcinfo | 24 cap | 32 count | 40 head | 48 ring(int64_t*) |
@@ -66,9 +65,9 @@ static CWaiter **C_RTAIL(void *c)
 {
 	return (CWaiter**)((char*)c + 88);
 }
-static SRWLOCK  *C_LOCK(void *c)
+static bzy_mutex *C_LOCK(void *c)
 {
-	return (SRWLOCK*)((char*)c + 96);
+	return (bzy_mutex*)((char*)c + 96);
 }
 
 static void wq_push(CWaiter **head, CWaiter **tail, CWaiter *w)
@@ -151,7 +150,7 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 		cap = 1;   /* V1 requires a buffer of at least one slot. */
 	}
 
-	void *c = bzy_alloc(104);
+	void *c = bzy_alloc(96 + sizeof(bzy_mutex));   /* Lock at 96; sized for the host's mutex (8 on Win, ~40 on POSIX). */
 	*(void**)c = channel_vtable();
 	*C_CAP(c) = cap;
 	*C_COUNT(c) = 0;
@@ -162,13 +161,13 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 	*C_STAIL(c) = NULL;
 	*C_RHEAD(c) = NULL;
 	*C_RTAIL(c) = NULL;
-	InitializeSRWLock(C_LOCK(c));
+	bzy_mutex_init(C_LOCK(c));
 	return c;
 }
 
 void bzy_channel_send(void *c, int64_t v)
 {
-	AcquireSRWLockExclusive(C_LOCK(c));
+	bzy_mutex_lock(C_LOCK(c));
 
 	/* A receiver is already waiting (channel was empty): hand the value over. */
 	CWaiter *r = wq_pop(C_RHEAD(c), C_RTAIL(c));
@@ -176,7 +175,7 @@ void bzy_channel_send(void *c, int64_t v)
 	{
 		*r->deliver = v;                    /* Move: the +1 passes straight to the receiver. */
 		void *rb = r->breeze;
-		ReleaseSRWLockExclusive(C_LOCK(c));
+		bzy_mutex_unlock(C_LOCK(c));
 		bzy_sched_wake(rb);                 /* Wake outside the channel lock (may cross cores). */
 		return;
 	}
@@ -184,7 +183,7 @@ void bzy_channel_send(void *c, int64_t v)
 	if (*C_COUNT(c) < *C_CAP(c))
 	{
 		ring_push(c, v);                    /* Buffer (owns the +1 until recv takes it). */
-		ReleaseSRWLockExclusive(C_LOCK(c));
+		bzy_mutex_unlock(C_LOCK(c));
 		return;
 	}
 
@@ -200,7 +199,7 @@ void bzy_channel_send(void *c, int64_t v)
 
 int64_t bzy_channel_recv(void *c)
 {
-	AcquireSRWLockExclusive(C_LOCK(c));
+	bzy_mutex_lock(C_LOCK(c));
 
 	if (*C_COUNT(c) > 0)
 	{
@@ -214,7 +213,7 @@ int64_t bzy_channel_recv(void *c)
 			sb = s->breeze;
 		}
 
-		ReleaseSRWLockExclusive(C_LOCK(c));
+		bzy_mutex_unlock(C_LOCK(c));
 		if (sb)
 		{
 			bzy_sched_wake(sb);             /* Wake outside the channel lock. */

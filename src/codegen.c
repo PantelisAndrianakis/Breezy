@@ -202,7 +202,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    sub rsp, 32");
 	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
 	cg_emit(cg,".L%d:", ok);
-	cg_emit(cg,"    lea rbx, [rax + rcx*8 + 32]");
+	cg_emit(cg,"    lea rbx, [rax + %s*8 + 32]", cg_iarg(cg, 0));   /* Index reg matches the OOB-check load above. */
 }
 
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no

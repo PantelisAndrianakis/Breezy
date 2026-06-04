@@ -1,8 +1,7 @@
 #include "breezy.h"
+#include "platform.h"
 #include <stdint.h>
 #include <stdlib.h>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 
 /* Timer object (object_size = 56), same managed-leaf idiom as channel:
    0 vtable | 8 rc | 16 gcinfo | 24 deadline | 32 period | 40 entry | 48 cancelled.
@@ -27,7 +26,7 @@ static void *timer_vtable(void)
 static void  **g_heap;
 static int64_t g_n;
 static int64_t g_cap;
-static SRWLOCK g_lock = SRWLOCK_INIT;
+static bzy_mutex g_lock = BZY_MUTEX_INIT;
 
 static void heap_swap(int64_t i, int64_t j)
 {
@@ -111,9 +110,9 @@ void *bzy_timer_schedule(void (*entry)(void), int64_t first_deadline, int64_t pe
 	T_CANCELLED(t) = 0;
 
 	bzy_retain(t);                 /* The heap's own reference (caller keeps the alloc +1). */
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	heap_push(t);
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 
 	bzy_sched_nudge();             /* A worker may be idle-parked; let it re-arm its timer wait. */
 	return t;                      /* Owned (+1) to the caller. */
@@ -151,9 +150,9 @@ void bzy_timer_cancel(void *t)
 		return;
 	}
 
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	T_CANCELLED(t) = 1;            /* Lazy: the heap evicts cancelled entries when it reaches them. */
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 }
 
 /* Drop cancelled entries sitting at the root. Caller holds g_lock. */
@@ -169,26 +168,26 @@ static void drop_cancelled_root(void)
 
 int64_t bzy_timer_next_deadline(void)
 {
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	drop_cancelled_root();
 	int64_t d = (g_n > 0) ? T_DEADLINE(g_heap[0]) : -1;
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 	return d;
 }
 
 void *bzy_timer_pop_due(int64_t now)
 {
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	drop_cancelled_root();
 	if (g_n == 0 || T_DEADLINE(g_heap[0]) > now)
 	{
-		ReleaseSRWLockExclusive(&g_lock);
+		bzy_mutex_unlock(&g_lock);
 		return NULL;
 	}
 
 	void *root = g_heap[0];
 	heap_pop_root();
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 	return root;                  /* Heap ref transferred to the caller (the scheduler). */
 }
 
@@ -201,27 +200,27 @@ void bzy_timer_reinsert(void *t, int64_t now)
 	}
 
 	T_DEADLINE(t) = d;
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	heap_push(t);                 /* The caller's transferred ref becomes the heap's ref again. */
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 }
 
 int64_t bzy_timer_count(void)
 {
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	int64_t n = g_n;
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 	return n;
 }
 
 void bzy_timer_reset(void)
 {
-	AcquireSRWLockExclusive(&g_lock);
+	bzy_mutex_lock(&g_lock);
 	for (int64_t i = 0; i < g_n; i++)
 	{
 		bzy_release(g_heap[i]);   /* Drop every heap reference. */
 	}
 
 	g_n = 0;
-	ReleaseSRWLockExclusive(&g_lock);
+	bzy_mutex_unlock(&g_lock);
 }
