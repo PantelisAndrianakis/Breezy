@@ -1167,12 +1167,10 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Arithmetic operands must be integers.",NULL);
 		}
 
-		if (ty_is_signed(a)!=ty_is_signed(b))
-		{
-			die(e->line,"Mixed signedness in arithmetic; add a cast.",NULL);
-		}
-
-		e->type.kind = ty_rank(a)>=ty_rank(b) ? a : b;   /* Wider operand wins. */
+		/* Integer promotion: the wider rank wins. For mixed signedness, unsigned
+		   wins (C-style) — the result is the unsigned type at the wider rank. */
+		TypeKind wider = ty_rank(a)>=ty_rank(b) ? a : b;
+		e->type.kind = (ty_is_signed(a)!=ty_is_signed(b)) ? ty_to_unsigned(wider) : wider;
 		break;
 	}
 	case EX_FIELD:

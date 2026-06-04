@@ -60,6 +60,7 @@ check scalars     tests/samples/proj_scalars   $'0\n0\n5000000000\n4000000000\nt
 check floats      tests/samples/proj_floats    $'3.75\n3.375\n7\ntrue\n10\n1.5'
 check floats_fn   tests/samples/proj_floats_fn $'10'
 check promote     tests/samples/proj_promote   $'5\n5\n12\n13\nfalse\ntrue'
+check promote_signed tests/samples/proj_promote_signed $'8\n2\n15\n1\n0\n10000000005'
 check string      tests/samples/proj_string    $'Hello, Breezy\n13'
 check str_concat_val tests/samples/proj_str_concat_value $'Score: 42\n42 points\nx=3 y=7\nok? true\nd=1.5\nab'
 check array       tests/samples/proj_array     $'30'

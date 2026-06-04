@@ -124,6 +124,25 @@ static inline int ty_rank(TypeKind k)
 	return ty_is_int(k) ? ty_bits(k) : 0;
 }
 
+/* The unsigned integer kind of the same width. Unsigned and non-integer kinds
+   are returned unchanged. Used for C-style "unsigned wins" mixed-sign promotion. */
+static inline TypeKind ty_to_unsigned(TypeKind k)
+{
+	switch (k)
+	{
+	case TY_BYTE:
+		return TY_UBYTE;
+	case TY_SHORT:
+		return TY_USHORT;
+	case TY_INT:
+		return TY_UINT;
+	case TY_LONG:
+		return TY_ULONG;
+	default:
+		return k;
+	}
+}
+
 typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,

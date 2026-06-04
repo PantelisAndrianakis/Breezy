@@ -35,6 +35,32 @@ Breezy is **statically typed**: every variable has a type known at compile time,
 
 ---
 
+## Mixing numeric types
+
+When an arithmetic expression mixes numeric types, the result **promotes** to the more general type - you do not need a cast for the common cases:
+
+- **Floating wins.** If either operand is `double`, the result is `double`; otherwise if either is `float`, the result is `float`. Integers convert into the floating type automatically. So `int + float` is a `float`, and `int + double` is a `double`.
+- **Wider integer wins.** For two integers of the **same** signedness, the result is the wider one: `byte + int` is an `int`, `int + long` is a `long`.
+- **Unsigned wins on a sign mix.** If one operand is signed and the other unsigned, the result is the **unsigned** type at the wider rank: `int + uint` is a `uint`, `long + uint` is a `ulong`. As in C, a negative value treated as unsigned wraps around - so mix signs deliberately.
+
+```breezy
+int i;
+i = 3;
+float f;
+f = 2.0f;
+print(i + f);        // 5   -- int + float promotes to float.
+
+byte b;
+b = 100;
+int n;
+n = 50;
+print(b + n);        // 150 -- byte + int promotes to int.
+```
+
+The result type is what the expression *produces*; assigning it to a narrower or differently-signed variable can still require an explicit cast. **Comparisons** (`<`, `==`, ...) still require both operands to share signedness - add a cast to compare a signed and an unsigned value, since the safe answer is rarely obvious.
+
+---
+
 ## Reference types
 
 `string`, arrays, maps, collections, channels, and your own classes are **reference types** - they live on the heap (when they escape their scope) and are managed automatically by [ARC and the cycle collector](../memory/automatic-memory.md). You never free them.

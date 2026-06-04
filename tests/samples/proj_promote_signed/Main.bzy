@@ -1,0 +1,24 @@
+// Mixed-signedness arithmetic: unsigned wins (C-style), at the wider rank.
+void main()
+{
+	int s;
+	s = 5;
+	uint u;
+	u = 3u;
+	print(s + u);        // 8  (uint).
+	print(s - u);        // 2  (uint).
+	print(s * u);        // 15 (uint).
+	print(s / u);        // 1  (unsigned division).
+
+	int neg;
+	neg = 0 - 1;         // -1.
+	uint one;
+	one = 1u;
+	print(neg + one);    // (uint)-1 + 1 wraps to 0.
+
+	long bigl;
+	bigl = 10000000000L;
+	uint five;
+	five = 5u;
+	print(bigl + five);  // 10000000005 (ulong, wider rank wins).
+}

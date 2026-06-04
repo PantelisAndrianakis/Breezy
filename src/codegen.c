@@ -439,7 +439,10 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_expr(cg,tt,e->rhs);
 	cg_emit(cg,"    mov rbx, rax");
 	cg_emit(cg,"    pop rax");
-	int uns = ty_is_unsigned(e->lhs->type.kind);   /* Operands share signedness. */
+	/* Unsigned if either operand is unsigned: division then uses the unsigned
+	   form (C-style "unsigned wins"), and comparisons — where the resolver still
+	   requires matching signedness — see the operands' shared signedness. */
+	int uns = ty_is_unsigned(e->lhs->type.kind) || ty_is_unsigned(e->rhs->type.kind);
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
