@@ -152,6 +152,44 @@ static void test_parse_interface_and_implements(void)
 	ASSERT_STR(u->klass->implements[0], "Speaker");
 }
 
+static void test_generic_class_decl(void)
+{
+	Unit *u = parse_unit_str("class Box<T> { T value; T get() { return this.value; } }");
+	ASSERT_INT(u->klass->type_param_count, 1);
+	ASSERT_STR(u->klass->type_params[0], "T");
+	ASSERT_STR(u->klass->type_param_bounds[0], "");   /* unbounded */
+	ASSERT_INT(u->klass->fields[0].type.kind, TY_OBJECT);  /* bare T parses as object "T" */
+	ASSERT_STR(u->klass->fields[0].type.class_name, "T");
+}
+
+static void test_generic_class_multi_and_bound(void)
+{
+	Unit *u = parse_unit_str("class Pair<K, V: Speaker> { K k; V v; }");
+	ASSERT_INT(u->klass->type_param_count, 2);
+	ASSERT_STR(u->klass->type_params[1], "V");
+	ASSERT_STR(u->klass->type_param_bounds[1], "Speaker");
+}
+
+static void test_generic_application_type(void)
+{
+	Unit *u = parse_unit_str("void m() { Pair<int, string> p; }");
+	TypeRef *t = &u->funcs[0]->body->stmts[0]->decl_type;
+	ASSERT_INT(t->kind, TY_GENERIC);
+	ASSERT_STR(t->class_name, "Pair");
+	ASSERT_INT(t->targ_count, 2);
+	ASSERT_INT(t->targs[0]->kind, TY_INT);
+	ASSERT_INT(t->targs[1]->kind, TY_STRING);
+}
+
+static void test_new_generic_with_args(void)
+{
+	Expr *e = parse_str("new Pair<int, string>(1, \"x\")");
+	ASSERT_INT(e->kind, EX_NEWGEN);
+	ASSERT_STR(e->type.class_name, "Pair");
+	ASSERT_INT(e->type.targ_count, 2);
+	ASSERT_INT(e->arg_count, 2);
+}
+
 static void test_parse_extern_blocking(void)
 {
 	Unit *u = parse_unit_str("extern blocking long read_db(long h); void main() { }");
@@ -487,6 +525,10 @@ int main(void)
 	RUN(test_parse_extern_decl);
 	RUN(test_parse_extern_blocking);
 	RUN(test_parse_interface_and_implements);
+	RUN(test_generic_class_decl);
+	RUN(test_generic_class_multi_and_bound);
+	RUN(test_generic_application_type);
+	RUN(test_new_generic_with_args);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);

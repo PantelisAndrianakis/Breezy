@@ -292,10 +292,24 @@ static Expr *parse_primary(Parser *p)
 		}
 		if (et.kind==TY_GENERIC)
 		{
-			expect(p,TOKEN_LPAREN);
-			expect(p,TOKEN_RPAREN);
 			Expr *e=expr_new(EX_NEWGEN,line);
-			e->type=et;                       /* Carries class_name (template) + elem (T). */
+			e->type=et;                       /* class_name (template) + elem or targs. */
+			expect(p,TOKEN_LPAREN);
+			if (et.targ_count>0 && !check(p,TOKEN_RPAREN))
+			{
+				do
+				{
+					if (e->arg_count>=8)
+					{
+						fprintf(stderr,"line %d: Too many constructor arguments.\n",line);
+						exit(1);
+					}
+					e->args[e->arg_count++]=parse_expr(p);
+				}
+				while (match(p,TOKEN_COMMA));
+			}
+
+			expect(p,TOKEN_RPAREN);
 			return e;
 		}
 		if (check(p,TOKEN_LBRACKET))
@@ -446,24 +460,40 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	   '<' is a clear error, not a downstream parse failure. */
 	if (check(p,TOKEN_IDENT) && p->peek.type==TOKEN_LT)
 	{
-		if (!is_generic_template(p->cur.text))
-		{
-			fprintf(stderr,"line %d: Unknown generic template '%s' (user-defined generics are not supported).\n",
-					p->cur.line, p->cur.text);
-			exit(1);
-		}
-
 		char tmpl[64];
 		strcpy(tmpl,p->cur.text);
-		advance(p);                 /* Template name. */
+		int builtin = is_generic_template(tmpl);
+		advance(p);                 /* Template / generic-class name. */
 		expect(p,TOKEN_LT);
-		TypeRef el;
-		parse_type(p,&el);
-		expect(p,TOKEN_GT);
 		out->kind=TY_GENERIC;
 		strcpy(out->class_name,tmpl);
-		out->elem=typeref_box(el);
+		out->elem=NULL;
 		out->elem2=NULL;
+		out->targ_count=0;
+		if (builtin)
+		{
+			TypeRef el;
+			parse_type(p,&el);
+			out->elem=typeref_box(el);   /* Built-in templates carry T in elem (4e/4f). */
+		}
+		else
+		{
+			/* User-generic application: Name<T1, T2, ...>; validated whole-program. */
+			do
+			{
+				if (out->targ_count>=MAX_TYPE_ARGS)
+				{
+					fprintf(stderr,"line %d: Too many type arguments.\n",p->cur.line);
+					exit(1);
+				}
+				TypeRef a;
+				parse_type(p,&a);
+				out->targs[out->targ_count++]=typeref_box(a);
+			}
+			while (match(p,TOKEN_COMMA));
+		}
+
+		expect(p,TOKEN_GT);
 		return 1;
 	}
 	if (check(p,TOKEN_MAP))
@@ -638,8 +668,9 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
-	/* `Box<...>` etc.: a known template name followed by '<'. */
-	if (check(p,TOKEN_IDENT) && is_generic_template(p->cur.text) && p->peek.type == TOKEN_LT)
+	/* `Box<...>` / `Pair<...>` etc.: any IDENT followed by '<' begins a generic
+	   variable declaration (Breezy has no bare comparison statements). */
+	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_LT)
 	{
 		return 1;
 	}
@@ -1181,6 +1212,29 @@ static ClassDecl *parse_class(Parser *p)
 	ClassDecl *c=class_new();
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(c->name,name.text);
+	if (match(p,TOKEN_LT))
+	{
+		do
+		{
+			if (c->type_param_count>=MAX_TYPE_PARAMS)
+			{
+				fprintf(stderr,"line %d: Too many type parameters.\n",p->cur.line);
+				exit(1);
+			}
+			Token tp=expect(p,TOKEN_IDENT);
+			strcpy(c->type_params[c->type_param_count],tp.text);
+			if (match(p,TOKEN_COLON))
+			{
+				Token b=expect(p,TOKEN_IDENT);
+				strcpy(c->type_param_bounds[c->type_param_count],b.text);
+			}
+
+			c->type_param_count++;
+		}
+		while (match(p,TOKEN_COMMA));
+		expect(p,TOKEN_GT);
+	}
+
 	if (match(p,TOKEN_EXTENDS))
 	{
 		Token par=expect(p,TOKEN_IDENT);

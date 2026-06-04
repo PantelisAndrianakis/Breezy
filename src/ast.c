@@ -88,3 +88,107 @@ Unit      *unit_new(void)
 {
 	return track(calloc(1,sizeof(Unit)));
 }
+
+TypeRef typeref_deepcopy(const TypeRef *t)
+{
+	TypeRef r=*t;   /* Copies scalars + class_name + targ_count by value. */
+	r.elem  = t->elem  ? typeref_box(typeref_deepcopy(t->elem))  : NULL;
+	r.elem2 = t->elem2 ? typeref_box(typeref_deepcopy(t->elem2)) : NULL;
+	for (int i=0; i<t->targ_count; i++)
+	{
+		r.targs[i]=typeref_box(typeref_deepcopy(t->targs[i]));
+	}
+	return r;
+}
+
+Expr *expr_clone(const Expr *e)
+{
+	if (!e)
+	{
+		return NULL;
+	}
+
+	Expr *n=expr_new(e->kind,e->line);
+	*n=*e;                                   /* Shallow copy scalars + arrays. */
+	n->type=typeref_deepcopy(&e->type);
+	n->lhs=expr_clone(e->lhs);
+	n->rhs=expr_clone(e->rhs);
+	for (int i=0; i<e->arg_count; i++)
+	{
+		n->args[i]=expr_clone(e->args[i]);
+	}
+	return n;
+}
+
+Stmt *stmt_clone(const Stmt *s)
+{
+	if (!s)
+	{
+		return NULL;
+	}
+
+	Stmt *n=stmt_new(s->kind,s->line);
+	*n=*s;
+	n->decl_type=typeref_deepcopy(&s->decl_type);
+	n->fe_val_type=typeref_deepcopy(&s->fe_val_type);
+	n->decl_init=expr_clone(s->decl_init);
+	n->for_init=stmt_clone(s->for_init);
+	n->for_post=stmt_clone(s->for_post);
+	n->target=expr_clone(s->target);
+	n->value=expr_clone(s->value);
+	n->cond=expr_clone(s->cond);
+	n->ret_val=expr_clone(s->ret_val);
+	n->expr=expr_clone(s->expr);
+	n->then_blk=block_clone(s->then_blk);
+	n->else_blk=block_clone(s->else_blk);
+	return n;
+}
+
+Block *block_clone(const Block *b)
+{
+	if (!b)
+	{
+		return NULL;
+	}
+
+	Block *n=block_new();
+	for (int i=0; i<b->count; i++)
+	{
+		block_push(n,stmt_clone(b->stmts[i]));
+	}
+	return n;
+}
+
+Func *func_clone(const Func *f)
+{
+	if (!f)
+	{
+		return NULL;
+	}
+
+	Func *n=func_new();
+	*n=*f;
+	n->ret_type=typeref_deepcopy(&f->ret_type);
+	for (int i=0; i<f->param_count; i++)
+	{
+		n->params[i].type=typeref_deepcopy(&f->params[i].type);
+	}
+	n->body=block_clone(f->body);
+	return n;
+}
+
+ClassDecl *classdecl_clone(const ClassDecl *c)
+{
+	ClassDecl *n=class_new();
+	*n=*c;
+	for (int i=0; i<c->field_count; i++)
+	{
+		n->fields[i].type=typeref_deepcopy(&c->fields[i].type);
+	}
+	for (int i=0; i<c->method_count; i++)
+	{
+		n->methods[i]=func_clone(c->methods[i]);
+	}
+	n->ctor=func_clone(c->ctor);
+	return n;
+}

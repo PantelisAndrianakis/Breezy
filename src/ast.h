@@ -25,12 +25,15 @@ typedef enum
 	TY_STRING,  /* Immutable string. */
 	TY_NULL     /* The `null` literal: a bare 0 assignable to any managed reference. */
 } TypeKind;
+#define MAX_TYPE_ARGS 4
 typedef struct TypeRef
 {
 	TypeKind kind;
 	char class_name[64];
 	struct TypeRef *elem;    /* TY_ARRAY element, or TY_MAP key; NULL otherwise. */
 	struct TypeRef *elem2;   /* TY_MAP value; NULL otherwise. */
+	struct TypeRef *targs[MAX_TYPE_ARGS];   /* User-generic application args (TY_GENERIC, user class). */
+	int targ_count;          /* 0 for built-in templates (Box/List/...), which use elem/elem2. */
 } TypeRef;
 
 /* Width in bits of a scalar kind. Booleans report 1; objects/strings are
@@ -211,6 +214,7 @@ typedef struct
 	TypeRef type;
 	char name[64];
 } Field;
+#define MAX_TYPE_PARAMS 4
 typedef struct
 {
 	char  name[64];
@@ -218,6 +222,9 @@ typedef struct
 	int has_parent;
 	char implements[8][64];   /* Interface names this class implements. */
 	int implements_count;
+	char type_params[MAX_TYPE_PARAMS][64];        /* Generic class: parameter names, e.g. "T". */
+	char type_param_bounds[MAX_TYPE_PARAMS][64];  /* Interface bound per param, or "" if none. */
+	int  type_param_count;                        /* 0 = ordinary (non-generic) class. */
 	Field fields[32];
 	int field_count;
 	Func *methods[32];
@@ -251,5 +258,12 @@ Func  *func_new(void);
 ClassDecl *class_new(void);
 InterfaceDecl *interface_new(void);
 Unit  *unit_new(void);
+
+TypeRef    typeref_deepcopy(const TypeRef *t);   /* Deep copy incl. elem/elem2/targs. */
+Expr      *expr_clone(const Expr *e);
+Stmt      *stmt_clone(const Stmt *s);
+Block     *block_clone(const Block *b);
+Func      *func_clone(const Func *f);
+ClassDecl *classdecl_clone(const ClassDecl *c);
 
 #endif
