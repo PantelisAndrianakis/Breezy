@@ -1068,6 +1068,11 @@ static Func *parse_extern(Parser *p)
 	expect(p,TOKEN_EXTERN);
 	Func *f=func_new();
 	f->is_extern=1;
+	if (match(p,TOKEN_BLOCKING))
+	{
+		f->is_blocking=1;
+	}
+
 	parse_type(p,&f->ret_type);
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(f->name,name.text);

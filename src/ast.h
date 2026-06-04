@@ -199,6 +199,7 @@ typedef struct
 	int param_count;
 	Block  *body;
 	int     is_extern;        /* FFI: declared with `extern`, no body; asm_label is the raw C symbol. */
+	int     is_blocking;      /* FFI: `extern blocking` — dispatch via the offload pool. */
 	int     frame_size;       /* Resolver. */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
