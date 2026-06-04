@@ -3277,9 +3277,23 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			if (s->ret_val)
 			{
 				cg_expr(cg,tt,s->ret_val);
+				if (f->obj_local_count > 0)
+				{
+					/* Preserve the scalar return value (rax) across the local
+					   releases: bzy_release clobbers rax. */
+					cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+					cg_release_object_locals(cg, f, -1);
+					cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+				}
+				else
+				{
+					cg_release_object_locals(cg, f, -1);
+				}
 			}
-
-			cg_release_object_locals(cg, f, -1);
+			else
+			{
+				cg_release_object_locals(cg, f, -1);
+			}
 		}
 
 		if (in_main)

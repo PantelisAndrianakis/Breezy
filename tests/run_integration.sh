@@ -2,9 +2,20 @@
 set -u
 export TZ=UTC0   # Make Clock.getDateString output deterministic across machines.
 fail=0
+# Compile a sample, retrying a few times: on Windows a just-run out.exe can stay
+# briefly locked by the OS/AV, so gcc's link to out.exe transiently fails with a
+# sharing violation. Used by the success-expecting checks (not check_fail).
+bzy_build() {
+    local target="$1" i
+    for i in 1 2 3 4 5; do
+        ./breezy "$target" >/dev/null 2>&1 && return 0
+        sleep 0.3
+    done
+    return 1
+}
 check() {
     local name="$1" target="$2" expected="$3"
-    ./breezy "$target" >/dev/null 2>&1
+    bzy_build "$target"
     if [ $? -ne 0 ]; then echo "  $name: COMPILE FAILED"; fail=1; return; fi
     local got; got="$(./out.exe)"
     got="${got//$'\r'/}"   # Normalize Windows CRLF line endings to LF.
@@ -19,14 +30,14 @@ check_fail() {
 }
 check_abort() {
     local name="$1" target="$2"
-    ./breezy "$target" >/dev/null 2>&1 || { echo "  $name: COMPILE FAILED"; fail=1; return; }
+    bzy_build "$target" || { echo "  $name: COMPILE FAILED"; fail=1; return; }
     ./out.exe >/dev/null 2>&1
     if [ $? -ne 0 ]; then echo "  $name: OK (aborted)"
     else echo "  $name: FAIL (no abort)"; fail=1; fi
 }
 check_throws() {
     local name="$1" target="$2" expect="$3"
-    ./breezy "$target" >/dev/null 2>&1 || { echo "  $name: COMPILE FAILED"; fail=1; return; }
+    bzy_build "$target" || { echo "  $name: COMPILE FAILED"; fail=1; return; }
     local out; out="$(./out.exe 2>&1)"; local code=$?
     out="${out//$'\r'/}"
     if [ $code -eq 0 ]; then echo "  $name: FAIL (expected abort)"; fail=1
@@ -105,6 +116,7 @@ check catch_multi tests/samples/proj_catch_multi   $'bee\n99'
 check catch_subclass tests/samples/proj_catch_subclass $'missing\n0'
 check rethrow     tests/samples/proj_rethrow       "bee"
 check catch_oob   tests/samples/proj_catch_oob     $'Array index 5 out of bounds for length 3.\n99'
+check catch_param tests/samples/proj_catch_param   $'7'
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

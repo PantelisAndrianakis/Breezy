@@ -1,0 +1,20 @@
+// Regression: reading a function parameter after a caught exception must return
+// the parameter's value, not garbage. Prints 7.
+int f(int d)
+{
+	try
+	{
+		Exception e;
+		e = new Exception();
+		throw e;
+	}
+	catch (Exception ex)
+	{
+		return d;
+	}
+}
+
+void main()
+{
+	print(f(7));   // 7
+}
