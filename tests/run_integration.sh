@@ -130,6 +130,9 @@ check interface_poly tests/samples/proj_interface_poly $'woof\nmeow'
 check_fail generic_bound   tests/samples/bad_generic_bound
 check_fail generic_arity   tests/samples/bad_generic_arity
 check_fail generic_unknown tests/samples/bad_generic_unknown
+check generic_box   tests/samples/proj_generic_box   $'7\nhi'
+check generic_pair  tests/samples/proj_generic_pair  $'42\nanswer'
+check generic_announce tests/samples/proj_generic_bound $'woof\nmeow'
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

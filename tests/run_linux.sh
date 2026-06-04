@@ -35,6 +35,9 @@ check str_isnum   tests/samples/proj_str_isnum  $'true\ntrue\nfalse\ntrue\nfalse
 check catch       tests/samples/proj_catch      $'caught it\n0'
 check catch_param tests/samples/proj_catch_param $'7'
 check interface_poly tests/samples/proj_interface_poly $'woof\nmeow'
+check generic_box      tests/samples/proj_generic_box   $'7\nhi'
+check generic_pair     tests/samples/proj_generic_pair  $'42\nanswer'
+check generic_announce tests/samples/proj_generic_bound $'woof\nmeow'
 check math_basic  tests/samples/proj_math_basic $'4\n5\n2.5'
 check vec2        tests/samples/proj_vec2       $'5\nfalse\ntrue\n5'
 # Concurrency: cooperative single-worker ordering is deterministic (pin to 1).

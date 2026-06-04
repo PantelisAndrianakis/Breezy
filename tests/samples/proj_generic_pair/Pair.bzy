@@ -1,0 +1,8 @@
+class Pair<K, V>
+{
+	K k;
+	V v;
+	Pair(K k, V v) { this.k = k; this.v = v; }
+	K first() { return this.k; }
+	V second() { return this.v; }
+}

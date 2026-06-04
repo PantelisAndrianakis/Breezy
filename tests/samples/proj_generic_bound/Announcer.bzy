@@ -1,0 +1,6 @@
+class Announcer<T: Speaker>
+{
+	T who;
+	void set(T w) { this.who = w; }
+	string announce() { return this.who.speak(); }
+}

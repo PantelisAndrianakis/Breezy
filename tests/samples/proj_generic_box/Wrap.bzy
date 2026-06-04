@@ -1,0 +1,6 @@
+class Wrap<T>
+{
+	T value;
+	void set(T v) { this.value = v; }
+	T get() { return this.value; }
+}

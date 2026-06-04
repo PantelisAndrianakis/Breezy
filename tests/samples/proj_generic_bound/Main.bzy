@@ -1,0 +1,12 @@
+void main()
+{
+	Announcer<Dog> ad;
+	ad = new Announcer<Dog>();
+	ad.set(new Dog());
+	print(ad.announce());    // woof
+
+	Announcer<Cat> ac;
+	ac = new Announcer<Cat>();
+	ac.set(new Cat());
+	print(ac.announce());    // meow
+}

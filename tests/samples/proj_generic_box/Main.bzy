@@ -1,0 +1,12 @@
+void main()
+{
+	Wrap<int> wi;
+	wi = new Wrap<int>();
+	wi.set(7);
+	print(wi.get());        // 7
+
+	Wrap<string> ws;
+	ws = new Wrap<string>();
+	ws.set("hi");
+	print(ws.get());        // hi
+}

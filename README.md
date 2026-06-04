@@ -131,6 +131,32 @@ print(s.speak());   // woof  -- dispatched through the interface
 
 Dispatch is **zero-overhead**: interface methods occupy reserved vtable slots shared by every implementer, so an interface call is the same single indirect load as a virtual call — and an interface value is a single object pointer (ARC-tracked like any object), not a fat pointer.
 
+**Generics.** Declare your own parametric classes — `class Box<T>`, `class Pair<K, V>` — with optional **interface bounds** (`<T: Speaker>`) that let you call the bound's methods on a value of the type parameter.
+
+```breezy
+class Pair<K, V>
+{
+    K k;
+    V v;
+    Pair(K k, V v) { this.k = k; this.v = v; }
+    K first() { return this.k; }
+    V second() { return this.v; }
+}
+
+interface Speaker { string speak(); }
+class Announcer<T: Speaker>
+{
+    T who;
+    string announce() { return this.who.speak(); }   // allowed: T is bound to Speaker
+}
+
+Pair<int, string> p;
+p = new Pair<int, string>(42, "answer");
+print(p.first());    // 42
+```
+
+Generics are **monomorphized**: the compiler synthesizes one ordinary class per concrete instantiation (`Pair$int$string`, `Announcer$Dog`), so there is **no boxing and no dispatch overhead** — `Pair<int, string>` stores a real `int`, and a generic method call is a direct call. A type that uses no generics compiles to exactly the same code as before the feature existed.
+
 ### Built-in Vector Types
 
 Eight ready-made vector types ship with the language — `Vector2i` / `Vector2l` / `Vector2f` / `Vector2d` (fields `x`, `y`) and `Vector3i` / `Vector3l` / `Vector3f` / `Vector3d` (fields `x`, `y`, `z`) — each with a constructor, `equals` (component-wise), and `calculateDistance` (euclidean). They're ordinary classes, so a non-escaping vector local is stack-allocated (no heap, no reference counting).
@@ -1005,5 +1031,6 @@ The language design is settled. The compiler and runtime are being built from sc
 **Other targets & beyond**
 - [x] x86-64 codegen (Linux ELF64) — full language + runtime as native ELF (Part 8 complete: 8-1…8-5)
 - [x] Interfaces — `interface`/`implements`, polymorphism without inheritance, zero-overhead shared-vtable-slot dispatch (Part 9-1)
-- [ ] User-definable generics (`class Foo<T>`, interface-bounded), extended standard library
+- [x] User-definable generics — `class Box<T>`, multi-param `Pair<K, V>`, interface bounds (`<T: Speaker>`), monomorphized to ordinary classes (Part 9-2)
+- [ ] Extended standard library (sorted/tree maps, priority queue, math, time, formatting)
 - [ ] Self-hosting compiler

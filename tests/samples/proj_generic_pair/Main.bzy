@@ -1,0 +1,7 @@
+void main()
+{
+	Pair<int, string> p;
+	p = new Pair<int, string>(42, "answer");
+	print(p.first());    // 42
+	print(p.second());   // answer
+}

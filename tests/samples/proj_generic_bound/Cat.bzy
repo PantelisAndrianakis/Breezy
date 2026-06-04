@@ -1,0 +1,4 @@
+class Cat implements Speaker
+{
+	string speak() { return "meow"; }
+}

@@ -1,0 +1,4 @@
+class Dog implements Speaker
+{
+	string speak() { return "woof"; }
+}
