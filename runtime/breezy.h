@@ -197,8 +197,12 @@ void *bzy_iocp_op_overlapped(IocpOp *op);/* &op->ov, to pass to WSARecv/WSASend/
 void  bzy_iocp_park(IocpOp *op);         /* Park until the completion thread wakes this op. */
 unsigned long bzy_iocp_op_bytes(IocpOp *op);  /* Bytes transferred (valid after resume). */
 int   bzy_iocp_op_err(IocpOp *op);            /* 0 on success else a Winsock error (valid after resume). */
-int64_t bzy_iocp_inflight(void);         /* Breezes currently parked on a network op. */
+int64_t bzy_iocp_inflight(void);         /* Breezes parked on a network op (Windows: iocp.c; Linux: reactor_epoll.c). */
 void  bzy_iocp_shutdown(void);           /* Stop the completion thread + close the port (no-op if unused). */
+/* Linux epoll reactor (the IOCP counterpart): readiness-park primitive for sockets. */
+void  bzy_reactor_ensure(void);          /* Lazily create the epoll instance + reactor thread. */
+int   bzy_reactor_wait(int fd, int want_write, int64_t timeout_ms);   /* 1 ready, 0 timeout, -1 error. */
+void  bzy_reactor_shutdown(void);        /* Stop the reactor thread (no-op if unused). */
 
 /* TCP sockets (6b-2): managed leaf objects holding a SOCKET fd; the finalizer
    closesocket()s. accept/connect/read park the calling breeze on the IOCP. */
