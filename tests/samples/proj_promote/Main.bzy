@@ -1,0 +1,17 @@
+// Numeric promotion: mixed float/int and float/double arithmetic.
+void main()
+{
+	int i;
+	i = 3;
+	float f;
+	f = 2.0f;
+	double d;
+	d = 10.0;
+
+	print(i + f);   // int + float -> float -> 5.
+	print(f + i);   // float + int -> float -> 5.
+	print(f + d);   // float + double -> double -> 12.
+	print(i + d);   // int + double -> double -> 13.
+	print(i < f);   // 3 < 2.0 -> false.
+	print(f < d);   // 2.0 < 10.0 -> true.
+}

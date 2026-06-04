@@ -309,26 +309,34 @@ static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    add rsp, 32");
 }
 
+/* Widen the operand just evaluated (an integer in rax, or a float/double already
+   in xmm0) to the common floating type `ct`, leaving the result in xmm0. */
+static void cg_fp_promote(Codegen *cg, TypeKind from, TypeKind ct)
+{
+	if (ty_is_int(from))
+	{
+		cg_emit(cg, ct==TY_DOUBLE ? "    cvtsi2sd xmm0, rax" : "    cvtsi2ss xmm0, rax");
+	}
+	else if (from==TY_FLOAT && ct==TY_DOUBLE)
+	{
+		cg_emit(cg,"    cvtss2sd xmm0, xmm0");
+	}
+}
+
 /* Floating-point binary op. Operands evaluate to xmm0; the left operand is
-   spilled on the machine stack so nested FP expressions compose correctly. The
-   one legal int operand (int + double) is promoted with cvtsi2sd. */
+   spilled on the machine stack so nested FP expressions compose correctly. Both
+   operands promote to the common type: double if either side is double,
+   otherwise float (integers convert in with cvtsi2ss/sd). */
 static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	const char *sfx = (e->lhs->type.kind==TY_FLOAT && e->rhs->type.kind==TY_FLOAT) ? "ss" : "sd";
+	TypeKind ct = (e->lhs->type.kind==TY_DOUBLE || e->rhs->type.kind==TY_DOUBLE) ? TY_DOUBLE : TY_FLOAT;
+	const char *sfx = (ct==TY_DOUBLE) ? "sd" : "ss";
 	cg_expr(cg,tt,e->lhs);
-	if (ty_is_int(e->lhs->type.kind))
-	{
-		cg_emit(cg,"    cvtsi2sd xmm0, rax");
-	}
-
+	cg_fp_promote(cg, e->lhs->type.kind, ct);
 	cg_emit(cg,"    sub rsp, 8");
 	cg_emit(cg,"    movsd qword [rsp], xmm0");   /* Spill lhs (float lives in the low 4 bytes). */
 	cg_expr(cg,tt,e->rhs);
-	if (ty_is_int(e->rhs->type.kind))
-	{
-		cg_emit(cg,"    cvtsi2sd xmm0, rax");
-	}
-
+	cg_fp_promote(cg, e->rhs->type.kind, ct);
 	cg_emit(cg,"    movsd xmm1, xmm0");          /* rhs -> xmm1. */
 	cg_emit(cg,"    movsd xmm0, qword [rsp]");   /* lhs -> xmm0. */
 	cg_emit(cg,"    add rsp, 8");

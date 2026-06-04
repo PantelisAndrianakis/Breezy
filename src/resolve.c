@@ -1106,35 +1106,16 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (ty_is_float(a) || ty_is_float(b))
 		{
-			TypeKind ft;
-			if (ty_is_float(a) && ty_is_float(b))
+			/* Numeric promotion: when either operand is floating, the other must
+			   also be numeric (integer or floating). The result widens to the
+			   most general type present: double if either side is double,
+			   otherwise float. Integers promote to that float type implicitly. */
+			if (!(ty_is_int(a) || ty_is_float(a)) || !(ty_is_int(b) || ty_is_float(b)))
 			{
-				if (a != b)
-				{
-					die(e->line,"Mix of float and double; add a cast.",NULL);
-				}
-
-				ft = a;
-			}
-			else
-			{
-				/* One operand is floating, the other must be an integer that
-				   promotes; only int->double is implicit, so float+int errors. */
-				TypeKind fk = ty_is_float(a) ? a : b;
-				TypeKind ik = ty_is_float(a) ? b : a;
-				if (!ty_is_int(ik))
-				{
-					die(e->line,"Non-numeric operand.",NULL);
-				}
-
-				if (fk==TY_FLOAT)
-				{
-					die(e->line,"Mix of float and integer; add a cast.",NULL);
-				}
-
-				ft = TY_DOUBLE;
+				die(e->line,"Non-numeric operand.",NULL);
 			}
 
+			TypeKind ft = (a==TY_DOUBLE || b==TY_DOUBLE) ? TY_DOUBLE : TY_FLOAT;
 			int cmp = e->op==TOKEN_EQ || e->op==TOKEN_NEQ || e->op==TOKEN_LT
 					  || e->op==TOKEN_GT || e->op==TOKEN_LTE || e->op==TOKEN_GTE;
 			e->type.kind = cmp ? TY_BOOL : ft;

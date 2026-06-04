@@ -59,6 +59,7 @@ check cycle       tests/samples/proj_cycle     "0"
 check scalars     tests/samples/proj_scalars   $'0\n0\n5000000000\n4000000000\ntrue\n-1\nfalse\ntrue'
 check floats      tests/samples/proj_floats    $'3.75\n3.375\n7\ntrue\n10\n1.5'
 check floats_fn   tests/samples/proj_floats_fn $'10'
+check promote     tests/samples/proj_promote   $'5\n5\n12\n13\nfalse\ntrue'
 check string      tests/samples/proj_string    $'Hello, Breezy\n13'
 check array       tests/samples/proj_array     $'30'
 check array_obj   tests/samples/proj_array_obj $'4\n5'
@@ -197,7 +198,6 @@ check_fail int_condition  tests/samples/bad_int_cond.bzy
 check_fail bool_int_cast  tests/samples/bad_bool_cast.bzy
 check_fail float_needs_cast tests/samples/bad_int_to_float.bzy
 check_fail dbl_to_float     tests/samples/bad_double_to_float.bzy
-check_fail float_int_mix    tests/samples/bad_float_int_mix.bzy
 check_fail schedule_nonvoid tests/samples/bad_schedule_nonvoid
 check_fail schedule_args    tests/samples/bad_schedule_args
 # Cross-assembly: the Linux (System V / ELF64) emission must assemble cleanly with

@@ -57,14 +57,6 @@ Familiar on purpose. If you've written Java or C#, you already know how to read 
 
 ---
 
-## Documentation
-
-This README covers *what* Breezy is. For *how to use it* - every language feature, the standard library, and the build tooling, each on its own page - read the full guide:
-
-📖 **[The Breezy Language Guide → documentation/guide.md](documentation/guide.md)**
-
----
-
 # Language Philosophy
 
 ## The Principle Behind Every Design Decision
@@ -154,3 +146,11 @@ The objective is simple:
 Create a language that removes the complexity of memory management and concurrency while preserving the performance, predictability, and control traditionally associated with systems programming.
 
 Developers should be able to write clear code and trust the compiler to produce efficient native binaries capable of competing with the best software in the world.
+
+---
+
+## Documentation
+
+This README covers *what* Breezy is. For *how to use it* - every language feature, the standard library, and the build tooling, each on its own page - read the full guide:
+
+📖 **[The Breezy Language Guide → documentation/guide.md](documentation/guide.md)**
