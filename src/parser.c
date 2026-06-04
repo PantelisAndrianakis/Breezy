@@ -1299,6 +1299,7 @@ static ClassDecl *parse_class(Parser *p)
 	expect(p,TOKEN_LBRACE);
 	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 	{
+		int member_static = match(p,TOKEN_STATIC);   /* `static` field/method modifier. */
 		/* Constructor: the class name immediately followed by '(' (no return type). */
 		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,c->name)==0 && p->peek.type==TOKEN_LPAREN)
 		{
@@ -1361,6 +1362,7 @@ static ClassDecl *parse_class(Parser *p)
 			}
 			expect(p,TOKEN_RPAREN);
 			f->body=parse_block(p);
+			f->is_static=member_static;
 			if (c->method_count>=32)
 			{
 				fprintf(stderr,"Too many methods.\n");
@@ -1370,6 +1372,12 @@ static ClassDecl *parse_class(Parser *p)
 		}
 		else
 		{
+			Expr *init=NULL;
+			if (match(p,TOKEN_ASSIGN))
+			{
+				init=parse_expr(p);
+			}
+
 			expect(p,TOKEN_SEMICOLON);
 			if (c->field_count>=32)
 			{
@@ -1378,6 +1386,8 @@ static ClassDecl *parse_class(Parser *p)
 			}
 			c->fields[c->field_count].type=ty;
 			strcpy(c->fields[c->field_count].name,mname.text);
+			c->fields[c->field_count].is_static=member_static;
+			c->fields[c->field_count].init=init;
 			c->field_count++;
 		}
 	}
@@ -1607,6 +1617,17 @@ Unit *parse_unit(Parser *p)
 				exit(1);
 			}
 			u->funcs[u->func_count++]=parse_extern(p);
+		}
+		else if (check(p,TOKEN_STATIC) && p->peek.type==TOKEN_CLASS)
+		{
+			advance(p);                 /* 'static'; parse_class consumes 'class'. */
+			if (u->klass)
+			{
+				fprintf(stderr,"line %d: Only one class per file.\n",p->cur.line);
+				exit(1);
+			}
+			u->klass=parse_class(p);
+			u->klass->is_static=1;
 		}
 		else if (check(p,TOKEN_CLASS))
 		{

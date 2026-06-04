@@ -258,6 +258,25 @@ static void test_parse_enum_implements(void)
 	ASSERT_INT(u->enums[0]->constant_count, 2);
 }
 
+static void test_parse_static_member(void)
+{
+	Unit *u = parse_unit_str(
+				  "class Counter { static int total = 0; int id;"
+				  " static int peek() { return Counter.total; } }");
+	ASSERT_INT(u->klass->is_static, 0);                 /* class itself not static */
+	ASSERT_INT(u->klass->fields[0].is_static, 1);       /* total */
+	ASSERT_INT(u->klass->fields[0].init->kind, EX_INT);
+	ASSERT_INT(u->klass->fields[1].is_static, 0);       /* id */
+	ASSERT_INT(u->klass->methods[0]->is_static, 1);     /* peek */
+}
+
+static void test_parse_static_class(void)
+{
+	Unit *u = parse_unit_str("static class Config { int maxPlayers = 100; int tick() { return 0; } }");
+	ASSERT_INT(u->klass->is_static, 1);
+	ASSERT_INT(u->klass->fields[0].init != NULL, 1);
+}
+
 static void test_parse_extern_blocking(void)
 {
 	Unit *u = parse_unit_str("extern blocking long read_db(long h); void main() { }");
@@ -602,6 +621,8 @@ int main(void)
 	RUN(test_parse_enum_basic);
 	RUN(test_parse_enum_constant_body);
 	RUN(test_parse_enum_implements);
+	RUN(test_parse_static_member);
+	RUN(test_parse_static_class);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);

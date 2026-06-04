@@ -203,6 +203,7 @@ typedef struct
 	Block  *body;
 	int     is_extern;        /* FFI: declared with `extern`, no body; asm_label is the raw C symbol. */
 	int     is_blocking;      /* FFI: `extern blocking` — dispatch via the offload pool. */
+	int     is_static;        /* Static method: no `this`, called via the class name. */
 	int     frame_size;       /* Resolver. */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
@@ -213,11 +214,14 @@ typedef struct
 {
 	TypeRef type;
 	char name[64];
+	int   is_static;          /* Static field: one shared global slot, not in the object. */
+	Expr *init;               /* Static-field declaration initializer, or NULL. */
 } Field;
 #define MAX_TYPE_PARAMS 4
 typedef struct
 {
 	char  name[64];
+	int is_static;            /* `static class`: every member is static, not instantiable. */
 	char parent_name[64];
 	int has_parent;
 	char implements[8][64];   /* Interface names this class implements. */

@@ -12,6 +12,7 @@ typedef enum
 	TOKEN_ENUM,                                          /* `enum` declaration. */
 	TOKEN_EXTERN,                                        /* `extern` C FFI declaration. */
 	TOKEN_BLOCKING,                                      /* `blocking` FFI dispatch modifier. */
+	TOKEN_STATIC,                                        /* `static` member / class modifier. */
 	TOKEN_BYTE, TOKEN_SHORT, TOKEN_LONG,                 /* Signed width keywords. */
 	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* Unsigned width keywords. */
 	TOKEN_BOOLEAN, TOKEN_TRUE, TOKEN_FALSE,              /* Boolean type + literals. */
