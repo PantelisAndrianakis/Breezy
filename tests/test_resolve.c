@@ -1,5 +1,6 @@
 #include "test_framework.h"
 #include "parser.h"
+#include "generics.h"
 #include "types.h"
 #include "resolve.h"
 
@@ -17,6 +18,66 @@ static Unit *build1(const char *s)
 	types_register_unit_members(&g_tt,u);
 	resolve_program(&g_tt,&u,1);
 	return u;
+}
+
+/* Build several source files, run the generics pass, register + resolve. */
+static TypeTable *build_generic(const char **srcs, int n)
+{
+	static Parser ps[16];
+	static Unit *units[64];
+	for (int i=0; i<n; i++)
+	{
+		parser_init(&ps[i],srcs[i]);
+		units[i]=parse_unit(&ps[i]);
+	}
+
+	int total=n;
+	generics_expand(units,&total,64);
+	types_init(&g_tt);
+	types_register_builtins(&g_tt);
+	for (int i=0; i<total; i++)
+	{
+		types_register_unit_names(&g_tt,units[i]);
+	}
+	for (int i=0; i<total; i++)
+	{
+		types_register_interfaces(&g_tt,units[i]);
+	}
+	for (int i=0; i<total; i++)
+	{
+		types_register_unit_members(&g_tt,units[i]);
+	}
+
+	resolve_program(&g_tt,units,total);
+	return &g_tt;
+}
+
+static void test_generic_lowers_to_class(void)
+{
+	const char *srcs[] =
+	{
+		"class Wrap<T> { T value; void set(T v) { this.value = v; } T get() { return this.value; } }",
+		"void main() { Wrap<int> b; b = new Wrap<int>(); b.set(7); print(b.get()); }"
+	};
+	TypeTable *tt = build_generic(srcs, 2);
+	ASSERT_INT(types_find_class(tt,"Wrap$int") != NULL, 1);  /* synthesized */
+	ASSERT_INT(types_find_class(tt,"Wrap") == NULL, 1);      /* template excluded */
+	MethodInfo *m = types_find_method(types_find_class(tt,"Wrap$int"),"get");
+	ASSERT_INT(m->ret_type.kind, TY_INT);                    /* T -> int */
+}
+
+static void test_generic_multi_param_lowers(void)
+{
+	const char *srcs[] =
+	{
+		"class Pair<K, V> { K k; V v; }",
+		"void main() { Pair<int, string> p; p = new Pair<int, string>(); }"
+	};
+	TypeTable *tt = build_generic(srcs, 2);
+	ClassInfo *c = types_find_class(tt,"Pair$int$string");
+	ASSERT_INT(c != NULL, 1);
+	ASSERT_INT(types_find_field(c,"k")->type.kind, TY_INT);
+	ASSERT_INT(types_find_field(c,"v")->type.kind, TY_STRING);
 }
 
 static void test_interface_call_resolves(void)
@@ -616,6 +677,8 @@ int main(void)
 {
 	printf("Resolver tests\n");
 	RUN(test_interface_call_resolves);
+	RUN(test_generic_lowers_to_class);
+	RUN(test_generic_multi_param_lowers);
 	RUN(test_extern_call_resolves);
 	RUN(test_extern_blocking_flag);
 	RUN(test_local_int_offset);

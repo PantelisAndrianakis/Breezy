@@ -3,6 +3,7 @@
 #include <string.h>
 #include <dirent.h>
 #include "parser.h"
+#include "generics.h"
 #include "types.h"
 #include "resolve.h"
 #include "codegen.h"
@@ -145,6 +146,10 @@ int main(int argc, char *argv[])
 		parser_init(&parsers[np+i],src);
 		units[np+i]=parse_unit(&parsers[np+i]);
 	}
+
+	/* Lower user generics: synthesize one ordinary class per (template, type-args)
+	   tuple, rewrite applications, and drop templates. Grows `total` in place. */
+	generics_expand(units,&total,MAX_FILES);
 
 	static TypeTable tt;   /* ~8 MB: in BSS, not on the stack (would overflow Linux's 8 MB default). */
 	types_init(&tt);
