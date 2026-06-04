@@ -1,8 +1,20 @@
 CC      = gcc
-# The TypeTable is ~8 MB and is declared as a stack local in the driver and
-# tests, which overflows Windows' default ~1 MB main-thread stack. Reserve a
-# 64 MB stack at link time so those binaries run.
-CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc -Wl,--stack,0x4000000
+
+# Host detection: pick the coroutine backend and platform libs/flags per OS.
+# Windows (MinGW, uname = MINGW*/MSYS*) uses fibers + a 64 MB stack reserve at
+# link time (--stack is a PE-only ld flag). Linux uses ucontext + pthreads.
+UNAME := $(shell uname -s)
+ifeq ($(findstring Linux,$(UNAME)),Linux)
+  CORO_SRC      = runtime/coroutine_posix.c
+  PLATFORM_LIBS = -lpthread
+  STACKFLAG     =
+else
+  CORO_SRC      = runtime/coroutine_win.c
+  PLATFORM_LIBS =
+  STACKFLAG     = -Wl,--stack,0x4000000
+endif
+
+CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc $(STACKFLAG)
 
 # Release flags: optimize, drop debug info, and let the linker garbage-collect
 # unreferenced functions so stages a binary never calls are not carried along.
@@ -20,7 +32,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
 OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/prelude.c src/config.c
 
-RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/exception.c runtime/regex.c runtime/coroutine_win.c runtime/scheduler.c runtime/map_entry.c runtime/channel.c runtime/file.c runtime/timer.c runtime/offload.c runtime/system.c runtime/reflect.c runtime/iocp.c runtime/socket.c runtime/udp.c runtime/filechannel.c runtime/logger.c runtime/http.c
+RT_SRC  = runtime/alloc.c runtime/print.c runtime/string.c runtime/array.c runtime/map.c runtime/vector.c runtime/clock.c runtime/random.c runtime/exception.c runtime/regex.c $(CORO_SRC) runtime/scheduler.c runtime/map_entry.c runtime/channel.c runtime/file.c runtime/timer.c runtime/offload.c runtime/system.c runtime/reflect.c runtime/iocp.c runtime/socket.c runtime/udp.c runtime/filechannel.c runtime/logger.c runtime/http.c
 RT_HDR  = runtime/breezy.h runtime/coroutine.h runtime/network_internal.h
 
 .PHONY: all clean test integration release
@@ -47,6 +59,9 @@ test_config: tests/test_config.c src/config.c
 
 test_codegen: tests/test_codegen.c $(OBJS)
 	$(CC) $(CFLAGS) -o test_codegen tests/test_codegen.c $(OBJS)
+
+test_coroutine: tests/test_coroutine.c $(CORO_SRC) runtime/coroutine.h
+	$(CC) $(CFLAGS) -Iruntime -Itests -o test_coroutine tests/test_coroutine.c $(CORO_SRC) $(PLATFORM_LIBS)
 
 test_parser: tests/test_parser.c src/lexer.c src/ast.c src/parser.c
 	$(CC) $(CFLAGS) -o test_parser tests/test_parser.c src/lexer.c src/ast.c src/parser.c
@@ -96,7 +111,7 @@ lib_breezy.a: $(RT_SRC) $(RT_HDR)
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
-test: test_lexer test_ast test_config test_parser test_types test_resolve test_ownership test_escape test_codegen test_runtime breezy
+test: test_lexer test_ast test_config test_parser test_types test_resolve test_ownership test_escape test_codegen test_coroutine test_runtime breezy
 	./test_lexer
 	./test_ast
 	./test_config
@@ -106,6 +121,7 @@ test: test_lexer test_ast test_config test_parser test_types test_resolve test_o
 	./test_ownership
 	./test_escape
 	./test_codegen
+	./test_coroutine
 	./test_runtime
 	bash tests/run_integration.sh
 
@@ -113,4 +129,4 @@ integration: breezy lib_breezy.a
 	bash tests/run_integration.sh
 
 clean:
-	rm -f breezy test_lexer test_ast test_config test_codegen test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe out_cg_test.asm
+	rm -f breezy test_lexer test_ast test_config test_codegen test_coroutine test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe out_cg_test.asm

@@ -75,7 +75,11 @@ int main(int argc, char *argv[])
 	LinkConfig cfg;
 	memset(&cfg, 0, sizeof(cfg));
 	const char *src_arg = NULL;
-	Target target = TARGET_WINDOWS;   /* Build-host default. */
+#ifdef _WIN32
+	Target target = TARGET_WINDOWS;   /* Default to the build host. */
+#else
+	Target target = TARGET_LINUX;
+#endif
 	for (int i = 1; i < argc; i++)
 	{
 		if (strcmp(argv[i],"--link")==0 && i+1 < argc)
@@ -142,7 +146,7 @@ int main(int argc, char *argv[])
 		units[np+i]=parse_unit(&parsers[np+i]);
 	}
 
-	TypeTable tt;
+	static TypeTable tt;   /* ~8 MB: in BSS, not on the stack (would overflow Linux's 8 MB default). */
 	types_init(&tt);
 	types_register_builtins(&tt);
 	for (int i=0; i<total; i++)

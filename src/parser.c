@@ -331,7 +331,7 @@ static Expr *parse_primary(Parser *p)
 		{
 			expect(p,TOKEN_LPAREN);
 			Expr *e=expr_new(EX_CALL,line);
-			snprintf(e->name,sizeof e->name,"%s.%s",ns,m.text);
+			snprintf(e->name,sizeof e->name,"%.31s.%.31s",ns,m.text);   /* Bounded to fit name[64] (ns/method are short). */
 			e->arg_count=parse_args(p,e->args);
 			expect(p,TOKEN_RPAREN);
 			return e;
