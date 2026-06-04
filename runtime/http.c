@@ -2,9 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winhttp.h>
+#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+  #include <winhttp.h>
+#else
+  #include <pthread.h>
+  #include <curl/curl.h>
+#endif
 
 /* readUrl context: the worker thread fills body/err; the breeze wraps body in a
    managed string after it resumes (no cross-thread ARC allocation). */
@@ -21,6 +26,7 @@ static void url_fail(UrlCtx *c, const char *msg)
 	snprintf(c->err, sizeof(c->err), "%s", msg);
 }
 
+#ifdef _WIN32
 /* Worker-side: the blocking WinHTTP fetch. Runs on an offload thread. */
 static void url_fetch(void *vp)
 {
@@ -150,6 +156,114 @@ static void url_fetch(void *vp)
 	c->body = buf;
 	c->body_len = len;
 }
+
+#else
+/* ===== POSIX: libcurl fetch (http + https; TLS, redirects, chunked handled by
+   libcurl). Runs on an offload thread; curl_easy_perform blocks. ===== */
+
+static pthread_once_t g_curl_once = PTHREAD_ONCE_INIT;
+static void curl_global_setup(void)
+{
+	curl_global_init(CURL_GLOBAL_DEFAULT);   /* Once, before any worker uses curl. */
+}
+
+/* A growing body buffer with a 64 MiB cap (matches the WinHTTP path). */
+typedef struct
+{
+	char  *buf;
+	size_t len;
+	size_t cap;
+	int    over;   /* Exceeded the cap (or OOM). */
+} BodyAcc;
+
+static size_t curl_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+	BodyAcc *a = (BodyAcc*)userdata;
+	size_t n = size * nmemb;
+	if (a->over)
+	{
+		return 0;
+	}
+
+	if (a->len + n > (size_t)(64 * 1024 * 1024))
+	{
+		a->over = 1;
+		return 0;
+	}
+
+	if (a->len + n > a->cap)
+	{
+		size_t nc = (a->cap == 0) ? (n + 4096) : (a->cap * 2);
+		if (nc < a->len + n)
+		{
+			nc = a->len + n;
+		}
+
+		char *nb = realloc(a->buf, nc);
+		if (!nb)
+		{
+			a->over = 1;
+			return 0;
+		}
+
+		a->buf = nb;
+		a->cap = nc;
+	}
+
+	memcpy(a->buf + a->len, ptr, n);
+	a->len += n;
+	return n;
+}
+
+static void url_fetch(void *vp)
+{
+	UrlCtx *c = (UrlCtx*)vp;
+	c->body = NULL;
+	c->body_len = 0;
+	c->err[0] = '\0';
+
+	pthread_once(&g_curl_once, curl_global_setup);
+
+	CURL *h = curl_easy_init();
+	if (!h)
+	{
+		url_fail(c, "readUrl: curl init failed.");
+		return;
+	}
+
+	BodyAcc a;
+	a.buf = NULL;
+	a.len = 0;
+	a.cap = 0;
+	a.over = 0;
+
+	curl_easy_setopt(h, CURLOPT_URL, c->url);
+	curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L);   /* Follow redirects (matches WinHTTP). */
+	curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, curl_write_cb);
+	curl_easy_setopt(h, CURLOPT_WRITEDATA, &a);
+	curl_easy_setopt(h, CURLOPT_USERAGENT, "breezy/1.0");
+	curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);          /* Thread-safe: no SIGALRM-based timeouts. */
+	CURLcode rc = curl_easy_perform(h);
+	curl_easy_cleanup(h);
+
+	if (a.over)
+	{
+		free(a.buf);
+		url_fail(c, "readUrl: response exceeds 64 MiB cap.");
+		return;
+	}
+
+	if (rc != CURLE_OK)
+	{
+		free(a.buf);
+		url_fail(c, "readUrl: request failed (host unreachable or TLS error).");
+		return;
+	}
+
+	c->body = a.buf;
+	c->body_len = (int)a.len;
+}
+#endif
 
 /* Breeze-side: park on the offload pool while the worker fetches, then wrap the
    body in a managed string. On failure, io_fail sets the thread-local error that

@@ -924,7 +924,7 @@ breezy myproject                    # Windows PE64 (Microsoft x64 ABI) — the d
 breezy myproject --target linux     # System V AMD64 / ELF64 emission
 ```
 
-`--target linux` emits System V AMD64 assembly (arguments in `rdi, rsi, rdx, rcx, r8, r9`, FP args numbered independently of position) and drives `nasm -f elf64` + `gcc -no-pie`. On a Linux host, `breezy` builds and runs native ELF64 for **compute, concurrency, and file I/O**: the codegen ABI (8-1), the runtime core — ucontext coroutines, a pthread scheduler, the offload pool, channels, timers (8-2) — and file I/O — the `File.*` namespace, `FileWriter`, `Logger`, `FileChannel` over `pread`/`pwrite` (8-3). The verification suite `tests/run_linux.sh` runs that whole subset as ELF (the Windows suite stays the source of truth for the parts not yet ported). **Still Windows-only:** network sockets (IOCP → epoll is 8-4) and `Network.readUrl` (WinHTTP → libcurl is 8-5); a couple of `File` attributes (`HIDDEN`/`SYSTEM`/`ARCHIVE`) are Windows concepts with no POSIX equivalent. Windows usage is unchanged.
+`--target linux` emits System V AMD64 assembly (arguments in `rdi, rsi, rdx, rcx, r8, r9`, FP args numbered independently of position) and drives `nasm -f elf64` + `gcc -no-pie`. On a Linux host, `breezy` builds and runs native ELF64 for **compute, concurrency, file I/O, and networking**: the codegen ABI (8-1); the runtime core — ucontext coroutines, a pthread scheduler, the offload pool, channels, timers (8-2); file I/O — the `File.*` namespace, `FileWriter`, `Logger`, `FileChannel` over `pread`/`pwrite` (8-3); sockets — TCP `Listener`/`Socket` + UDP `UdpSocket`/`Datagram` on an **epoll reactor** that replaces Windows IOCP (8-4); and `Network.readUrl` via **libcurl** (8-5, the one external runtime dependency on Linux — `libcurl4-openssl-dev`). The full language + runtime runs on Linux; `tests/run_linux.sh` verifies it as ELF. **Per-host difference:** a couple of `File` attributes (`HIDDEN`/`SYSTEM`/`ARCHIVE`) are Windows concepts with no POSIX equivalent. Windows usage is unchanged.
 
 > Cross-building from one tree: object files are shared paths, so run `make clean` when switching between the Windows and Linux builds.
 
@@ -983,12 +983,12 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Random-access `FileChannel` — `File.openChannel`; positioned `readAt`/`writeAt` over IOCP + explicit `sync()`; the database storage foundation (6b-5)
 - [x] Buffered file writes — `File.openWrite`/`openAppend` → `FileWriter`; small writes coalesce in a userspace buffer, flush on the offload pool (6b-3)
 - [x] Channel-fed logger — `Log.open` → `Logger`; a dedicated logger breeze drains a `channel<string>` and writes off the hot path, so a tick never waits on disk (6b-4)
-- [~] Linux target (Part 8): codegen ABI + ELF64 (8-1), runtime core — ucontext coroutines, pthread scheduler, offload pool, channels, timers (8-2), and file I/O — `File.*`/`FileWriter`/`Logger`/`FileChannel` over `pread`/`pwrite` (8-3) all run as native ELF; epoll sockets (8-4) + `readUrl` (8-5) pending
+- [x] Linux target (Part 8): the full language + runtime runs as native ELF64 — codegen ABI (8-1), runtime core (ucontext coroutines, pthread scheduler, offload pool, channels, timers; 8-2), file I/O (`File.*`/`FileWriter`/`Logger`/`FileChannel` over `pread`/`pwrite`; 8-3), sockets (TCP/UDP on an epoll reactor; 8-4), and `Network.readUrl` (libcurl; 8-5). Selected by `--target linux`; Windows path unchanged
 
 **Interop (Part 7)**
 - [x] `extern` C FFI — direct C-ABI calls, `string`→`char*` marshalling, `--link` + `breezy.toml [link]`, and `blocking` offload dispatch
 
 **Other targets & beyond**
-- [~] x86-64 codegen (Linux ELF64) — live for compute + concurrency + file I/O (Part 8-1/8-2/8-3); sockets + HTTP pending (8-4/8-5)
+- [x] x86-64 codegen (Linux ELF64) — full language + runtime as native ELF (Part 8 complete: 8-1…8-5)
 - [ ] Interfaces, user-definable generics (`class Foo<T>`), extended standard library
 - [ ] Self-hosting compiler

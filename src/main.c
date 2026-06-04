@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
 	int off;
 	if (target == TARGET_LINUX)
 	{
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -l_breezy -lpthread -lm");
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -l_breezy -lpthread -lm -lcurl");
 	}
 	else
 	{
