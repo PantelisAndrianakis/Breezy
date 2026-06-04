@@ -143,9 +143,13 @@ the language should provide the same fundamental advantages without requiring de
 
 The objective is simple:
 
-Create a language that removes the complexity of memory management and concurrency while preserving the performance, predictability, and control traditionally associated with systems programming.
+Create a language that makes memory management and concurrency largely disappear from application code without relying on a garbage collector, a virtual machine, or a heavyweight runtime.
 
-Developers should be able to write clear code and trust the compiler to produce efficient native binaries capable of competing with the best software in the world.
+Developers should be able to write clear, familiar, object-oriented code while the compiler handles the complexity of resource management and execution.
+
+The result should be software that retains the performance, predictability, memory efficiency, and native interoperability traditionally associated with systems programming languages, while offering the productivity expected from modern managed languages.
+
+In short, Breezy aims to deliver the simplicity developers want without requiring the runtime costs they have learned to accept.
 
 ---
 
