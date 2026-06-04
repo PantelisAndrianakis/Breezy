@@ -117,6 +117,20 @@ Point p;
 p = new Point(3, 4);   // x=3, y=4
 ```
 
+**Interfaces.** Abstract contracts for polymorphism *without* inheritance: declare `interface Name { … }` of method signatures, and `class C implements I, J { … }` must define them. An interface-typed value holds any implementing object and dispatches to its concrete method.
+
+```breezy
+interface Speaker { string speak(); }
+class Dog implements Speaker { string speak() { return "woof"; } }
+class Cat implements Speaker { string speak() { return "meow"; } }
+
+Speaker s;
+s = new Dog();
+print(s.speak());   // woof  -- dispatched through the interface
+```
+
+Dispatch is **zero-overhead**: interface methods occupy reserved vtable slots shared by every implementer, so an interface call is the same single indirect load as a virtual call — and an interface value is a single object pointer (ARC-tracked like any object), not a fat pointer.
+
 ### Built-in Vector Types
 
 Eight ready-made vector types ship with the language — `Vector2i` / `Vector2l` / `Vector2f` / `Vector2d` (fields `x`, `y`) and `Vector3i` / `Vector3l` / `Vector3f` / `Vector3d` (fields `x`, `y`, `z`) — each with a constructor, `equals` (component-wise), and `calculateDistance` (euclidean). They're ordinary classes, so a non-escaping vector local is stack-allocated (no heap, no reference counting).
@@ -990,5 +1004,6 @@ The language design is settled. The compiler and runtime are being built from sc
 
 **Other targets & beyond**
 - [x] x86-64 codegen (Linux ELF64) — full language + runtime as native ELF (Part 8 complete: 8-1…8-5)
-- [ ] Interfaces, user-definable generics (`class Foo<T>`), extended standard library
+- [x] Interfaces — `interface`/`implements`, polymorphism without inheritance, zero-overhead shared-vtable-slot dispatch (Part 9-1)
+- [ ] User-definable generics (`class Foo<T>`, interface-bounded), extended standard library
 - [ ] Self-hosting compiler

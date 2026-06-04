@@ -126,6 +126,7 @@ check catch_subclass tests/samples/proj_catch_subclass $'missing\n0'
 check rethrow     tests/samples/proj_rethrow       "bee"
 check catch_oob   tests/samples/proj_catch_oob     $'Array index 5 out of bounds for length 3.\n99'
 check catch_param tests/samples/proj_catch_param   $'7'
+check interface_poly tests/samples/proj_interface_poly $'woof\nmeow'
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

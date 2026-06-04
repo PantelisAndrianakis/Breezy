@@ -671,11 +671,36 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->lhs);                       /* Receiver pointer in rax. */
 	cg_emit(cg,"    mov rax, [rax]");             /* Vtable pointer. */
-	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);
+	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);   /* Method at its (virtual or interface) slot. */
+	const TypeRef *params;
+	int pcount;
 	ClassInfo *c=types_find_class(tt,e->anno_str);
-	MethodInfo *m=types_find_method(c,e->name);
+	if (c)
+	{
+		MethodInfo *m=types_find_method(c,e->name);
+		params=m->param_types;
+		pcount=m->param_count;
+	}
+	else
+	{
+		/* Interface-typed receiver: parameter types come from the interface method. */
+		InterfaceInfo *itf=types_find_interface(tt,e->anno_str);
+		int k=0;
+		for (int i=0; i<itf->method_count; i++)
+		{
+			if (strcmp(itf->methods[i],e->name)==0)
+			{
+				k=i;
+				break;
+			}
+		}
+
+		params=itf->param_types[k];
+		pcount=itf->param_counts[k];
+	}
+
 	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, ty_is_managed(e->type.kind),
-					  ty_is_float(e->type.kind), m->param_types, m->param_count, 0);
+					  ty_is_float(e->type.kind), params, pcount, 0);
 }
 
 /* StringBuilder methods lower to runtime calls (no vtable dispatch). The receiver
@@ -3665,14 +3690,20 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 	cg_emit(cg,"__vtable_%s:", c->name);
 	for (int slot=0; slot<c->vtable_size; slot++)
 	{
+		const char *label=NULL;
 		for (int i=0; i<c->method_count; i++)
 		{
 			if (c->methods[i].vtable_slot==slot)
 			{
-				cg_emit(cg,"    dq %s", c->methods[i].asm_label);
+				label=c->methods[i].asm_label;
 				break;
 			}
 		}
+
+		/* Fill gaps (reserved interface slots this class does not implement) with 0
+		   so every slot keeps its fixed index; the type checker ensures a gap is
+		   never actually dispatched. */
+		cg_emit(cg,"    dq %s", label ? label : "0");
 	}
 
 	cg_emit(cg,"__classname_%s: db \"%s\", 0", c->name, c->name);   /* NUL-terminated dynamic class name. */

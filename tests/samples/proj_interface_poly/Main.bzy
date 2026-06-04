@@ -1,0 +1,12 @@
+// Polymorphism without inheritance: a Speaker-typed variable dispatches to the
+// concrete class's speak() via the interface's reserved vtable slot. Prints
+// woof then meow. (Speaker/Dog/Cat are in their own files: one class per file.)
+void main()
+{
+	Speaker a;
+	a = new Dog();
+	Speaker b;
+	b = new Cat();
+	print(a.speak());   // woof  -- dispatched through the interface
+	print(b.speak());   // meow
+}
