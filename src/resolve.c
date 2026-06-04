@@ -1036,6 +1036,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		ClassInfo *nc=types_find_class(g_types,e->name);
+		if (nc && nc->is_static)
+		{
+			die(e->line,"Cannot instantiate a static class: ",e->name);
+		}
+
 		for (int i=0; i<e->arg_count; i++)
 		{
 			resolve_expr(st,e->args[i],tc);
@@ -1201,6 +1206,32 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		/* Static field access (C.total): the lhs is a class name, not a variable.
+		   Annotate with the sentinel anno_int=-1 + class so codegen loads the slot;
+		   lhs is left unresolved. */
+		if (e->lhs->kind==EX_IDENT && !sym_find(st,e->lhs->name))
+		{
+			ClassInfo *sc=types_find_class(g_types,e->lhs->name);
+			if (sc)
+			{
+				FieldInfo *f=types_find_field(sc,e->name);
+				if (!f)
+				{
+					die(e->line,"No such static field: ",e->name);
+				}
+
+				if (!f->is_static)
+				{
+					die(e->line,"Access an instance field through an object, not the class name: ",e->name);
+				}
+
+				e->type=f->type;
+				e->anno_int=-1;
+				strcpy(e->anno_str,e->lhs->name);
+				break;
+			}
+		}
+
 		/* Namespace constant access (File.READONLY etc.): the lhs is the namespace
 		   identifier, not a variable. Rewrite the node to an integer literal. */
 		if (e->lhs->kind==EX_IDENT && strcmp(e->lhs->name,"File")==0)
@@ -1324,6 +1355,39 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			break;
+		}
+
+		/* Static method call (C.peek()): the lhs is a class name, not a variable. */
+		if (e->lhs->kind==EX_IDENT && !sym_find(st,e->lhs->name))
+		{
+			ClassInfo *sc=types_find_class(g_types,e->lhs->name);
+			if (sc)
+			{
+				MethodInfo *m=types_find_method(sc,e->name);
+				if (!m || !m->is_static)
+				{
+					die(e->line,"No such static method: ",e->name);
+				}
+
+				resolve_args(st,e,tc);
+				if (e->arg_count != m->param_count)
+				{
+					die(e->line,"Static method argument count mismatch.",NULL);
+				}
+
+				for (int i=0; i<e->arg_count; i++)
+				{
+					if (!assignable(&m->param_types[i], &e->args[i]->type))
+					{
+						die(e->line,"Argument type mismatch; add a cast.",NULL);
+					}
+				}
+
+				e->type=m->ret_type;
+				e->anno_int=-1;
+				strcpy(e->anno_str,e->lhs->name);
+				break;
+			}
 		}
 
 		resolve_expr(st,e->lhs,tc);
@@ -2679,14 +2743,39 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 
 		if (u->klass)
 		{
-			for (int k=0; k<u->klass->method_count; k++)
+			ClassDecl *d=u->klass;
+			for (int k=0; k<d->method_count; k++)
 			{
-				resolve_func(tt,u->klass->methods[k],u->klass->name);
+				/* A static method has no `this`: resolve it like a free function. */
+				int mstatic = d->methods[k]->is_static || d->is_static;
+				resolve_func(tt,d->methods[k], mstatic ? NULL : d->name);
 			}
 
-			if (u->klass->ctor)
+			if (d->ctor)
 			{
-				resolve_func(tt,u->klass->ctor,u->klass->name);
+				resolve_func(tt,d->ctor,d->name);
+			}
+
+			/* Static field initializers live outside any function body; resolve
+			   each in an empty scope and type-check against the field. */
+			for (int k=0; k<d->field_count; k++)
+			{
+				int fstatic = d->fields[k].is_static || d->is_static;
+				if (d->fields[k].init)
+				{
+					if (!fstatic)
+					{
+						die(d->fields[k].init->line,"Field initializers are only allowed on static fields.",NULL);
+					}
+
+					SymTable es;
+					sym_init(&es);
+					resolve_expr(&es,d->fields[k].init,NULL);
+					if (!assignable(&d->fields[k].type,&d->fields[k].init->type))
+					{
+						die(d->fields[k].init->line,"Static field initializer type mismatch; add a cast.",NULL);
+					}
+				}
 			}
 		}
 	}

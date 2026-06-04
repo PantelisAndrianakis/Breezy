@@ -157,6 +157,24 @@ static void test_enum_static_access(void)
 	ASSERT_STR(m->body->stmts[9]->value->type.class_name, "Color");
 }
 
+static void test_static_member_resolves(void)
+{
+	const char *srcs[] =
+	{
+		"class C { static int total = 0; static int peek() { return C.total; } int id;"
+		" C() { C.total = C.total + 1; this.id = C.total; } }",
+		"void main() { C a; a = new C(); int t; t = C.total; int p; p = C.peek(); }"
+	};
+	build_program(srcs, 2);
+	Func *mn = prog_find_func("main");
+	ASSERT_INT(mn != NULL, 1);
+	ASSERT_INT(mn->body->stmts[3]->value->type.kind, TY_INT);   /* t = C.total */
+	ASSERT_INT(mn->body->stmts[5]->value->type.kind, TY_INT);   /* p = C.peek() */
+	/* Static access is annotated for codegen with the sentinel + class name. */
+	ASSERT_INT(mn->body->stmts[3]->value->anno_int, -1);
+	ASSERT_STR(mn->body->stmts[3]->value->anno_str, "C");
+}
+
 static void test_generic_lowers_to_class(void)
 {
 	const char *srcs[] =
@@ -800,6 +818,7 @@ int main(void)
 	RUN(test_interface_call_resolves);
 	RUN(test_enum_lowers_to_class);
 	RUN(test_enum_static_access);
+	RUN(test_static_member_resolves);
 	RUN(test_generic_lowers_to_class);
 	RUN(test_generic_multi_param_lowers);
 	RUN(test_generic_bound_ok);
