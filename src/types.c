@@ -268,7 +268,15 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 			fi->param_types[k]=f->params[k].type;
 		}
 
-		snprintf(fi->asm_label,sizeof(fi->asm_label),"bzy_%s",f->name);
+		if (f->is_extern)
+		{
+			snprintf(fi->asm_label,sizeof(fi->asm_label),"%s",f->name);   /* Raw C symbol, no bzy_ prefix. */
+			fi->is_extern=1;
+		}
+		else
+		{
+			snprintf(fi->asm_label,sizeof(fi->asm_label),"bzy_%s",f->name);
+		}
 	}
 
 	if (!u->klass)

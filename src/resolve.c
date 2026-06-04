@@ -2424,6 +2424,18 @@ static void resolve_block(SymTable *st, Block *b, const char *tc)
 void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 {
 	g_types=tt;
+	if (f->is_extern)
+	{
+		/* Validate the FFI signature, then skip body resolution (there is none). */
+		if (f->ret_type.kind==TY_STRING || f->ret_type.kind==TY_OBJECT
+			|| f->ret_type.kind==TY_ARRAY || f->ret_type.kind==TY_MAP)
+		{
+			die(0,"extern return type must be a scalar or long (string/object returns are not supported yet).",NULL);
+		}
+
+		return;
+	}
+
 	g_ret=&f->ret_type;
 	g_loop_depth=0;
 	g_break_depth=0;

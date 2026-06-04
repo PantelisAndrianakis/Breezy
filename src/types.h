@@ -47,6 +47,7 @@ typedef struct
 	TypeRef ret_type;
 	int param_count;
 	TypeRef param_types[8];
+	int is_extern;            /* FFI: asm_label is the raw C symbol; no body emitted. */
 } FuncInfo;
 typedef struct
 {

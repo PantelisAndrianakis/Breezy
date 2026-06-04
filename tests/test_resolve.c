@@ -18,6 +18,14 @@ static Unit *build1(const char *s)
 	return u;
 }
 
+static void test_extern_call_resolves(void)
+{
+	Func *f=build1("extern long strlen(string s); extern int abs(int n);"
+				   " void main() { long n; n = strlen(\"hi\"); int a; a = abs(-3); }")->funcs[2];
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LONG);   /* strlen(string) -> long. */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);    /* abs(int) -> int. */
+}
+
 static void test_local_int_offset(void)
 {
 	Func *f=build1("void main() { int x; x = 5; }")->funcs[0];
@@ -574,6 +582,7 @@ static void test_network_udp_resolves(void)
 int main(void)
 {
 	printf("Resolver tests\n");
+	RUN(test_extern_call_resolves);
 	RUN(test_local_int_offset);
 	RUN(test_field_resolves_offset);
 	RUN(test_int_literal_widths);
