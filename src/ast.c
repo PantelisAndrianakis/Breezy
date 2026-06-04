@@ -80,6 +80,10 @@ ClassDecl *class_new(void)
 {
 	return track(calloc(1,sizeof(ClassDecl)));
 }
+InterfaceDecl *interface_new(void)
+{
+	return track(calloc(1,sizeof(InterfaceDecl)));
+}
 Unit      *unit_new(void)
 {
 	return track(calloc(1,sizeof(Unit)));

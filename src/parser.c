@@ -1127,6 +1127,54 @@ static Func *parse_function(Parser *p)
 	return f;
 }
 
+static InterfaceDecl *parse_interface(Parser *p)
+{
+	expect(p,TOKEN_INTERFACE);
+	InterfaceDecl *itf=interface_new();
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(itf->name,name.text);
+	expect(p,TOKEN_LBRACE);
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		Func *m=func_new();
+		parse_type(p,&m->ret_type);
+		Token mn=expect(p,TOKEN_IDENT);
+		strcpy(m->name,mn.text);
+		expect(p,TOKEN_LPAREN);
+		if (!check(p,TOKEN_RPAREN))
+		{
+			do
+			{
+				if (m->param_count>=8)
+				{
+					fprintf(stderr,"Too many params.\n");
+					exit(1);
+				}
+
+				Param *pm=&m->params[m->param_count++];
+				parse_type(p,&pm->type);
+				Token pn=expect(p,TOKEN_IDENT);
+				strcpy(pm->name,pn.text);
+			}
+			while (match(p,TOKEN_COMMA));
+		}
+
+		expect(p,TOKEN_RPAREN);
+		expect(p,TOKEN_SEMICOLON);   /* Signature only, no body. */
+		m->body=NULL;
+		if (itf->method_count>=16)
+		{
+			fprintf(stderr,"Too many interface methods.\n");
+			exit(1);
+		}
+
+		itf->methods[itf->method_count++]=m;
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return itf;
+}
+
 static ClassDecl *parse_class(Parser *p)
 {
 	advance(p);
@@ -1139,6 +1187,23 @@ static ClassDecl *parse_class(Parser *p)
 		strcpy(c->parent_name,par.text);
 		c->has_parent=1;
 	}
+
+	if (match(p,TOKEN_IMPLEMENTS))
+	{
+		do
+		{
+			Token in=expect(p,TOKEN_IDENT);
+			if (c->implements_count>=8)
+			{
+				fprintf(stderr,"Too many implemented interfaces.\n");
+				exit(1);
+			}
+
+			strcpy(c->implements[c->implements_count++],in.text);
+		}
+		while (match(p,TOKEN_COMMA));
+	}
+
 	expect(p,TOKEN_LBRACE);
 	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 	{
@@ -1233,7 +1298,16 @@ Unit *parse_unit(Parser *p)
 	Unit *u=unit_new();
 	while (!check(p,TOKEN_EOF))
 	{
-		if (check(p,TOKEN_EXTERN))
+		if (check(p,TOKEN_INTERFACE))
+		{
+			if (u->interface_count>=8)
+			{
+				fprintf(stderr,"Too many interfaces per file.\n");
+				exit(1);
+			}
+			u->interfaces[u->interface_count++]=parse_interface(p);
+		}
+		else if (check(p,TOKEN_EXTERN))
 		{
 			if (u->func_count>=8)
 			{

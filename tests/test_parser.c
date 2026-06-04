@@ -135,6 +135,23 @@ static void test_parse_extern_decl(void)
 	ASSERT_INT(e->params[0].type.kind, TY_STRING);
 }
 
+static void test_parse_interface_and_implements(void)
+{
+	Unit *u = parse_unit_str("interface Speaker { string speak(); int volume(int x); }"
+							 " class Dog implements Speaker { string speak() { return \"woof\"; } }");
+	ASSERT_INT(u->interface_count, 1);
+	InterfaceDecl *itf = u->interfaces[0];
+	ASSERT_STR(itf->name, "Speaker");
+	ASSERT_INT(itf->method_count, 2);
+	ASSERT_STR(itf->methods[0]->name, "speak");
+	ASSERT_INT(itf->methods[0]->ret_type.kind, TY_STRING);
+	ASSERT_INT(itf->methods[0]->body == NULL, 1);
+	ASSERT_INT(itf->methods[1]->param_count, 1);
+	ASSERT_STR(u->klass->name, "Dog");
+	ASSERT_INT(u->klass->implements_count, 1);
+	ASSERT_STR(u->klass->implements[0], "Speaker");
+}
+
 static void test_parse_extern_blocking(void)
 {
 	Unit *u = parse_unit_str("extern blocking long read_db(long h); void main() { }");
@@ -469,6 +486,7 @@ int main(void)
 	RUN(test_new);
 	RUN(test_parse_extern_decl);
 	RUN(test_parse_extern_blocking);
+	RUN(test_parse_interface_and_implements);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);

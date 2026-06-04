@@ -216,6 +216,8 @@ typedef struct
 	char  name[64];
 	char parent_name[64];
 	int has_parent;
+	char implements[8][64];   /* Interface names this class implements. */
+	int implements_count;
 	Field fields[32];
 	int field_count;
 	Func *methods[32];
@@ -225,9 +227,18 @@ typedef struct
 
 typedef struct
 {
-	ClassDecl *klass;         /* Non-NULL if this file declares a class. */
-	Func      *funcs[8];      /* File-scope functions. */
-	int        func_count;
+	char  name[64];
+	Func *methods[16];        /* Bodyless signature Funcs (body == NULL). */
+	int   method_count;
+} InterfaceDecl;
+
+typedef struct
+{
+	ClassDecl     *klass;         /* Non-NULL if this file declares a class. */
+	InterfaceDecl *interfaces[8]; /* File-scope interface declarations. */
+	int            interface_count;
+	Func          *funcs[8];      /* File-scope functions. */
+	int            func_count;
 } Unit;
 
 void   ast_free_all(void);
@@ -238,6 +249,7 @@ Block *block_new(void);
 void   block_push(Block *b, Stmt *s);
 Func  *func_new(void);
 ClassDecl *class_new(void);
+InterfaceDecl *interface_new(void);
 Unit  *unit_new(void);
 
 #endif
