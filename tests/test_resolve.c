@@ -54,6 +54,25 @@ static TypeTable *build_generic(const char **srcs, int n)
 }
 
 /* Full front-end lowering: enums first, then generics, then register + resolve. */
+static Unit *g_prog_units[64];
+static int   g_prog_total;
+
+static Func *prog_find_func(const char *name)
+{
+	for (int i=0; i<g_prog_total; i++)
+	{
+		for (int j=0; j<g_prog_units[i]->func_count; j++)
+		{
+			if (strcmp(g_prog_units[i]->funcs[j]->name,name)==0)
+			{
+				return g_prog_units[i]->funcs[j];
+			}
+		}
+	}
+
+	return NULL;
+}
+
 static TypeTable *build_program(const char **srcs, int n)
 {
 	static Parser ps[16];
@@ -67,6 +86,12 @@ static TypeTable *build_program(const char **srcs, int n)
 	int total=n;
 	enums_expand(units,&total,64);
 	generics_expand(units,&total,64);
+	for (int i=0; i<total; i++)
+	{
+		g_prog_units[i]=units[i];
+	}
+
+	g_prog_total=total;
 	types_init(&g_tt);
 	types_register_builtins(&g_tt);
 	for (int i=0; i<total; i++)
@@ -105,6 +130,31 @@ static void test_enum_lowers_to_class(void)
 	ASSERT_INT(enum_is("Color"), 1);
 	ASSERT_INT(enum_ordinal("Color","GREEN"), 1);
 	ASSERT_INT(enum_count_of("Color"), 3);
+}
+
+static void test_enum_static_access(void)
+{
+	const char *srcs[] =
+	{
+		"enum Color { RED, GREEN, BLUE; }",
+		"void main() { Color c; c = Color.RED; int o; o = c.ordinal(); string n; n = c.name();"
+		" Color[] all; all = Color.values(); Color v; v = Color.valueOf(\"GREEN\"); }"
+	};
+	build_program(srcs, 2);
+	Func *m = prog_find_func("main");
+	ASSERT_INT(m != NULL, 1);
+	/* c = Color.RED -> Color (object). */
+	ASSERT_INT(m->body->stmts[1]->value->type.kind, TY_OBJECT);
+	ASSERT_STR(m->body->stmts[1]->value->type.class_name, "Color");
+	/* o = c.ordinal() -> int;  n = c.name() -> string. */
+	ASSERT_INT(m->body->stmts[3]->value->type.kind, TY_INT);
+	ASSERT_INT(m->body->stmts[5]->value->type.kind, TY_STRING);
+	/* all = Color.values() -> Color[];  v = Color.valueOf(..) -> Color. */
+	ASSERT_INT(m->body->stmts[7]->value->type.kind, TY_ARRAY);
+	ASSERT_INT(m->body->stmts[7]->value->type.elem->kind, TY_OBJECT);
+	ASSERT_STR(m->body->stmts[7]->value->type.elem->class_name, "Color");
+	ASSERT_INT(m->body->stmts[9]->value->type.kind, TY_OBJECT);
+	ASSERT_STR(m->body->stmts[9]->value->type.class_name, "Color");
 }
 
 static void test_generic_lowers_to_class(void)
@@ -749,6 +799,7 @@ int main(void)
 	printf("Resolver tests\n");
 	RUN(test_interface_call_resolves);
 	RUN(test_enum_lowers_to_class);
+	RUN(test_enum_static_access);
 	RUN(test_generic_lowers_to_class);
 	RUN(test_generic_multi_param_lowers);
 	RUN(test_generic_bound_ok);

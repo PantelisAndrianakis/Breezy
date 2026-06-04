@@ -2,6 +2,7 @@
 #include "symtable.h"
 #include "ownership.h"
 #include "escape.h"
+#include "enums.h"
 #include "lexer.h"
 #include <string.h>
 #include <stdio.h>
@@ -1185,6 +1186,21 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_FIELD:
 	{
+		/* Enum constant access (Color.RED): the lhs is the enum type name, not a
+		   variable. The node stays EX_FIELD; codegen re-detects it via enum_is and
+		   loads the singleton slot, so lhs is left unresolved. */
+		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
+		{
+			if (enum_ordinal(e->lhs->name,e->name)<0)
+			{
+				die(e->line,"No such enum constant: ",e->name);
+			}
+
+			e->type.kind=TY_OBJECT;
+			strcpy(e->type.class_name,e->lhs->name);
+			break;
+		}
+
 		/* Namespace constant access (File.READONLY etc.): the lhs is the namespace
 		   identifier, not a variable. Rewrite the node to an integer literal. */
 		if (e->lhs->kind==EX_IDENT && strcmp(e->lhs->name,"File")==0)
@@ -1273,6 +1289,43 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_METHOD_CALL:
 	{
+		/* Static enum calls: Enum.values() / Enum.valueOf(string). The lhs is the
+		   enum type name, not a variable; codegen re-detects via enum_is. */
+		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"values")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Enum.values() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_OBJECT;
+				strcpy(el.class_name,e->lhs->name);
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"valueOf")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"Enum.valueOf(string) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_OBJECT;
+				strcpy(e->type.class_name,e->lhs->name);
+			}
+			else
+			{
+				die(e->line,"Unknown static enum method: ",e->name);
+			}
+
+			break;
+		}
+
 		resolve_expr(st,e->lhs,tc);
 		if (e->lhs->type.kind==TY_STRING)
 		{
@@ -2039,6 +2092,19 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Method call on non-object.",NULL);
 		}
 
+		/* Enum instance built-ins: name() -> string, ordinal() -> int (read the
+		   hidden fields; lowered directly in codegen). */
+		if (enum_is(c->name) && (strcmp(e->name,"name")==0 || strcmp(e->name,"ordinal")==0))
+		{
+			if (e->arg_count!=0)
+			{
+				die(e->line,"Enum name()/ordinal() take no arguments.",NULL);
+			}
+
+			e->type.kind = (strcmp(e->name,"name")==0) ? TY_STRING : TY_INT;
+			break;
+		}
+
 		MethodInfo *m=types_find_method(c,e->name);
 		if (!m)
 		{
@@ -2227,6 +2293,11 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		break;
 	}
 	case ST_ASSIGN:
+		if (s->target->kind==EX_FIELD && s->target->lhs->kind==EX_IDENT && enum_is(s->target->lhs->name))
+		{
+			die(s->line,"Enum constants are immutable.",NULL);
+		}
+
 		resolve_expr(st,s->target,tc);
 		resolve_expr(st,s->value,tc);
 		if (!assignable(&s->target->type, &s->value->type))
@@ -2498,7 +2569,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	{
 		/* Validate the FFI signature, then skip body resolution (there is none). */
 		if (f->ret_type.kind==TY_STRING || f->ret_type.kind==TY_OBJECT
-			|| f->ret_type.kind==TY_ARRAY || f->ret_type.kind==TY_MAP)
+				|| f->ret_type.kind==TY_ARRAY || f->ret_type.kind==TY_MAP)
 		{
 			die(0,"extern return type must be a scalar or long (string/object returns are not supported yet).",NULL);
 		}
