@@ -455,6 +455,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	TypeKind k;
 	out->elem=NULL;
 	out->elem2=NULL;
+	out->targ_count=0;   /* Cleared for every base type; only user generics set it. */
 	/* A known template name immediately followed by '<' is a generic. Since
 	   parse_base_type is only reached in type position, an unknown IDENT before
 	   '<' is a clear error, not a downstream parse failure. */

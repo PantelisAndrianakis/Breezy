@@ -190,6 +190,39 @@ static void test_new_generic_with_args(void)
 	ASSERT_INT(e->arg_count, 2);
 }
 
+static void test_classdecl_clone_independent(void)
+{
+	Unit *u = parse_unit_str(
+				  "class Box<T> { T value; void set(T v) { this.value = v; } T get() { return this.value; } }");
+	ClassDecl *orig = u->klass;
+	ClassDecl *copy = classdecl_clone(orig);
+	/* Distinct nodes. */
+	ASSERT_INT(copy == orig, 0);
+	ASSERT_INT(copy->methods[0] == orig->methods[0], 0);
+	ASSERT_INT(copy->fields[0].type.elem == orig->fields[0].type.elem, 1);  /* both NULL */
+	/* Mutating the copy must not touch the original. */
+	strcpy(copy->name, "Box$int");
+	copy->fields[0].type.kind = TY_INT;
+	copy->fields[0].type.class_name[0] = '\0';
+	ASSERT_STR(orig->name, "Box");
+	ASSERT_INT(orig->fields[0].type.kind, TY_OBJECT);
+	ASSERT_STR(orig->fields[0].type.class_name, "T");
+	/* Cloned body is a distinct tree. */
+	ASSERT_INT(copy->methods[1]->body == orig->methods[1]->body, 0);
+}
+
+static void test_typeref_deepcopy_nested(void)
+{
+	Unit *u = parse_unit_str("void m() { Pair<int, Box<string>> p; }");
+	TypeRef *orig = &u->funcs[0]->body->stmts[0]->decl_type;
+	TypeRef copy = typeref_deepcopy(orig);
+	ASSERT_INT(copy.targ_count, 2);
+	ASSERT_INT(copy.targs[0] == orig->targs[0], 0);              /* distinct */
+	ASSERT_INT(copy.targs[1]->kind, TY_GENERIC);                /* Box<string> preserved */
+	ASSERT_STR(copy.targs[1]->class_name, "Box");
+	ASSERT_INT(copy.targs[1]->elem->kind, TY_STRING);
+}
+
 static void test_parse_extern_blocking(void)
 {
 	Unit *u = parse_unit_str("extern blocking long read_db(long h); void main() { }");
@@ -529,6 +562,8 @@ int main(void)
 	RUN(test_generic_class_multi_and_bound);
 	RUN(test_generic_application_type);
 	RUN(test_new_generic_with_args);
+	RUN(test_classdecl_clone_independent);
+	RUN(test_typeref_deepcopy_nested);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);
