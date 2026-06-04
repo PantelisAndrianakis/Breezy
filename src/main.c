@@ -3,6 +3,7 @@
 #include <string.h>
 #include <dirent.h>
 #include "parser.h"
+#include "enums.h"
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
@@ -146,6 +147,10 @@ int main(int argc, char *argv[])
 		parser_init(&parsers[np+i],src);
 		units[np+i]=parse_unit(&parsers[np+i]);
 	}
+
+	/* Lower enums to synthesized classes (base + per-constant subclasses) before
+	   generics, so enum field/arg types that use generics still get instantiated. */
+	enums_expand(units,&total,MAX_FILES);
 
 	/* Lower user generics: synthesize one ordinary class per (template, type-args)
 	   tuple, rewrite applications, and drop templates. Grows `total` in place. */

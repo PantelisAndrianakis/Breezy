@@ -1,5 +1,6 @@
 #include "test_framework.h"
 #include "parser.h"
+#include "enums.h"
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
@@ -50,6 +51,60 @@ static TypeTable *build_generic(const char **srcs, int n)
 
 	resolve_program(&g_tt,units,total);
 	return &g_tt;
+}
+
+/* Full front-end lowering: enums first, then generics, then register + resolve. */
+static TypeTable *build_program(const char **srcs, int n)
+{
+	static Parser ps[16];
+	static Unit *units[64];
+	for (int i=0; i<n; i++)
+	{
+		parser_init(&ps[i],srcs[i]);
+		units[i]=parse_unit(&ps[i]);
+	}
+
+	int total=n;
+	enums_expand(units,&total,64);
+	generics_expand(units,&total,64);
+	types_init(&g_tt);
+	types_register_builtins(&g_tt);
+	for (int i=0; i<total; i++)
+	{
+		types_register_unit_names(&g_tt,units[i]);
+	}
+	for (int i=0; i<total; i++)
+	{
+		types_register_interfaces(&g_tt,units[i]);
+	}
+	for (int i=0; i<total; i++)
+	{
+		types_register_unit_members(&g_tt,units[i]);
+	}
+
+	resolve_program(&g_tt,units,total);
+	return &g_tt;
+}
+
+static void test_enum_lowers_to_class(void)
+{
+	const char *srcs[] =
+	{
+		"enum Color { RED(255,0,0), GREEN(0,255,0), BLUE(0,0,255); int r; int g; int b;"
+		" Color(int r, int g, int b) { this.r = r; this.g = g; this.b = b; } }",
+		"void main() { }"
+	};
+	TypeTable *tt = build_program(srcs, 2);
+	ClassInfo *c = types_find_class(tt,"Color");
+	ASSERT_INT(c != NULL, 1);
+	/* Hidden fields first, then user fields. */
+	ASSERT_INT(types_find_field(c,"__ordinal")->type.kind, TY_INT);
+	ASSERT_INT(types_find_field(c,"__name")->type.kind, TY_STRING);
+	ASSERT_INT(types_find_field(c,"r")->type.kind, TY_INT);
+	/* Registry. */
+	ASSERT_INT(enum_is("Color"), 1);
+	ASSERT_INT(enum_ordinal("Color","GREEN"), 1);
+	ASSERT_INT(enum_count_of("Color"), 3);
 }
 
 static void test_generic_lowers_to_class(void)
@@ -693,6 +748,7 @@ int main(void)
 {
 	printf("Resolver tests\n");
 	RUN(test_interface_call_resolves);
+	RUN(test_enum_lowers_to_class);
 	RUN(test_generic_lowers_to_class);
 	RUN(test_generic_multi_param_lowers);
 	RUN(test_generic_bound_ok);

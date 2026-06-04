@@ -31,7 +31,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
                  -ffunction-sections -Wl,--gc-sections \
                  -s -Wl,--stack,0x4000000
 
-OBJS    = src/lexer.c src/ast.c src/parser.c src/generics.c src/types.c \
+OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/prelude.c src/config.c
 
 # Runtime modules, per host. Common = portable (compute + concurrency core);
