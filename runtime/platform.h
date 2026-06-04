@@ -22,6 +22,10 @@
   /* Returns 1 if signaled, 0 if timed out. */
   static inline int  bzy_sem_wait_ms(bzy_sem *s, int64_t ms) { return WaitForSingleObject(*s, (DWORD)ms) == WAIT_OBJECT_0; }
   static inline void bzy_sem_destroy(bzy_sem *s)     { CloseHandle(*s); }
+  typedef HANDLE bzy_thread;
+  static inline void bzy_thread_start(bzy_thread *t, void *(*fn)(void*), void *arg)
+  { *t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(void*)fn, arg, 0, NULL); }
+  static inline void bzy_thread_join(bzy_thread t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
 #else
   #include <pthread.h>
   #include <semaphore.h>
@@ -50,6 +54,10 @@
 	  return sem_timedwait(s, &ts) == 0;
   }
   static inline void bzy_sem_destroy(bzy_sem *s)     { sem_destroy(s); }
+  typedef pthread_t bzy_thread;
+  static inline void bzy_thread_start(bzy_thread *t, void *(*fn)(void*), void *arg)
+  { pthread_create(t, NULL, fn, arg); }
+  static inline void bzy_thread_join(bzy_thread t) { pthread_join(t, NULL); }
 #endif
 
 #endif

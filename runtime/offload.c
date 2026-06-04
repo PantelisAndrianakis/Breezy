@@ -1,7 +1,12 @@
 #include "breezy.h"
+#include "platform.h"
 #include <stdlib.h>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+#else
+  #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
+#endif
 
 /* A task is a stack node on the submitting breeze's coroutine stack (stable while
    parked). The worker copies its fields out under the lock, runs fn(ctx), then
@@ -16,27 +21,27 @@ typedef struct OffTask
 } OffTask;
 
 static OffTask *g_head, *g_tail;
-static SRWLOCK  g_lock = SRWLOCK_INIT;
-static HANDLE   g_sem;                 /* Released once per submitted task. */
-static HANDLE  *g_threads;
-static int      g_nthreads;
-static volatile LONG g_inflight;       /* Breezes parked on an offload task. */
-static volatile LONG g_shutdown;
-static int      g_started;             /* Guarded by g_start_lock. */
-static SRWLOCK  g_start_lock = SRWLOCK_INIT;
+static bzy_mutex  g_lock = BZY_MUTEX_INIT;
+static bzy_sem    g_sem;               /* Released once per submitted task. */
+static bzy_thread *g_threads;
+static int        g_nthreads;
+static int        g_inflight;          /* Breezes parked on an offload task (via __atomic). */
+static int        g_shutdown;          /* Read by workers via __atomic. */
+static int        g_started;           /* Guarded by g_start_lock. */
+static bzy_mutex  g_start_lock = BZY_MUTEX_INIT;
 
-static DWORD WINAPI offload_worker(void *unused)
+static void *offload_worker(void *unused)
 {
 	(void)unused;
 	for (;;)
 	{
-		WaitForSingleObject(g_sem, INFINITE);
-		if (g_shutdown)
+		bzy_sem_wait(&g_sem);
+		if (__atomic_load_n(&g_shutdown, __ATOMIC_SEQ_CST))
 		{
 			break;
 		}
 
-		AcquireSRWLockExclusive(&g_lock);
+		bzy_mutex_lock(&g_lock);
 		OffTask *tp = g_head;
 		if (tp)
 		{
@@ -47,7 +52,7 @@ static DWORD WINAPI offload_worker(void *unused)
 			}
 		}
 
-		ReleaseSRWLockExclusive(&g_lock);
+		bzy_mutex_unlock(&g_lock);
 		if (!tp)
 		{
 			continue;                  /* Spurious / shutdown wake. */
@@ -58,15 +63,15 @@ static DWORD WINAPI offload_worker(void *unused)
 		void *breeze = tp->breeze;
 		fn(ctx);                       /* The blocking call: reads caller buffers, fills the result slot. */
 		bzy_sched_wake_external(breeze);
-		InterlockedDecrement(&g_inflight);
+		__atomic_sub_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST);
 	}
 
-	return 0;
+	return NULL;
 }
 
 static void offload_ensure_started(void)
 {
-	AcquireSRWLockExclusive(&g_start_lock);
+	bzy_mutex_lock(&g_start_lock);
 	if (!g_started)
 	{
 		int n;
@@ -77,9 +82,13 @@ static void offload_ensure_started(void)
 		}
 		else
 		{
+#ifdef _WIN32
 			SYSTEM_INFO si;
 			GetSystemInfo(&si);
 			n = (int)si.dwNumberOfProcessors;
+#else
+			n = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
 		}
 
 		if (n < 1)
@@ -93,18 +102,18 @@ static void offload_ensure_started(void)
 		}
 
 		g_shutdown = 0;
-		g_sem = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
-		g_threads = calloc((size_t)n, sizeof(HANDLE));
+		bzy_sem_init(&g_sem);
+		g_threads = calloc((size_t)n, sizeof(bzy_thread));
 		for (int i = 0; i < n; i++)
 		{
-			g_threads[i] = CreateThread(NULL, 0, offload_worker, NULL, 0, NULL);
+			bzy_thread_start(&g_threads[i], offload_worker, NULL);
 		}
 
 		g_nthreads = n;
 		g_started = 1;
 	}
 
-	ReleaseSRWLockExclusive(&g_start_lock);
+	bzy_mutex_unlock(&g_start_lock);
 }
 
 void bzy_offload_run(void (*fn)(void*), void *ctx)
@@ -117,8 +126,8 @@ void bzy_offload_run(void (*fn)(void*), void *ctx)
 	t.breeze = bzy_sched_current();
 	t.next = NULL;
 
-	InterlockedIncrement(&g_inflight);
-	AcquireSRWLockExclusive(&g_lock);
+	__atomic_add_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST);
+	bzy_mutex_lock(&g_lock);
 	if (g_tail)
 	{
 		g_tail->next = &t;
@@ -129,7 +138,7 @@ void bzy_offload_run(void (*fn)(void*), void *ctx)
 	}
 
 	g_tail = &t;
-	ReleaseSemaphore(g_sem, 1, NULL);
+	bzy_sem_post(&g_sem, 1);
 	/* Park; the scheduler releases g_lock after we switch out, so a worker cannot
 	   pop &t (and read our stack node) until we are safely off the CPU. */
 	bzy_sched_park_unlock(&g_lock);
@@ -138,26 +147,24 @@ void bzy_offload_run(void (*fn)(void*), void *ctx)
 
 int64_t bzy_offload_inflight(void)
 {
-	return (int64_t)g_inflight;
+	return (int64_t)__atomic_load_n(&g_inflight, __ATOMIC_SEQ_CST);
 }
 
 void bzy_offload_shutdown(void)
 {
-	AcquireSRWLockExclusive(&g_start_lock);
+	bzy_mutex_lock(&g_start_lock);
 	if (g_started)
 	{
-		g_shutdown = 1;
-		ReleaseSemaphore(g_sem, g_nthreads, NULL);   /* Wake every worker to exit. */
-		WaitForMultipleObjects((DWORD)g_nthreads, g_threads, TRUE, INFINITE);
+		__atomic_store_n(&g_shutdown, 1, __ATOMIC_SEQ_CST);
+		bzy_sem_post(&g_sem, g_nthreads);   /* Wake every worker to exit. */
 		for (int i = 0; i < g_nthreads; i++)
 		{
-			CloseHandle(g_threads[i]);
+			bzy_thread_join(g_threads[i]);
 		}
 
 		free(g_threads);
 		g_threads = NULL;
-		CloseHandle(g_sem);
-		g_sem = NULL;
+		bzy_sem_destroy(&g_sem);
 		g_nthreads = 0;
 		g_started = 0;
 		g_shutdown = 0;
@@ -165,5 +172,5 @@ void bzy_offload_shutdown(void)
 		g_tail = NULL;
 	}
 
-	ReleaseSRWLockExclusive(&g_start_lock);
+	bzy_mutex_unlock(&g_start_lock);
 }

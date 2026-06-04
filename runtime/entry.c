@@ -16,9 +16,9 @@ int main(int argc, char **argv)
 	bzy_spawn(bzy_user_main);
 	bzy_sched_run();
 
+	bzy_offload_shutdown();   /* Join the offload pool (no-op if it was never used; portable). */
 #ifdef _WIN32
-	bzy_offload_shutdown();   /* Join the offload pool (no-op if it was never used). */
-	bzy_iocp_shutdown();      /* Join the IOCP completion thread (no-op if no sockets were used). */
+	bzy_iocp_shutdown();      /* Join the IOCP completion thread (Windows sockets only). */
 #endif
 
 	/* A breeze that died from an uncaught exception is survived (the scheduler keeps
