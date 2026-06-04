@@ -1,9 +1,15 @@
 #include "breezy.h"
 #include "coroutine.h"
+#include "platform.h"
 #include <stdlib.h>
 #include <stdio.h>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#ifdef _WIN32
+  #define WIN32_LEAN_AND_MEAN
+  #include <windows.h>
+#else
+  #include <pthread.h>
+  #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
+#endif
 
 typedef struct Breeze
 {
@@ -20,24 +26,25 @@ typedef struct Breeze
 typedef struct Worker
 {
 	Breeze *head, *tail;
-	SRWLOCK lock;
+	bzy_mutex lock;
 } Worker;
 
 static Worker *g_workers;
 static int     g_nworkers = 1;
-static HANDLE  g_work_sem;          /* Released on every enqueue: "work may be available". */
-static volatile LONG g_live;        /* Breezes created but not finished (atomic). */
-static volatile LONG g_shutdown;    /* Set when g_live hits 0; unblocks idle workers so they exit. */
+static bzy_sem g_work_sem;          /* Released on every enqueue: "work may be available". */
+static int     g_sem_ready;         /* 1 once g_work_sem is initialized (nudge guard pre-run). */
+static int     g_live;              /* Breezes created but not finished (accessed via __atomic). */
+static int     g_shutdown;          /* Set when g_live hits 0; unblocks idle workers so they exit. */
 
 static __thread BzyCoroutine *t_sched;       /* This thread's scheduler coroutine. */
 static __thread Breeze       *t_running;     /* Breeze currently on this CPU (NULL = scheduler). */
 static __thread int           t_wid;         /* This thread's worker index. */
-static __thread void         *t_park_unlock; /* SRWLOCK* the scheduler releases after a parking switch. */
+static __thread void         *t_park_unlock; /* bzy_mutex* the scheduler releases after a parking switch. */
 
 static void enqueue_on(int wid, Breeze *b)
 {
 	Worker *w = &g_workers[wid];
-	AcquireSRWLockExclusive(&w->lock);
+	bzy_mutex_lock(&w->lock);
 	b->next = NULL;
 	if (w->tail)
 	{
@@ -49,14 +56,14 @@ static void enqueue_on(int wid, Breeze *b)
 	}
 
 	w->tail = b;
-	ReleaseSRWLockExclusive(&w->lock);
-	ReleaseSemaphore(g_work_sem, 1, NULL);
+	bzy_mutex_unlock(&w->lock);
+	bzy_sem_post(&g_work_sem, 1);
 }
 
 static Breeze *dequeue_from(int wid)
 {
 	Worker *w = &g_workers[wid];
-	AcquireSRWLockExclusive(&w->lock);
+	bzy_mutex_lock(&w->lock);
 	Breeze *b = w->head;
 	if (b)
 	{
@@ -67,7 +74,7 @@ static Breeze *dequeue_from(int wid)
 		}
 	}
 
-	ReleaseSRWLockExclusive(&w->lock);
+	bzy_mutex_unlock(&w->lock);
 	return b;
 }
 
@@ -105,9 +112,13 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 {
 	if (n <= 0)
 	{
+#ifdef _WIN32
 		SYSTEM_INFO si;
 		GetSystemInfo(&si);
 		n = (int)si.dwNumberOfProcessors;
+#else
+		n = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
 	}
 
 	if (n < 1)
@@ -117,7 +128,7 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 
 	if (n > 64)
 	{
-		n = 64;   /* WaitForMultipleObjects caps at MAXIMUM_WAIT_OBJECTS (64). */
+		n = 64;   /* Windows WaitForMultipleObjects caps at MAXIMUM_WAIT_OBJECTS (64). */
 	}
 
 	int old = g_nworkers;
@@ -126,7 +137,7 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 	{
 		g_workers[i].head = NULL;
 		g_workers[i].tail = NULL;
-		InitializeSRWLock(&g_workers[i].lock);
+		bzy_mutex_init(&g_workers[i].lock);
 	}
 
 	g_nworkers = n;
@@ -141,14 +152,15 @@ void bzy_sched_init(void)
 	g_nworkers = 0;
 	g_workers = NULL;
 	bzy_sched_set_workers(1);        /* Worker 0 exists before any spawn; Task 2 raises this. */
-	g_work_sem = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
+	bzy_sem_init(&g_work_sem);
+	g_sem_ready = 1;
 }
 
 static Breeze *make_breeze(void)
 {
 	Breeze *b = calloc(1, sizeof(*b));
 	b->coroutine = bzy_coroutine_create(breeze_run, b);
-	InterlockedIncrement(&g_live);
+	__atomic_add_fetch(&g_live, 1, __ATOMIC_SEQ_CST);
 	return b;
 }
 
@@ -177,9 +189,9 @@ void bzy_sched_park(void)          /* Suspend the running breeze; a wake() must 
 	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_park_unlock(void *srwlock)   /* Park, then have the scheduler release the lock after we switch out. */
+void bzy_sched_park_unlock(void *lock)   /* Park, then have the scheduler release the lock after we switch out. */
 {
-	t_park_unlock = srwlock;        /* Closes the wake-before-park race: the waker cannot take the lock,
+	t_park_unlock = lock;           /* bzy_mutex*. Closes the wake-before-park race: the waker cannot take the lock,
 	                                   and so cannot observe us as a waiter, until we are safely off the CPU. */
 	bzy_coroutine_switch(t_sched);
 }
@@ -196,9 +208,9 @@ void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread
 
 void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re-checks timers. */
 {
-	if (g_work_sem)
+	if (g_sem_ready)
 	{
-		ReleaseSemaphore(g_work_sem, 1, NULL);
+		bzy_sem_post(&g_work_sem, 1);
 	}
 }
 
@@ -244,7 +256,7 @@ static void worker_loop(void)
 		Breeze *b = find_work();
 		if (!b)
 		{
-			if (g_shutdown)
+			if (__atomic_load_n(&g_shutdown, __ATOMIC_SEQ_CST))
 			{
 				break;
 			}
@@ -288,7 +300,7 @@ static void worker_loop(void)
 					wait = 0x7fffffff;
 				}
 
-				WaitForSingleObject(g_work_sem, (DWORD)wait);   /* Sleep until the next deadline (or an enqueue). */
+				bzy_sem_wait_ms(&g_work_sem, wait);   /* Sleep until the next deadline (or an enqueue). */
 				continue;
 			}
 
@@ -297,18 +309,18 @@ static void worker_loop(void)
 			{
 				/* A breeze is parked on an offload or network op; a worker or the
 				   completion thread will wake it. Wait instead of declaring deadlock. */
-				WaitForSingleObject(g_work_sem, INFINITE);
+				bzy_sem_wait(&g_work_sem);
 				continue;
 			}
 
-			if (g_nworkers == 1 && g_live > 0)
+			if (g_nworkers == 1 && __atomic_load_n(&g_live, __ATOMIC_SEQ_CST) > 0)
 			{
 				/* Single worker, breezes remain parked, nothing can ever wake them. */
 				fprintf(stderr, "Deadlock: all breezes blocked.\n");
 				abort();
 			}
 
-			WaitForSingleObject(g_work_sem, INFINITE);
+			bzy_sem_wait(&g_work_sem);
 			continue;
 		}
 
@@ -318,7 +330,7 @@ static void worker_loop(void)
 
 		if (t_park_unlock)
 		{
-			ReleaseSRWLockExclusive((PSRWLOCK)t_park_unlock);   /* Hand-off: the breeze parked holding this. */
+			bzy_mutex_unlock((bzy_mutex*)t_park_unlock);   /* Hand-off: the breeze parked holding this. */
 			t_park_unlock = NULL;
 		}
 
@@ -326,27 +338,43 @@ static void worker_loop(void)
 		{
 			bzy_coroutine_delete(b->coroutine);
 			free(b);
-			if (InterlockedDecrement(&g_live) == 0 && bzy_timer_next_deadline() < 0)
+			if (__atomic_sub_fetch(&g_live, 1, __ATOMIC_SEQ_CST) == 0 && bzy_timer_next_deadline() < 0)
 			{
 				/* No breezes and no timer can ever fire again: shut down. A pending
 				   timer keeps the program alive — workers fall into the timer wait. */
-				g_shutdown = 1;
-				ReleaseSemaphore(g_work_sem, g_nworkers, NULL);   /* Wake every idle worker to exit. */
+				__atomic_store_n(&g_shutdown, 1, __ATOMIC_SEQ_CST);
+				bzy_sem_post(&g_work_sem, g_nworkers);   /* Wake every idle worker to exit. */
 			}
 		}
 	}
 }
 
-static DWORD WINAPI worker_thread_main(void *arg)
+/* Worker entry: become this thread's own scheduler coroutine, then run the loop.
+   The two ABIs differ only in the wrapper signature/return. */
+static void worker_main(int wid)
 {
-	t_wid = (int)(intptr_t)arg;
+	t_wid = wid;
 	t_sched = bzy_coroutine_thread_enter();   /* This thread becomes its own scheduler coroutine. */
 	worker_loop();
+}
+
+#ifdef _WIN32
+static DWORD WINAPI worker_thread_main(void *arg)
+{
+	worker_main((int)(intptr_t)arg);
 	return 0;
 }
+#else
+static void *worker_thread_main(void *arg)
+{
+	worker_main((int)(intptr_t)arg);
+	return NULL;
+}
+#endif
 
 void bzy_sched_run(void)
 {
+#ifdef _WIN32
 	HANDLE *threads = NULL;
 	if (g_nworkers > 1)
 	{
@@ -369,9 +397,32 @@ void bzy_sched_run(void)
 
 		free(threads);
 	}
+#else
+	pthread_t *threads = NULL;
+	if (g_nworkers > 1)
+	{
+		threads = calloc((size_t)(g_nworkers - 1), sizeof(pthread_t));
+		for (int i = 1; i < g_nworkers; i++)
+		{
+			pthread_create(&threads[i - 1], NULL, worker_thread_main, (void*)(intptr_t)i);
+		}
+	}
 
-	CloseHandle(g_work_sem);
-	g_work_sem = NULL;
+	worker_loop();   /* This thread is worker 0. */
+
+	if (threads)
+	{
+		for (int i = 0; i < g_nworkers - 1; i++)
+		{
+			pthread_join(threads[i], NULL);
+		}
+
+		free(threads);
+	}
+#endif
+
+	bzy_sem_destroy(&g_work_sem);
+	g_sem_ready = 0;
 	free(g_workers);
 	g_workers = NULL;
 	g_nworkers = 0;

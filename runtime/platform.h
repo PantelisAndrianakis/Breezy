@@ -13,6 +13,7 @@
   typedef SRWLOCK bzy_mutex;
   typedef HANDLE  bzy_sem;
   #define BZY_MUTEX_INIT SRWLOCK_INIT
+  static inline void bzy_mutex_init(bzy_mutex *m)   { InitializeSRWLock(m); }
   static inline void bzy_mutex_lock(bzy_mutex *m)   { AcquireSRWLockExclusive(m); }
   static inline void bzy_mutex_unlock(bzy_mutex *m) { ReleaseSRWLockExclusive(m); }
   static inline void bzy_sem_init(bzy_sem *s)        { *s = CreateSemaphore(NULL, 0, 0x7fffffff, NULL); }
@@ -28,6 +29,7 @@
   typedef pthread_mutex_t bzy_mutex;
   typedef sem_t           bzy_sem;
   #define BZY_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
+  static inline void bzy_mutex_init(bzy_mutex *m)   { pthread_mutex_init(m, NULL); }
   static inline void bzy_mutex_lock(bzy_mutex *m)   { pthread_mutex_lock(m); }
   static inline void bzy_mutex_unlock(bzy_mutex *m) { pthread_mutex_unlock(m); }
   static inline void bzy_sem_init(bzy_sem *s)        { sem_init(s, 0, 0); }

@@ -8,13 +8,15 @@ ifeq ($(findstring Linux,$(UNAME)),Linux)
   CORO_SRC      = runtime/coroutine_posix.c
   PLATFORM_LIBS = -lpthread
   STACKFLAG     =
+  PLATFORM_DEFS = -D_POSIX_C_SOURCE=200809L   # Expose clock_gettime / sem_timedwait under -std=c99.
 else
   CORO_SRC      = runtime/coroutine_win.c
   PLATFORM_LIBS =
   STACKFLAG     = -Wl,--stack,0x4000000
+  PLATFORM_DEFS =
 endif
 
-CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc $(STACKFLAG)
+CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc $(STACKFLAG) $(PLATFORM_DEFS)
 
 # Release flags: optimize, drop debug info, and let the linker garbage-collect
 # unreferenced functions so stages a binary never calls are not carried along.
