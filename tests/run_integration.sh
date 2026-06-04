@@ -175,4 +175,18 @@ check_fail dbl_to_float     tests/samples/bad_double_to_float.bzy
 check_fail float_int_mix    tests/samples/bad_float_int_mix.bzy
 check_fail schedule_nonvoid tests/samples/bad_schedule_nonvoid
 check_fail schedule_args    tests/samples/bad_schedule_args
+# Cross-assembly: the Linux (System V / ELF64) emission must assemble cleanly with
+# NASM. Link + run is a Linux-only step; here we only prove the asm is valid ELF64.
+# Skipped (not failed) if NASM can't emit elf64 on this host.
+if nasm -hf 2>/dev/null | grep -qi elf64; then
+    ./breezy tests/samples/arith.bzy --target linux >/dev/null 2>&1
+    if [ -f out.asm ] && nasm -f elf64 out.asm -o out_elf.o >/dev/null 2>&1; then
+        echo "  elf64_assembles: OK"
+    else
+        echo "  elf64_assembles: FAIL"; fail=1
+    fi
+    rm -f out_elf.o
+else
+    echo "  elf64_assembles: SKIP (nasm has no elf64 output on this host)"
+fi
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

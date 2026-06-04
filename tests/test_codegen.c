@@ -73,10 +73,29 @@ static void test_windows_arg_regs_unchanged(void)
 	ASSERT_INT(strstr(g_asm, "rdi") == NULL, 1);   /* never SysV regs on Windows. */
 }
 
+static void test_linux_receiver_and_release(void)
+{
+	/* A method call + an object local: the receiver passes in rdi (SysV arg0). */
+	emit("class A { int v; int get() { return this.v; } }"
+		 " void main() { A a; a = new A(); int x; x = a.get(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "rdi") != NULL, 1);
+}
+
+static void test_linux_fp_arg_numbering(void)
+{
+	/* f(int a, double b): a -> rdi, b -> xmm0 (FP numbered independently of the
+	   integer arg in position 0). */
+	emit("double f(int a, double b) { return b; } void main() { double r; r = f(1, 2.5); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "rdi") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "xmm0") != NULL, 1);
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);
+	RUN(test_linux_receiver_and_release);
+	RUN(test_linux_fp_arg_numbering);
 	SUMMARY();
 	return 0;
 }

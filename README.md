@@ -915,6 +915,17 @@ make
 
 Requirements (handled automatically by the scripts): GCC (or MinGW-w64 on Windows), NASM, GNU Make.
 
+### Targets
+
+The codegen backend is selectable with `--target` (default: the build host):
+
+```sh
+breezy myproject                    # Windows PE64 (Microsoft x64 ABI) — the default
+breezy myproject --target linux     # System V AMD64 / ELF64 emission
+```
+
+`--target linux` emits System V AMD64 assembly (arguments in `rdi, rsi, rdx, rcx, r8, r9`, FP args numbered independently of position) and drives `nasm -f elf64` + `gcc -no-pie`. The **compute subset** of the language (arithmetic, control flow, functions, objects/ARC, strings, collections) is wired for it now; the concurrency/I-O runtime (threads, channels, files, sockets, `readUrl`) needs the Linux backends that land in later sub-parts. On a Linux (or WSL) host the produced `out.asm` assembles and links; on Windows the SysV output is verified by assembling it with `nasm -f elf64` (the `elf64_assembles` integration check). Windows usage is unchanged.
+
 ---
 
 ## Roadmap
