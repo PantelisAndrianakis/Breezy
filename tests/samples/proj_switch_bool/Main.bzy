@@ -1,0 +1,10 @@
+void main()
+{
+	boolean f;
+	f = true;
+	switch (f)
+	{
+		case false: print(10); break;
+		case true:  print(20); break;
+	}
+}

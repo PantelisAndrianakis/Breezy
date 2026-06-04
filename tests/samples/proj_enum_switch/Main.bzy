@@ -1,0 +1,12 @@
+void main()
+{
+	Color c;
+	c = Color.GREEN;
+	switch (c)
+	{
+		case RED:   print(1); break;
+		case GREEN: print(2); break;
+		case BLUE:  print(3); break;
+		default:    print(9); break;
+	}
+}

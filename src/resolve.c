@@ -2439,12 +2439,23 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_SWITCH:
 	{
 		resolve_expr(st,s->cond,tc);
-		if (!ty_is_int(s->cond->type.kind))
+		TypeKind ck=s->cond->type.kind;
+		int is_enum_switch = (ck==TY_OBJECT && enum_is(s->cond->type.class_name));
+		int is_string_switch = (ck==TY_STRING);
+		/* Permitted operands: integers, bool, enum, string. Floats are rejected
+		   (exact-equality matching is unsafe for floating point, as in Java). */
+		if (!ty_is_int(ck) && ck!=TY_BOOL && !is_enum_switch && !is_string_switch)
 		{
-			die(s->line,"Switch operand must be an integer.",NULL);
+			if (ty_is_float(ck))
+			{
+				die(s->line,"Switch operand cannot be float/double (exact equality is unreliable).",NULL);
+			}
+
+			die(s->line,"Switch operand must be an integer, bool, enum, or string.",NULL);
 		}
 
 		long long seen[256];
+		const char *seen_str[256];
 		int nseen=0, ndefault=0;
 		Block *b=s->then_blk;
 		g_break_depth++;
@@ -2453,6 +2464,59 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			Stmt *c=b->stmts[i];
 			if (c->kind==ST_CASE)
 			{
+				if (is_enum_switch)
+				{
+					/* case CONST: -> the operand enum's ordinal. */
+					if (c->value->kind!=EX_IDENT)
+					{
+						die(c->line,"Enum switch case must be a constant name.",NULL);
+					}
+
+					int ord=enum_ordinal(s->cond->type.class_name,c->value->name);
+					if (ord<0)
+					{
+						die(c->line,"No such enum constant: ",c->value->name);
+					}
+
+					c->value->kind=EX_INT;
+					c->value->int_val=ord;
+					c->value->type.kind=TY_INT;
+				}
+				else if (is_string_switch)
+				{
+					if (c->value->kind!=EX_STR)
+					{
+						die(c->line,"String switch case must be a string literal.",NULL);
+					}
+
+					c->value->type.kind=TY_STRING;
+					for (int j=0; j<nseen; j++)
+					{
+						if (strcmp(seen_str[j],c->value->str_val)==0)
+						{
+							die(c->line,"Duplicate case value in switch.",NULL);
+						}
+					}
+
+					if (nseen<256)
+					{
+						seen_str[nseen++]=c->value->str_val;
+					}
+
+					continue;   /* String dedupe handled above; skip the integer path. */
+				}
+				else if (ck==TY_BOOL)
+				{
+					if (c->value->kind!=EX_BOOL)
+					{
+						die(c->line,"Boolean switch case must be true or false.",NULL);
+					}
+				}
+				else if (c->value->kind!=EX_INT)
+				{
+					die(c->line,"Switch case must be an integer literal.",NULL);
+				}
+
 				for (int j=0; j<nseen; j++)
 				{
 					if (seen[j]==c->value->int_val)

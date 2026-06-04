@@ -3113,6 +3113,50 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
    fallthrough is automatic (bodies emit contiguously) and only break exits.
    A pre-pass assigns a label per case/default; dispatch is a compare-chain;
    break targets the switch end. */
+/* String switch: a compare-chain via bzy_str_eq (no jump table on pointers). The
+   operand persists in assign_save; the matched target label is computed into
+   fp_save (a stack slot survives the calls), then a single indirect jmp dispatches
+   so an owned operand is released exactly once regardless of which case matched. */
+static void cg_switch_string(Codegen *cg, TypeTable *tt, Stmt *s, Block *b, int default_lbl)
+{
+	cg_expr(cg,tt,s->cond);                                  /* Operand string -> rax. */
+	int owned = expr_is_owned(s->cond);
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);  /* Operand (persists). */
+	cg_emit(cg,"    lea rax, [rel .L%d]", default_lbl);
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->fp_save);      /* Matched target := default. */
+	for (int i=0; i<b->count; i++)
+	{
+		Stmt *c=b->stmts[i];
+		if (c->kind!=ST_CASE)
+		{
+			continue;
+		}
+
+		int skip=cg_label(cg);
+		cg_expr(cg,tt,c->value);                             /* Case literal -> rax (owned). */
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save); /* Case string (to release). */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), cg->assign_save);
+		cg_aligned_call(cg,"bzy_str_eq");                    /* rax = 0/1. */
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    je .L%d", skip);
+		cg_emit(cg,"    lea rax, [rel .L%d]", c->decl_offset);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->fp_save);  /* Matched target := this case. */
+		cg_emit(cg,".L%d:", skip);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
+		cg_release_rcx(cg);                                  /* Release the case literal. */
+	}
+
+	if (owned)
+	{
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);
+		cg_release_rcx(cg);
+	}
+
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->fp_save);
+	cg_emit(cg,"    jmp rax");
+}
+
 static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	Block *b = s->then_blk;
@@ -3130,6 +3174,12 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				default_lbl = c->decl_offset;
 			}
 		}
+	}
+
+	if (s->cond->type.kind==TY_STRING)
+	{
+		cg_switch_string(cg,tt,s,b,default_lbl);
+		goto bodies;
 	}
 
 	/* Collect case-value extent for the dense/sparse choice. */
@@ -3158,6 +3208,24 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	int dense = ncases>=4 && range<=4*ncases && range<=4096;
 
 	cg_expr(cg,tt,s->cond);                 /* operand -> rax */
+	if (s->cond->type.kind==TY_OBJECT && enum_is(s->cond->type.class_name))
+	{
+		/* Enum operand: switch on the hidden __ordinal (offset 24). Release the
+		   operand object first if it was an owned read (rbx is callee-saved, so it
+		   survives bzy_release and carries the ordinal across). */
+		if (expr_is_owned(s->cond))
+		{
+			cg_emit(cg,"    mov rbx, [rax + 24]");
+			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, rbx");
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rax + 24]");
+		}
+	}
+
 	if (dense)
 	{
 		int tab = cg_label(cg);
@@ -3198,6 +3266,8 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,"    jmp .L%d", default_lbl);
 	}
 
+bodies:
+	;
 	int sb = cg->cur_break_label;
 	cg->cur_break_label = end;              /* break -> switch end; continue unchanged. */
 	for (int i=0; i<b->count; i++)          /* Body in source order; labels emit contiguously. */

@@ -1,0 +1,12 @@
+void main()
+{
+	string s;
+	s = "green";
+	switch (s)
+	{
+		case "red":   print(1); break;
+		case "green": print(2); break;
+		case "blue":  print(3); break;
+		default:      print(9); break;
+	}
+}

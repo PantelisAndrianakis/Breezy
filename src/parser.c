@@ -836,6 +836,43 @@ static Stmt *parse_for(Parser *p)
 static Expr *parse_case_const(Parser *p)
 {
 	int line=p->cur.line;
+	/* A bare identifier is an enum constant label (case RED:); the resolver maps
+	   it to the operand enum's ordinal. */
+	if (check(p,TOKEN_IDENT))
+	{
+		Token id=expect(p,TOKEN_IDENT);
+		Expr *e=expr_new(EX_IDENT,line);
+		strcpy(e->name,id.text);
+		return e;
+	}
+
+	if (check(p,TOKEN_TRUE) || check(p,TOKEN_FALSE))
+	{
+		Expr *e=expr_new(EX_BOOL,line);
+		e->int_val = check(p,TOKEN_TRUE) ? 1 : 0;
+		advance(p);
+		return e;
+	}
+
+	if (check(p,TOKEN_STR_LIT))
+	{
+		Expr *e=expr_new(EX_STR,line);
+		strcpy(e->str_val,p->cur.text);
+		advance(p);
+		return e;
+	}
+
+	/* A float literal is parsed only so the resolver can reject float/double
+	   switches with a clear operand-level message (Java forbids them). */
+	if (check(p,TOKEN_FLOAT_LIT))
+	{
+		Expr *e=expr_new(EX_FLOAT,line);
+		e->float_val=strtod(p->cur.text,NULL);
+		strcpy(e->int_suffix,p->cur.suffix);
+		advance(p);
+		return e;
+	}
+
 	int neg=0;
 	if (check(p,TOKEN_MINUS))
 	{

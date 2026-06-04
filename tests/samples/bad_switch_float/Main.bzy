@@ -1,0 +1,9 @@
+void main()
+{
+	double d;
+	d = 1.0;
+	switch (d)       // Float/double switch is rejected (exact equality is unreliable).
+	{
+		case 1.0: print(1); break;
+	}
+}
