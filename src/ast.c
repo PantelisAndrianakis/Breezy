@@ -176,6 +176,7 @@ Func *func_clone(const Func *f)
 	for (int i=0; i<f->param_count; i++)
 	{
 		n->params[i].type=typeref_deepcopy(&f->params[i].type);
+		n->params[i].def=expr_clone(f->params[i].def);
 	}
 	n->body=block_clone(f->body);
 	return n;

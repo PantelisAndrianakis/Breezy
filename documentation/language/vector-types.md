@@ -27,13 +27,13 @@ The suffix encodes the element type: `i` = `int`, `l` = `long`, `f` = `float`, `
 
 ## Constructing and reading
 
-Pass one value per component to the constructor, then read the fields directly:
+Pass one value per component to the constructor, then read the fields directly. The components have **default values of zero**, so calling the constructor with no arguments gives a zero vector:
 
 ```breezy
 void main()
 {
 	Vector3f a;
-	a = new Vector3f(0.0f, 0.0f, 0.0f);
+	a = new Vector3f();              // Zero vector: (0, 0, 0).
 
 	Vector3f b;
 	b = new Vector3f(2.0f, 3.0f, 6.0f);
@@ -43,6 +43,8 @@ void main()
 	print(b.z);   // 6
 }
 ```
+
+(`new Vector3f()` works because the constructor's parameters default to `0` - see [default parameter values](classes.md#default-parameter-values).)
 
 ---
 

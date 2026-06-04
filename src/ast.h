@@ -212,6 +212,7 @@ typedef struct
 {
 	TypeRef type;
 	char name[64];
+	Expr *def;   /* Default value (a literal) used when the argument is omitted, or NULL. */
 } Param;
 typedef struct
 {

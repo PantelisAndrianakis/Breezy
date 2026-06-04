@@ -54,6 +54,8 @@ check inheritance tests/samples/proj_inherit  "2"
 check ctor        tests/samples/proj_ctor      $'3
 4
 7'
+check default_args   tests/samples/proj_default_args  $'15\n6\n1\n2\n7\n2'
+check vector_zero    tests/samples/proj_vector_zero   $'0\n0\n0\n0\n0\n1\n2'
 check leak        tests/samples/proj_leak      "1"
 check cycle       tests/samples/proj_cycle     "0"
 check scalars     tests/samples/proj_scalars   $'0\n0\n5000000000\n4000000000\ntrue\n-1\nfalse\ntrue'
@@ -196,6 +198,7 @@ check vec2        tests/samples/proj_vec2          $'5\nfalse\ntrue\n5'
 check vec3        tests/samples/proj_vec3          $'7\nfalse\ntrue\ntrue\n0'
 check_fail narrow_no_cast tests/samples/bad_narrow.bzy
 check_fail mixed_sign     tests/samples/bad_mixed_sign.bzy
+check_fail default_order  tests/samples/bad_default_order.bzy
 check_fail int_condition  tests/samples/bad_int_cond.bzy
 check_fail bool_int_cast  tests/samples/bad_bool_cast.bzy
 check_fail float_needs_cast tests/samples/bad_int_to_float.bzy

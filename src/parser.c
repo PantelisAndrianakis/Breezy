@@ -1132,6 +1132,27 @@ static Block *parse_block(Parser *p)
 	return b;
 }
 
+/* Parse one parameter — its type, name, and an optional "= <literal>" default
+   value (literal constants only). A default is substituted when the argument is
+   omitted at a call site (see fill_default_args in the resolver). */
+static void parse_one_param(Parser *p, Param *pm)
+{
+	parse_type(p,&pm->type);
+	Token pn=expect(p,TOKEN_IDENT);
+	strcpy(pm->name,pn.text);
+	if (match(p,TOKEN_ASSIGN))
+	{
+		Expr *d=parse_primary(p);
+		if (d->kind!=EX_INT && d->kind!=EX_FLOAT && d->kind!=EX_BOOL && d->kind!=EX_STR)
+		{
+			fprintf(stderr,"line %d: A default parameter value must be a literal constant.\n",d->line);
+			exit(1);
+		}
+
+		pm->def=d;
+	}
+}
+
 static Func *parse_extern(Parser *p)
 {
 	expect(p,TOKEN_EXTERN);
@@ -1156,9 +1177,7 @@ static Func *parse_extern(Parser *p)
 				exit(1);
 			}
 			Param *pm=&f->params[f->param_count++];
-			parse_type(p,&pm->type);
-			Token pn=expect(p,TOKEN_IDENT);
-			strcpy(pm->name,pn.text);
+			parse_one_param(p,pm);
 		}
 		while (match(p,TOKEN_COMMA));
 	}
@@ -1185,9 +1204,7 @@ static Func *parse_function(Parser *p)
 				exit(1);
 			}
 			Param *pm=&f->params[f->param_count++];
-			parse_type(p,&pm->type);
-			Token pn=expect(p,TOKEN_IDENT);
-			strcpy(pm->name,pn.text);
+			parse_one_param(p,pm);
 		}
 		while (match(p,TOKEN_COMMA));
 	}
@@ -1221,9 +1238,7 @@ static InterfaceDecl *parse_interface(Parser *p)
 				}
 
 				Param *pm=&m->params[m->param_count++];
-				parse_type(p,&pm->type);
-				Token pn=expect(p,TOKEN_IDENT);
-				strcpy(pm->name,pn.text);
+				parse_one_param(p,pm);
 			}
 			while (match(p,TOKEN_COMMA));
 		}
@@ -1318,9 +1333,7 @@ static ClassDecl *parse_class(Parser *p)
 						exit(1);
 					}
 					Param *pm=&f->params[f->param_count++];
-					parse_type(p,&pm->type);
-					Token pn=expect(p,TOKEN_IDENT);
-					strcpy(pm->name,pn.text);
+					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
 			}
@@ -1354,9 +1367,7 @@ static ClassDecl *parse_class(Parser *p)
 						exit(1);
 					}
 					Param *pm=&f->params[f->param_count++];
-					parse_type(p,&pm->type);
-					Token pn=expect(p,TOKEN_IDENT);
-					strcpy(pm->name,pn.text);
+					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
 			}
@@ -1484,9 +1495,7 @@ static EnumDecl *parse_enum(Parser *p)
 								exit(1);
 							}
 							Param *pm=&f->params[f->param_count++];
-							parse_type(p,&pm->type);
-							Token pn=expect(p,TOKEN_IDENT);
-							strcpy(pm->name,pn.text);
+							parse_one_param(p,pm);
 						}
 						while (match(p,TOKEN_COMMA));
 					}
@@ -1525,9 +1534,7 @@ static EnumDecl *parse_enum(Parser *p)
 						exit(1);
 					}
 					Param *pm=&f->params[f->param_count++];
-					parse_type(p,&pm->type);
-					Token pn=expect(p,TOKEN_IDENT);
-					strcpy(pm->name,pn.text);
+					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
 			}
@@ -1561,9 +1568,7 @@ static EnumDecl *parse_enum(Parser *p)
 						exit(1);
 					}
 					Param *pm=&f->params[f->param_count++];
-					parse_type(p,&pm->type);
-					Token pn=expect(p,TOKEN_IDENT);
-					strcpy(pm->name,pn.text);
+					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
 			}

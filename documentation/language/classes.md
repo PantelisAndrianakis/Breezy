@@ -150,6 +150,55 @@ Use `this.` to disambiguate when a parameter has the same name as a field, as ab
 
 ---
 
+## Default parameter values
+
+A parameter of a constructor, method, or function may be given a **default value** with `= <literal>`. When a caller omits that argument, the default is used. This lets one constructor or method serve several call shapes without overloads.
+
+```breezy
+class Box
+{
+	int w;
+	int h;
+
+	Box(int w = 1, int h = 2)
+	{
+		this.w = w;
+		this.h = h;
+	}
+}
+
+void main()
+{
+	Box a;
+	a = new Box();        // Uses both defaults: w = 1, h = 2.
+
+	Box b;
+	b = new Box(7);       // First given, second defaults: w = 7, h = 2.
+
+	Box c;
+	c = new Box(7, 9);    // Both given: w = 7, h = 9.
+}
+```
+
+It works the same on methods and free functions:
+
+```breezy
+int add(int a, int b = 10)
+{
+	return a + b;
+}
+
+// add(5) is 15; add(5, 1) is 6.
+```
+
+**Rules:**
+
+- The default must be a **literal constant** (a number, `true`/`false`, or a string).
+- Defaults may only be given to **trailing** parameters - once a parameter has a default, every parameter after it must have one too. So `f(int a, int b = 0)` is valid, but `f(int a = 0, int b)` is not.
+- This is how the [built-in vector types](vector-types.md) support `new Vector2f()` - their components default to `0`.
+
+---
+
 ## Complete example
 
 Putting it together - declaration, inheritance, a constructor, an override, and polymorphic dispatch:

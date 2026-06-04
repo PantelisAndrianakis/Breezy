@@ -825,6 +825,31 @@ static void resolve_random(Expr *e)
 
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
 
+/* Append cloned default-value arguments for omitted trailing parameters of a call
+   whose target's AST is `ast` (NULL for builtins — a no-op). Stops at the first
+   missing parameter that has no default, leaving the caller's existing arg-count
+   check to report the error. Each injected default is resolved in place. */
+static void fill_default_args(SymTable *st, Expr *e, Func *ast, const char *tc)
+{
+	if (!ast)
+	{
+		return;
+	}
+
+	while (e->arg_count < ast->param_count && e->arg_count < 8)
+	{
+		Expr *d = ast->params[e->arg_count].def;
+		if (!d)
+		{
+			break;
+		}
+
+		Expr *copy = expr_clone(d);
+		resolve_expr(st, copy, tc);
+		e->args[e->arg_count++] = copy;
+	}
+}
+
 static void resolve_args(SymTable *st, Expr *e, const char *tc)
 {
 	for (int i=0; i<e->arg_count; i++)
@@ -1048,6 +1073,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (nc && nc->has_ctor)
 		{
+			fill_default_args(st, e, nc->ctor_ast, tc);
 			if (e->arg_count != nc->ctor_param_count)
 			{
 				die(e->line,"Constructor argument count mismatch.",NULL);
@@ -1354,6 +1380,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				}
 
 				resolve_args(st,e,tc);
+				fill_default_args(st, e, m->ast, tc);
 				if (e->arg_count != m->param_count)
 				{
 					die(e->line,"Static method argument count mismatch.",NULL);
@@ -2171,6 +2198,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		resolve_args(st,e,tc);
+		fill_default_args(st, e, m->ast, tc);
 		for (int i=0; i<e->arg_count && i<m->param_count; i++)
 		{
 			if (!assignable(&m->param_types[i], &e->args[i]->type))
@@ -2298,6 +2326,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Unknown function: ",e->name);
 			}
 
+			fill_default_args(st, e, fi->ast, tc);
 			for (int i=0; i<e->arg_count && i<fi->param_count; i++)
 			{
 				if (!assignable(&fi->param_types[i], &e->args[i]->type))
@@ -2687,6 +2716,21 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 		}
 
 		return;
+	}
+
+	/* Default parameter values may only fill trailing parameters: once a
+	   parameter has a default, every parameter after it must have one too. */
+	int seen_default=0;
+	for (int i=0; i<f->param_count; i++)
+	{
+		if (f->params[i].def)
+		{
+			seen_default=1;
+		}
+		else if (seen_default)
+		{
+			die(0,"A parameter without a default cannot follow one with a default.",NULL);
+		}
 	}
 
 	g_ret=&f->ret_type;

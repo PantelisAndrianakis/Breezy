@@ -1,0 +1,19 @@
+// No-argument vector construction zero-initializes; explicit args still work.
+void main()
+{
+	Vector2f a;
+	a = new Vector2f();
+	print(a.x);   // 0
+	print(a.y);   // 0
+
+	Vector3i b;
+	b = new Vector3i();
+	print(b.x);   // 0
+	print(b.y);   // 0
+	print(b.z);   // 0
+
+	Vector2f c;
+	c = new Vector2f(1.0f, 2.0f);
+	print(c.x);   // 1
+	print(c.y);   // 2
+}
