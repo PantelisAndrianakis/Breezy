@@ -133,6 +133,7 @@ check_fail generic_unknown tests/samples/bad_generic_unknown
 check generic_box   tests/samples/proj_generic_box   $'7\nhi'
 check generic_pair  tests/samples/proj_generic_pair  $'42\nanswer'
 check generic_announce tests/samples/proj_generic_bound $'woof\nmeow'
+check enum_basic tests/samples/proj_enum_basic $'1\nGREEN\n255\n255\n3\n255'
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

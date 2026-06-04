@@ -1,6 +1,7 @@
 #include "codegen.h"
 #include "symtable.h"
 #include "lexer.h"
+#include "enums.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -246,6 +247,12 @@ static int expr_is_owned(Expr *e)
 	if (!ty_is_managed(e->type.kind))
 	{
 		return 0;
+	}
+
+	/* An enum constant access (Color.RED) retains the singleton on read. */
+	if (e->kind==EX_FIELD && e->lhs && e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
+	{
+		return 1;
 	}
 
 	/* A managed EX_BINARY is a string concat (bzy_str_concat returns +1); an
@@ -1394,6 +1401,98 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* Static enum calls (the receiver is the enum type name): Enum.values() builds a
+   fresh owned array of the singletons; Enum.valueOf(s) returns the matching
+   constant (retained) or throws via bzy_enum_no_constant. Emitted inline in the
+   caller's frame so the throw site is covered by its exception record. */
+static void cg_enum_static(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *en=e->lhs->name;
+	int n=enum_count_of(en);
+	/* assign_save holds the value that must survive cg_retain_rax (which uses
+	   val_save as its own scratch). */
+	if (strcmp(e->name,"values")==0)
+	{
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), n);
+		cg_emit(cg,"    mov %s, 1", cg_iarg(cg, 1));   /* Managed elements. */
+		cg_aligned_call(cg,"bzy_array_new");           /* Owned array -> rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);
+		for (int i=0; i<n; i++)
+		{
+			cg_emit(cg,"    mov rax, [rel __enum_%s_%s]", en, enum_const_name(en,i));
+			cg_retain_rax(cg);
+			cg_emit(cg,"    mov rbx, [rbp - %d]", cg->assign_save);
+			cg_emit(cg,"    mov [rbx + %d], rax", 32 + i*8);
+		}
+
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->assign_save);
+		return;
+	}
+
+	/* valueOf(string): query string in assign_save (survives str_eq + retain). */
+	cg_expr(cg,tt,e->args[0]);
+	int owned=expr_is_owned(e->args[0]);
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);
+	int done=cg_label(cg);
+	for (int i=0; i<n; i++)
+	{
+		int next=cg_label(cg);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);
+		cg_emit(cg,"    mov rbx, [rel __enum_%s_%s]", en, enum_const_name(en,i));
+		cg_emit(cg,"    mov %s, [rbx + 32]", cg_iarg(cg, 1));   /* The constant's __name. */
+		cg_aligned_call(cg,"bzy_str_eq");
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    je .L%d", next);
+		cg_emit(cg,"    mov rax, [rel __enum_%s_%s]", en, enum_const_name(en,i));
+		cg_retain_rax(cg);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Result (retain done). */
+		cg_emit(cg,"    jmp .L%d", done);
+		cg_emit(cg,".L%d:", next);
+	}
+
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);   /* The bad name. */
+	int pc=cg_label(cg);
+	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 1), pc);
+	cg_emit(cg,".L%d:", pc);
+	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 2));
+	cg_aligned_call(cg,"bzy_enum_no_constant");   /* Never returns. */
+	cg_emit(cg,".L%d:", done);
+	if (owned)
+	{
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);
+		cg_release_rcx(cg);   /* Clobbers rax; the result is parked in val_save. */
+	}
+
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
+/* Enum instance built-ins: name() reads the hidden __name field (offset 32, an
+   owned string), ordinal() reads __ordinal (offset 24, an int). */
+static void cg_enum_instance(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	int isname = strcmp(e->name,"name")==0;
+	cg_expr(cg,tt,e->lhs);
+	int owned=expr_is_owned(e->lhs);
+	if (owned)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);   /* Receiver (survives retain). */
+	}
+
+	cg_emit(cg,"    mov rax, [rax + %d]", isname ? 32 : 24);
+	if (isname)
+	{
+		cg_retain_rax(cg);                                       /* Uses val_save as scratch. */
+	}
+
+	if (owned)
+	{
+		cg_emit(cg,"    push rax");                              /* Preserve the result. */
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);
+		cg_release_rcx(cg);
+		cg_emit(cg,"    pop rax");
+	}
+}
+
 static void cg_print(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->args[0]);
@@ -2491,6 +2590,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	case EX_FIELD:
 	{
+		/* Enum constant (Color.RED): load the singleton slot and retain (owned). */
+		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
+		{
+			cg_emit(cg,"    mov rax, [rel __enum_%s_%s]", e->lhs->name, e->name);
+			cg_retain_rax(cg);
+			break;
+		}
+
 		cg_expr(cg,tt,e->lhs);
 		char mem[32];
 		sprintf(mem,"[rax + %d]", e->anno_int);
@@ -2534,6 +2641,19 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_new(cg,tt,e);
 		break;
 	case EX_METHOD_CALL:
+		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
+		{
+			cg_enum_static(cg,tt,e);   /* Enum.values() / Enum.valueOf(s). */
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_OBJECT && enum_is(e->lhs->type.class_name)
+				&& (strcmp(e->name,"name")==0 || strcmp(e->name,"ordinal")==0))
+		{
+			cg_enum_instance(cg,tt,e);
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
 			if (strcmp(e->lhs->type.class_name,"Box")==0)
@@ -3649,6 +3769,12 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		cg_emit(cg,"    mov qword [rbp - %d], 0", f->obj_local_offsets[i]);
 	}
 
+	/* Class-load: construct the enum singletons once, before any user statement. */
+	if (is_main && enum_total()>0)
+	{
+		cg_emit(cg,"    call __enum_init");
+	}
+
 	cg_block(cg, tt, f, f->body, is_main);
 
 	cg_release_object_locals(cg, f, -1);
@@ -3706,7 +3832,110 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 		cg_emit(cg,"    dq %s", label ? label : "0");
 	}
 
-	cg_emit(cg,"__classname_%s: db \"%s\", 0", c->name, c->name);   /* NUL-terminated dynamic class name. */
+	/* Reflection name: a per-constant enum subclass (Enum$CONST) reports the base
+	   enum, so getClassName() on Color.RED returns "Color", not "Color$RED". */
+	char refl[64];
+	strncpy(refl,c->name,sizeof(refl)-1);
+	refl[sizeof(refl)-1]='\0';
+	const char *dollar=strchr(c->name,'$');
+	if (dollar)
+	{
+		char base[64];
+		size_t bl=(size_t)(dollar-c->name);
+		if (bl<sizeof(base))
+		{
+			memcpy(base,c->name,bl);
+			base[bl]='\0';
+			if (enum_is(base) && enum_ordinal(base,dollar+1)>=0)
+			{
+				strcpy(refl,base);
+			}
+		}
+	}
+
+	cg_emit(cg,"__classname_%s: db \"%s\", 0", c->name, refl);   /* NUL-terminated dynamic class name. */
+}
+
+/* Class-load init: construct each enum constant's singleton via the ordinary
+   new + ctor path, stamp its hidden __ordinal/__name, and store it in its data
+   slot (which holds the one permanent reference). Called at main's entry. */
+static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
+{
+	if (enum_total()==0)
+	{
+		return;
+	}
+
+	int locals=16;
+	cg->sp_save=locals+8;
+	cg->val_save=locals+16;
+	cg->argtmp_base=locals+24;
+	cg->assign_save=locals+56;
+	cg->fp_save=locals+64;
+	int frame=locals+72;
+	if (frame%16!=0)
+	{
+		frame=(frame/16+1)*16;
+	}
+
+	cg_emit(cg,"global __enum_init");
+	cg_emit(cg,"__enum_init:");
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, %d", frame);
+	for (int i=0; i<enum_total(); i++)
+	{
+		const EnumInfo *e=enum_at(i);
+		for (int k=0; k<e->constant_count; k++)
+		{
+			Expr tmp;
+			memset(&tmp,0,sizeof(tmp));
+			tmp.kind=EX_NEW;
+			strcpy(tmp.name,e->const_class[k]);
+			tmp.type.kind=TY_OBJECT;
+			strcpy(tmp.type.class_name,e->const_class[k]);
+			tmp.arg_count=e->const_argc[k];
+			for (int a=0; a<e->const_argc[k]; a++)
+			{
+				tmp.args[a]=e->const_args[k][a];
+			}
+
+			cg_new(cg,tt,&tmp);                                /* Owned object -> rax. */
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+			cg_emit(cg,"    mov qword [rax + 24], %d", k);      /* __ordinal. */
+			cg_emit(cg,"    lea %s, [rel __enumname_%s_%s]", cg_iarg(cg, 0), e->name, e->const_name[k]);
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), (int)strlen(e->const_name[k]));
+			cg_aligned_call(cg,"bzy_str_new");                 /* Owned string -> rax. */
+			cg_emit(cg,"    mov rbx, [rbp - %d]", cg->val_save);
+			cg_emit(cg,"    mov [rbx + 32], rax");              /* __name. */
+			cg_emit(cg,"    mov [rel __enum_%s_%s], rbx", e->name, e->const_name[k]);
+		}
+	}
+
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
+}
+
+/* Enum singleton storage slots (one permanent reference each) + the constant
+   name strings used to stamp __name and to drive valueOf(). */
+static void cg_emit_enum_data(Codegen *cg)
+{
+	for (int i=0; i<enum_total(); i++)
+	{
+		const EnumInfo *e=enum_at(i);
+		for (int k=0; k<e->constant_count; k++)
+		{
+			cg_emit(cg,"__enum_%s_%s: dq 0", e->name, e->const_name[k]);
+			fprintf(cg->out,"__enumname_%s_%s: db ", e->name, e->const_name[k]);
+			for (const char *p=e->const_name[k]; *p; p++)
+			{
+				fprintf(cg->out,"%d,", (unsigned char)*p);
+			}
+
+			fprintf(cg->out,"0\n");
+		}
+	}
 }
 
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
@@ -3874,6 +4103,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_regex_find");
 	cg_emit(cg,"extern bzy_regex_replace");
 	cg_emit(cg,"extern bzy_throw");
+	cg_emit(cg,"extern bzy_enum_no_constant");
 	cg_emit(cg,"extern bzy_io_check");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
@@ -3973,6 +4203,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		cg_emit_blocking_thunk(cg, cg->blocking_thunks[i]);
 	}
 
+	cg_emit_enum_init(cg,tt);   /* __enum_init (constructs the singletons), still in .text. */
+
 	cg_emit(cg,"");
 	cg_emit(cg,"section .data");
 	for (int i=0; i<tt->class_count; i++)
@@ -4029,4 +4261,6 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	}
 
 	cg_emit(cg,"__bzy_exception_func_count: dq %d", cg->exception_fn_count);
+
+	cg_emit_enum_data(cg);   /* Enum singleton slots + constant name strings. */
 }

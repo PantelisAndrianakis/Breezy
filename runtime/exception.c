@@ -32,6 +32,7 @@ extern void *__bzy_vtable_parents[];     /* Flat [child0, parent0, child1, paren
 extern int64_t __bzy_vtable_parent_count;   /* Number of (child, parent) pairs. */
 
 extern char __vtable_IndexOutOfBounds[];   /* Emitted by codegen for the builtin class. */
+extern char __vtable_NumberFormatException[];   /* Reused for enum valueOf misses. */
 
 static int64_t g_uncaught = 0;   /* Uncaught exceptions survived by the scheduler (atomic). */
 
@@ -184,6 +185,28 @@ void bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame)
 	void *msg = bzy_str_new(buf, len);
 	void *exc = bzy_alloc(32);                       /* Owned (+1); fields zeroed. */
 	*(void**)exc = (void*)__vtable_IndexOutOfBounds;
+	*(void**)((char*)exc + 24) = msg;                /* Exception.message. */
+	bzy_throw(exc, pc, frame);                       /* Never returns. */
+}
+
+/* Thrown by Enum.valueOf(name) when no constant matches the given name. */
+void bzy_enum_no_constant(void *name, int64_t pc, int64_t frame)
+{
+	char buf[160];
+	int len;
+	if (name)
+	{
+		len = snprintf(buf, sizeof(buf), "No enum constant: %.*s.",
+					   (int)bzy_str_len(name), bzy_str_data(name));
+	}
+	else
+	{
+		len = snprintf(buf, sizeof(buf), "No enum constant.");
+	}
+
+	void *msg = bzy_str_new(buf, len);
+	void *exc = bzy_alloc(32);                       /* Owned (+1); fields zeroed. */
+	*(void**)exc = (void*)__vtable_NumberFormatException;
 	*(void**)((char*)exc + 24) = msg;                /* Exception.message. */
 	bzy_throw(exc, pc, frame);                       /* Never returns. */
 }
