@@ -38,6 +38,31 @@ static void test_field_offsets_and_size(void)
 	ASSERT_INT(c->object_size, 40);
 }
 
+static void test_static_field_layout(void)
+{
+	TypeTable tt;
+	Unit *u[1];
+	const char *s[]= {"class C { static int total; int id; }"};
+	build(&tt,u,s,1);
+	ClassInfo *c=types_find_class(&tt,"C");
+	ASSERT_INT(types_find_field(c,"total")->is_static, 1);
+	ASSERT_INT(types_find_field(c,"id")->is_static, 0);
+	ASSERT_INT(types_find_field(c,"id")->offset, 24);   /* First INSTANCE field; static excluded. */
+	ASSERT_INT(c->object_size, 32);                     /* header(24) + id(8). */
+}
+
+static void test_static_method_no_vtable_slot(void)
+{
+	TypeTable tt;
+	Unit *u[1];
+	const char *s[]= {"class C { static int f() { return 0; } int g() { return 0; } }"};
+	build(&tt,u,s,1);
+	ClassInfo *c=types_find_class(&tt,"C");
+	ASSERT_INT(types_find_method(c,"f")->is_static, 1);
+	ASSERT_INT(types_find_method(c,"f")->vtable_slot, -1);
+	ASSERT_INT(types_find_method(c,"g")->vtable_slot >= 0, 1);
+}
+
 static void test_method_slot(void)
 {
 	TypeTable tt;
@@ -81,6 +106,8 @@ int main(void)
 {
 	printf("Type table tests\n");
 	RUN(test_field_offsets_and_size);
+	RUN(test_static_field_layout);
+	RUN(test_static_method_no_vtable_slot);
 	RUN(test_method_slot);
 	RUN(test_override_reuses_slot);
 	RUN(test_inherited_field_offset);

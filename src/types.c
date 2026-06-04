@@ -362,6 +362,31 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 
 	ClassDecl *d=u->klass;
 	ClassInfo *c=types_find_class(tt,d->name);
+	c->is_static=d->is_static;
+	if (d->is_static)
+	{
+		if (d->ctor)
+		{
+			fprintf(stderr,"Static class %s may not declare a constructor.\n",d->name);
+			exit(1);
+		}
+		if (d->has_parent)
+		{
+			fprintf(stderr,"Static class %s may not extend a class.\n",d->name);
+			exit(1);
+		}
+		if (d->implements_count)
+		{
+			fprintf(stderr,"Static class %s may not implement interfaces.\n",d->name);
+			exit(1);
+		}
+		if (d->type_param_count)
+		{
+			fprintf(stderr,"Static class %s may not be generic.\n",d->name);
+			exit(1);
+		}
+	}
+
 	link_parent(tt,c,d);
 	c->implements_count=d->implements_count;
 	memcpy(c->implements,d->implements,sizeof(c->implements));
@@ -378,20 +403,33 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		c->vtable_size=tt->iface_slots;   /* Reserve [0..K) for interface methods; own methods follow. */
 	}
 
+	/* Instance fields take sequential 8-byte slots from the parent's object_size;
+	   static fields are global slots (offset -1) and excluded from the layout. */
+	int next_off = c->parent ? c->parent->object_size : 24;
 	for (int i=0; i<d->field_count; i++)
 	{
-		FieldInfo *fi=&c->fields[c->field_count];
+		FieldInfo *fi=&c->fields[c->field_count++];
+		memset(fi,0,sizeof(*fi));
 		strcpy(fi->name,d->fields[i].name);
 		fi->type=d->fields[i].type;
-		fi->offset=24 + c->field_count*8;
-		c->field_count++;
+		fi->is_static = d->fields[i].is_static || d->is_static;
+		if (fi->is_static)
+		{
+			fi->offset=-1;
+		}
+		else
+		{
+			fi->offset=next_off;
+			next_off+=8;
+		}
 	}
 
-	c->object_size = 24 + c->field_count*8;
+	c->object_size = next_off;
 	for (int i=0; i<d->method_count; i++)
 	{
 		Func *m=d->methods[i];
-		MethodInfo *existing=types_find_method(c,m->name);
+		int mstatic = m->is_static || d->is_static;
+		MethodInfo *existing = mstatic ? NULL : types_find_method(c,m->name);   /* Static methods never override. */
 		MethodInfo *mi;
 		if (existing)
 		{
@@ -402,12 +440,28 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 			mi=&c->methods[c->method_count++];
 			memset(mi,0,sizeof(*mi));
 			strcpy(mi->name,m->name);
-			int islot=iface_slot_for(tt,c,m->name);   /* Interface method -> its reserved global slot. */
-			mi->vtable_slot=(islot>=0) ? islot : c->vtable_size++;
+			if (mstatic)
+			{
+				mi->vtable_slot=-1;   /* No virtual dispatch. */
+			}
+			else
+			{
+				int islot=iface_slot_for(tt,c,m->name);   /* Interface method -> its reserved global slot. */
+				mi->vtable_slot=(islot>=0) ? islot : c->vtable_size++;
+			}
 		}
 
+		mi->is_static=mstatic;
 		strcpy(mi->owner_class,c->name);
-		snprintf(mi->asm_label,sizeof(mi->asm_label),"%s__%s",c->name,m->name);
+		if (mstatic)
+		{
+			snprintf(mi->asm_label,sizeof(mi->asm_label),"__static_%s__%s",c->name,m->name);
+		}
+		else
+		{
+			snprintf(mi->asm_label,sizeof(mi->asm_label),"%s__%s",c->name,m->name);
+		}
+
 		mi->ast=m;
 		mi->ret_type=m->ret_type;
 		mi->param_count=m->param_count;

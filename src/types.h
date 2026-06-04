@@ -9,18 +9,20 @@ typedef struct
 {
 	char name[64];
 	TypeRef type;
-	int offset;
+	int offset;       /* Instance field byte offset; -1 for a static field (global slot). */
+	int is_static;    /* Static field: one shared global slot, not in the object. */
 } FieldInfo;
 typedef struct
 {
 	char name[64];
-	int vtable_slot;
+	int vtable_slot;  /* -1 for a static method (no virtual dispatch). */
 	char asm_label[160];
 	char owner_class[64];
 	Func *ast;
 	TypeRef ret_type;
 	int param_count;
 	TypeRef param_types[8];
+	int is_static;    /* Static method: no `this`, called via the class name. */
 } MethodInfo;
 typedef struct ClassInfo
 {
@@ -40,6 +42,7 @@ typedef struct ClassInfo
 	int is_shared;                 /* 1 if instances may cross a core boundary -> atomic refcounts (6a-3). */
 	char implements[8][64];        /* Interface names this class implements. */
 	int implements_count;
+	int is_static;                 /* `static class`: not instantiable; all members static. */
 } ClassInfo;
 typedef struct
 {
