@@ -48,6 +48,7 @@ typedef struct
 	int param_count;
 	TypeRef param_types[8];
 	int is_extern;            /* FFI: asm_label is the raw C symbol; no body emitted. */
+	int is_blocking;          /* FFI: dispatch via the offload pool (parks the breeze). */
 } FuncInfo;
 typedef struct
 {

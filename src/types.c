@@ -274,6 +274,7 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 			   (e.g. `abs`); NASM strips it, so the linker sees the bare symbol. */
 			snprintf(fi->asm_label,sizeof(fi->asm_label),"$%s",f->name);
 			fi->is_extern=1;
+			fi->is_blocking=f->is_blocking;
 		}
 		else
 		{

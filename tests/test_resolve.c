@@ -26,6 +26,15 @@ static void test_extern_call_resolves(void)
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);    /* abs(int) -> int. */
 }
 
+static void test_extern_blocking_flag(void)
+{
+	Unit *u=build1("extern blocking long read_db(long h); void main() { long n; n = read_db(1); }");
+	(void)u;
+	FuncInfo *fi=types_find_func(&g_tt,"read_db");
+	ASSERT_INT(fi->is_extern, 1);
+	ASSERT_INT(fi->is_blocking, 1);
+}
+
 static void test_local_int_offset(void)
 {
 	Func *f=build1("void main() { int x; x = 5; }")->funcs[0];
@@ -583,6 +592,7 @@ int main(void)
 {
 	printf("Resolver tests\n");
 	RUN(test_extern_call_resolves);
+	RUN(test_extern_blocking_flag);
 	RUN(test_local_int_offset);
 	RUN(test_field_resolves_offset);
 	RUN(test_int_literal_widths);
