@@ -40,11 +40,13 @@ check vec2        tests/samples/proj_vec2       $'5\nfalse\ntrue\n5'
 export BZY_WORKERS=1
 check spawn       tests/samples/proj_spawn      $'1\n2\n9\n3\n4'
 check spawn_args  tests/samples/proj_spawn_args $'7\nhi'
+# Timer ordering is only deterministic on one worker: with several, two timers
+# whose deadlines are close get popped by different workers and print out of order.
+check timer_after tests/samples/proj_timer_after $'1\n2'
+check timer_order tests/samples/proj_timer_order $'1\n2\n3'
 unset BZY_WORKERS
 check channel     tests/samples/proj_channel    $'60'
 check mc_sum      tests/samples/proj_mc_sum     $'100'
-check timer_after tests/samples/proj_timer_after $'1\n2'
-check timer_order tests/samples/proj_timer_order $'1\n2\n3'
 # File I/O (offload pool + POSIX file ops).
 check file_exists tests/samples/proj_file_exists $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw     $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
@@ -54,4 +56,6 @@ check file_async  tests/samples/proj_file_async  $'50'
 # HIDDEN/SYSTEM/ARCHIVE are Windows-only — on POSIX they are no-ops (hidden is the
 # leading-dot convention), so the 3rd line is 'false' here vs 'true' on Windows.
 check file_attr   tests/samples/proj_file_attr   $'true\nfalse\nfalse\nfalse'
+check filewriter  tests/samples/proj_filewriter  $'102'
+check logger      tests/samples/proj_logger      $'200'
 if [ $fail -eq 0 ]; then echo "All Linux integration tests passed"; else echo "FAILURES"; exit 1; fi

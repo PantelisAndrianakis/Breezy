@@ -1741,7 +1741,7 @@ static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
 	int owned = expr_is_owned(e->args[0]);
 	if (owned)
 	{
-		cg_emit(cg,"    mov [rbp - %d], rcx", cg->val_save);   /* Save path for release. */
+		cg_emit(cg,"    mov [rbp - %d], %s", cg->val_save, cg_iarg(cg, 0));   /* Save path for release. */
 	}
 
 	cg_aligned_call(cg,"bzy_logger_open");       /* Owned Logger -> rax. */
@@ -2045,7 +2045,7 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 	int owned = expr_is_owned(e->args[0]);
 	if (owned)
 	{
-		cg_emit(cg,"    mov [rbp - %d], rcx", cg->val_save);   /* Save command for release. */
+		cg_emit(cg,"    mov [rbp - %d], %s", cg->val_save, cg_iarg(cg, 0));   /* Save command for release. */
 	}
 
 	cg_aligned_call(cg,"bzy_system_shell");   /* Result (pid / exit code) in rax. */
@@ -2129,7 +2129,7 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 		int owned = expr_is_owned(e->args[0]);
 		if (owned)
 		{
-			cg_emit(cg,"    mov [rbp - %d], rcx", cg->val_save);   /* Save path for release (rcx dies in the call). */
+			cg_emit(cg,"    mov [rbp - %d], %s", cg->val_save, cg_iarg(cg, 0));   /* Save path for release (rcx dies in the call). */
 		}
 
 		cg_aligned_call(cg,"bzy_filewriter_open");   /* Owned FileWriter -> rax. */
