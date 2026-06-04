@@ -1,0 +1,9 @@
+// Constant A passes two arguments, but the constructor takes one.
+enum E
+{
+	A(1, 2);
+
+	int x;
+	E(int x) { this.x = x; }
+}
+void main() { }

@@ -1,0 +1,8 @@
+// 'ordinal' is a compiler-provided enum built-in and may not be declared.
+enum E
+{
+	A, B;
+
+	int ordinal() { return 0; }
+}
+void main() { }

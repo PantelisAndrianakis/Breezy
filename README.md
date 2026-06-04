@@ -157,6 +157,37 @@ print(p.first());    // 42
 
 Generics are **monomorphized**: the compiler synthesizes one ordinary class per concrete instantiation (`Pair$int$string`, `Announcer$Dog`), so there is **no boxing and no dispatch overhead** — `Pair<int, string>` stores a real `int`, and a generic method call is a direct call. A type that uses no generics compiles to exactly the same code as before the feature existed.
 
+**Enums.** Java-style enums: each constant is a **singleton instance** of the enum's class, with optional per-constant constructor arguments, instance fields and methods, per-constant override bodies, `implements`, and the built-ins `values()` / `valueOf(string)` / `name()` / `ordinal()`.
+
+```breezy
+enum Op
+{
+    ADD { int apply(int a, int b) { return a + b; } },   // per-constant override body
+    SUB { int apply(int a, int b) { return a - b; } };
+    int apply(int a, int b) { return 0; }
+}
+
+enum Color
+{
+    RED(255, 0, 0), GREEN(0, 255, 0), BLUE(0, 0, 255);
+    int r; int g; int b;
+    Color(int r, int g, int b) { this.r = r; this.g = g; this.b = b; }
+}
+
+print(Op.ADD.apply(3, 4));     // 7
+print(Color.GREEN.ordinal());  // 1
+print(Color.GREEN.name());     // GREEN
+Color c;
+c = Color.valueOf("BLUE");
+switch (c)
+{
+    case RED:   print(1); break;
+    case BLUE:  print(3); break;   // case labels are the unqualified constant names
+}
+```
+
+Enums lower to ordinary classes (constants → singleton objects constructed once at startup; per-constant bodies → subclasses), so dispatch is the same zero-overhead virtual call as any method. `switch` accepts enums (matched by ordinal) — as well as integers, `bool`, and `string` (float/double are rejected, since exact-equality matching is unreliable for them).
+
 ### Built-in Vector Types
 
 Eight ready-made vector types ship with the language — `Vector2i` / `Vector2l` / `Vector2f` / `Vector2d` (fields `x`, `y`) and `Vector3i` / `Vector3l` / `Vector3f` / `Vector3d` (fields `x`, `y`, `z`) — each with a constructor, `equals` (component-wise), and `calculateDistance` (euclidean). They're ordinary classes, so a non-escaping vector local is stack-allocated (no heap, no reference counting).
@@ -1032,5 +1063,6 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] x86-64 codegen (Linux ELF64) — full language + runtime as native ELF (Part 8 complete: 8-1…8-5)
 - [x] Interfaces — `interface`/`implements`, polymorphism without inheritance, zero-overhead shared-vtable-slot dispatch (Part 9-1)
 - [x] User-definable generics — `class Box<T>`, multi-param `Pair<K, V>`, interface bounds (`<T: Speaker>`), monomorphized to ordinary classes (Part 9-2)
+- [x] Java-style enums — singleton constants, fields/ctors/methods, per-constant bodies, `implements`, values/valueOf/name/ordinal, switch (Part 9-3)
 - [ ] Extended standard library (sorted/tree maps, priority queue, math, time, formatting)
 - [ ] Self-hosting compiler

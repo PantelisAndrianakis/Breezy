@@ -139,6 +139,11 @@ check enum_switch tests/samples/proj_enum_switch $'2'
 check switch_string tests/samples/proj_switch_string $'2'
 check switch_bool   tests/samples/proj_switch_bool   $'20'
 check_fail switch_float tests/samples/bad_switch_float
+check enum_iface tests/samples/proj_enum_iface $'HI'
+check_fail enum_reserved   tests/samples/bad_enum_reserved_method.bzy
+check_fail enum_arity      tests/samples/bad_enum_arity.bzy
+check_fail enum_extends    tests/samples/bad_enum_extends.bzy
+check_fail enum_bad_label  tests/samples/bad_enum_switch_label.bzy
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

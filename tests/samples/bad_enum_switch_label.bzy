@@ -1,0 +1,14 @@
+// PURPLE is not a constant of Color.
+enum Color
+{
+	RED, GREEN, BLUE;
+}
+void main()
+{
+	Color c;
+	c = Color.RED;
+	switch (c)
+	{
+		case PURPLE: print(1); break;
+	}
+}

@@ -1,0 +1,6 @@
+// Enums may not extend a class (they may only implement interfaces).
+enum E extends Object
+{
+	A, B;
+}
+void main() { }

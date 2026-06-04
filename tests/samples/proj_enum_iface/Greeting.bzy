@@ -1,0 +1,6 @@
+enum Greeting implements Speaker
+{
+	HI, BYE;
+
+	string speak() { return this.name(); }
+}

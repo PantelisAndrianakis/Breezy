@@ -1,0 +1,6 @@
+void main()
+{
+	Speaker s;
+	s = Greeting.HI;
+	print(s.speak());     // HI
+}
