@@ -349,11 +349,11 @@ static void resolve_string_method(Expr *e)
 
 		e->type.kind = TY_STRING;
 	}
-	else if (strcmp(nm,"isEmpty")==0)
+	else if (strcmp(nm,"isEmpty")==0 || strcmp(nm,"isNumeric")==0 || strcmp(nm,"isAlphaNumeric")==0)
 	{
 		if (e->arg_count != 0)
 		{
-			die(e->line,"String.isEmpty() takes no arguments.",NULL);
+			die(e->line,"This string method takes no arguments.",NULL);
 		}
 
 		e->type.kind = TY_BOOL;

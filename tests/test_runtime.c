@@ -611,6 +611,14 @@ static void test_str_more(void)
 	ASSERT_INT(bzy_str_equals_ignore_case(bzy_str_new("a", 1), bzy_str_new("ab", 2)), 0);
 	ASSERT_INT(bzy_str_is_empty(bzy_str_new("", 0)), 1);
 	ASSERT_INT(bzy_str_is_empty(bzy_str_new("x", 1)), 0);
+	ASSERT_INT(bzy_str_is_numeric(bzy_str_new("12345", 5)), 1);
+	ASSERT_INT(bzy_str_is_numeric(bzy_str_new("12a45", 5)), 0);
+	ASSERT_INT(bzy_str_is_numeric(bzy_str_new("-12", 3)), 0);   /* Signs are not digits. */
+	ASSERT_INT(bzy_str_is_numeric(bzy_str_new("", 0)), 0);      /* Empty -> false. */
+	ASSERT_INT(bzy_str_is_alphanumeric(bzy_str_new("abc123", 6)), 1);
+	ASSERT_INT(bzy_str_is_alphanumeric(bzy_str_new("abc 123", 7)), 0);   /* Space rejected. */
+	ASSERT_INT(bzy_str_is_alphanumeric(bzy_str_new("a_b", 3)), 0);       /* Underscore rejected. */
+	ASSERT_INT(bzy_str_is_alphanumeric(bzy_str_new("", 0)), 0);          /* Empty -> false. */
 	ASSERT_INT(bzy_str_char_at(bzy_str_new("abc", 3), 1), 'b');
 	ASSERT_INT(bzy_str_char_at(bzy_str_new("abc", 3), 9), -1);
 	ASSERT_INT(bzy_str_last_index_of(bzy_str_new("abcabc", 6), bzy_str_new("bc", 2)), 4);

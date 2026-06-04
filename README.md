@@ -502,7 +502,7 @@ foreach (string p in parts)
 }
 ```
 
-- **Query:** `length()`, `isEmpty()`, `equals(o)`, `equalsIgnoreCase(o)`, `contains(x)`, `startsWith(p)`, `endsWith(p)`, `indexOf(x)`, `lastIndexOf(x)`, `charAt(i)` (returns the byte as an `int`, or `-1` out of range).
+- **Query:** `length()`, `isEmpty()`, `isNumeric()` (non-empty, all digits `0-9`), `isAlphaNumeric()` (non-empty, all letters/digits), `equals(o)`, `equalsIgnoreCase(o)`, `contains(x)`, `startsWith(p)`, `endsWith(p)`, `indexOf(x)`, `lastIndexOf(x)`, `charAt(i)` (returns the byte as an `int`, or `-1` out of range).
 - **Transform (return a new string):** `substring(a, b)`, `replace(from, to)`, `repeat(n)`, `trim()`, `toUpper()`, `toLower()`.
 - **`split(sep)`** returns a `string[]` you can iterate with `foreach`.
 - **Parse to a number:** `toInt()`, `toLong()`, `toByte()`, `toShort()`, `toFloat()`, `toDouble()`, `toBool()` (`true`/`false`, case-insensitive). Each throws a catchable `NumberFormatException` on malformed/out-of-range input, so a default-on-failure reads naturally:

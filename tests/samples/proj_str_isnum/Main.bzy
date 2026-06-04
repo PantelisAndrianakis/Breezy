@@ -1,0 +1,18 @@
+// isNumeric: non-empty and all digits 0-9. isAlphaNumeric: non-empty and all
+// letters/digits. Empty and any other character make both false.
+void main()
+{
+	string a;
+	a = "12345";
+	print(a.isNumeric());        // true
+	print(a.isAlphaNumeric());   // true
+
+	string b;
+	b = "abc123";
+	print(b.isNumeric());        // false
+	print(b.isAlphaNumeric());   // true
+
+	string c;
+	c = "hi there";
+	print(c.isAlphaNumeric());   // false  (space)
+}

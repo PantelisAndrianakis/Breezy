@@ -288,6 +288,52 @@ int64_t bzy_str_is_empty(void *s)
 	return bzy_str_len(s) == 0 ? 1 : 0;
 }
 
+/* 1 if the string is non-empty and every byte is a digit 0-9. Empty -> 0. */
+int64_t bzy_str_is_numeric(void *s)
+{
+	int64_t n = bzy_str_len(s);
+	if (n == 0)
+	{
+		return 0;
+	}
+
+	const char *d = bzy_str_data(s);
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (d[i] < '0' || d[i] > '9')
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+/* 1 if the string is non-empty and every byte is a letter or digit. Empty -> 0. */
+int64_t bzy_str_is_alphanumeric(void *s)
+{
+	int64_t n = bzy_str_len(s);
+	if (n == 0)
+	{
+		return 0;
+	}
+
+	const char *d = bzy_str_data(s);
+	for (int64_t i = 0; i < n; i++)
+	{
+		char c = d[i];
+		int is_digit = (c >= '0' && c <= '9');
+		int is_lower = (c >= 'a' && c <= 'z');
+		int is_upper = (c >= 'A' && c <= 'Z');
+		if (!is_digit && !is_lower && !is_upper)
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 int64_t bzy_str_char_at(void *s, int64_t i)
 {
 	int64_t sl = bzy_str_len(s);
