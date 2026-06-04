@@ -1,0 +1,5 @@
+class Pair<K, V>
+{
+	K k;
+	V v;
+}

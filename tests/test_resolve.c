@@ -80,6 +80,22 @@ static void test_generic_multi_param_lowers(void)
 	ASSERT_INT(types_find_field(c,"v")->type.kind, TY_STRING);
 }
 
+static void test_generic_bound_ok(void)
+{
+	const char *srcs[] =
+	{
+		"interface Speaker { string speak(); }",
+		"class Dog implements Speaker { string speak() { return \"woof\"; } }",
+		"class Caller<T: Speaker> { T who; string call() { return this.who.speak(); } }",
+		"void main() { Caller<Dog> c; c = new Caller<Dog>(); }"
+	};
+	TypeTable *tt = build_generic(srcs, 4);
+	ClassInfo *c = types_find_class(tt,"Caller$Dog");
+	ASSERT_INT(c != NULL, 1);
+	/* who: T -> Dog; the substituted body this.who.speak() resolves to string. */
+	ASSERT_INT(types_find_method(c,"call")->ret_type.kind, TY_STRING);
+}
+
 static void test_interface_call_resolves(void)
 {
 	Unit *u=build1("interface Speaker { string speak(); }"
@@ -679,6 +695,7 @@ int main(void)
 	RUN(test_interface_call_resolves);
 	RUN(test_generic_lowers_to_class);
 	RUN(test_generic_multi_param_lowers);
+	RUN(test_generic_bound_ok);
 	RUN(test_extern_call_resolves);
 	RUN(test_extern_blocking_flag);
 	RUN(test_local_int_offset);

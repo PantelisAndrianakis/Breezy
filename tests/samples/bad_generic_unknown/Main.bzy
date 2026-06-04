@@ -1,0 +1,5 @@
+void main()
+{
+	Nope<int> n;       // No class 'Nope' exists -> unknown generic.
+	n = new Nope<int>();
+}

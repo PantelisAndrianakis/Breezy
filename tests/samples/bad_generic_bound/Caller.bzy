@@ -1,0 +1,5 @@
+class Caller<T: Speaker>
+{
+	T who;
+	string call() { return this.who.speak(); }
+}

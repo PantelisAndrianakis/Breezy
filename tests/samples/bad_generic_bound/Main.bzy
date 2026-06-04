@@ -1,0 +1,5 @@
+void main()
+{
+	Caller<Cat> c;       // Cat does not implement Speaker -> bound violation.
+	c = new Caller<Cat>();
+}
