@@ -3,8 +3,9 @@
 
 extern void bzy_user_main(void);
 
-int main(void)
+int main(int argc, char **argv)
 {
+	bzy_set_args(argc, argv);   /* Make argv available to System.args(). */
 	bzy_sched_init();
 
 	/* Default to one worker per logical core; BZY_WORKERS overrides (1 = the

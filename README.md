@@ -744,7 +744,15 @@ code = System.shell("robocopy src dst /MIR", true);
 
 - `System.shell(command) -> int` — runs `cmd /c <command>` asynchronously and returns the OS process id (`0` if the launch failed). Output is **not** captured (the child inherits the console).
 - `System.shell(command, wait) -> int` — when `wait` is `true`, blocks until the process exits and returns its **exit code**; the wait is routed through the offload pool so the breeze parks instead of stalling its core.
+- `System.args() -> string[]` — the command-line arguments the program was launched with (`out.exe alpha beta` → `["alpha", "beta"]`). Excludes the program path; returns an empty array when none were passed.
 - Windows only for now (`CreateProcess`); a POSIX backend lands with the Linux target. No output capture, stdin, or timeout yet.
+
+```breezy
+string[] args;
+args = System.args();          // out.exe alpha beta -> ["alpha", "beta"]
+print(args.length);            // 2
+foreach (string a in args) { print(a); }
+```
 
 ---
 
@@ -942,12 +950,13 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] `/* */` block comments + compound assignment (`+=` `-=` `*=` `/=`)
 - [x] `Math` (SSE-inlined `min`/`max`/`clamp`/`abs`/`round`/`floor`/`ceil`/`sqrt`/`toRadians`; libm `cos`/`tan`/`exp`/`pow`)
 - [x] `Clock.currentTimeMillis()` / `currentTimeNanos()` / `getDateString(millis[, format])`
-- [x] String methods (`contains`/`startsWith`/`indexOf`/`substring`/`replace`/`split`/`trim`/...)
+- [x] String methods (`contains`/`startsWith`/`indexOf`/`substring`/`replace`/`split`/`trim`/`isNumeric`/`isAlphaNumeric`/...) + parse-to-number (`toInt`/`toLong`/`toFloat`/`toDouble`/`toBool`, throwing `NumberFormatException`)
 - [x] `Regex` (`matches`/`test`/`find`/`replace`; Thompson NFA / Pike VM, linear-time, ReDoS-safe)
 - [x] `Random` (fast PRNG: `get`/`next*`/`nextGaussian`/`nextBytes`)
 - [x] Exceptions: `try`/`catch`/`throw` + stack traces (multiple clauses, is-a matching, user `extends Exception`, builtin `IndexOutOfBounds`; zero-cost-when-not-thrown)
 - [x] Map views: `containsKey` (replaces `has`) / `containsValue`, `getKeys`/`getValues` → `K[]`/`V[]`, `getEntries` → `Entry[]` (`getKey`/`getValue`), `foreach (k, v in m)`
 - [x] `File` namespace: exists/create/delete, read/write text + binary, glob search, Windows attributes (throws `IOException`)
+- [x] `System` namespace: `System.shell(command[, wait])` (run a process, offloaded wait) + `System.args()` → `string[]` (command-line arguments)
 - [x] Constructor arguments (`new Class(args)`) + eight built-in vector types (`Vector2/3 × i/l/f/d`: `equals`, `calculateDistance`)
 
 **Concurrency & I/O (Part 6)**

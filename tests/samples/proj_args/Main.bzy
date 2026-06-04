@@ -1,0 +1,12 @@
+// System.args() returns the command-line arguments (argv[1..], excluding the
+// program path) as a string[]. Run as `out.exe alpha beta` -> 2, alpha, beta.
+void main()
+{
+	string[] a;
+	a = System.args();
+	print(a.length);
+	foreach (string s in a)
+	{
+		print(s);
+	}
+}

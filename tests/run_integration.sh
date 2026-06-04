@@ -110,6 +110,14 @@ check str_transform tests/samples/proj_str_transform $'Hello.World\nHello World\
 check str_more    tests/samples/proj_str_more      $'true\nfalse\n101\n4\nababab'
 check str_split   tests/samples/proj_str_split     $'3\nred\ngreen\nblue'
 check str_isnum   tests/samples/proj_str_isnum     $'true\ntrue\nfalse\ntrue\nfalse'
+# System.args(): run the program WITH arguments and confirm they arrive (count + values).
+bzy_build tests/samples/proj_args
+if [ $? -eq 0 ]; then
+    got="$(./out.exe alpha beta)"; got="${got//$'\r'/}"
+    if [ "$got" == $'2\nalpha\nbeta' ]; then echo "  args: OK"; else echo "  args: FAIL (got '$got')"; fail=1; fi
+else
+    echo "  args: COMPILE FAILED"; fail=1
+fi
 check parse       tests/samples/proj_parse         $'42\n7\ntrue'
 check_throws throw tests/samples/proj_throw "boom"
 check catch       tests/samples/proj_catch         $'caught it\n0'

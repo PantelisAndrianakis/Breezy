@@ -44,6 +44,8 @@ void   *bzy_str_to_upper(void *s);                              /* ASCII upper; 
 void   *bzy_str_to_lower(void *s);                              /* ASCII lower; owned. */
 int64_t bzy_str_equals_ignore_case(void *a, void *b);  /* ASCII case-insensitive equality. */
 void *bzy_net_read_url(void *url);                     /* HTTP/HTTPS GET -> body string (fallible). */
+void  bzy_set_args(int argc, char **argv);             /* Capture argv at startup (entry.c). */
+void *bzy_sys_args(void);                              /* System.args() -> string[] of user args. */
 int64_t bzy_str_is_empty(void *s);                     /* 1 if length 0. */
 int64_t bzy_str_is_numeric(void *s);                   /* 1 if non-empty and all digits 0-9. */
 int64_t bzy_str_is_alphanumeric(void *s);              /* 1 if non-empty and all letters/digits. */

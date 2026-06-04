@@ -474,6 +474,21 @@ static int file_is_byte_array(TypeRef *t)
 static void resolve_system(Expr *e)
 {
 	const char *m = e->name + 7;   /* After "System.". */
+	if (strcmp(m,"args")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"System.args() takes no arguments.",NULL);
+		}
+
+		TypeRef elem;
+		memset(&elem, 0, sizeof(elem));
+		elem.kind = TY_STRING;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(elem);
+		return;
+	}
+
 	if (strcmp(m,"shell")==0)
 	{
 		if (e->arg_count<1 || e->arg_count>2 || e->args[0]->type.kind!=TY_STRING)

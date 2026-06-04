@@ -1997,6 +1997,12 @@ static void cg_logger_method(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 7;   /* After "System.". */
+	if (strcmp(m,"args")==0)
+	{
+		cg_aligned_call(cg,"bzy_sys_args");   /* Owned (+1) string[] in rax. */
+		return;
+	}
+
 	if (strcmp(m,"shell")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
@@ -3786,6 +3792,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_clock_date");
 	cg_emit(cg,"extern bzy_clock_date_fmt");
 	cg_emit(cg,"extern bzy_system_shell");
+	cg_emit(cg,"extern bzy_sys_args");
 	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");
