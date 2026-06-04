@@ -58,4 +58,5 @@ check file_async  tests/samples/proj_file_async  $'50'
 check file_attr   tests/samples/proj_file_attr   $'true\nfalse\nfalse\nfalse'
 check filewriter  tests/samples/proj_filewriter  $'102'
 check logger      tests/samples/proj_logger      $'200'
+check filechannel tests/samples/proj_filechannel  $'10'
 if [ $fail -eq 0 ]; then echo "All Linux integration tests passed"; else echo "FAILURES"; exit 1; fi

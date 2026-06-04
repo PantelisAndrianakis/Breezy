@@ -315,6 +315,17 @@ static void worker_loop(void)
 
 			if (g_nworkers == 1 && __atomic_load_n(&g_live, __ATOMIC_SEQ_CST) > 0)
 			{
+				/* Re-poll before declaring deadlock: an offload/IOCP worker enqueues
+				   the woken breeze *before* it decrements its inflight counter, so a
+				   wake that landed between the find_work() above and this inflight==0
+				   read is already in the ready queue. Only a still-empty queue is a
+				   genuine deadlock. */
+				b = find_work();
+				if (b)
+				{
+					goto run;
+				}
+
 				/* Single worker, breezes remain parked, nothing can ever wake them. */
 				fprintf(stderr, "Deadlock: all breezes blocked.\n");
 				abort();
@@ -324,6 +335,7 @@ static void worker_loop(void)
 			continue;
 		}
 
+run:
 		t_running = b;
 		bzy_coroutine_switch(b->coroutine);
 		t_running = NULL;

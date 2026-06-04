@@ -41,7 +41,7 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/types.c \
 RT_COMMON = alloc print string array map vector clock random exception regex \
             map_entry channel timer reflect args scheduler
 ifeq ($(findstring Linux,$(UNAME)),Linux)
-  RT_NAMES = $(RT_COMMON) coroutine_posix offload file logger io_stubs_posix
+  RT_NAMES = $(RT_COMMON) coroutine_posix offload file filechannel logger io_stubs_posix
 else
   RT_NAMES = $(RT_COMMON) coroutine_win file offload system iocp socket udp filechannel logger http
 endif
