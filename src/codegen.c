@@ -2614,7 +2614,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		   (owned, stack-preserved like the enum load). anno_str = class. */
 		if (e->anno_int == -1)
 		{
-			char smem[128];
+			char smem[192];
 			snprintf(smem,sizeof(smem),"[rel __static_%s_%s]", e->anno_str, e->name);
 			if (ty_is_float(e->type.kind))
 			{
@@ -2921,7 +2921,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	}
 	else if (target->anno_int==-1)   /* Static field: a global slot (no receiver). */
 	{
-		char mem[128];
+		char mem[192];
 		snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", target->anno_str, target->name);
 		if (fp)
 		{
@@ -2978,7 +2978,7 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 	}
 	else if (target->anno_int==-1)   /* Static managed field: a global slot. */
 	{
-		char mem[128];
+		char mem[192];
 		snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", target->anno_str, target->name);
 		cg_expr_owned(cg,tt,value);            /* +1 new value -> rax. */
 		cg_emit(cg,"    mov rbx, %s", mem);    /* Old occupant. */
@@ -4165,7 +4165,7 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 			}
 
 			TypeKind tk=d->fields[k].type.kind;
-			char mem[128];
+			char mem[192];
 			snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", d->name, d->fields[k].name);
 			if (ty_is_float(tk))
 			{

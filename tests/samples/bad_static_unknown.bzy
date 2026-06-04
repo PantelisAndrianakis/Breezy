@@ -1,0 +1,9 @@
+// No such static field on the class.
+static class Config
+{
+	int maxPlayers = 100;
+}
+void main()
+{
+	print(Config.nope);
+}

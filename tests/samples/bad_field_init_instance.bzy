@@ -1,0 +1,6 @@
+// Field initializers are only allowed on static fields.
+class A
+{
+	int x = 5;
+}
+void main() { }

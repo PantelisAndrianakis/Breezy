@@ -188,6 +188,40 @@ switch (c)
 
 Enums lower to ordinary classes (constants → singleton objects constructed once at startup; per-constant bodies → subclasses), so dispatch is the same zero-overhead virtual call as any method. `switch` accepts enums (matched by ordinal) — as well as integers, `bool`, and `string` (float/double are rejected, since exact-equality matching is unreliable for them).
 
+**Static members & static classes.** Mark a field or method `static` to make it shared program-wide (one copy across all instances), reached through the class name. Mark a whole class `static` to make *every* member static and the class non-instantiable — a named bag of global state + utilities. Static fields may have declaration initializers, run once at startup.
+
+```breezy
+class Counter
+{
+    static int total = 0;          // one shared slot across all Counter objects
+    int id;                        // per-object
+    Counter() { Counter.total = Counter.total + 1; this.id = Counter.total; }
+}
+
+static class Config                // not instantiable; all members static
+{
+    int maxPlayers = 100;
+    int dbl(int n) { return n + n; }
+}
+
+print(Config.maxPlayers);          // 100
+Config.maxPlayers = 50;            // writable
+print(Config.dbl(21));             // 42
+```
+
+A **singleton** is just a static field holding the one instance — and because it's a real object, it can be passed around and implement interfaces:
+
+```breezy
+class Server implements Greeter
+{
+    static Server INSTANCE;
+    string greet() { return "hello"; }
+}
+// Server.INSTANCE = new Server();  Greeter g;  g = Server.INSTANCE;  g.greet();
+```
+
+Static fields are global slots (`__static_<Class>_<field>`), excluded from the object layout; static methods are plain functions with no `this`. Members are reached by class name (`Class.field`, `Class.method()`) — including inside the class's own methods. (Float/double switch aside, this is the Java model: per-member `static`, with the singleton as a pattern rather than a keyword.)
+
 ### Built-in Vector Types
 
 Eight ready-made vector types ship with the language — `Vector2i` / `Vector2l` / `Vector2f` / `Vector2d` (fields `x`, `y`) and `Vector3i` / `Vector3l` / `Vector3f` / `Vector3d` (fields `x`, `y`, `z`) — each with a constructor, `equals` (component-wise), and `calculateDistance` (euclidean). They're ordinary classes, so a non-escaping vector local is stack-allocated (no heap, no reference counting).
@@ -1064,5 +1098,6 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Interfaces — `interface`/`implements`, polymorphism without inheritance, zero-overhead shared-vtable-slot dispatch (Part 9-1)
 - [x] User-definable generics — `class Box<T>`, multi-param `Pair<K, V>`, interface bounds (`<T: Speaker>`), monomorphized to ordinary classes (Part 9-2)
 - [x] Java-style enums — singleton constants, fields/ctors/methods, per-constant bodies, `implements`, values/valueOf/name/ordinal, switch (Part 9-3)
+- [x] Static members & static classes — per-member `static` fields/methods, `static class`, field initializers, singletons (Part 9-4)
 - [ ] Extended standard library (sorted/tree maps, priority queue, math, time, formatting)
 - [ ] Self-hosting compiler

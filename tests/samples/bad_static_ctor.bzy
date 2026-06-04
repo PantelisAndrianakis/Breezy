@@ -1,0 +1,7 @@
+// A static class may not declare a constructor.
+static class C
+{
+	int x;
+	C() { this.x = 0; }
+}
+void main() { }

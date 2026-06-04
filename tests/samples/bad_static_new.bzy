@@ -1,0 +1,10 @@
+// A static class is not instantiable.
+static class Config
+{
+	int x = 1;
+}
+void main()
+{
+	Config c;
+	c = new Config();
+}

@@ -1,0 +1,7 @@
+void main()
+{
+	Server.INSTANCE = new Server();
+	Greeter g;
+	g = Server.INSTANCE;        // the singleton flows through an interface-typed var
+	print(g.greet());           // hello
+}
