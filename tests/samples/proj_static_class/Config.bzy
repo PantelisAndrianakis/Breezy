@@ -1,0 +1,6 @@
+static class Config
+{
+	int maxPlayers = 100;
+	string name = "Breezy";
+	int dbl(int n) { return n + n; }
+}

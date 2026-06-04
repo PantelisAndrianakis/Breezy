@@ -255,6 +255,12 @@ static int expr_is_owned(Expr *e)
 		return 1;
 	}
 
+	/* A static managed field read (C.field) retains the slot's value. */
+	if (e->kind==EX_FIELD && e->anno_int==-1)
+	{
+		return 1;
+	}
+
 	/* A managed EX_BINARY is a string concat (bzy_str_concat returns +1); an
 	   EX_STR literal is +1 from bzy_str_new. */
 	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
@@ -2604,6 +2610,32 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
+		/* Static field (C.total): load from the global slot; retain if managed
+		   (owned, stack-preserved like the enum load). anno_str = class. */
+		if (e->anno_int == -1)
+		{
+			char smem[128];
+			snprintf(smem,sizeof(smem),"[rel __static_%s_%s]", e->anno_str, e->name);
+			if (ty_is_float(e->type.kind))
+			{
+				cg_load_fp(cg,e->type.kind,smem);
+			}
+			else
+			{
+				cg_load_scalar(cg,e->type.kind,smem);
+			}
+
+			if (ty_is_managed(e->type.kind))
+			{
+				cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+				cg_emit(cg,"    push rax");
+				cg_aligned_call(cg,"bzy_retain");
+				cg_emit(cg,"    pop rax");
+			}
+
+			break;
+		}
+
 		cg_expr(cg,tt,e->lhs);
 		char mem[32];
 		sprintf(mem,"[rax + %d]", e->anno_int);
@@ -2647,6 +2679,15 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_new(cg,tt,e);
 		break;
 	case EX_METHOD_CALL:
+		if (e->anno_int==-1)   /* Static method call (C.method(args)): no `this`. */
+		{
+			MethodInfo *sm=types_find_method(types_find_class(tt,e->anno_str),e->name);
+			cg_call_with_args(cg,tt,sm->asm_label,NULL,e->args,e->arg_count,0,
+							  ty_is_managed(e->type.kind), ty_is_float(e->type.kind),
+							  sm->param_types, sm->param_count, 0);
+			break;
+		}
+
 		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
 		{
 			cg_enum_static(cg,tt,e);   /* Enum.values() / Enum.valueOf(s). */
@@ -2843,6 +2884,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 
 static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main);
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);
+static int cg_tt_has_statics(TypeTable *tt);
 
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {
@@ -2875,6 +2917,19 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		else
 		{
 			cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
+		}
+	}
+	else if (target->anno_int==-1)   /* Static field: a global slot (no receiver). */
+	{
+		char mem[128];
+		snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", target->anno_str, target->name);
+		if (fp)
+		{
+			cg_store_fp(cg,target->type.kind,mem);
+		}
+		else
+		{
+			cg_emit(cg,"    mov %s, rax", mem);
 		}
 	}
 	else if (fp)     /* EX_FIELD, float value in xmm0. */
@@ -2920,6 +2975,16 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 		cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
 		cg_emit(cg,"    mov %s, rbx", cg_iarg(cg, 0));
 		cg_release_rcx(cg);
+	}
+	else if (target->anno_int==-1)   /* Static managed field: a global slot. */
+	{
+		char mem[128];
+		snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", target->anno_str, target->name);
+		cg_expr_owned(cg,tt,value);            /* +1 new value -> rax. */
+		cg_emit(cg,"    mov rbx, %s", mem);    /* Old occupant. */
+		cg_emit(cg,"    mov %s, rax", mem);    /* Store new (transfers the +1). */
+		cg_emit(cg,"    mov %s, rbx", cg_iarg(cg, 0));
+		cg_release_rcx(cg);                    /* Release old. */
 	}
 	else
 	{
@@ -3851,6 +3916,11 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		cg_emit(cg,"    call __enum_init");
 	}
 
+	if (is_main && cg_tt_has_statics(tt))
+	{
+		cg_emit(cg,"    call __static_init");
+	}
+
 	cg_block(cg, tt, f, f->body, is_main);
 
 	cg_release_object_locals(cg, f, -1);
@@ -3872,7 +3942,7 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 	int nobj=0;
 	for (int i=0; i<c->field_count; i++)
 	{
-		if (ty_is_managed(c->fields[i].type.kind))
+		if (ty_is_managed(c->fields[i].type.kind) && !c->fields[i].is_static)
 		{
 			nobj++;
 		}
@@ -3881,9 +3951,9 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 	cg_emit(cg,"    dq %d", nobj);
 	for (int i=0; i<c->field_count; i++)
 	{
-		if (ty_is_managed(c->fields[i].type.kind))
+		if (ty_is_managed(c->fields[i].type.kind) && !c->fields[i].is_static)
 		{
-			cg_emit(cg,"    dq %d", c->fields[i].offset);
+			cg_emit(cg,"    dq %d", c->fields[i].offset);   /* Instance managed fields only; statics are global. */
 		}
 	}
 
@@ -4012,6 +4082,112 @@ static void cg_emit_enum_data(Codegen *cg)
 			fprintf(cg->out,"0\n");
 		}
 	}
+}
+
+/* True if any class declares a static field (drives whether __static_init and
+   its main-entry call exist). Inherited duplicate copies don't affect the y/n. */
+static int cg_tt_has_statics(TypeTable *tt)
+{
+	for (int i=0; i<tt->class_count; i++)
+	{
+		for (int k=0; k<tt->classes[i].field_count; k++)
+		{
+			if (tt->classes[i].fields[k].is_static)
+			{
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+/* One global slot per declared static field (iterate the declaring ClassDecls so
+   inherited copies don't emit duplicate slots). */
+static void cg_emit_static_data(Codegen *cg, Unit **units, int n)
+{
+	for (int i=0; i<n; i++)
+	{
+		ClassDecl *d=units[i]->klass;
+		if (!d)
+		{
+			continue;
+		}
+
+		for (int k=0; k<d->field_count; k++)
+		{
+			if (d->fields[k].is_static || d->is_static)
+			{
+				cg_emit(cg,"__static_%s_%s: dq 0", d->name, d->fields[k].name);
+			}
+		}
+	}
+}
+
+/* Run static-field declaration initializers once, before any user statement. */
+static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
+{
+	if (!cg_tt_has_statics(tt))
+	{
+		return;
+	}
+
+	int locals=16;
+	cg->sp_save=locals+8;
+	cg->val_save=locals+16;
+	cg->argtmp_base=locals+24;
+	cg->assign_save=locals+56;
+	cg->fp_save=locals+64;
+	int frame=locals+72;
+	if (frame%16!=0)
+	{
+		frame=(frame/16+1)*16;
+	}
+
+	cg_emit(cg,"global __static_init");
+	cg_emit(cg,"__static_init:");
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, %d", frame);
+	for (int i=0; i<n; i++)
+	{
+		ClassDecl *d=units[i]->klass;
+		if (!d)
+		{
+			continue;
+		}
+
+		for (int k=0; k<d->field_count; k++)
+		{
+			if (!(d->fields[k].is_static || d->is_static) || !d->fields[k].init)
+			{
+				continue;
+			}
+
+			TypeKind tk=d->fields[k].type.kind;
+			char mem[128];
+			snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", d->name, d->fields[k].name);
+			if (ty_is_float(tk))
+			{
+				cg_expr(cg,tt,d->fields[k].init);         /* Value -> xmm0. */
+				cg_store_fp(cg,tk,mem);
+			}
+			else if (ty_is_managed(tk))
+			{
+				cg_expr_owned(cg,tt,d->fields[k].init);   /* Owned (+1); slot starts 0, no release. */
+				cg_emit(cg,"    mov %s, rax", mem);
+			}
+			else
+			{
+				cg_expr(cg,tt,d->fields[k].init);         /* Scalar -> rax. */
+				cg_emit(cg,"    mov %s, rax", mem);
+			}
+		}
+	}
+
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
 }
 
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
@@ -4260,7 +4436,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		{
 			Func *m=u->klass->methods[k];
 			MethodInfo *mi=types_find_method(c,m->name);
-			cg_emit_func(cg,tt,mi->asm_label,m,c->name);
+			cg_emit_func(cg,tt,mi->asm_label,m, mi->is_static ? NULL : c->name);   /* Static: no `this`. */
 		}
 
 		if (u->klass->ctor)
@@ -4280,6 +4456,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	}
 
 	cg_emit_enum_init(cg,tt);   /* __enum_init (constructs the singletons), still in .text. */
+	cg_emit_static_init(cg,tt,units,unit_count);   /* __static_init (runs field initializers). */
 
 	cg_emit(cg,"");
 	cg_emit(cg,"section .data");
@@ -4339,4 +4516,5 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"__bzy_exception_func_count: dq %d", cg->exception_fn_count);
 
 	cg_emit_enum_data(cg);   /* Enum singleton slots + constant name strings. */
+	cg_emit_static_data(cg,units,unit_count);   /* Static-field global slots. */
 }

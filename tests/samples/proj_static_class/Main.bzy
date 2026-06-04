@@ -1,0 +1,8 @@
+void main()
+{
+	print(Config.maxPlayers);   // 100
+	print(Config.name);         // Breezy
+	Config.maxPlayers = 50;
+	print(Config.maxPlayers);   // 50
+	print(Config.dbl(21));      // 42
+}

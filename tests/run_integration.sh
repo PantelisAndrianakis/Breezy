@@ -133,6 +133,8 @@ check_fail generic_unknown tests/samples/bad_generic_unknown
 check generic_box   tests/samples/proj_generic_box   $'7\nhi'
 check generic_pair  tests/samples/proj_generic_pair  $'42\nanswer'
 check generic_announce tests/samples/proj_generic_bound $'woof\nmeow'
+check static_field tests/samples/proj_static_field $'1\n2\n3\n3'
+check static_class tests/samples/proj_static_class $'100\nBreezy\n50\n42'
 check enum_basic tests/samples/proj_enum_basic $'1\nGREEN\n255\n255\n3\n255'
 check enum_body  tests/samples/proj_enum_body  $'7\n7\n42\nADD\nOp'
 check enum_switch tests/samples/proj_enum_switch $'2'

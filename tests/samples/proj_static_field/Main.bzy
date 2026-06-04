@@ -1,0 +1,13 @@
+void main()
+{
+	Counter a;
+	a = new Counter();
+	Counter b;
+	b = new Counter();
+	Counter c;
+	c = new Counter();
+	print(a.id);            // 1
+	print(b.id);            // 2
+	print(c.id);            // 3
+	print(Counter.total);   // 3  (shared across all instances)
+}

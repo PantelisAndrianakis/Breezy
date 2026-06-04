@@ -1,0 +1,10 @@
+class Counter
+{
+	static int total = 0;
+	int id;
+	Counter()
+	{
+		Counter.total = Counter.total + 1;
+		this.id = Counter.total;
+	}
+}
