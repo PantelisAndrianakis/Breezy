@@ -62,4 +62,5 @@ check filechannel tests/samples/proj_filechannel  $'10'
 # TCP sockets (epoll reactor): loopback accept/connect/read/write + timeout.
 check tcp_echo       tests/samples/proj_tcp_echo       $'4'
 check socket_timeout tests/samples/proj_socket_timeout $'2'
+check udp_echo       tests/samples/proj_udp_echo       $'2'
 if [ $fail -eq 0 ]; then echo "All Linux integration tests passed"; else echo "FAILURES"; exit 1; fi

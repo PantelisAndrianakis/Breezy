@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
 #define U_FD(o)     (*(SOCKET*)((char*)(o) + 24))   /* UdpSocket reuses the socket-handle layout. */
 #define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
 
@@ -281,3 +282,242 @@ int64_t bzy_dgram_port(void *d)
 {
 	return DG_PORT(d);
 }
+
+#else
+/* ===== POSIX: UDP on the epoll reactor (recvfrom/sendto, non-blocking). ===== */
+#define U_FD(o)     (*(int64_t*)((char*)(o) + 24))
+#define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
+
+#define DG_DATA(o) (*(void**)((char*)(o) + 24))
+#define DG_HOST(o) (*(void**)((char*)(o) + 32))
+#define DG_PORT(o) (*(int64_t*)((char*)(o) + 40))
+
+static int64_t g_dgram_typeinfo[4] = { 0 /* Finalizer. */, 2, 24, 32 };
+static int64_t g_dgram_vtable[2];
+
+static void *dgram_vtable(void)
+{
+	g_dgram_vtable[0] = (int64_t)&g_dgram_typeinfo[0];
+	return &g_dgram_vtable[1];
+}
+
+static void *dgram_new(void *data, void *host, int64_t port)
+{
+	void *o = bzy_alloc(48);
+	*(void**)o = dgram_vtable();
+	DG_DATA(o) = data;   /* Owned (+1) transferred in. */
+	DG_HOST(o) = host;   /* Owned (+1) transferred in. */
+	DG_PORT(o) = port;
+	return o;
+}
+
+void *bzy_udp_new(int64_t port)
+{
+	bzy_reactor_ensure();
+	int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+	if (fd < 0)
+	{
+		return NULL;
+	}
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons((unsigned short)port);
+	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+	return bzy_sock_wrap(fd);
+}
+
+int64_t bzy_udp_port(void *u)
+{
+	struct sockaddr_in addr;
+	socklen_t len = sizeof(addr);
+	if (getsockname((int)U_FD(u), (struct sockaddr*)&addr, &len) != 0)
+	{
+		return -1;
+	}
+
+	return (int64_t)ntohs(addr.sin_port);
+}
+
+static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf, int64_t len)
+{
+	struct sockaddr_in dst;
+	memset(&dst, 0, sizeof(dst));
+	dst.sin_family = AF_INET;
+	dst.sin_port = htons((unsigned short)port);
+	dst.sin_addr.s_addr = inet_addr(bzy_str_data(host));   /* IPv4 dotted-quad; getaddrinfo for names. */
+	if (dst.sin_addr.s_addr == INADDR_NONE)
+	{
+		if (bzy_resolve4(bzy_str_data(host), (int)port, &dst) != 0)
+		{
+			return 0;
+		}
+	}
+
+	for (;;)
+	{
+		ssize_t n = sendto((int)U_FD(u), buf, (size_t)len, MSG_NOSIGNAL, (struct sockaddr*)&dst, sizeof(dst));
+		if (n >= 0)
+		{
+			return (int64_t)n;
+		}
+
+		if (errno != EAGAIN && errno != EWOULDBLOCK)
+		{
+			return 0;
+		}
+
+		if (bzy_reactor_wait((int)U_FD(u), 1, -1) < 0)
+		{
+			return 0;
+		}
+	}
+}
+
+int64_t bzy_udp_send_to(void *u, void *host, int64_t port, void *data)
+{
+	int64_t n = bzy_array_len(data);
+	int64_t *slots = (int64_t*)((char*)data + 32);
+	char *buf = malloc((size_t)(n > 0 ? n : 1));
+	for (int64_t i = 0; i < n; i++)
+	{
+		buf[i] = (char)(unsigned char)slots[i];
+	}
+
+	int64_t sent = udp_send_bytes(u, host, port, buf, n);
+	free(buf);
+	return sent;
+}
+
+int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str)
+{
+	return udp_send_bytes(u, host, port, bzy_str_data(str), bzy_str_len(str));
+}
+
+/* One recvfrom, parking on read-readiness. timeout_ms<0 = infinite. bytes, -1 err, -2 timeout. */
+static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sockaddr_in *from)
+{
+	for (;;)
+	{
+		socklen_t fromlen = sizeof(*from);
+		memset(from, 0, sizeof(*from));
+		ssize_t n = recvfrom((int)U_FD(u), buf, (size_t)max, 0, (struct sockaddr*)from, &fromlen);
+		if (n >= 0)
+		{
+			return (int)n;
+		}
+
+		if (errno != EAGAIN && errno != EWOULDBLOCK)
+		{
+			return -1;
+		}
+
+		int r = bzy_reactor_wait((int)U_FD(u), 0, timeout_ms);
+		if (r == 0)
+		{
+			return -2;
+		}
+
+		if (r < 0)
+		{
+			return -1;
+		}
+	}
+}
+
+static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
+{
+	void *arr = bzy_array_new(n < 0 ? 0 : n, 0);
+	int64_t *slots = (int64_t*)((char*)arr + 32);
+	for (int i = 0; i < n; i++)
+	{
+		slots[i] = (unsigned char)buf[i];
+	}
+
+	char ip[INET_ADDRSTRLEN] = {0};
+	inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+	void *host = bzy_str_new(ip, (int64_t)strlen(ip));
+	return dgram_new(arr, host, (int64_t)ntohs(from->sin_port));
+}
+
+void *bzy_udp_receive(void *u)
+{
+	char buf[65536];
+	struct sockaddr_in from;
+	int n = udp_recv(u, buf, sizeof(buf), -1, &from);
+	return make_dgram(buf, n < 0 ? 0 : n, &from);
+}
+
+void *bzy_udp_receive_timeout(void *u, int64_t ms)
+{
+	char buf[65536];
+	struct sockaddr_in from;
+	int n = udp_recv(u, buf, sizeof(buf), ms, &from);
+	if (n == -2)
+	{
+		return NULL;   /* Timed out. */
+	}
+
+	return make_dgram(buf, n < 0 ? 0 : n, &from);
+}
+
+void *bzy_udp_try_receive(void *u)
+{
+	char buf[65536];
+	struct sockaddr_in from;
+	socklen_t fromlen = sizeof(from);
+	memset(&from, 0, sizeof(from));
+	ssize_t n = recvfrom((int)U_FD(u), buf, sizeof(buf), 0, (struct sockaddr*)&from, &fromlen);
+	if (n < 0)
+	{
+		return NULL;   /* EAGAIN: no datagram queued. */
+	}
+
+	return make_dgram(buf, (int)n, &from);
+}
+
+void bzy_udp_close(void *u)
+{
+	if (!U_CLOSED(u) && U_FD(u) >= 0)
+	{
+		close((int)U_FD(u));
+		U_CLOSED(u) = 1;
+	}
+}
+
+void *bzy_dgram_data(void *d)
+{
+	bzy_retain(DG_DATA(d));
+	return DG_DATA(d);
+}
+
+void *bzy_dgram_text(void *d)
+{
+	void *arr = DG_DATA(d);
+	int64_t n = bzy_array_len(arr);
+	int64_t *slots = (int64_t*)((char*)arr + 32);
+	char *buf = malloc((size_t)(n > 0 ? n : 1));
+	for (int64_t i = 0; i < n; i++)
+	{
+		buf[i] = (char)(unsigned char)slots[i];
+	}
+
+	void *s = bzy_str_new(buf, n);
+	free(buf);
+	return s;
+}
+
+void *bzy_dgram_host(void *d)
+{
+	bzy_retain(DG_HOST(d));
+	return DG_HOST(d);
+}
+
+int64_t bzy_dgram_port(void *d)
+{
+	return DG_PORT(d);
+}
+
+#endif
