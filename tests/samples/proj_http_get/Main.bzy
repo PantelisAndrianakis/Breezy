@@ -1,0 +1,37 @@
+// A minimal HTTP/1.1 GET over a raw TCP socket -- the building block of a scraper.
+// Connects to a plain-HTTP host, writes the request, reads the response until the
+// server closes the connection (Connection: close), then pulls a couple of fields
+// out of the returned HTML. NOTE: HTTP only -- there is no TLS yet, so https://
+// sites will not work directly. Not part of `make test` (needs the network).
+void main()
+{
+	Socket s;
+	s = Network.connect("example.com", 80);
+	s.writeText("GET / HTTP/1.1\r\nHost: example.com\r\nUser-Agent: breezy\r\nConnection: close\r\n\r\n");
+
+	string resp;
+	resp = "";
+	string chunk;
+	chunk = s.readText(4096);
+	while (chunk.length() > 0)
+	{
+		resp = resp + chunk;
+		chunk = s.readText(4096);
+	}
+	s.close();
+
+	// Scrape: the status line (up to the first CRLF), total bytes, and the <title>.
+	int nl;
+	nl = resp.indexOf("\r\n");
+	print(resp.substring(0, nl));        // HTTP/1.1 200 OK
+	print(resp.length());                // total response bytes
+
+	int t0;
+	t0 = resp.indexOf("<title>");
+	if (t0 >= 0)
+	{
+		int t1;
+		t1 = resp.indexOf("</title>");
+		print(resp.substring(t0 + 7, t1));   // the page title
+	}
+}

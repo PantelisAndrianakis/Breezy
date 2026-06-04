@@ -1,0 +1,10 @@
+// Network.readUrl fetches a URL (http or https) and returns the body as a string.
+// WinHTTP handles TLS, redirects, and chunked decoding; the breeze parks on the
+// offload pool during the fetch. NOTE: needs the network -- not part of make test.
+void main()
+{
+	string body;
+	body = Network.readUrl("https://example.com");
+	print(body.length() > 0);                // true
+	print(body.contains("Example Domain"));  // true
+}

@@ -1661,6 +1661,23 @@ static void cg_timer_method(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 8;   /* After "Network.". */
+	if (strcmp(m,"readUrl")==0)
+	{
+		/* Fetch (http/https) -> owned body string; fallible, so a post-call
+		   bzy_io_check throws IOException with the body preserved across it. */
+		TypeRef ps0[1];
+		ps0[0]=e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_net_read_url",NULL,e->args,e->arg_count,0, 1, 0, ps0, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the body across io_check. */
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea rcx, [rel .L%d]", k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov rdx, rbp");
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
 	const char *fn;
 	if (strcmp(m,"listen")==0)
 	{
@@ -3679,6 +3696,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_listener_port");
 	cg_emit(cg,"extern bzy_listener_close");
 	cg_emit(cg,"extern bzy_socket_connect");
+	cg_emit(cg,"extern bzy_net_read_url");
 	cg_emit(cg,"extern bzy_socket_read");
 	cg_emit(cg,"extern bzy_socket_read_timeout");
 	cg_emit(cg,"extern bzy_socket_try_read");

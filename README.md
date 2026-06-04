@@ -376,6 +376,18 @@ void handle(Socket c)
 }
 ```
 
+#### Fetch a URL in one call
+
+`Network.readUrl(url)` is the high-level client: it fetches an `http://` **or** `https://` URL and returns the response **body** as a string. TLS, redirects, and chunked transfer-encoding are handled natively by Windows' WinHTTP, and the fetch runs on the **offload pool** — so the breeze parks while a worker thread does the request, and your scheduler core keeps flowing. A transport/URL error (bad URL, DNS failure, TLS error) throws a catchable `IOException`.
+
+```breezy
+string page;
+page = Network.readUrl("https://example.com");   // Parks the breeze; WinHTTP does TLS + the GET.
+print(page.contains("Example Domain"));           // true
+```
+
+It's GET-only and returns the body (no status/headers surface yet); for full control, drop down to a raw `Socket` (see `tests/samples/proj_http_get`).
+
 ### File writing done right
 
 A `FileWriter` **buffers writes** - small writes coalesce in a userspace buffer and flush in far fewer syscalls, and each flush runs off the scheduler core. And logging is a channel, not a syscall: a `Logger` owns a dedicated logger breeze that drains a `channel<string>` and writes off the hot path, so **a tick never waits on disk**.
@@ -945,6 +957,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [x] Timers — scheduled & periodic breezes (`scheduleAfter` / `scheduleEvery`, `Timer.cancel`) + crash-safe breezes (uncaught throw continues)
 - [x] Offload thread pool + async file I/O — `File.*` data ops park the breeze instead of blocking the scheduler (6b-1)
 - [x] Network sockets via IOCP — `Network.listen`/`connect`/`udp`; TCP `Listener`/`Socket` + UDP `UdpSocket`/`Datagram` park a breeze on the completion port (6b-2)
+- [x] `Network.readUrl(url)` — one-call HTTP/HTTPS GET (WinHTTP: TLS + redirects + chunked) dispatched on the offload pool; returns the body, throws `IOException` on failure
 - [x] Random-access `FileChannel` — `File.openChannel`; positioned `readAt`/`writeAt` over IOCP + explicit `sync()`; the database storage foundation (6b-5)
 - [x] Buffered file writes — `File.openWrite`/`openAppend` → `FileWriter`; small writes coalesce in a userspace buffer, flush on the offload pool (6b-3)
 - [x] Channel-fed logger — `Log.open` → `Logger`; a dedicated logger breeze drains a `channel<string>` and writes off the hot path, so a tick never waits on disk (6b-4)

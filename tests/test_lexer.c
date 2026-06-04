@@ -103,6 +103,16 @@ static void test_string_literal(void)
 	ASSERT_STR(t.text, "a\nb");
 }
 
+static void test_string_escape_cr(void)
+{
+	Lexer l;
+	Token t;
+	lexer_init(&l, "\"a\\r\\nb\"");
+	t = lexer_next(&l);
+	ASSERT_INT(t.type, TOKEN_STR_LIT);
+	ASSERT_STR(t.text, "a\r\nb");
+}
+
 static void test_brackets(void)
 {
 	Lexer l;
@@ -274,6 +284,7 @@ int main(void)
 	RUN(test_float_keywords);
 	RUN(test_float_literals);
 	RUN(test_string_literal);
+	RUN(test_string_escape_cr);
 	RUN(test_brackets);
 	RUN(test_map_keyword);
 	RUN(test_foreach_in_and_colon);

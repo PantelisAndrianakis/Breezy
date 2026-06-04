@@ -200,6 +200,9 @@ Token lexer_next(Lexer *l)
 				case 't':
 					d = '\t';
 					break;
+				case 'r':
+					d = '\r';
+					break;
 				case '\\':
 					d = '\\';
 					break;

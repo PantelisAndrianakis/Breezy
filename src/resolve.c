@@ -507,6 +507,17 @@ static void resolve_network(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"readUrl")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Network.readUrl(url) takes one string URL.",NULL);
+		}
+
+		e->type.kind=TY_STRING;
+		return;
+	}
+
 	if (strcmp(m,"connect")==0)
 	{
 		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind))

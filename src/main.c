@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	char link_cmd[2048];
-	int off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32");
+	int off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32 -lwinhttp");
 	for (int i = 0; i < cfg.nlib_paths; i++)
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -L%s",cfg.lib_paths[i]);
