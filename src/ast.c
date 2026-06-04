@@ -84,6 +84,10 @@ InterfaceDecl *interface_new(void)
 {
 	return track(calloc(1,sizeof(InterfaceDecl)));
 }
+EnumDecl *enum_new(void)
+{
+	return track(calloc(1,sizeof(EnumDecl)));
+}
 Unit      *unit_new(void)
 {
 	return track(calloc(1,sizeof(Unit)));

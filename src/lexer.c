@@ -15,7 +15,7 @@ static const struct
 	{"break",TOKEN_BREAK},{"continue",TOKEN_CONTINUE},
 	{"switch",TOKEN_SWITCH},{"case",TOKEN_CASE},{"default",TOKEN_DEFAULT},{"class",TOKEN_CLASS},
 	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},{"extern",TOKEN_EXTERN},{"blocking",TOKEN_BLOCKING},
-	{"interface",TOKEN_INTERFACE},{"implements",TOKEN_IMPLEMENTS},
+	{"interface",TOKEN_INTERFACE},{"implements",TOKEN_IMPLEMENTS},{"enum",TOKEN_ENUM},
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
 	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
@@ -442,6 +442,8 @@ const char *token_type_name(TokenType t)
 		return "interface";
 	case TOKEN_IMPLEMENTS:
 		return "implements";
+	case TOKEN_ENUM:
+		return "enum";
 	case TOKEN_EXTERN:
 		return "extern";
 	case TOKEN_BLOCKING:

@@ -1348,6 +1348,206 @@ static ClassDecl *parse_class(Parser *p)
 	return c;
 }
 
+/* enum Name [implements I, J] { CONST [ (args) ] [ { overrides } ] (, CONST)*
+   [ ; shared-fields-and-methods ] }. Modeled on parse_class for the members. */
+static EnumDecl *parse_enum(Parser *p)
+{
+	advance(p);                 /* 'enum' */
+	EnumDecl *e=enum_new();
+	Token name=expect(p,TOKEN_IDENT);
+	strcpy(e->name,name.text);
+	if (check(p,TOKEN_EXTENDS))
+	{
+		fprintf(stderr,"line %d: Enums may not extend a class.\n",p->cur.line);
+		exit(1);
+	}
+
+	if (match(p,TOKEN_IMPLEMENTS))
+	{
+		do
+		{
+			if (e->implements_count>=8)
+			{
+				fprintf(stderr,"Too many implemented interfaces.\n");
+				exit(1);
+			}
+			Token in=expect(p,TOKEN_IDENT);
+			strcpy(e->implements[e->implements_count++],in.text);
+		}
+		while (match(p,TOKEN_COMMA));
+	}
+
+	expect(p,TOKEN_LBRACE);
+	/* Constants: IDENT [ (args) ] [ { method overrides } ], comma-separated. */
+	if (check(p,TOKEN_IDENT))
+	{
+		do
+		{
+			if (e->constant_count>=64)
+			{
+				fprintf(stderr,"Too many enum constants.\n");
+				exit(1);
+			}
+			EnumConstant *c=&e->constants[e->constant_count];
+			Token cn=expect(p,TOKEN_IDENT);
+			strcpy(c->name,cn.text);
+			if (match(p,TOKEN_LPAREN))
+			{
+				if (!check(p,TOKEN_RPAREN))
+				{
+					do
+					{
+						if (c->arg_count>=8)
+						{
+							fprintf(stderr,"Too many constant arguments.\n");
+							exit(1);
+						}
+						c->args[c->arg_count++]=parse_expr(p);
+					}
+					while (match(p,TOKEN_COMMA));
+				}
+
+				expect(p,TOKEN_RPAREN);
+			}
+
+			if (check(p,TOKEN_LBRACE))
+			{
+				advance(p);             /* '{' of the per-constant body. */
+				while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+				{
+					if (c->override_count>=8)
+					{
+						fprintf(stderr,"Too many constant overrides.\n");
+						exit(1);
+					}
+					TypeRef rt;
+					parse_type(p,&rt);
+					Func *f=func_new();
+					f->ret_type=rt;
+					Token mn=expect(p,TOKEN_IDENT);
+					strcpy(f->name,mn.text);
+					expect(p,TOKEN_LPAREN);
+					if (!check(p,TOKEN_RPAREN))
+					{
+						do
+						{
+							if (f->param_count>=8)
+							{
+								fprintf(stderr,"Too many params.\n");
+								exit(1);
+							}
+							Param *pm=&f->params[f->param_count++];
+							parse_type(p,&pm->type);
+							Token pn=expect(p,TOKEN_IDENT);
+							strcpy(pm->name,pn.text);
+						}
+						while (match(p,TOKEN_COMMA));
+					}
+
+					expect(p,TOKEN_RPAREN);
+					f->body=parse_block(p);
+					c->overrides[c->override_count++]=f;
+				}
+
+				expect(p,TOKEN_RBRACE);
+			}
+
+			e->constant_count++;
+		}
+		while (match(p,TOKEN_COMMA));
+	}
+
+	match(p,TOKEN_SEMICOLON);   /* Optional ';' before shared members. */
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		/* Constructor: IDENT == enum name followed by '('. */
+		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,e->name)==0 && p->peek.type==TOKEN_LPAREN)
+		{
+			advance(p);
+			Func *f=func_new();
+			f->ret_type.kind=TY_VOID;
+			strcpy(f->name,e->name);
+			expect(p,TOKEN_LPAREN);
+			if (!check(p,TOKEN_RPAREN))
+			{
+				do
+				{
+					if (f->param_count>=8)
+					{
+						fprintf(stderr,"Too many params.\n");
+						exit(1);
+					}
+					Param *pm=&f->params[f->param_count++];
+					parse_type(p,&pm->type);
+					Token pn=expect(p,TOKEN_IDENT);
+					strcpy(pm->name,pn.text);
+				}
+				while (match(p,TOKEN_COMMA));
+			}
+
+			expect(p,TOKEN_RPAREN);
+			f->body=parse_block(p);
+			e->ctor=f;
+			continue;
+		}
+
+		TypeRef ty;
+		if (!parse_type(p,&ty))
+		{
+			fprintf(stderr,"line %d: Expected member type.\n",p->cur.line);
+			exit(1);
+		}
+		Token mname=expect(p,TOKEN_IDENT);
+		if (check(p,TOKEN_LPAREN))
+		{
+			Func *f=func_new();
+			f->ret_type=ty;
+			strcpy(f->name,mname.text);
+			advance(p);
+			if (!check(p,TOKEN_RPAREN))
+			{
+				do
+				{
+					if (f->param_count>=8)
+					{
+						fprintf(stderr,"Too many params.\n");
+						exit(1);
+					}
+					Param *pm=&f->params[f->param_count++];
+					parse_type(p,&pm->type);
+					Token pn=expect(p,TOKEN_IDENT);
+					strcpy(pm->name,pn.text);
+				}
+				while (match(p,TOKEN_COMMA));
+			}
+
+			expect(p,TOKEN_RPAREN);
+			f->body=parse_block(p);
+			if (e->method_count>=32)
+			{
+				fprintf(stderr,"Too many methods.\n");
+				exit(1);
+			}
+			e->methods[e->method_count++]=f;
+		}
+		else
+		{
+			expect(p,TOKEN_SEMICOLON);
+			if (e->field_count>=32)
+			{
+				fprintf(stderr,"Too many fields.\n");
+				exit(1);
+			}
+			e->fields[e->field_count].type=ty;
+			strcpy(e->fields[e->field_count].name,mname.text);
+			e->field_count++;
+		}
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return e;
+}
+
 Unit *parse_unit(Parser *p)
 {
 	Unit *u=unit_new();
@@ -1379,6 +1579,15 @@ Unit *parse_unit(Parser *p)
 				exit(1);
 			}
 			u->klass=parse_class(p);
+		}
+		else if (check(p,TOKEN_ENUM))
+		{
+			if (u->enum_count>=8)
+			{
+				fprintf(stderr,"Too many enums per file.\n");
+				exit(1);
+			}
+			u->enums[u->enum_count++]=parse_enum(p);
 		}
 		else
 		{

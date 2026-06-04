@@ -223,6 +223,41 @@ static void test_typeref_deepcopy_nested(void)
 	ASSERT_INT(copy.targs[1]->elem->kind, TY_STRING);
 }
 
+static void test_parse_enum_basic(void)
+{
+	Unit *u = parse_unit_str(
+				  "enum Color { RED(255,0,0), GREEN(0,255,0), BLUE(0,0,255); int r; int g; int b;"
+				  " Color(int r, int g, int b) { this.r = r; this.g = g; this.b = b; }"
+				  " int sum() { return this.r + this.g + this.b; } }");
+	EnumDecl *e = u->enums[0];
+	ASSERT_STR(e->name, "Color");
+	ASSERT_INT(e->constant_count, 3);
+	ASSERT_STR(e->constants[0].name, "RED");
+	ASSERT_INT(e->constants[0].arg_count, 3);
+	ASSERT_INT(e->field_count, 3);
+	ASSERT_INT(e->method_count, 1);
+	ASSERT_INT(e->ctor != NULL, 1);
+}
+
+static void test_parse_enum_constant_body(void)
+{
+	Unit *u = parse_unit_str(
+				  "enum Op { ADD { int apply(int a, int b) { return a + b; } },"
+				  " SUB { int apply(int a, int b) { return a - b; } };"
+				  " int apply(int a, int b) { return 0; } }");
+	EnumDecl *e = u->enums[0];
+	ASSERT_INT(e->constant_count, 2);
+	ASSERT_INT(e->constants[0].override_count, 1);
+	ASSERT_STR(e->constants[0].overrides[0]->name, "apply");
+}
+
+static void test_parse_enum_implements(void)
+{
+	Unit *u = parse_unit_str("enum E implements Speaker { A, B; string speak() { return \"x\"; } }");
+	ASSERT_STR(u->enums[0]->implements[0], "Speaker");
+	ASSERT_INT(u->enums[0]->constant_count, 2);
+}
+
 static void test_parse_extern_blocking(void)
 {
 	Unit *u = parse_unit_str("extern blocking long read_db(long h); void main() { }");
@@ -564,6 +599,9 @@ int main(void)
 	RUN(test_new_generic_with_args);
 	RUN(test_classdecl_clone_independent);
 	RUN(test_typeref_deepcopy_nested);
+	RUN(test_parse_enum_basic);
+	RUN(test_parse_enum_constant_body);
+	RUN(test_parse_enum_implements);
 	RUN(test_parse_function_with_vardecl);
 	RUN(test_parse_scalar_vardecls);
 	RUN(test_parse_timer_vardecl);

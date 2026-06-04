@@ -241,9 +241,34 @@ typedef struct
 
 typedef struct
 {
+	char  name[64];           /* Constant name, e.g. "RED". */
+	Expr *args[8];            /* Constructor arguments for this constant. */
+	int   arg_count;
+	Func *overrides[8];       /* Per-constant method override bodies (empty if none). */
+	int   override_count;
+} EnumConstant;
+
+typedef struct
+{
+	char  name[64];
+	char  implements[8][64];
+	int   implements_count;
+	EnumConstant constants[64];
+	int   constant_count;
+	Field fields[32];         /* Shared instance fields (user-declared). */
+	int   field_count;
+	Func *methods[32];        /* Shared instance methods. */
+	int   method_count;
+	Func *ctor;               /* The enum constructor (params + body), or NULL. */
+} EnumDecl;
+
+typedef struct
+{
 	ClassDecl     *klass;         /* Non-NULL if this file declares a class. */
 	InterfaceDecl *interfaces[8]; /* File-scope interface declarations. */
 	int            interface_count;
+	EnumDecl      *enums[8];      /* File-scope enum declarations. */
+	int            enum_count;
 	Func          *funcs[8];      /* File-scope functions. */
 	int            func_count;
 } Unit;
@@ -257,6 +282,7 @@ void   block_push(Block *b, Stmt *s);
 Func  *func_new(void);
 ClassDecl *class_new(void);
 InterfaceDecl *interface_new(void);
+EnumDecl *enum_new(void);
 Unit  *unit_new(void);
 
 TypeRef    typeref_deepcopy(const TypeRef *t);   /* Deep copy incl. elem/elem2/targs. */
