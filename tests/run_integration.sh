@@ -138,6 +138,8 @@ if [ $? -eq 0 ]; then
 else
     echo "  ffi_link: COMPILE FAILED"; fail=1
 fi
+check ffi_toml      tests/samples/proj_ffi_toml       $'5\n7'
+check_fail ffi_toml_badlib tests/samples/proj_ffi_badlib
 check timer_after tests/samples/proj_timer_after   $'1\n2'
 check timer_order tests/samples/proj_timer_order   $'1\n2\n3'
 check vec2        tests/samples/proj_vec2          $'5\nfalse\ntrue\n5'

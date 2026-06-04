@@ -7,6 +7,7 @@
 #include "resolve.h"
 #include "codegen.h"
 #include "prelude.h"
+#include "config.h"
 
 static char *read_file(const char *path)
 {
@@ -71,16 +72,16 @@ static int collect_files(const char *path, char paths[][512])
 int main(int argc, char *argv[])
 {
 	/* Collect --link <lib> flags; the first non-flag arg is the source path. */
+	LinkConfig cfg;
+	memset(&cfg, 0, sizeof(cfg));
 	const char *src_arg = NULL;
-	char links[64][64];
-	int nlinks = 0;
 	for (int i = 1; i < argc; i++)
 	{
 		if (strcmp(argv[i],"--link")==0 && i+1 < argc)
 		{
-			if (nlinks < 64)
+			if (cfg.nlibs < CFG_MAX_LIBS)
 			{
-				snprintf(links[nlinks++],64,"%s",argv[++i]);
+				snprintf(cfg.libs[cfg.nlibs++],CFG_LIB_LEN,"%s",argv[++i]);
 			}
 		}
 		else if (!src_arg)
@@ -94,6 +95,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [--link <lib>]...\n");
 		return 1;
 	}
+
+	config_load(src_arg, &cfg);   /* Merge libs/lib_paths from <project>/breezy.toml. */
 	static char paths[MAX_FILES][512];
 	int nfiles=collect_files(src_arg,paths);
 
@@ -151,11 +154,15 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"Nasm failed.\n");
 		return 1;
 	}
-	char link_cmd[1024];
+	char link_cmd[2048];
 	int off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32");
-	for (int i = 0; i < nlinks; i++)
+	for (int i = 0; i < cfg.nlib_paths; i++)
 	{
-		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",links[i]);
+		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -L%s",cfg.lib_paths[i]);
+	}
+	for (int i = 0; i < cfg.nlibs; i++)
+	{
+		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",cfg.libs[i]);
 	}
 	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o out.exe");
 	if (system(link_cmd)!=0)

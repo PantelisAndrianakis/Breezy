@@ -1,0 +1,10 @@
+// Same FFI calls as proj_ffi, but libm is supplied by breezy.toml's [link]
+// section instead of a --link flag. Prints 5 then 7.
+extern long strlen(string s);
+extern int abs(int n);
+
+void main()
+{
+	print(strlen("hello"));   // 5
+	print(abs(-7));           // 7
+}

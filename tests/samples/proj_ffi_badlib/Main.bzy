@@ -1,0 +1,6 @@
+// The breezy.toml names a library that does not exist, so the gcc link step
+// must fail -- proving config libs are passed to the linker.
+void main()
+{
+	print(0);
+}

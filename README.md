@@ -419,6 +419,16 @@ void main()
 
 The type contract: Breezy `int`/`byte`/`short` → C 32-/8-/16-bit ints; `long` → C 64-bit (a handle/pointer); `float`/`double` → C `float`/`double`; `boolean` → C int; a `string` **argument** marshals to its NUL-terminated `char*` data (embedded NULs truncate on the C side). Returns are limited to `void`/int-family/`long`/`float`/`double`/`boolean` — a C function returning `char*` is declared `long` and wrapped manually for now. `blocking` dispatch is the next sub-part; until then an `extern` call runs inline on the calling breeze.
 
+**Per-project linking with `breezy.toml`.** Instead of repeating `--link` on every build, declare native libraries (and search paths) in a `breezy.toml` next to your project. The `[link]` section is live:
+
+```toml
+[link]
+libs = ["m", "mysqlclient"]   # appended as -lm -lmysqlclient
+lib_paths = ["C:/libs"]        # appended as -LC:/libs
+```
+
+Config libs and `--link` flags compose (both reach the linker), and a missing `breezy.toml` is a no-op.
+
 ---
 
 ## Type System (v1)

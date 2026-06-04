@@ -1,0 +1,4 @@
+# libm is part of the MinGW C runtime: harmless to link, proves the [link]
+# section is read and threaded into the gcc link step.
+[link]
+libs = ["m"]
