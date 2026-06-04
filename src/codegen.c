@@ -17,6 +17,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->exception_fn_count=0;
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
+	cg->blocking_thunk_count=0;
 }
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
@@ -34,6 +35,7 @@ int  cg_label(Codegen *cg)
 }
 
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
+static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi);
 static const char *ARG_REG[4] = { "rcx","rdx","r8","r9" };   /* Win64. */
 
 /* Load a scalar from 'mem' into rax, sign- or zero-extending to 64 bits per its
@@ -587,6 +589,68 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	{
 		cg_emit(cg,"    add rsp, %d", block);
 	}
+}
+
+/* Lower a call to an `extern blocking` function: build a ctx blob on the stack,
+   marshal the args into it, hand it to the offload pool (the breeze parks while a
+   worker runs the C call), then read the result back. Args are stored raw (the
+   string->char* marshalling happens worker-side in the thunk), so the owned-temp
+   release frees the original object. Up to 4 args. */
+static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
+{
+	if (e->arg_count > 4)
+	{
+		fprintf(stderr,"Codegen: >4 args unsupported\n");
+		exit(1);
+	}
+
+	cg_emit(cg,"    sub rsp, 48");                 /* ctx blob: 4 arg slots + result, 16-aligned. */
+	int owned_tmp[4];
+	int owned_n = 0;
+	for (int i=0; i<e->arg_count; i++)
+	{
+		TypeKind pk = (i < fi->param_count) ? fi->param_types[i].kind : e->args[i]->type.kind;
+		cg_expr(cg,tt,e->args[i]);
+		cg_coerce(cg,pk,e->args[i]->type.kind);
+		if (ty_is_float(pk))
+		{
+			cg_emit(cg,"    movsd qword [rsp + %d], xmm0", i*8);
+		}
+		else
+		{
+			if (expr_is_owned(e->args[i]))
+			{
+				owned_tmp[owned_n++] = i;
+			}
+
+			cg_emit(cg,"    mov [rsp + %d], rax", i*8);
+		}
+	}
+
+	cg_emit(cg,"    lea rcx, [rel __blocking_%s]", fi->asm_label);
+	cg_emit(cg,"    mov rdx, rsp");                /* ctx pointer (base of the blob). */
+	cg_aligned_call(cg,"bzy_offload_run");         /* Parks the breeze; worker fills ctx[32]. */
+
+	for (int i=0; i<owned_n; i++)
+	{
+		cg_emit(cg,"    mov rcx, [rsp + %d]", owned_tmp[i]*8);
+		cg_release_rcx(cg);
+	}
+
+	if (fi->ret_type.kind==TY_DOUBLE)
+	{
+		cg_emit(cg,"    movsd xmm0, qword [rsp + 32]");
+	}
+	else if (fi->ret_type.kind==TY_FLOAT)
+	{
+		cg_emit(cg,"    movss xmm0, dword [rsp + 32]");
+	}
+	else if (fi->ret_type.kind!=TY_VOID)
+	{
+		cg_emit(cg,"    mov rax, [rsp + 32]");
+	}
+
+	cg_emit(cg,"    add rsp, 48");
 }
 
 static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
@@ -2568,8 +2632,16 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
-			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
-							  ty_is_float(e->type.kind), fi->param_types, fi->param_count, fi->is_extern);
+			if (fi->is_blocking)
+			{
+				cg_request_blocking_thunk(cg, fi);
+				cg_blocking_call(cg,tt,e,fi);
+			}
+			else
+			{
+				cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
+								  ty_is_float(e->type.kind), fi->param_types, fi->param_count, fi->is_extern);
+			}
 		}
 		break;
 	}
@@ -3054,6 +3126,74 @@ static void cg_emit_breeze_thunk(Codegen *cg, FuncInfo *fi)
 	cg_emit(cg,"    ret");
 }
 
+static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi)
+{
+	for (int i=0; i<cg->blocking_thunk_count; i++)
+	{
+		if (cg->blocking_thunks[i] == fi)
+		{
+			return;
+		}
+	}
+
+	if (cg->blocking_thunk_count < 64)
+	{
+		cg->blocking_thunks[cg->blocking_thunk_count++] = fi;
+	}
+}
+
+/* The per-target blocking thunk, run on an offload worker: rcx = ctx blob.
+   ctx[i*8] holds arg i (raw object pointer for a string); ctx[32] receives the
+   return value. Loads each arg into its Win64 register by position, marshals a
+   string to its char* data (+32), calls the raw C symbol, stores the result. */
+static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
+{
+	const char *ireg[4] = { "rcx", "rdx", "r8", "r9" };
+	cg_emit(cg,"__blocking_%s:", fi->asm_label);
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, 48");                 /* 16-aligned: ctx save at [rbp-8] + shadow. */
+	cg_emit(cg,"    mov [rbp - 8], rcx");          /* Save the ctx pointer. */
+	for (int i=0; i<fi->param_count; i++)
+	{
+		TypeKind k = fi->param_types[i].kind;
+		cg_emit(cg,"    mov rax, [rbp - 8]");
+		if (ty_is_float(k))
+		{
+			cg_emit(cg, k==TY_FLOAT ? "    movd xmm%d, [rax + %d]" : "    movq xmm%d, [rax + %d]", i, i*8);
+		}
+		else
+		{
+			cg_emit(cg,"    mov %s, [rax + %d]", ireg[i], i*8);
+			if (k==TY_STRING)
+			{
+				cg_emit(cg,"    add %s, 32", ireg[i]);   /* string object -> char* data. */
+			}
+		}
+	}
+
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call %s", fi->asm_label);      /* The raw ($-escaped) C symbol. */
+	cg_emit(cg,"    add rsp, 32");
+	cg_emit(cg,"    mov rcx, [rbp - 8]");
+	if (fi->ret_type.kind==TY_DOUBLE)
+	{
+		cg_emit(cg,"    movq [rcx + 32], xmm0");
+	}
+	else if (fi->ret_type.kind==TY_FLOAT)
+	{
+		cg_emit(cg,"    movd [rcx + 32], xmm0");
+	}
+	else if (fi->ret_type.kind!=TY_VOID)
+	{
+		cg_emit(cg,"    mov [rcx + 32], rax");
+	}
+
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	switch (s->kind)
@@ -3508,6 +3648,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_entry_val");
 	cg_emit(cg,"extern bzy_spawn");
 	cg_emit(cg,"extern bzy_spawn_args");
+	cg_emit(cg,"extern bzy_offload_run");   /* FFI: `extern blocking` dispatch. */
 	cg_emit(cg,"extern bzy_yield");
 	cg_emit(cg,"extern bzy_channel_new");
 	cg_emit(cg,"extern bzy_channel_send");
@@ -3722,6 +3863,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<cg->breeze_thunk_count; i++)   /* spawn-with-args thunks (in .text). */
 	{
 		cg_emit_breeze_thunk(cg, cg->breeze_thunks[i]);
+	}
+
+	for (int i=0; i<cg->blocking_thunk_count; i++)   /* extern-blocking offload thunks (in .text). */
+	{
+		cg_emit_blocking_thunk(cg, cg->blocking_thunks[i]);
 	}
 
 	cg_emit(cg,"");

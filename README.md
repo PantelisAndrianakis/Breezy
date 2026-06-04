@@ -402,7 +402,7 @@ extern long  mysql_real_connect(long conn, string host, string user,
 extern blocking int mysql_real_query(long conn, string stmt, long len);
 ```
 
-The `blocking` keyword tells the runtime a call may block, so it's dispatched to the offload pool and your breezes keep flowing. Native libraries to link are declared per-project (`breezy.toml`) or with `--link mysqlclient`.
+The `blocking` keyword tells the runtime a call may block, so it's dispatched to the offload pool and your breezes keep flowing (now live — see below). Native libraries to link are declared per-project (`breezy.toml`) or with `--link mysqlclient`.
 
 **The FFI core is live.** `extern` declarations with scalar/`long`/`string` signatures call C directly, and `--link <lib>` (repeatable) appends a `-l` to the link step:
 
@@ -417,7 +417,20 @@ void main()
 }
 ```
 
-The type contract: Breezy `int`/`byte`/`short` → C 32-/8-/16-bit ints; `long` → C 64-bit (a handle/pointer); `float`/`double` → C `float`/`double`; `boolean` → C int; a `string` **argument** marshals to its NUL-terminated `char*` data (embedded NULs truncate on the C side). Returns are limited to `void`/int-family/`long`/`float`/`double`/`boolean` — a C function returning `char*` is declared `long` and wrapped manually for now. `blocking` dispatch is the next sub-part; until then an `extern` call runs inline on the calling breeze.
+The type contract: Breezy `int`/`byte`/`short` → C 32-/8-/16-bit ints; `long` → C 64-bit (a handle/pointer); `float`/`double` → C `float`/`double`; `boolean` → C int; a `string` **argument** marshals to its NUL-terminated `char*` data (embedded NULs truncate on the C side). Returns are limited to `void`/int-family/`long`/`float`/`double`/`boolean` — a C function returning `char*` is declared `long` and wrapped manually for now.
+
+**`blocking` dispatch is live.** Mark a potentially-slow C call `extern blocking` and it's shipped to the offload pool: the calling breeze parks while a worker thread runs the call, so the scheduler core keeps serving other breezes — no stalled core, same blocking-looking code.
+
+```breezy
+extern blocking long strlen(string s);   // Parks the breeze; a worker runs strlen.
+
+void main()
+{
+	print(strlen("hello"));   // 5
+}
+```
+
+The marshalling contract is identical to a plain `extern`; `blocking` changes only *how* the call is dispatched (off the scheduler core, onto the worker pool).
 
 **Per-project linking with `breezy.toml`.** Instead of repeating `--link` on every build, declare native libraries (and search paths) in a `breezy.toml` next to your project. The `[link]` section is live:
 
@@ -938,7 +951,7 @@ The language design is settled. The compiler and runtime are being built from sc
 - [ ] Linux async I/O backends: epoll (sockets) + `pread`/`pwrite`/`io_uring` (files) under the same surface (Part 8)
 
 **Interop (Part 7)**
-- [ ] `extern` C FFI with `blocking` dispatch
+- [x] `extern` C FFI — direct C-ABI calls, `string`→`char*` marshalling, `--link` + `breezy.toml [link]`, and `blocking` offload dispatch
 
 **Other targets & beyond**
 - [ ] x86-64 codegen (Linux ELF64)

@@ -23,6 +23,8 @@ typedef struct
 	char cur_try_vt[64][64]; /* Their catch-type class names (for __vtable_<name>). */
 	FuncInfo *breeze_thunks[64]; /* spawn-with-args targets needing a __breeze_ thunk (deduped). */
 	int breeze_thunk_count;
+	FuncInfo *blocking_thunks[64]; /* `extern blocking` targets needing a __blocking_ thunk (deduped). */
+	int blocking_thunk_count;
 	struct
 	{
 		int is_float;             /* 1 for a 32-bit float constant, 0 for 64-bit double. */

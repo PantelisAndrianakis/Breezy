@@ -1,0 +1,11 @@
+// `blocking` routes a C call through the offload pool: the breeze parks while a
+// worker thread runs the call, then resumes with the result. Same calls as the
+// FFI core sample, but dispatched off the scheduler core. Prints 5 then 7.
+extern blocking long strlen(string s);
+extern blocking int abs(int n);
+
+void main()
+{
+	print(strlen("hello"));   // 5  -- string arg marshalled worker-side, long result.
+	print(abs(-7));           // 7  -- int arg + int result, via the offload pool.
+}
