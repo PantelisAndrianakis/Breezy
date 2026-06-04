@@ -1095,9 +1095,14 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		TypeKind a=e->lhs->type.kind, b=e->rhs->type.kind;
 		if (a==TY_STRING || b==TY_STRING)
 		{
-			if (e->op!=TOKEN_PLUS || a!=TY_STRING || b!=TY_STRING)
+			/* Concatenation with '+': when either operand is a string, the other
+			   may be a string or any scalar (integer, floating, or boolean) — the
+			   scalar is converted to its text form. Objects/arrays are rejected. */
+			int a_ok = a==TY_STRING || ty_is_int(a) || ty_is_float(a) || a==TY_BOOL;
+			int b_ok = b==TY_STRING || ty_is_int(b) || ty_is_float(b) || b==TY_BOOL;
+			if (e->op!=TOKEN_PLUS || !a_ok || !b_ok)
 			{
-				die(e->line,"Strings support only '+' concatenation of two strings.",NULL);
+				die(e->line,"Strings support '+' concatenation with strings or scalar values only.",NULL);
 			}
 
 			e->type.kind=TY_STRING;

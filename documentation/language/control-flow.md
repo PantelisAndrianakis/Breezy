@@ -87,8 +87,7 @@ Maps support iterating values, or keys and values together as a pair:
 ```breezy
 foreach (string key, int value in counts)
 {
-	print(key);
-	print(value);
+	print(key + " = " + value);
 }
 ```
 

@@ -1,0 +1,25 @@
+// Value-to-string concatenation: a scalar joined with a string converts to text.
+void main()
+{
+	int n;
+	n = 42;
+	print("Score: " + n);          // Score: 42
+
+	print(n + " points");          // 42 points (string on the right).
+
+	int x;
+	x = 3;
+	int y;
+	y = 7;
+	print("x=" + x + " y=" + y);   // x=3 y=7 (chained).
+
+	boolean flag;
+	flag = true;
+	print("ok? " + flag);          // ok? true
+
+	double d;
+	d = 1.5;
+	print("d=" + d);               // d=1.5
+
+	print("a" + "b");              // ab (string + string still works).
+}

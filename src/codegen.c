@@ -287,15 +287,48 @@ static void cg_expr_owned(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
-/* String concatenation: evaluate both operands owned, call bzy_str_concat, then
-   release the two operand temporaries. Operands and result are spilled on the
-   machine stack so nested concats compose. */
+/* Leave an owned (+1) string in rax for one concat operand: a string is taken
+   owned as-is; a scalar is converted to its text via the matching bzy_str_from_*
+   helper (which returns +1), so the surrounding concat logic is uniform. */
+static void cg_concat_operand(Codegen *cg, TypeTable *tt, Expr *op)
+{
+	TypeKind k = op->type.kind;
+	if (k==TY_STRING)
+	{
+		cg_expr_owned(cg,tt,op);
+		return;
+	}
+
+	if (ty_is_float(k))
+	{
+		cg_expr(cg,tt,op);                           /* Value in xmm0. */
+		if (k==TY_FLOAT)
+		{
+			cg_emit(cg,"    cvtss2sd xmm0, xmm0");   /* Promote to double (matches print). */
+		}
+
+		cg_aligned_call(cg,"bzy_str_from_f64");      /* Double arg in xmm0; owned (+1) string in rax. */
+		return;
+	}
+
+	cg_expr(cg,tt,op);                               /* Integer/bool in rax. */
+	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+	const char *fn = k==TY_BOOL ? "bzy_str_from_bool"
+					 : ty_is_unsigned(k) ? "bzy_str_from_u64"
+					 : "bzy_str_from_i64";
+	cg_aligned_call(cg,fn);                          /* Owned (+1) string in rax. */
+}
+
+/* String concatenation: produce an owned string for each operand (strings as-is,
+   scalars converted), call bzy_str_concat, then release the two operand
+   temporaries. Operands and result are spilled on the machine stack so nested
+   concats compose. */
 static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	cg_expr_owned(cg,tt,e->lhs);
+	cg_concat_operand(cg,tt,e->lhs);
 	cg_emit(cg,"    sub rsp, 32");
 	cg_emit(cg,"    mov [rsp], rax");          /* lhs. */
-	cg_expr_owned(cg,tt,e->rhs);
+	cg_concat_operand(cg,tt,e->rhs);
 	cg_emit(cg,"    mov [rsp + 8], rax");      /* rhs. */
 	cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
 	cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 1));
@@ -4215,6 +4248,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_print_f64");
 	cg_emit(cg,"extern bzy_str_new");
 	cg_emit(cg,"extern bzy_str_concat");
+	cg_emit(cg,"extern bzy_str_from_i64");
+	cg_emit(cg,"extern bzy_str_from_u64");
+	cg_emit(cg,"extern bzy_str_from_bool");
+	cg_emit(cg,"extern bzy_str_from_f64");
 	cg_emit(cg,"extern bzy_str_len");
 	cg_emit(cg,"extern bzy_print_str");
 	cg_emit(cg,"extern bzy_sb_new");

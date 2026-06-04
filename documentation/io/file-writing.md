@@ -21,7 +21,7 @@ Logging should never make a request wait on disk. A `Logger` owns a dedicated **
 ```breezy
 Logger log;
 log = Log.open("game.log");          // Owns a channel + a FileWriter + a logger breeze.
-log.log("Tick done.");               // Hands off over the channel - returns at once.
+log.log("Tick " + n + " done.");     // Hands off over the channel - returns at once.
 // ... many ticks later ...
 log.close();                          // Drain, flush, and join the logger breeze.
 ```

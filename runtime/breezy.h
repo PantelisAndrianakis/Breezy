@@ -32,6 +32,10 @@ void   *bzy_str_new(const char *bytes, int64_t len); /* Owned (+1) immutable str
 int64_t bzy_str_len(void *s);                        /* Byte length (excludes the NUL). */
 const char *bzy_str_data(void *s);                   /* Pointer to the inline NUL-terminated bytes. */
 void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */
+void   *bzy_str_from_i64(int64_t v);                 /* Owned (+1) decimal text of a signed integer. */
+void   *bzy_str_from_u64(uint64_t v);                /* Owned (+1) decimal text of an unsigned integer. */
+void   *bzy_str_from_bool(int64_t v);                /* Owned (+1) "true"/"false". */
+void   *bzy_str_from_f64(double v);                  /* Owned (+1) text of a double (matches print). */
 int64_t bzy_str_eq(void *a, void *b);                /* 1 if byte-equal (NULL-safe, identity fast path). */
 int64_t bzy_str_contains(void *s, void *needle);     /* 1 if needle occurs in s (empty needle -> 1). */
 int64_t bzy_str_starts_with(void *s, void *pre);     /* 1 if s begins with pre. */

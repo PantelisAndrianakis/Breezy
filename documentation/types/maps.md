@@ -61,8 +61,7 @@ The most direct way to walk a map is the **pair `foreach`**, which gives you eac
 ```breezy
 foreach (string name, int count in counts)   // Key and value together.
 {
-	print(name);
-	print(count);
+	print(name + " = " + count);
 }
 
 foreach (string name in counts)              // Keys only.

@@ -23,24 +23,17 @@ void main()
 }
 ```
 
-The `+` operator joins **strings**, so both sides must already be strings:
+To combine text and values, build a `string` with `+`. When either side of `+` is a string, the other operand may be a number or boolean, which is converted to its text form automatically:
 
 ```breezy
-string first;
-first = "Bree";
-string second;
-second = "zy";
-print(first + second);          // Breezy.
-```
+int score;
+score = 42;
+print("Your score is " + score + ".");   // Your score is 42.
 
-> **Numbers are printed on their own.** Breezy's `+` does **not** convert a number to text, and `print` takes a single value - so you cannot write `"Score: " + score` when `score` is an `int`. Print the label and the number on separate lines instead:
->
-> ```breezy
-> int score;
-> score = 42;
-> print("Your score:");
-> print(score);               // 42.
-> ```
+boolean ok;
+ok = true;
+print("Passed: " + ok);                   // Passed: true
+```
 
 ---
 
@@ -86,7 +79,7 @@ If you need to parse text you already have (rather than read a fresh line), use 
 
 - **No imports needed** - `print`, `input`, and `inputInt` are part of the language.
 - **`print` adds a newline** automatically.
-- **`+` joins strings only** - both operands must be strings. There is no automatic number-to-text conversion, so print a number on its own line rather than concatenating it into a label.
+- **Build composite output with `+`**: when one side is a string, a number or boolean on the other side is converted to text, so `"x = " + x` produces a `string`.
 - **`input` returns a `string`; `inputInt` returns an `int`.** To read other numeric types, read a line with `input()` and parse it with the appropriate [string method](../types/strings.md).
 
 ---

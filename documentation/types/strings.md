@@ -8,7 +8,7 @@ A `string` is **immutable UTF-8 text**. It is a heap-allocated, length-prefixed 
 
 ## Creating and joining strings
 
-Write a string literal in double quotes, and join strings with `+` (or `+=`). **Both operands of `+` must be strings** - Breezy does not auto-convert a number or boolean to text, so you cannot write `"n = " + n` when `n` is a number (print such values on their own; see [Console I/O](../language/console-io.md)).
+Write a string literal in double quotes, and join values with `+` (or `+=`). When either side of `+` is a string, the other operand may be a string or any scalar (a number or boolean), which is converted to its text form - so `"n = " + n` works.
 
 ```breezy
 string greeting;
@@ -113,7 +113,7 @@ See [Exceptions](../language/exceptions.md) for the `try`/`catch` mechanics.
 - **Use `StringBuilder` for loops** of many appends to avoid O(n²) copying.
 - **`charAt(i)` returns an `int`** (the byte value), or `-1` when out of range.
 - **Parsing throws `NumberFormatException`** - wrap it in `try`/`catch` if the input might be invalid.
-- **`+` concatenates strings only** - both operands must be strings; there is currently no built-in number-to-string conversion.
+- **`+` builds strings** - when one operand is a string, a scalar (number or boolean) on the other side is converted to its text form; objects cannot be concatenated.
 - **Strings are ARC-managed** - you never free them.
 
 ---
