@@ -129,6 +129,15 @@ check socket_timeout tests/samples/proj_socket_timeout $'2'
 check filechannel   tests/samples/proj_filechannel    $'10'
 check filewriter    tests/samples/proj_filewriter     $'102'
 check logger        tests/samples/proj_logger         $'200'
+check ffi           tests/samples/proj_ffi            $'5\n7'
+# FFI --link flag: recompile with an extra -l and confirm it still links + runs.
+./breezy tests/samples/proj_ffi --link m >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+    got="$(./out.exe)"; got="${got//$'\r'/}"
+    if [ "$got" == $'5\n7' ]; then echo "  ffi_link: OK"; else echo "  ffi_link: FAIL (got '$got')"; fail=1; fi
+else
+    echo "  ffi_link: COMPILE FAILED"; fail=1
+fi
 check timer_after tests/samples/proj_timer_after   $'1\n2'
 check timer_order tests/samples/proj_timer_order   $'1\n2\n3'
 check vec2        tests/samples/proj_vec2          $'5\nfalse\ntrue\n5'

@@ -70,13 +70,32 @@ static int collect_files(const char *path, char paths[][512])
 }
 int main(int argc, char *argv[])
 {
-	if (argc<2)
+	/* Collect --link <lib> flags; the first non-flag arg is the source path. */
+	const char *src_arg = NULL;
+	char links[64][64];
+	int nlinks = 0;
+	for (int i = 1; i < argc; i++)
 	{
-		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy>\n");
+		if (strcmp(argv[i],"--link")==0 && i+1 < argc)
+		{
+			if (nlinks < 64)
+			{
+				snprintf(links[nlinks++],64,"%s",argv[++i]);
+			}
+		}
+		else if (!src_arg)
+		{
+			src_arg = argv[i];
+		}
+	}
+
+	if (!src_arg)
+	{
+		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [--link <lib>]...\n");
 		return 1;
 	}
 	static char paths[MAX_FILES][512];
-	int nfiles=collect_files(argv[1],paths);
+	int nfiles=collect_files(src_arg,paths);
 
 	static Parser parsers[MAX_FILES];
 	static Unit *units[MAX_FILES];
@@ -132,7 +151,14 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"Nasm failed.\n");
 		return 1;
 	}
-	if (system("gcc out.obj -L. -l_breezy -lws2_32 -o out.exe")!=0)
+	char link_cmd[1024];
+	int off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32");
+	for (int i = 0; i < nlinks; i++)
+	{
+		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",links[i]);
+	}
+	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o out.exe");
+	if (system(link_cmd)!=0)
 	{
 		fprintf(stderr,"Gcc link failed.\n");
 		return 1;

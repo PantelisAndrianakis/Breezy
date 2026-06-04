@@ -1,0 +1,11 @@
+// Call C library functions directly. strlen marshals the Breezy string to its
+// NUL-terminated char* data pointer and returns its length; abs takes/returns a
+// plain int. Prints 5 then 7.
+extern long strlen(string s);
+extern int abs(int n);
+
+void main()
+{
+	print(strlen("hello"));   // 5
+	print(abs(-7));           // 7
+}

@@ -404,6 +404,21 @@ extern blocking int mysql_real_query(long conn, string stmt, long len);
 
 The `blocking` keyword tells the runtime a call may block, so it's dispatched to the offload pool and your breezes keep flowing. Native libraries to link are declared per-project (`breezy.toml`) or with `--link mysqlclient`.
 
+**The FFI core is live.** `extern` declarations with scalar/`long`/`string` signatures call C directly, and `--link <lib>` (repeatable) appends a `-l` to the link step:
+
+```breezy
+extern long strlen(string s);   // string marshals to its char* data pointer.
+extern int  abs(int n);
+
+void main()
+{
+	print(strlen("hello"));   // 5
+	print(abs(-7));           // 7
+}
+```
+
+The type contract: Breezy `int`/`byte`/`short` → C 32-/8-/16-bit ints; `long` → C 64-bit (a handle/pointer); `float`/`double` → C `float`/`double`; `boolean` → C int; a `string` **argument** marshals to its NUL-terminated `char*` data (embedded NULs truncate on the C side). Returns are limited to `void`/int-family/`long`/`float`/`double`/`boolean` — a C function returning `char*` is declared `long` and wrapped manually for now. `blocking` dispatch is the next sub-part; until then an `extern` call runs inline on the calling breeze.
+
 ---
 
 ## Type System (v1)

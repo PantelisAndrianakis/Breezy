@@ -270,7 +270,9 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 
 		if (f->is_extern)
 		{
-			snprintf(fi->asm_label,sizeof(fi->asm_label),"%s",f->name);   /* Raw C symbol, no bzy_ prefix. */
+			/* Raw C symbol, no bzy_ prefix. The `$` escapes NASM reserved words
+			   (e.g. `abs`); NASM strips it, so the linker sees the bare symbol. */
+			snprintf(fi->asm_label,sizeof(fi->asm_label),"$%s",f->name);
 			fi->is_extern=1;
 		}
 		else

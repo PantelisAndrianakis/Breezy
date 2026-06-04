@@ -454,7 +454,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 							  Expr *self, Expr **args, int argc, int indirect,
 							  int result_is_object, int result_is_fp,
-							  const TypeRef *params, int param_count)
+							  const TypeRef *params, int param_count, int marshal_cstr)
 {
 	int total = (self?1:0) + argc;
 	if (total > 4)
@@ -532,6 +532,10 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		else
 		{
 			cg_emit(cg,"    mov %s, [rsp + %d]", ARG_REG[s], s*8);
+			if (marshal_cstr && slot_kind[s]==TY_STRING)
+			{
+				cg_emit(cg,"    add %s, 32", ARG_REG[s]);   /* string object -> char* data (NUL-terminated). */
+			}
 		}
 	}
 
@@ -593,7 +597,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	ClassInfo *c=types_find_class(tt,e->anno_str);
 	MethodInfo *m=types_find_method(c,e->name);
 	cg_call_with_args(cg,tt,NULL,e->lhs,e->args,e->arg_count,1, ty_is_managed(e->type.kind),
-					  ty_is_float(e->type.kind), m->param_types, m->param_count);
+					  ty_is_float(e->type.kind), m->param_types, m->param_count, 0);
 }
 
 /* StringBuilder methods lower to runtime calls (no vtable dispatch). The receiver
@@ -1514,7 +1518,7 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
-					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 
 	/* The parse methods throw NumberFormatException on malformed input: emit the
 	   post-call check, preserving the result (int/bool in rax, fp in xmm0). */
@@ -1617,7 +1621,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
-					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 }
 
 /* Log.open(path) -> owned Logger. Single string arg; fallible (the FileWriter open
@@ -1770,7 +1774,7 @@ static void cg_net_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
-					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 }
 
 /* FileChannel methods: receiver (e->lhs) in rcx, args in rdx/r8. readAt returns an
@@ -1815,7 +1819,7 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	int obj = ty_is_managed(e->type.kind);   /* readAt -> byte[] (owned); others scalar/void. */
-	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count);
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count, 0);
 
 	if (fallible)
 	{
@@ -1870,7 +1874,7 @@ static void cg_filewriter_method(Codegen *cg, TypeTable *tt, Expr *e)
 		ps[i]=e->args[i]->type;
 	}
 
-	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count);
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
 
 	int k = cg_label(cg);
 	cg_emit(cg,"    lea rcx, [rel .L%d]", k);   /* pc = the call site. */
@@ -1959,7 +1963,7 @@ static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
 			ps[i]=e->args[i]->type;
 		}
 
-		cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count);
+		cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
 		return;
 	}
 
@@ -1982,7 +1986,7 @@ static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
-					  ty_is_managed(e->type.kind), 0, ps, e->arg_count);
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 }
 
 /* File.* builtins. Selects the bzy_file_* symbol, lowers via cg_call_with_args,
@@ -2145,7 +2149,7 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	int obj = ty_is_managed(e->type.kind);
-	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0, obj, 0, ps, e->arg_count);
+	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0, obj, 0, ps, e->arg_count, 0);
 
 	if (fallible)
 	{
@@ -2225,7 +2229,7 @@ static void cg_random(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
-					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), ps, np);
+					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), ps, np, 0);
 }
 
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
@@ -2565,7 +2569,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			FuncInfo *fi=types_find_func(tt,e->name);
 			cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
-							  ty_is_float(e->type.kind), fi->param_types, fi->param_count);
+							  ty_is_float(e->type.kind), fi->param_types, fi->param_count, fi->is_extern);
 		}
 		break;
 	}
@@ -3652,6 +3656,17 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"global __vtable_IndexOutOfBounds");   /* Referenced by the runtime bzy_oob. */
 	cg_emit(cg,"global __vtable_IOException");        /* Referenced by the runtime bzy_io_check. */
 	cg_emit(cg,"global __vtable_NumberFormatException");   /* Referenced by the runtime bzy_number_check. */
+	for (int i=0; i<unit_count; i++)   /* FFI: declare each extern C symbol for the linker. */
+	{
+		for (int k=0; k<units[i]->func_count; k++)
+		{
+			if (units[i]->funcs[k]->is_extern)
+			{
+				cg_emit(cg,"extern %s", units[i]->funcs[k]->name);
+			}
+		}
+	}
+
 	cg_emit(cg,"section .text");
 
 	for (int i=0; i<unit_count; i++)
@@ -3660,6 +3675,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		for (int k=0; k<u->func_count; k++)
 		{
 			Func *f=u->funcs[k];
+			if (f->is_extern)
+			{
+				continue;   /* No body; the symbol is declared extern + resolved by the linker. */
+			}
+
 			char buf[160];
 			const char *label;
 			if (strcmp(f->name,"main")==0)
