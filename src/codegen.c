@@ -288,6 +288,33 @@ static void cg_temp_pop(Codegen *cg)
 	cg_temp_pop_reg(cg,"rax");
 }
 
+/* Allocate n bytes from the per-function scratch arena (a software stack that
+   replaces sub rsp,N). Returns the rbp offset of the block's byte 0 - the address
+   the old code reached via [rsp + 0] - so a former [rsp + k] becomes
+   [rbp - (base - k)]. Blocks nest (an arg block stays live while its argument
+   expressions, themselves possibly calls, are evaluated), so the cursor is a true
+   stack: cg_scratch_free unwinds in reverse. The overflow trap turns an
+   under-counted max_scratch_bytes into a loud compile-time failure, not silent
+   corruption. n is rounded to 16 to preserve in-arena alignment. */
+static int cg_scratch_alloc(Codegen *cg, int n)
+{
+	int n16 = (n + 15) & ~15;
+	cg->cur_scratch += n16;
+	if (cg->cur_scratch > cg->cur_scratch_cap)
+	{
+		fprintf(stderr,"Codegen: scratch-arena overflow (%d > %d) - frame analysis under-counted.\n",
+				cg->cur_scratch, cg->cur_scratch_cap);
+		exit(1);
+	}
+
+	return cg->scratch_base + cg->cur_scratch;
+}
+
+static void cg_scratch_free(Codegen *cg, int n)
+{
+	cg->cur_scratch -= (n + 15) & ~15;
+}
+
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
    matter the current rsp alignment or pending pushes; the argument is in rcx. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
@@ -3824,6 +3851,14 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		exit(1);
 	}
 
+	/* Likewise every scratch-arena block allocated during the previous statement
+	   must have been freed; a non-zero cursor means a converted block is unbalanced. */
+	if (cg->cur_scratch != 0)
+	{
+		fprintf(stderr,"Codegen: scratch cursor %d at a statement boundary (unbalanced arena alloc/free).\n", cg->cur_scratch);
+		exit(1);
+	}
+
 	switch (s->kind)
 	{
 	case ST_VARDECL:
@@ -4159,12 +4194,21 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	   calls need no per-call rsp arithmetic. Existing locals/scratch/stack-object
 	   offsets are unchanged - the new regions only extend the frame downward. */
 	int temps   = f->max_temp_depth * 8;
+	int arena   = (f->max_scratch_bytes + 15) & ~15;   /* 16-aligned scratch byte-stack region. */
 	int outargs = ((f->max_outgoing_args*8 + 15)/16)*16 + 32;
 	cg->temp_base      = locals + scratch + stack_objs + 8;
 	cg->cur_temp_depth = 0;
 	cg->cur_temp_cap   = f->max_temp_depth;
 
-	int frame = locals + scratch + stack_objs + temps + outargs;
+	/* Scratch arena: a software byte-stack that replaces the body's sub rsp,N
+	   blocks so rsp stays static. It sits between the temp region and the
+	   outgoing-arg/shadow region; cg_scratch_alloc grows the cursor downward and
+	   returns the rbp offset of the block's byte 0 (its deepest byte). */
+	cg->scratch_base    = locals + scratch + stack_objs + temps;
+	cg->cur_scratch     = 0;
+	cg->cur_scratch_cap = arena;
+
+	int frame = locals + scratch + stack_objs + temps + arena + outargs;
 	if (frame % 16 != 0)
 	{
 		frame = (frame/16 + 1)*16;   /* Keep rsp 16-aligned after the prologue so calls are aligned. */
