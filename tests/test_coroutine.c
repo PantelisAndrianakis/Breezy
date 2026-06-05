@@ -4,6 +4,7 @@
    Windows). */
 #include "test_framework.h"
 #include "coroutine.h"
+#include <stdint.h>
 
 static char g_log[64];
 static int  g_n;
@@ -35,6 +36,29 @@ static void co_b(void *arg)
 	bzy_coroutine_switch(g_main);
 }
 
+static int g_runs;
+
+/* Returns normally so the looping trampoline parks it for reuse. */
+static void co_count(void *arg)
+{
+	g_runs += (int)(intptr_t)arg;
+}
+
+static void test_coroutine_reuse(void)
+{
+	g_runs = 0;
+	g_main = bzy_coroutine_thread_enter();
+	BzyCoroutine *c = bzy_coroutine_create(co_count, (void*)(intptr_t)2);
+	bzy_coroutine_switch(c);                              /* Runs co_count(2); trampoline returns here. */
+	ASSERT_INT(g_runs, 2);
+
+	bzy_coroutine_rearm(c, co_count, (void*)(intptr_t)5);
+	bzy_coroutine_switch(c);                              /* Reuses the SAME stack; runs co_count(5). */
+	ASSERT_INT(g_runs, 7);
+
+	bzy_coroutine_delete(c);
+}
+
 static void test_pingpong(void)
 {
 	bzy_coroutine_main_init();
@@ -52,6 +76,7 @@ static void test_pingpong(void)
 int main(void)
 {
 	RUN(test_pingpong);
+	RUN(test_coroutine_reuse);
 	SUMMARY();
 	return 0;
 }

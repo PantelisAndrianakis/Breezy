@@ -10,5 +10,6 @@ BzyCoroutine *bzy_coroutine_create(BzyCoroutineFn fn, void *arg);  /* A new susp
 void          bzy_coroutine_switch(BzyCoroutine *to);              /* Save the current coroutine, resume `to`. */
 BzyCoroutine *bzy_coroutine_self(void);                            /* The currently running coroutine. */
 void          bzy_coroutine_delete(BzyCoroutine *c);
+void          bzy_coroutine_rearm(BzyCoroutine *c, BzyCoroutineFn fn, void *arg);  /* Repoint an idle coroutine at new work, for reuse. */
 
 #endif

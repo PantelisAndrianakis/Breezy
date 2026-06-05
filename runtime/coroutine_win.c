@@ -48,13 +48,11 @@ void bzy_coroutine_main_init(void)
 static void WINAPI coroutine_trampoline(void *p)
 {
 	BzyCoroutine *c = (BzyCoroutine*)p;
-	c->fn(c->arg);
-	/* A breeze's fn switches away before returning (the scheduler wrapper does).
-	   A fiber function that returns would terminate the thread, so guard by
-	   bouncing back to this thread's scheduler. */
 	for (;;)
 	{
-		bzy_coroutine_switch(g_home);
+		c->fn(c->arg);                  /* Runs to completion; a breeze body returns here. */
+		bzy_coroutine_switch(g_home);   /* Park: back to THIS thread's scheduler, ready for reuse. */
+		/* Resumed only after the scheduler re-armed c->fn/c->arg for a new breeze. */
 	}
 }
 
@@ -65,6 +63,12 @@ BzyCoroutine *bzy_coroutine_create(BzyCoroutineFn fn, void *arg)
 	c->arg = arg;
 	c->fiber = CreateFiber(0, coroutine_trampoline, c);   /* 0 = default (1 MiB reserve, lazy-committed). */
 	return c;
+}
+
+void bzy_coroutine_rearm(BzyCoroutine *c, BzyCoroutineFn fn, void *arg)
+{
+	c->fn = fn;     /* The fiber is suspended at the trampoline's park switch; next resume runs fn. */
+	c->arg = arg;
 }
 
 void bzy_coroutine_switch(BzyCoroutine *to)
