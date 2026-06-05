@@ -1,0 +1,13 @@
+void main()
+{
+	build();
+	collectCycles();
+	print(liveCount());   // 0 -- node -> set -> node-member cycle is collected.
+}
+
+void build()
+{
+	Node n;
+	n = new Node();
+	n.peers.add(n);   // Self-reference through a Set member (a map KEY).
+}

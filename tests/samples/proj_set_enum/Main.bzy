@@ -1,0 +1,11 @@
+void main()
+{
+	Set<Color> s;
+	s = new Set<Color>();
+	s.add(Color.RED);
+	s.add(Color.BLUE);
+	s.add(Color.RED);                // Duplicate ignored.
+	print(s.size);                   // 2
+	print(s.contains(Color.RED));    // true
+	print(s.contains(Color.GREEN));  // false
+}

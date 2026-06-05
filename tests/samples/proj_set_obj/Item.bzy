@@ -1,0 +1,8 @@
+class Item
+{
+	int id;
+	Item(int id)
+	{
+		this.id = id;
+	}
+}

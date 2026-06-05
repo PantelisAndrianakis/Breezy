@@ -1,0 +1,19 @@
+void main()
+{
+	Set<Item> s;
+	s = new Set<Item>();
+	Item a;
+	a = new Item(1);
+	Item b;
+	b = new Item(1);        // Structurally equal to a, different object.
+	s.add(a);
+	s.add(a);               // Same reference -- duplicate ignored.
+	s.add(b);               // Distinct identity -- added.
+	print(s.size);          // 2
+	print(s.contains(a));   // true
+	print(s.contains(b));   // true
+
+	Item c;
+	c = new Item(1);        // Equal but distinct again.
+	print(s.contains(c));   // false -- identity miss.
+}

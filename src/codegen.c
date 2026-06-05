@@ -1127,6 +1127,7 @@ static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    sub rsp, 16");
 	cg_emit(cg,"    mov [rsp], rax");
 	cg_expr(cg,tt,e->args[0]);              /* Key. */
+	cg_extend_reg(cg, tk);                  /* Canonicalize an integer key to 64 bits. */
 	cg_emit(cg,"    mov [rsp + 8], rax");
 	cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
 	cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 1));
@@ -2572,7 +2573,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else if (strcmp(e->type.class_name,"Set")==0)
 		{
-			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), e->type.elem->kind==TY_STRING ? 1 : 0);   /* key_kind. */
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_map_key_kind(e->type.elem->kind));        /* key_kind. */
 			cg_emit(cg,"    mov %s, 0", cg_iarg(cg, 1));                                            /* Values unmanaged. */
 			cg_aligned_call(cg,"bzy_map_new");
 		}

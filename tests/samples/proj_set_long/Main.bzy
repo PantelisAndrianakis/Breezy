@@ -1,0 +1,15 @@
+void main()
+{
+	Set<long> s;
+	s = new Set<long>();
+	long big;
+	big = 5000000000L;
+	s.add(big);
+	s.add(big);             // Duplicate ignored.
+	long two;
+	two = 2;
+	s.add(two);
+	print(s.size);          // 2
+	print(s.contains(big)); // true
+	print(s.contains(two)); // true
+}

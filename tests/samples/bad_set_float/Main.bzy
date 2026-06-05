@@ -1,0 +1,6 @@
+void main()
+{
+	Set<double> s;
+	s = new Set<double>();
+	s.add(1.5);
+}

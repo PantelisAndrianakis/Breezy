@@ -992,9 +992,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Collection element must be a scalar, string, or object.",NULL);
 		}
 
-		if (strcmp(tmpl,"Set")==0 && ek!=TY_INT && ek!=TY_STRING)
+		if (strcmp(tmpl,"Set")==0 && !ty_is_int(ek) && ek!=TY_STRING && ek!=TY_OBJECT)
 		{
-			die(e->line,"Set element must be int or string (hashable).",NULL);
+			die(e->line,"Set element must be an integer type, string, enum, or object (hashable).",NULL);
 		}
 
 		if (ek==TY_OBJECT

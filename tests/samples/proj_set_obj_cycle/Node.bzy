@@ -1,0 +1,8 @@
+class Node
+{
+	Set<Node> peers;
+	Node()
+	{
+		this.peers = new Set<Node>();
+	}
+}
