@@ -1,6 +1,6 @@
 <p align="center"> <img src="https://github.com/PantelisAndrianakis/Breezy/blob/main/logo.png"/></p>
 
-### What is Breezy?
+## What is Breezy?
 
 Breezy is a statically-typed, object-oriented language with clean, familiar syntax that compiles **straight to native x86-64 assembly**. No virtual machine. No bytecode. No tracing garbage collector. Just your code, lowered to the metal - with memory and concurrency handled *for* you, automatically.
 
@@ -124,20 +124,6 @@ The compiler should perform as much analysis and optimization as possible, allow
 Software should achieve comparable performance across operating systems when executed on equivalent hardware.
 
 The language should not favor one platform over another, nor should developers be forced to redesign software to achieve acceptable performance on a different operating system.
-
-## One Language for Every Scale
-
-The same language should remain effective regardless of project size.
-
-Whether writing:
-
-* A desktop application
-* Enterprise software
-* A game server
-* A database engine
-* An operating system component
-
-the language should provide the same fundamental advantages without requiring developers to move to a different technology stack.
 
 ## Final Goal
 
