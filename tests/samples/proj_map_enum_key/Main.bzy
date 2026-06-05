@@ -1,0 +1,11 @@
+void main()
+{
+	map<Color,int> m;
+	m = new map<Color,int>();
+	m.put(Color.RED, 100);
+	m.put(Color.BLUE, 300);
+	print(m.get(Color.RED));            // 100
+	print(m.get(Color.BLUE));           // 300
+	print(m.containsKey(Color.GREEN));  // false
+	print(m.size);                      // 2
+}

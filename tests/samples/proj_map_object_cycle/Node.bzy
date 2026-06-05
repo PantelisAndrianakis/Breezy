@@ -1,0 +1,8 @@
+class Node
+{
+	map<Node,int> links;
+	Node()
+	{
+		this.links = new map<Node,int>();
+	}
+}

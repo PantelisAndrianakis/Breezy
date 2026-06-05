@@ -1,0 +1,13 @@
+void main()
+{
+	build();
+	collectCycles();
+	print(liveCount());   // 0 -- node -> map -> node-key cycle is collected.
+}
+
+void build()
+{
+	Node n;
+	n = new Node();
+	n.links.put(n, 1);   // Self-reference through an object KEY.
+}

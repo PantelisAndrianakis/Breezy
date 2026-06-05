@@ -940,9 +940,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		break;
 	case EX_NEWMAP:
-		if (!ty_is_int(e->type.elem->kind) && e->type.elem->kind!=TY_STRING)
+		if (!ty_is_int(e->type.elem->kind) && e->type.elem->kind!=TY_STRING
+				&& e->type.elem->kind!=TY_OBJECT)
 		{
-			die(e->line,"Map key must be an integer type or string.",NULL);
+			die(e->line,"Map key must be an integer type, string, enum, or object.",NULL);
+		}
+
+		if (e->type.elem->kind==TY_OBJECT
+				&& !is_stringbuilder(e->type.elem)
+				&& !enum_is(e->type.elem->class_name)
+				&& !types_find_class(g_types,e->type.elem->class_name))
+		{
+			die(e->line,"Unknown map key type: ",e->type.elem->class_name);
 		}
 
 		if (e->type.elem2->kind==TY_OBJECT

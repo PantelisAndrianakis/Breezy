@@ -1,0 +1,13 @@
+void main()
+{
+	map<Key,int> m;
+	m = new map<Key,int>();
+	Key a;
+	a = new Key(1);
+	Key b;
+	b = new Key(1);             // Structurally equal to a, different object.
+	m.put(a, 42);
+	print(m.get(a));            // 42    -- same reference hits.
+	print(m.containsKey(b));    // false -- equal but distinct identity misses.
+	print(m.size);              // 1
+}

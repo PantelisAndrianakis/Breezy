@@ -98,6 +98,24 @@ static void cg_load_scalar(Codegen *cg, TypeKind k, const char *mem)
 	}
 }
 
+/* Runtime map key_kind from a key TypeKind: 0=int family (raw value),
+   1=string (content), 2=object/enum (identity). 3 (value-equality protocol)
+   is reserved for a future Hashable protocol and never emitted here. */
+static int cg_map_key_kind(TypeKind k)
+{
+	if (k==TY_STRING)
+	{
+		return 1;
+	}
+
+	if (k==TY_OBJECT)
+	{
+		return 2;
+	}
+
+	return 0;
+}
+
 /* Re-extend the value already in rax to 64 bits at the given integer width, the
    way a fresh load would. Used after width-truncating arithmetic and for casts. */
 static void cg_extend_reg(Codegen *cg, TypeKind k)
@@ -2535,7 +2553,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_aligned_call(cg,"bzy_array_new");   /* Owned (+1) array in rax. */
 		break;
 	case EX_NEWMAP:
-		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), e->type.elem->kind==TY_STRING ? 1 : 0);
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_map_key_kind(e->type.elem->kind));
 		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), ty_is_managed(e->type.elem2->kind) ? 1 : 0);
 		cg_aligned_call(cg,"bzy_map_new");   /* Owned (+1) map in rax. */
 		break;
