@@ -1329,6 +1329,38 @@ static void test_string_parse_values(void)
 	bzy_release(sb);
 }
 
+static void test_str_idempotent_reuse(void)
+{
+	int64_t before = bzy_live_count();
+	void *s = bzy_str_new("clean", 5);
+
+	/* trim of an already-trimmed string hands back the same object, retained. */
+	void *t = bzy_str_trim(s);
+	ASSERT(t == s);
+
+	/* A full-range substring reuses the original. */
+	void *u = bzy_str_substring(s, 0, 5);
+	ASSERT(u == s);
+
+	/* toUpper of all-caps and toLower of all-lower reuse the input. */
+	void *up = bzy_str_new("ABC", 3);
+	void *up2 = bzy_str_to_upper(up);
+	ASSERT(up2 == up);
+	bzy_release(up2);                 /* Release the +1 the reuse handed back. */
+	bzy_release(up);
+
+	void *lo = bzy_str_new("abc", 3);
+	void *lo2 = bzy_str_to_lower(lo);
+	ASSERT(lo2 == lo);
+	bzy_release(lo2);
+	bzy_release(lo);
+
+	bzy_release(t);                   /* Release trim's +1. */
+	bzy_release(u);                   /* Release substring's +1. */
+	bzy_release(s);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1350,6 +1382,7 @@ int main(void)
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);
 	RUN(test_str_eq);
+	RUN(test_str_idempotent_reuse);
 	RUN(test_vec_value_back);
 	RUN(test_vec_grow);
 	RUN(test_vec_object_released);

@@ -155,6 +155,12 @@ void *bzy_str_substring(void *s, int64_t start, int64_t end)
 		start = end;
 	}
 
+	if (start == 0 && end == sl)
+	{
+		bzy_retain(s);   /* Full-range slice: reuse the immutable original. */
+		return s;
+	}
+
 	return bzy_str_new(bzy_str_data(s) + start, end - start);
 }
 
@@ -226,7 +232,7 @@ static int is_ws(char c)
 void *bzy_str_trim(void *s)
 {
 	const char *t = bzy_str_data(s);
-	int64_t a = 0, b = bzy_str_len(s);
+	int64_t sl = bzy_str_len(s), a = 0, b = sl;
 	while (a < b && is_ws(t[a]))
 	{
 		a++;
@@ -237,6 +243,12 @@ void *bzy_str_trim(void *s)
 		b--;
 	}
 
+	if (a == 0 && b == sl)
+	{
+		bzy_retain(s);   /* Nothing to trim: reuse the original. */
+		return s;
+	}
+
 	return bzy_str_new(t + a, b - a);
 }
 
@@ -244,11 +256,23 @@ void *bzy_str_to_upper(void *s)
 {
 	int64_t sl = bzy_str_len(s);
 	const char *t = bzy_str_data(s);
-	char *buf = malloc((size_t)sl + 1);
-	for (int64_t i = 0; i < sl; i++)
+	int64_t i = 0;
+	while (i < sl && !(t[i] >= 'a' && t[i] <= 'z'))
 	{
-		char c = t[i];
-		buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+		i++;
+	}
+
+	if (i == sl)
+	{
+		bzy_retain(s);   /* Already upper-case: no copy needed. */
+		return s;
+	}
+
+	char *buf = malloc((size_t)sl + 1);
+	for (int64_t j = 0; j < sl; j++)
+	{
+		char c = t[j];
+		buf[j] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
 	}
 
 	void *o = bzy_str_new(buf, sl);
@@ -260,11 +284,23 @@ void *bzy_str_to_lower(void *s)
 {
 	int64_t sl = bzy_str_len(s);
 	const char *t = bzy_str_data(s);
-	char *buf = malloc((size_t)sl + 1);
-	for (int64_t i = 0; i < sl; i++)
+	int64_t i = 0;
+	while (i < sl && !(t[i] >= 'A' && t[i] <= 'Z'))
 	{
-		char c = t[i];
-		buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+		i++;
+	}
+
+	if (i == sl)
+	{
+		bzy_retain(s);   /* Already lower-case: no copy needed. */
+		return s;
+	}
+
+	char *buf = malloc((size_t)sl + 1);
+	for (int64_t j = 0; j < sl; j++)
+	{
+		char c = t[j];
+		buf[j] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
 	}
 
 	void *o = bzy_str_new(buf, sl);
