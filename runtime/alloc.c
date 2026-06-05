@@ -107,17 +107,29 @@ static void (*finalizer_of(void *o))(void *)
 	} while (0)
 
 /* The roots buffer holds objects whose refcount was decremented to a positive
-   value and which could therefore be the root of a dead cycle. */
-#define ROOTS_CAP 65536
-static void   *g_roots[ROOTS_CAP];
+   value and which could therefore be the root of a dead cycle. It is allocated
+   lazily and grows geometrically, so a program that never buffers a candidate
+   pays nothing and one that buffers many is never silently truncated. */
+static void   **g_roots = NULL;
 static int64_t g_roots_n = 0;
+static int64_t g_roots_cap = 0;
 
 static void roots_push(void *o)
 {
-	if (g_roots_n < ROOTS_CAP)
+	if (g_roots_n == g_roots_cap)
 	{
-		g_roots[g_roots_n++] = o;
+		int64_t ncap = g_roots_cap ? g_roots_cap * 2 : 1024;
+		void **nb = realloc(g_roots, (size_t)ncap * sizeof(void*));
+		if (!nb)
+		{
+			return;   /* Out of memory: drop this candidate rather than abort. */
+		}
+
+		g_roots = nb;
+		g_roots_cap = ncap;
 	}
+
+	g_roots[g_roots_n++] = o;
 }
 
 void *bzy_alloc(int64_t size)
@@ -314,8 +326,27 @@ static void scan(void *s)
 /* Gather the white subgraph into g_white without freeing, recoloring to BLACK so
    each node is collected exactly once and cycles terminate. Freeing is deferred
    to bzy_collect_cycles so no walk dereferences a freed node. */
-static void *g_white[ROOTS_CAP];
-static int64_t g_white_n;
+static void   **g_white = NULL;
+static int64_t g_white_n = 0;
+static int64_t g_white_cap = 0;
+
+static void white_push(void *s)
+{
+	if (g_white_n == g_white_cap)
+	{
+		int64_t ncap = g_white_cap ? g_white_cap * 2 : 1024;
+		void **nb = realloc(g_white, (size_t)ncap * sizeof(void*));
+		if (!nb)
+		{
+			return;   /* Out of memory: drop this node from the gather pass. */
+		}
+
+		g_white = nb;
+		g_white_cap = ncap;
+	}
+
+	g_white[g_white_n++] = s;
+}
 
 static void gather_white(void *s)
 {
@@ -325,11 +356,7 @@ static void gather_white(void *s)
 	}
 
 	set_color(s, BLACK);
-	if (g_white_n < ROOTS_CAP)
-	{
-		g_white[g_white_n++] = s;
-	}
-
+	white_push(s);
 	FOR_EACH_CHILD(s, t,
 	{
 		gather_white(t);

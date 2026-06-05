@@ -1361,6 +1361,29 @@ static void test_str_idempotent_reuse(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_cycle_buffer_grows(void)
+{
+	int64_t before = bzy_live_count();
+	enum { N = 4000 };                    /* 2 * N = 8000 buffered roots, < the 10000 auto-collect bar. */
+	for (int i = 0; i < N; i++)
+	{
+		void *a = bzy_alloc(32);
+		void *b = bzy_alloc(32);
+		*(void**)a = node_vtable();
+		*(void**)b = node_vtable();
+		*(void**)((char*)a + 24) = b;
+		bzy_retain(b);
+		*(void**)((char*)b + 24) = a;
+		bzy_retain(a);
+		bzy_release(a);               /* Buffers a as a cycle-root candidate. */
+		bzy_release(b);               /* Buffers b. */
+	}
+
+	ASSERT_INT(bzy_live_count(), before + 2 * N);   /* Self-sustaining cycles stay alive. */
+	bzy_collect_cycles();
+	ASSERT_INT(bzy_live_count(), before);           /* The growable roots buffer collected them all. */
+}
+
 static void test_map_lazy_backing(void)
 {
 	int64_t before = bzy_live_count();
@@ -1421,6 +1444,7 @@ int main(void)
 	RUN(test_cycle_is_collected);
 	RUN(test_self_cycle_collected);
 	RUN(test_live_cycle_kept);
+	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
 	RUN(test_str_query);
