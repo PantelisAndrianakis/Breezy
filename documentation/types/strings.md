@@ -22,7 +22,7 @@ message = greeting + ", " + who + ".";   // Hello, Breezy.
 print(message);
 ```
 
-Each `+` allocates one new string sized to the sum of its parts. Strings are **immutable**: joining produces a *new* string and never changes an existing one.
+The parts of a `+` chain are joined in a single pass into one new string sized to their total - so `greeting + ", " + who + "."` allocates a single result, not one per `+` (scalars are first converted to text). Strings are **immutable**: joining produces a *new* string and never changes an existing one.
 
 ---
 
