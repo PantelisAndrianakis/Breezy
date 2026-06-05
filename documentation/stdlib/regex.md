@@ -52,4 +52,4 @@ Patterns are ordinary runtime strings, so you can build and pass them dynamicall
 
 ---
 
-← [Clock & Random](clock-random.md) · [Back to the guide](../guide.md) · Next: [File](file.md)
+← [Random](random.md) · [Back to the guide](../guide.md) · Next: [File](file.md)

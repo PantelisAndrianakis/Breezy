@@ -45,4 +45,4 @@ print(Math.pow(2.0, 10.0));           // 1024.
 
 ---
 
-← [C library interop](../ffi/c-interop.md) · [Back to the guide](../guide.md) · Next: [Clock & Random](clock-random.md)
+← [C library interop](../ffi/c-interop.md) · [Back to the guide](../guide.md) · Next: [Clock](clock.md)

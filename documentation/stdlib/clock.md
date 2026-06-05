@@ -1,12 +1,12 @@
-# Clock & Random
+# Clock
 
-`Clock` gives you time - monotonic for measuring durations, wall-clock for dates. `Random` is a fast `xoshiro256**` pseudo-random number generator with a familiar API. Both are static namespaces.
+`Clock` gives you time - monotonic for measuring durations, wall-clock for dates. It is a static namespace.
 
 ← [Back to the guide](../guide.md)
 
 ---
 
-## Clock - measuring time
+## Measuring time
 
 ```breezy
 long start;
@@ -21,7 +21,7 @@ now = Clock.currentTimeMillis();     // Wall-clock milliseconds since the epoch.
 
 ---
 
-## Clock - formatting dates
+## Formatting dates
 
 `Clock.getDateString` turns epoch milliseconds into a **local-time** date string - either a fixed ISO default or a Java-style pattern.
 
@@ -40,33 +40,12 @@ custom = Clock.getDateString(now, "yyyy/MM/dd HH:mm");   // 2026/06/02 14:30.
 
 ---
 
-## Random - random numbers
-
-`Random` mirrors a familiar API over a fast `xoshiro256**` PRNG.
-
-```breezy
-int roll;
-roll = Random.get(1, 6);        // [1, 6] inclusive.
-
-double d;
-d = Random.nextDouble();        // [0, 1).
-
-boolean flip;
-flip = Random.nextBoolean();
-```
-
-- **Ranged:** `get(bound)` and `get(origin, bound)` for `int`, `long`, `float`, and `double`.
-- **Next-value:** `nextInt`, `nextLong`, `nextFloat`, `nextDouble`, `nextBoolean`, `nextGaussian`, `nextBytes`.
-
----
-
 ## Rules & gotchas
 
 - **Use `currentTimeNanos` for durations** (monotonic) and `currentTimeMillis` for dates/timestamps (wall-clock).
 - **`getDateString` is local time** and accepts a Java-style pattern; unknown characters pass through literally.
-- **`Random.get(origin, bound)` is inclusive of both ends** for the integer forms (e.g. a `1..6` die roll).
-- **Both namespaces are static** - call through `Clock.` / `Random.`.
+- **The namespace is static** - call through `Clock.`.
 
 ---
 
-← [Math](math.md) · [Back to the guide](../guide.md) · Next: [Regex](regex.md)
+← [Math](math.md) · [Back to the guide](../guide.md) · Next: [Random](random.md)
