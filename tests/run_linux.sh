@@ -76,4 +76,7 @@ check filechannel tests/samples/proj_filechannel  $'10'
 check tcp_echo       tests/samples/proj_tcp_echo       $'4'
 check socket_timeout tests/samples/proj_socket_timeout $'2'
 check udp_echo       tests/samples/proj_udp_echo       $'2'
+# Process shell (fork/exec; the wait variant parks on the offload pool): the
+# child's exit code propagates back. Same sample/expectation as Windows.
+check system_shell   tests/samples/proj_system_shell   $'5'
 if [ $fail -eq 0 ]; then echo "All Linux integration tests passed"; else echo "FAILURES"; exit 1; fi

@@ -8,7 +8,7 @@
 
 ## Launching a command
 
-`System.shell(command)` runs `cmd /c <command>` **asynchronously** and returns the OS process id (`0` if the launch failed). It does not wait and does not capture output - the child inherits the console.
+`System.shell(command)` runs the command through the system shell (`cmd /c` on Windows, `/bin/sh -c` on Linux) **asynchronously** and returns the OS process id (`0` if the launch failed). It does not wait and does not capture output - the child inherits the console.
 
 ```breezy
 int pid;
@@ -48,7 +48,7 @@ foreach (string a in args)
 - **`shell(command)` is fire-and-forget** - it returns a process id and does not capture output.
 - **`shell(command, true)` waits** and returns the exit code, parking the breeze during the wait.
 - **`System.args()` excludes the program path** and is empty when no arguments were passed.
-- **Currently Windows-only** (`CreateProcess`); a POSIX backend lands with the Linux target. No output capture, stdin, or timeout yet.
+- **Cross-platform:** Windows launches via `cmd /c` (`CreateProcess`), Linux via `/bin/sh -c` (`fork`/`exec`). The same code runs on both. No output capture, stdin, or timeout yet.
 
 ---
 

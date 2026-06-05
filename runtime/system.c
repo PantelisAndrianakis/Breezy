@@ -1,15 +1,23 @@
 #include "breezy.h"
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#endif
 
-/* System.shell: Windows-only (CreateProcess). A POSIX fork/exec backend lands
-   with the Linux port; System.args lives in the portable args.c. */
+/* System.shell launches an OS command interpreter: "cmd /c <command>" on Windows
+   (CreateProcess), "/bin/sh -c <command>" on POSIX (fork/exec). Either returns
+   the launched process id (async) or waits and returns the exit code. The caller
+   owns the command string across any park; this only reads it. System.args lives
+   in the portable args.c. */
 
-/* Build "cmd /c <command>", launch it, and either return the pid (async) or wait
-   and return the exit code. The caller owns the command string across any park;
-   this only reads it. */
+#ifdef _WIN32
 static int64_t shell_run(const char *command, int64_t wait)
 {
 	size_t n = strlen(command) + 8;          /* "cmd /c " + NUL. */
@@ -47,6 +55,89 @@ static int64_t shell_run(const char *command, int64_t wait)
 	CloseHandle(pi.hThread);
 	return ret;
 }
+#else
+/* POSIX backend. The wait path forks once and waitpid()s the child for its exit
+   code. The async path double-forks so the grandchild is reparented to init and
+   never lingers as a zombie; its pid is passed back through a pipe. Everything
+   executed between fork and exec is async-signal-safe (no malloc), as required in
+   a multithreaded process — the command string is already built by the caller. */
+static int64_t shell_run(const char *command, int64_t wait)
+{
+	if (wait)
+	{
+		pid_t pid = fork();
+		if (pid < 0)
+		{
+			return 0;
+		}
+
+		if (pid == 0)
+		{
+			execl("/bin/sh", "sh", "-c", command, (char*)NULL);
+			_exit(127);                      /* exec failed: shell "command not found" code. */
+		}
+
+		int status = 0;
+		if (waitpid(pid, &status, 0) < 0)
+		{
+			return 0;
+		}
+
+		if (WIFEXITED(status))
+		{
+			return (int64_t)WEXITSTATUS(status);
+		}
+
+		if (WIFSIGNALED(status))
+		{
+			return (int64_t)(128 + WTERMSIG(status));   /* Shell convention for signal death. */
+		}
+
+		return 0;
+	}
+
+	/* Async: double-fork, reporting the grandchild pid back through the pipe. */
+	int pfd[2];
+	if (pipe(pfd) != 0)
+	{
+		return 0;
+	}
+
+	pid_t mid = fork();
+	if (mid < 0)
+	{
+		close(pfd[0]);
+		close(pfd[1]);
+		return 0;
+	}
+
+	if (mid == 0)
+	{
+		close(pfd[0]);
+		pid_t gc = fork();
+		if (gc == 0)
+		{
+			close(pfd[1]);
+			execl("/bin/sh", "sh", "-c", command, (char*)NULL);
+			_exit(127);
+		}
+
+		pid_t report = (gc > 0) ? gc : 0;
+		ssize_t w = write(pfd[1], &report, sizeof(report));
+		(void)w;
+		close(pfd[1]);
+		_exit(0);
+	}
+
+	close(pfd[1]);
+	pid_t gc = 0;
+	ssize_t r = read(pfd[0], &gc, sizeof(gc));
+	(void)r;
+	close(pfd[0]);
+	waitpid(mid, NULL, 0);                    /* Reap the middle child (exits at once). */
+	return (int64_t)(gc > 0 ? gc : 0);
+}
+#endif
 
 typedef struct
 {

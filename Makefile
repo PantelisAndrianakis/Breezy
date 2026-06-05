@@ -37,13 +37,13 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/type
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/prelude.c src/config.c
 
 # Runtime modules, per host. Common = portable (compute + concurrency core);
-# the I/O backends (files, sockets, IOCP, HTTP, offload, process shell) are
-# Windows-only until the Linux ports land (Parts 8-3/8-4). Linux substitutes
-# ucontext coroutines + I/O inflight stubs for the scheduler's deadlock gate.
+# each host then adds its own I/O backends — Windows uses IOCP + WinHTTP +
+# CreateProcess, Linux uses an epoll reactor + libcurl + fork/exec. The process
+# shell (system.c) now builds on both.
 RT_COMMON = alloc print string strconv array map vector clock random exception regex \
             map_entry channel timer reflect args scheduler
 ifeq ($(findstring Linux,$(UNAME)),Linux)
-  RT_NAMES = $(RT_COMMON) coroutine_posix offload file filechannel logger reactor_epoll socket udp http
+  RT_NAMES = $(RT_COMMON) coroutine_posix offload system file filechannel logger reactor_epoll socket udp http
 else
   RT_NAMES = $(RT_COMMON) coroutine_win file offload system iocp socket udp filechannel logger http
 endif
