@@ -1269,51 +1269,51 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(e->name,"set")==0)
 	{
 		cg_expr(cg,tt,e->lhs);                 /* Box ptr. */
-		cg_emit(cg,"    sub rsp, 16");
-		cg_emit(cg,"    mov [rsp], rax");
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
 		if (fp)
 		{
 			cg_expr(cg,tt,e->args[0]);         /* Value -> xmm0. */
-			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
 			cg_store_fp(cg,tk,"[rax + 32]");
 		}
 		else if (managed)
 		{
 			cg_expr(cg,tt,e->args[0]);         /* Value ptr -> rax. */
-			cg_emit(cg,"    mov [rsp + 8], rax");
+			cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
 			cg_aligned_call(cg,"bzy_retain");  /* Retain the new occupant. */
-			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
 			cg_emit(cg,"    mov rdx, [rax + 32]");   /* Old occupant -> rdx (scratch). */
-			cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0));
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
 			cg_emit(cg,"    mov [rax + 32], %s", cg_iarg(cg, 0));    /* Store new. */
 			cg_emit(cg,"    mov %s, rdx", cg_iarg(cg, 0));
 			cg_release_rcx(cg);                       /* Release the old. */
 			if (expr_is_owned(e->args[0]))
 			{
-				cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0)); /* Release the owned arg temporary. */
+				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8); /* Release the owned arg temporary. */
 				cg_release_rcx(cg);
 			}
 		}
 		else
 		{
 			cg_expr(cg,tt,e->args[0]);         /* Value -> rax. */
-			cg_emit(cg,"    mov rbx, [rsp]");
+			cg_emit(cg,"    mov rbx, [rbp - %d]", b);
 			cg_emit(cg,"    mov [rbx + 32], rax");    /* Width-extended 8-byte slot. */
 		}
 
-		cg_emit(cg,"    add rsp, 16");
+		cg_scratch_free(cg, 16);
 		return;
 	}
 
 	/* contains: bool in rax. */
 	cg_expr(cg,tt,e->lhs);                     /* Box ptr. */
-	cg_emit(cg,"    sub rsp, 16");
-	cg_emit(cg,"    mov [rsp], rax");
+	int b = cg_scratch_alloc(cg, 16);
+	cg_emit(cg,"    mov [rbp - %d], rax", b);
 	if (fp)
 	{
 		cg_expr(cg,tt,e->args[0]);             /* Arg -> xmm0. */
-		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg,"    mov rax, [rbp - %d]", b);
 		cg_emit(cg, tk==TY_FLOAT ? "    movss xmm1, dword [rax + 32]" : "    movsd xmm1, qword [rax + 32]");
 		cg_emit(cg, tk==TY_FLOAT ? "    ucomiss xmm0, xmm1" : "    ucomisd xmm0, xmm1");
 		cg_emit(cg,"    sete al");
@@ -1322,39 +1322,39 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 	else if (tk==TY_STRING)
 	{
 		cg_expr(cg,tt,e->args[0]);             /* Arg ptr -> rax. */
-		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
-		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg,"    mov rax, [rbp - %d]", b);
 		cg_emit(cg,"    mov %s, [rax + 32]", cg_iarg(cg, 0));
 		cg_aligned_call(cg,"bzy_str_eq");      /* rax = 0/1 */
 		if (expr_is_owned(e->args[0]))
 		{
-			cg_emit(cg,"    mov [rsp], rax");          /* Preserve result across release. */
-			cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0));
+			cg_emit(cg,"    mov [rbp - %d], rax", b);          /* Preserve result across release. */
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
 			cg_release_rcx(cg);
-			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
 		}
 	}
 	else   /* Scalar int/bool, or object identity. */
 	{
 		cg_expr(cg,tt,e->args[0]);             /* Arg -> rax. */
-		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 		cg_emit(cg,"    mov rbx, rax");
-		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg,"    mov rax, [rbp - %d]", b);
 		cg_emit(cg,"    mov rax, [rax + 32]"); /* Slot value. */
 		cg_emit(cg,"    cmp rax, rbx");
 		cg_emit(cg,"    sete al");
 		cg_emit(cg,"    movzx rax, al");
 		if (managed && expr_is_owned(e->args[0]))
 		{
-			cg_emit(cg,"    mov [rsp], rax");          /* Preserve result. */
-			cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0));
+			cg_emit(cg,"    mov [rbp - %d], rax", b);          /* Preserve result. */
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
 			cg_release_rcx(cg);
-			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
 		}
 	}
 
-	cg_emit(cg,"    add rsp, 16");
+	cg_scratch_free(cg, 16);
 }
 
 /* Set<T> over a BzyMap (keys only). add/remove/contains lower to map put(k,1)/
@@ -1365,13 +1365,13 @@ static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
 	TypeKind tk = e->lhs->type.elem->kind;
 	const char *nm = e->name;
 	cg_expr(cg,tt,e->lhs);                  /* Set (map) ptr. */
-	cg_emit(cg,"    sub rsp, 16");
-	cg_emit(cg,"    mov [rsp], rax");
+	int b = cg_scratch_alloc(cg, 16);
+	cg_emit(cg,"    mov [rbp - %d], rax", b);
 	cg_expr(cg,tt,e->args[0]);              /* Key. */
 	cg_extend_reg(cg, tk);                  /* Canonicalize an integer key to 64 bits. */
-	cg_emit(cg,"    mov [rsp + 8], rax");
-	cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
-	cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 1));
+	cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
 	if (strcmp(nm,"add")==0)
 	{
 		cg_emit(cg,"    mov %s, 1", cg_iarg(cg, 2));        /* Dummy value. */
@@ -1388,13 +1388,13 @@ static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (ty_is_managed(tk) && expr_is_owned(e->args[0]))
 	{
-		cg_emit(cg,"    mov [rsp], rax");        /* Preserve a bool result. */
-		cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0));
+		cg_emit(cg,"    mov [rbp - %d], rax", b);        /* Preserve a bool result. */
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
 		cg_release_rcx(cg);
-		cg_emit(cg,"    mov rax, [rsp]");
+		cg_emit(cg,"    mov rax, [rbp - %d]", b);
 	}
 
-	cg_emit(cg,"    add rsp, 16");
+	cg_scratch_free(cg, 16);
 }
 
 /* List / Stack / Queue / Deque / ArrayDeque methods over the vector runtime.
@@ -1479,18 +1479,18 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(nm,"get")==0)
 	{
 		cg_expr(cg,tt,e->lhs);
-		cg_emit(cg,"    sub rsp, 16");
-		cg_emit(cg,"    mov [rsp], rax");
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
 		cg_expr(cg,tt,e->args[0]);
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
-		cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
 		cg_aligned_call(cg,"bzy_vec_get");
 		if (fp)
 		{
 			cg_emit(cg, tk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
 		}
 
-		cg_emit(cg,"    add rsp, 16");
+		cg_scratch_free(cg, 16);
 		return;
 	}
 
@@ -1498,8 +1498,8 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(nm,"removeAt")==0 || strcmp(nm,"indexOf")==0 || strcmp(nm,"contains")==0)
 	{
 		cg_expr(cg,tt,e->lhs);
-		cg_emit(cg,"    sub rsp, 16");
-		cg_emit(cg,"    mov [rsp], rax");
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
 		if (fp)
 		{
 			cg_expr(cg,tt,e->args[0]);
@@ -1508,21 +1508,21 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			cg_expr(cg,tt,e->args[0]);
-			cg_emit(cg,"    mov [rsp + 8], rax");
+			cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
 		}
 
-		cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
 		cg_aligned_call(cg,fn);
 		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))   /* indexOf/contains arg temp. */
 		{
-			cg_emit(cg,"    mov [rsp], rax");
-			cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0));
+			cg_emit(cg,"    mov [rbp - %d], rax", b);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
 			cg_release_rcx(cg);
-			cg_emit(cg,"    mov rax, [rsp]");
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
 		}
 
-		cg_emit(cg,"    add rsp, 16");
+		cg_scratch_free(cg, 16);
 		return;
 	}
 
@@ -1530,10 +1530,10 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(nm,"set")==0)
 	{
 		cg_expr(cg,tt,e->lhs);
-		cg_emit(cg,"    sub rsp, 32");
-		cg_emit(cg,"    mov [rsp], rax");
+		int b = cg_scratch_alloc(cg, 32);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
 		cg_expr(cg,tt,e->args[0]);                  /* Index. */
-		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 		if (fp)
 		{
 			cg_expr(cg,tt,e->args[1]);
@@ -1544,25 +1544,25 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_expr(cg,tt,e->args[1]);
 		}
 
-		cg_emit(cg,"    mov [rsp + 16], rax");
-		cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
-		cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 1));
-		cg_emit(cg,"    mov %s, [rsp + 16]", cg_iarg(cg, 2));
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 16);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 2), b - 16);
 		cg_aligned_call(cg,"bzy_vec_set");
 		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[1]))
 		{
-			cg_emit(cg,"    mov %s, [rsp + 16]", cg_iarg(cg, 0));
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 16);
 			cg_release_rcx(cg);
 		}
 
-		cg_emit(cg,"    add rsp, 32");
+		cg_scratch_free(cg, 32);
 		return;
 	}
 
 	/* push-shape: add / push / enqueue / addFirst / addLast — one value arg, void. */
 	cg_expr(cg,tt,e->lhs);
-	cg_emit(cg,"    sub rsp, 16");
-	cg_emit(cg,"    mov [rsp], rax");
+	int b = cg_scratch_alloc(cg, 16);
+	cg_emit(cg,"    mov [rbp - %d], rax", b);
 	if (fp)
 	{
 		cg_expr(cg,tt,e->args[0]);
@@ -1571,19 +1571,19 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	else
 	{
 		cg_expr(cg,tt,e->args[0]);
-		cg_emit(cg,"    mov [rsp + 8], rax");
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
 	}
 
-	cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
 	cg_aligned_call(cg,fn);
 	if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))
 	{
-		cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 0));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
 		cg_release_rcx(cg);
 	}
 
-	cg_emit(cg,"    add rsp, 16");
+	cg_scratch_free(cg, 16);
 }
 
 /* Run a constructor on a freshly-built object: the object is in rax on entry and
