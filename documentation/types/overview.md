@@ -33,6 +33,11 @@ Breezy is **statically typed**: every variable has a type known at compile time,
 
 `int` is the everyday integer; reach for `long` at 64-bit. Numbers are raw machine values - there is no boxing and no wrapper types. See [No primitive wrapper classes](../language/no-wrapper-classes.md).
 
+**Literal suffixes.** An unsuffixed whole number is an `int` and an unsuffixed decimal is a `double`; suffixes opt into another type:
+
+- `L` - `long` (e.g. `5L`), and `u` - unsigned (e.g. `5u`); combine them for an unsigned 64-bit literal (`5uL`).
+- `f` - `float` (e.g. `2.0f`), and `d` - `double` (e.g. `2.0d`). Since a bare decimal is already `double`, `d` is for explicitness; `f` is the one you need to get a 32-bit float. Both accept upper case (`2.0F`, `2.0D`).
+
 ---
 
 ## Mixing numeric types

@@ -73,6 +73,12 @@ static Token finish_float(Lexer *l, Token *t, int i)
 		t->suffix[0] = 'f';
 		t->suffix[1] = '\0';
 	}
+	else if (peek_ch(l) == 'd' || peek_ch(l) == 'D')
+	{
+		next_ch(l);
+		t->suffix[0] = 'd';   /* Explicit double; same type a bare float literal already gets. */
+		t->suffix[1] = '\0';
+	}
 
 	t->type = TOKEN_FLOAT_LIT;
 	return *t;

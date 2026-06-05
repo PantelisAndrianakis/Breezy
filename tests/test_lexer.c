@@ -70,7 +70,7 @@ static void test_float_literals(void)
 {
 	Lexer l;
 	Token t;
-	lexer_init(&l, "1.5 1.5f 1e9 .5 2.");
+	lexer_init(&l, "1.5 1.5f 1e9 .5 2. 2.0d 3.0D 1e3d");
 	t = lexer_next(&l);
 	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
 	ASSERT_STR(t.text, "1.5");
@@ -88,6 +88,18 @@ static void test_float_literals(void)
 	t = lexer_next(&l);
 	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
 	ASSERT_STR(t.text, "2.");
+	t = lexer_next(&l);   /* 2.0d - explicit double suffix. */
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "2.0");
+	ASSERT_STR(t.suffix, "d");
+	t = lexer_next(&l);   /* 3.0D - uppercase, normalized to 'd'. */
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "3.0");
+	ASSERT_STR(t.suffix, "d");
+	t = lexer_next(&l);   /* 1e3d - suffix after an exponent. */
+	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
+	ASSERT_STR(t.text, "1e3");
+	ASSERT_STR(t.suffix, "d");
 }
 
 static void test_string_literal(void)
