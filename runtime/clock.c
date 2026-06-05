@@ -35,12 +35,24 @@ int64_t bzy_clock_nanos(void)
 
 int64_t bzy_clock_millis(void)
 {
-	return (int64_t)time(NULL) * 1000;   /* Coarse fallback for non-Windows platforms. */
+	/* time() has 1-second resolution, which collapses every sub-second timer onto
+	   one tick: timers scheduled milliseconds apart all come due together and the
+	   workers race to run them (broke proj_timer_order). clock_gettime(REALTIME)
+	   is the same epoch as time() -- so format_date still works -- but with
+	   millisecond resolution. */
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 int64_t bzy_clock_nanos(void)
 {
-	return (int64_t)clock() * (1000000000LL / CLOCKS_PER_SEC);
+	/* clock() measures CPU time, not elapsed wall time -- wrong for a monotonic
+	   counter (and what System.currentTimeNanos promises). CLOCK_MONOTONIC is the
+	   POSIX analogue of Windows' QueryPerformanceCounter. */
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 #endif
 
