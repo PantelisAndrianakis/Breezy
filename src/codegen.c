@@ -231,33 +231,11 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
 	cg_emit(cg,".L%d:", pc);               /* The throw-site PC (within this function/try). */
 	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
-	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-	cg_emit(cg,"    and rsp, -16");
-	cg_emit(cg,"    sub rsp, 32");
 	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
 	cg_emit(cg,".L%d:", ok);
 	cg_emit(cg,"    lea rbx, [rax + %s*8 + 32]", cg_iarg(cg, 0));   /* Index reg matches the OOB-check load above. */
 }
 
-/* Win64 requires the caller to reserve 32 bytes of shadow space below the return
-   address for the callee to spill its four register-arg slots; the SysV (Linux)
-   ABI requires none, so it is skipped there. The reservation is always a
-   16-multiple, so omitting it never changes stack alignment. */
-static void cg_shadow_sub(Codegen *cg)
-{
-	if (cg->target != TARGET_LINUX)
-	{
-		cg_emit(cg,"    sub rsp, 32");
-	}
-}
-
-static void cg_shadow_add(Codegen *cg)
-{
-	if (cg->target != TARGET_LINUX)
-	{
-		cg_emit(cg,"    add rsp, 32");
-	}
-}
 
 /* Preserve rax in a fixed frame temp slot instead of on the hardware stack, so
    the stack pointer stays static across the calls the caller is about to make.
@@ -315,15 +293,13 @@ static void cg_scratch_free(Codegen *cg, int n)
 	cg->cur_scratch -= (n + 15) & ~15;
 }
 
-/* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
-   matter the current rsp alignment or pending pushes; the argument is in rcx. */
+/* A runtime call. With the static-rsp frame, rsp is permanently rbp-frame
+   (16-aligned) and the callee's 32-byte Win64 shadow space is reserved once at the
+   bottom of the frame, so no per-call save / realign / shadow reservation is
+   needed - just the bare call. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
 {
-	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-	cg_emit(cg,"    and rsp, -16");
-	cg_shadow_sub(cg);
 	cg_emit(cg,"    call %s", fn);
-	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 }
 
 /* Release the object pointer currently in rcx; rax is clobbered. */
@@ -763,10 +739,11 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	/* Fast path for a single register argument - the common call shape (a one-arg
 	   function like fib(n-1), or a zero-arg method whose only operand is `this`).
 	   Pass it straight in the first argument register: no spill block, no
-	   store-then-reload. The rsp delta is still a 16-multiple (just the 32-byte
-	   shadow space), so alignment is unchanged. Excluded: float args (xmm routing),
-	   owned temporaries (their pointer must outlive the call for the release pass),
-	   and cstr marshalling - those keep the general path below. */
+	   store-then-reload, and (with the static-rsp frame) a bare call - rsp is already
+	   16-aligned and the callee's shadow space is reserved at the frame bottom.
+	   Excluded: float args (xmm routing), owned temporaries (their pointer must
+	   outlive the call for the release pass), and cstr marshalling - those keep the
+	   general path below. */
 	{
 		Expr *only = self ? self : (argc==1 ? args[0] : NULL);
 		if (total==1 && only && !expr_is_owned(only))
@@ -785,15 +762,11 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 				if (indirect)
 				{
 					cg_emit(cg,"    mov r11, [rbp - %d]", cg->val_save);
-					cg_shadow_sub(cg);
 					cg_emit(cg,"    call r11");
-					cg_shadow_add(cg);
 				}
 				else
 				{
-					cg_shadow_sub(cg);
 					cg_emit(cg,"    call %s", target);
-					cg_shadow_add(cg);
 				}
 
 				return;
@@ -874,15 +847,11 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	if (indirect)
 	{
 		cg_emit(cg,"    mov r11, [rbp - %d]", cg->val_save);
-		cg_shadow_sub(cg);
 		cg_emit(cg,"    call r11");
-		cg_shadow_add(cg);
 	}
 	else
 	{
-		cg_shadow_sub(cg);
 		cg_emit(cg,"    call %s", target);
-		cg_shadow_add(cg);
 	}
 
 	if (owned_n > 0)
@@ -1652,9 +1621,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 		}
 	}
 
-	cg_emit(cg,"    sub rsp, 32");
 	cg_emit(cg,"    call %s", label);
-	cg_emit(cg,"    add rsp, 32");
 
 	for (int i=0; i<owned_n; i++)
 	{
@@ -1691,11 +1658,7 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 	else
 	{
 		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), c->object_size);
-		cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-		cg_emit(cg,"    and rsp, -16");
-		cg_emit(cg,"    sub rsp, 32");
 		cg_emit(cg,"    call bzy_alloc");
-		cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 		cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
 		cg_emit(cg,"    mov [rax], rbx");
 		/* The refcount and fields are zeroed by bzy_alloc, so rax holds an owned reference. */
@@ -3097,19 +3060,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else if (strcmp(e->name,"liveCount")==0)
 		{
-			cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-			cg_emit(cg,"    and rsp, -16");
-			cg_emit(cg,"    sub rsp, 32");
 			cg_emit(cg,"    call bzy_live_count");
-			cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 		}
 		else if (strcmp(e->name,"collectCycles")==0)
 		{
-			cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-			cg_emit(cg,"    and rsp, -16");
-			cg_emit(cg,"    sub rsp, 32");
 			cg_emit(cg,"    call bzy_collect_cycles");
-			cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 		}
 		else if (strcmp(e->name,"yield")==0)
 		{
@@ -4364,15 +4319,12 @@ static int cg_field_is_record(Codegen *cg, TypeTable *tt, FieldInfo *f)
 	return ci && ci->is_record;
 }
 
-/* Emit a 16-byte-aligned indirect call to the function pointer in r11 (used for a
-   record field's recursive hashCode/equals via the callee's vtable). */
+/* Indirect call to the function pointer in r11 (used for a record field's recursive
+   hashCode/equals via the callee's vtable). The record-method frames keep rsp static
+   and 16-aligned with a reserved bottom shadow region, so this is a bare call. */
 static void cg_aligned_call_r11(Codegen *cg)
 {
-	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
-	cg_emit(cg,"    and rsp, -16");
-	cg_emit(cg,"    sub rsp, 32");
 	cg_emit(cg,"    call r11");
-	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 }
 
 /* Synthesize the bodies of a record's hashCode (vtable slot 0) and equals (slot 1).
@@ -4394,7 +4346,7 @@ static void cg_emit_record_methods(Codegen *cg, TypeTable *tt, ClassInfo *c)
 	cg_emit(cg,"__rec_equals_%s:", c->name);
 	cg_emit(cg,"    push rbp");
 	cg_emit(cg,"    mov rbp, rsp");
-	cg_emit(cg,"    sub rsp, 64");
+	cg_emit(cg,"    sub rsp, 96");   /* 64 of frame slots + 32 of bottom shadow for the now-bare calls. */
 	cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg,0));
 	cg_emit(cg,"    mov [rbp - 16], %s", cg_iarg(cg,1));
 	int eq_ret0 = cg_label(cg), eq_done = cg_label(cg);
@@ -4488,7 +4440,7 @@ static void cg_emit_record_methods(Codegen *cg, TypeTable *tt, ClassInfo *c)
 	cg_emit(cg,"__rec_hashCode_%s:", c->name);
 	cg_emit(cg,"    push rbp");
 	cg_emit(cg,"    mov rbp, rsp");
-	cg_emit(cg,"    sub rsp, 64");
+	cg_emit(cg,"    sub rsp, 96");   /* 64 of frame slots + 32 of bottom shadow for the now-bare calls. */
 	cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg,0));
 	cg_emit(cg,"    mov qword [rbp - 32], 17");             /* h = 17 */
 	for (int i=0; i<c->field_count; i++)
@@ -4593,7 +4545,7 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 	cg->scratch_base=locals+scratch+temps;
 	cg->cur_scratch=0;
 	cg->cur_scratch_cap=arena;
-	int frame=locals+scratch+temps+arena;
+	int frame=locals+scratch+temps+arena+32;   /* +32: the now-bare calls use a reserved bottom shadow region. */
 	if (frame%16!=0)
 	{
 		frame=(frame/16+1)*16;
@@ -4716,7 +4668,22 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 	cg->assign_save=locals+56;
 	cg->fp_save=locals+64;
 	cg->rbx_save=locals+72;
-	int frame=locals+80;
+	int scratch=80;
+	/* This hand-rolled frame runs each static field's initializer via cg_expr, which
+	   uses frame temp slots and the scratch arena and emits now-bare runtime calls.
+	   Like __enum_init, it must set up & arm those regions (cg_emit_func does this per
+	   function) plus a bottom shadow region, or the arena/temp addresses land outside
+	   the frame and the bare calls have no shadow space. Sized generously - this runs
+	   once at startup; the overflow traps backstop an unusually complex initializer. */
+	int temps=32*8;
+	int arena=512;
+	cg->temp_base=locals+scratch+8;
+	cg->cur_temp_depth=0;
+	cg->cur_temp_cap=32;
+	cg->scratch_base=locals+scratch+temps;
+	cg->cur_scratch=0;
+	cg->cur_scratch_cap=arena;
+	int frame=locals+scratch+temps+arena+32;   /* +32: bottom shadow for the bare calls. */
 	if (frame%16!=0)
 	{
 		frame=(frame/16+1)*16;

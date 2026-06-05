@@ -94,12 +94,25 @@ static void test_linux_fp_arg_numbering(void)
 	ASSERT_INT(strstr(g_asm, "xmm0") != NULL, 1);
 }
 
+static void test_static_rsp_no_push_no_realign(void)
+{
+	/* The fixed-rsp frame keeps rsp static across the whole body: expression
+	   temporaries live in frame slots (no push rax) and calls need no per-call
+	   realign (no and rsp, -16). This function does arithmetic (temp preservation)
+	   and allocates an escaping object (a runtime call via cg_aligned_call). */
+	emit("class A { int v; } A make() { return new A(); }"
+		 " void main() { A a; a = make(); int x; x = (1 + 2) + (3 + 4); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "push rax") == NULL, 1);     /* No expression pushes remain. */
+	ASSERT_INT(strstr(g_asm, "and rsp, -16") == NULL, 1); /* No per-call realign remains. */
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);
 	RUN(test_linux_receiver_and_release);
 	RUN(test_linux_fp_arg_numbering);
+	RUN(test_static_rsp_no_push_no_realign);
 	SUMMARY();
 	return 0;
 }
