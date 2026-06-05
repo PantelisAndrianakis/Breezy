@@ -13,6 +13,11 @@ check() {
     if [ "$got" == "$expected" ]; then echo "  $name: OK"
     else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
 }
+check_fail() {
+    local name="$1" target="$2"
+    if ./breezy "$target" >/dev/null 2>&1; then echo "  $name: FAIL (compiled, expected rejection)"; fail=1
+    else echo "  $name: OK (rejected)"; fi
+}
 echo "Linux ELF64 integration (compute + concurrency subset)"
 check minimal     tests/samples/minimal.bzy    "0"
 check arith       tests/samples/arith.bzy      "14"
@@ -47,6 +52,15 @@ check enum_basic  tests/samples/proj_enum_basic  $'1\nGREEN\n255\n255\n3\n255'
 check enum_body   tests/samples/proj_enum_body   $'7\n7\n42\nADD\nOp'
 check enum_switch tests/samples/proj_enum_switch $'2'
 check enum_iface  tests/samples/proj_enum_iface  $'HI'
+# Records: synthesized value equals/hashCode and value-keyed map/set (key_kind=3).
+check record_basic   tests/samples/proj_record_basic    $'3\n4'
+check_fail record_extends tests/samples/bad_record_extends
+check record_methods tests/samples/proj_record_methods  $'true\nfalse\ntrue'
+check record_map_key tests/samples/proj_record_map_key  $'42\ntrue\nfalse\n1'
+check record_set     tests/samples/proj_record_set      $'2\ntrue\nfalse'
+check record_nested  tests/samples/proj_record_nested   $'7\nfalse'
+check record_identity_fallback tests/samples/proj_record_identity_fallback $'true\nfalse'
+check record_cycle   tests/samples/proj_record_cycle    $'0'
 check math_basic  tests/samples/proj_math_basic $'4\n5\n2.5'
 check vec2        tests/samples/proj_vec2       $'5\nfalse\ntrue\n5'
 # Concurrency: cooperative single-worker ordering is deterministic (pin to 1).
