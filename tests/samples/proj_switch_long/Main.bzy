@@ -1,0 +1,29 @@
+void main()
+{
+	long x;
+	x = 2;
+	switch (x)
+	{
+		case 1:
+			print(10);
+			break;
+		case 2:
+			print(20);
+			break;
+		default:
+			print(99);
+			break;
+	}
+
+	uint u;
+	u = 1u;
+	switch (u)
+	{
+		case 1u:
+			print(30);
+			break;
+		default:
+			print(99);
+			break;
+	}
+}

@@ -150,6 +150,7 @@ check enum_body  tests/samples/proj_enum_body  $'7\n7\n42\nADD\nOp'
 check enum_switch tests/samples/proj_enum_switch $'2'
 check switch_string tests/samples/proj_switch_string $'2'
 check switch_bool   tests/samples/proj_switch_bool   $'20'
+check switch_long   tests/samples/proj_switch_long   $'20\n30'
 check_fail switch_float tests/samples/bad_switch_float
 check enum_iface tests/samples/proj_enum_iface $'HI'
 check_fail enum_reserved   tests/samples/bad_enum_reserved_method.bzy

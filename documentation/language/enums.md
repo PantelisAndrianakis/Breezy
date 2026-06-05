@@ -155,7 +155,7 @@ Enums lower to ordinary classes: each constant becomes a singleton object constr
 - **A semicolon ends the constant list** before any fields, constructor, or methods.
 - **`case` labels are unqualified** constant names inside a `switch`.
 - **Constants are singletons** - the same `Color.RED` object every time, so it can be compared and passed around freely.
-- Switch supports enums (matched by ordinal), plus `int`, `boolean`, and `string`; it rejects `float`/`double` because exact-equality matching is unreliable for them.
+- Switch supports enums (matched by ordinal), plus any integer type, `boolean`, and `string`; it rejects `float`/`double` because exact-equality matching is unreliable for them.
 
 ---
 

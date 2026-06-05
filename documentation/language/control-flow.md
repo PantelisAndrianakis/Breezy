@@ -138,7 +138,7 @@ switch (code)
 }
 ```
 
-`switch` accepts `int`, `boolean`, `string`, and [enum](enums.md) values (enums are matched by ordinal, and `case` labels use the unqualified constant name). It **rejects** `float` and `double`, because exact-equality matching is unreliable for them.
+`switch` accepts any integer type (`byte short int long` and the unsigned variants), `boolean`, `string`, and [enum](enums.md) values (enums are matched by ordinal, and `case` labels use the unqualified constant name). It **rejects** `float` and `double`, because exact-equality matching is unreliable for them.
 
 ---
 
