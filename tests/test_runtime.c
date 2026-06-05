@@ -843,6 +843,17 @@ static void test_channel_roundtrip(void)
 	bzy_release(g_ch);
 }
 
+/* A channel is shared between breezes on different worker threads by design, so
+   it must be allocated with the SHARED gcinfo bit set - otherwise its own
+   refcount is mutated non-atomically across cores and the channel is freed
+   early (a nondeterministic use-after-free under spawn churn). Guard the bit. */
+static void test_channel_is_shared(void)
+{
+	void *c = bzy_channel_new(1, 0);
+	ASSERT((*(int64_t*)((char*)c + 16) & BZY_GCINFO_SHARED) != 0);
+	bzy_release(c);
+}
+
 static int g_timer_hits;            /* A timer target for tests that only need a side effect. */
 static void timer_test_target(void)
 {
@@ -1539,6 +1550,7 @@ int main(void)
 	RUN(test_shared_atomic_refcount);
 	RUN(test_scheduler_multicore);
 	RUN(test_channel_roundtrip);
+	RUN(test_channel_is_shared);
 	RUN(test_timer_heap_orders_by_deadline);
 	RUN(test_timer_periodic_coalesces_missed_ticks);
 	RUN(test_timer_cancel_is_skipped);

@@ -152,6 +152,12 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 
 	void *c = bzy_alloc(96 + sizeof(bzy_mutex));   /* Lock at 96; sized for the host's mutex (8 on Win, ~40 on POSIX). */
 	*(void**)c = channel_vtable();
+	/* A channel exists to be shared between breezes running on different worker
+	   threads, so its own refcount must be mutated atomically: mark it SHARED at
+	   allocation (the bit is fixed here, never raced). Without this, a channel
+	   retained on one core and released on another corrupts its non-atomic count
+	   and is freed early. 8 = BZY_GCINFO_SHARED (bit 3). */
+	*(int64_t*)((char*)c + 16) |= BZY_GCINFO_SHARED;
 	*C_CAP(c) = cap;
 	*C_COUNT(c) = 0;
 	*C_HEAD(c) = 0;
