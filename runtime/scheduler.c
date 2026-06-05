@@ -40,6 +40,8 @@ static __thread BzyCoroutine *t_sched;       /* This thread's scheduler coroutin
 static __thread Breeze       *t_running;     /* Breeze currently on this CPU (NULL = scheduler). */
 static __thread int           t_wid;         /* This thread's worker index. */
 static __thread void         *t_park_unlock; /* bzy_mutex* the scheduler releases after a parking switch. */
+static __thread int           t_requeue;     /* bzy_yield sets this; the scheduler re-enqueues the breeze
+                                                after the switch, when it is safely off its own CPU. */
 
 static void enqueue_on(int wid, Breeze *b)
 {
@@ -222,7 +224,10 @@ void bzy_yield(void)
 		return;                 /* Called from the scheduler itself: nothing to yield. */
 	}
 
-	enqueue_on(t_wid, b);       /* Re-queue at the tail (round-robin). */
+	/* Do NOT enqueue here: that would make b stealable while its fiber is still on
+	   this CPU, letting another worker SwitchToFiber the same fiber concurrently.
+	   Defer the re-enqueue to the scheduler, which runs it once b is off-CPU. */
+	t_requeue = 1;
 	bzy_coroutine_switch(t_sched);
 }
 
@@ -346,7 +351,12 @@ run:
 			t_park_unlock = NULL;
 		}
 
-		if (b->done)
+		if (t_requeue)
+		{
+			t_requeue = 0;
+			enqueue_on(t_wid, b);   /* Yielded: b is off-CPU now, so it is safe to make it stealable. */
+		}
+		else if (b->done)
 		{
 			bzy_coroutine_delete(b->coroutine);
 			free(b);
