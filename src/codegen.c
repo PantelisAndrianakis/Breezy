@@ -1898,12 +1898,12 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		if (e->type.kind==TY_DOUBLE)
 		{
 			cg_to_double(cg,tt,e->args[0]);
-			cg_emit(cg,"    sub rsp, 16");
-			cg_emit(cg,"    movsd qword [rsp], xmm0");
+			int b = cg_scratch_alloc(cg, 16);
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
 			cg_to_double(cg,tt,e->args[1]);
 			cg_emit(cg,"    movsd xmm1, xmm0");
-			cg_emit(cg,"    movsd xmm0, qword [rsp]");
-			cg_emit(cg,"    add rsp, 16");
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+			cg_scratch_free(cg, 16);
 			cg_emit(cg, ismin ? "    minsd xmm0, xmm1" : "    maxsd xmm0, xmm1");
 		}
 		else
@@ -1924,37 +1924,37 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		if (e->type.kind==TY_DOUBLE)
 		{
-			cg_emit(cg,"    sub rsp, 32");
+			int b = cg_scratch_alloc(cg, 32);
 			cg_to_double(cg,tt,e->args[0]);
-			cg_emit(cg,"    movsd qword [rsp], xmm0");        /* x */
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);        /* x */
 			cg_to_double(cg,tt,e->args[1]);
-			cg_emit(cg,"    movsd qword [rsp + 8], xmm0");    /* lo */
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - 8);    /* lo */
 			cg_to_double(cg,tt,e->args[2]);
-			cg_emit(cg,"    movsd qword [rsp + 16], xmm0");   /* hi */
-			cg_emit(cg,"    movsd xmm0, qword [rsp]");
-			cg_emit(cg,"    movsd xmm1, qword [rsp + 16]");
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - 16);   /* hi */
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+			cg_emit(cg,"    movsd xmm1, qword [rbp - %d]", b - 16);
 			cg_emit(cg,"    minsd xmm0, xmm1");               /* min(x, hi) */
-			cg_emit(cg,"    movsd xmm1, qword [rsp + 8]");
+			cg_emit(cg,"    movsd xmm1, qword [rbp - %d]", b - 8);
 			cg_emit(cg,"    maxsd xmm0, xmm1");               /* max(., lo) */
-			cg_emit(cg,"    add rsp, 32");
+			cg_scratch_free(cg, 32);
 		}
 		else
 		{
-			cg_emit(cg,"    sub rsp, 32");
+			int b = cg_scratch_alloc(cg, 32);
 			cg_expr(cg,tt,e->args[0]);
-			cg_emit(cg,"    mov [rsp], rax");
+			cg_emit(cg,"    mov [rbp - %d], rax", b);
 			cg_expr(cg,tt,e->args[1]);
-			cg_emit(cg,"    mov [rsp + 8], rax");
+			cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 			cg_expr(cg,tt,e->args[2]);
-			cg_emit(cg,"    mov [rsp + 16], rax");
-			cg_emit(cg,"    mov rax, [rsp]");
-			cg_emit(cg,"    mov rbx, [rsp + 16]");
+			cg_emit(cg,"    mov [rbp - %d], rax", b - 16);
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
+			cg_emit(cg,"    mov rbx, [rbp - %d]", b - 16);
 			cg_emit(cg,"    cmp rax, rbx");
 			cg_emit(cg,"    cmovg rax, rbx");                 /* min(x, hi) */
-			cg_emit(cg,"    mov rbx, [rsp + 8]");
+			cg_emit(cg,"    mov rbx, [rbp - %d]", b - 8);
 			cg_emit(cg,"    cmp rax, rbx");
 			cg_emit(cg,"    cmovl rax, rbx");                 /* max(., lo) */
-			cg_emit(cg,"    add rsp, 32");
+			cg_scratch_free(cg, 32);
 		}
 
 		return;
@@ -1986,12 +1986,12 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(m,"pow")==0)
 	{
 		cg_to_double(cg,tt,e->args[0]);
-		cg_emit(cg,"    sub rsp, 16");
-		cg_emit(cg,"    movsd qword [rsp], xmm0");
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
 		cg_to_double(cg,tt,e->args[1]);
 		cg_emit(cg,"    movsd xmm1, xmm0");
-		cg_emit(cg,"    movsd xmm0, qword [rsp]");
-		cg_emit(cg,"    add rsp, 16");
+		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+		cg_scratch_free(cg, 16);
 		cg_aligned_call(cg,"pow");          /* base xmm0, exp xmm1; result xmm0. */
 		return;
 	}
@@ -2082,13 +2082,13 @@ static void cg_schedule(Codegen *cg, TypeTable *tt, Expr *e)
 	FuncInfo *fi = types_find_func(tt, e->args[0]->name);
 	if (periodic)
 	{
-		cg_emit(cg,"    sub rsp, 16");
+		int b = cg_scratch_alloc(cg, 16);
 		cg_expr(cg,tt,e->args[1]);          /* delayMs -> rax. */
-		cg_emit(cg,"    mov [rsp], rax");
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
 		cg_expr(cg,tt,e->args[2]);          /* periodMs -> rax. */
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 2));      /* period -> 3rd arg. */
-		cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 1));   /* delay  -> 2nd arg. */
-		cg_emit(cg,"    add rsp, 16");
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b);   /* delay  -> 2nd arg. */
+		cg_scratch_free(cg, 16);
 		cg_emit(cg,"    lea %s, [rel %s]", cg_iarg(cg, 0), fi->asm_label);   /* entry -> 1st arg (after the cg_exprs). */
 		cg_aligned_call(cg,"bzy_timer_every");
 	}
@@ -2427,14 +2427,14 @@ static void cg_logger_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(e->name,"log")==0)
 	{
 		cg_expr(cg,tt,e->lhs);                  /* Logger. */
-		cg_emit(cg,"    sub rsp, 16");
-		cg_emit(cg,"    mov [rsp], rax");
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
 		cg_expr_owned(cg,tt,e->args[0]);        /* +1 owned string; moves into the channel. */
-		cg_emit(cg,"    mov [rsp + 8], rax");
-		cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
-		cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 1));
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
 		cg_aligned_call(cg,"bzy_logger_log");   /* Channel takes ownership: no release here. */
-		cg_emit(cg,"    add rsp, 16");
+		cg_scratch_free(cg, 16);
 		return;
 	}
 
