@@ -940,9 +940,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		break;
 	case EX_NEWMAP:
-		if (e->type.elem->kind!=TY_INT && e->type.elem->kind!=TY_STRING)
+		if (!ty_is_int(e->type.elem->kind) && e->type.elem->kind!=TY_STRING)
 		{
-			die(e->line,"Map key must be int or string.",NULL);
+			die(e->line,"Map key must be an integer type or string.",NULL);
 		}
 
 		if (e->type.elem2->kind==TY_OBJECT

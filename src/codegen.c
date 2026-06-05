@@ -845,6 +845,7 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    sub rsp, 32");
 		cg_emit(cg,"    mov [rsp], rax");
 		cg_expr(cg,tt,e->args[0]);             /* Key. */
+		cg_extend_reg(cg, e->lhs->type.elem->kind);   /* Canonicalize the key to 64 bits. */
 		cg_emit(cg,"    mov [rsp + 8], rax");
 		cg_expr(cg,tt,e->args[1]);             /* Value. */
 		cg_emit(cg,"    mov [rsp + 16], rax");
@@ -876,6 +877,7 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    sub rsp, 16");
 	cg_emit(cg,"    mov [rsp], rax");
 	cg_expr(cg,tt,e->args[0]);                  /* Key. */
+	cg_extend_reg(cg, e->lhs->type.elem->kind); /* Canonicalize the key to 64 bits. */
 	cg_emit(cg,"    mov [rsp + 8], rax");
 	cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 0));
 	cg_emit(cg,"    mov %s, [rsp + 8]", cg_iarg(cg, 1));

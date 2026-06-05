@@ -1,0 +1,14 @@
+void main()
+{
+	map<byte,int> m;
+	m = new map<byte,int>();
+	byte k1;
+	k1 = (byte)-1;
+	byte k2;
+	k2 = (byte)2;
+	m.put(k1, 7);
+	m.put(k2, 8);
+	print(m.get(k1));   // 7
+	print(m.get(k2));   // 8
+	print(m.size);      // 2
+}

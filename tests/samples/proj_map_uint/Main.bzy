@@ -1,0 +1,14 @@
+void main()
+{
+	map<uint,int> m;
+	m = new map<uint,int>();
+	uint k;
+	k = 4000000000u;
+	m.put(k, 5);
+	uint k2;
+	k2 = 7u;
+	m.put(k2, 6);
+	print(m.get(k));    // 5
+	print(m.get(k2));   // 6
+	print(m.size);      // 2
+}
