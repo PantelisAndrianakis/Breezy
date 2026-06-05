@@ -338,11 +338,43 @@ static void cg_concat_operand(Codegen *cg, TypeTable *tt, Expr *op)
 	cg_aligned_call(cg,fn);                          /* Owned (+1) string in rax. */
 }
 
-/* String concatenation: produce an owned string for each operand (strings as-is,
-   scalars converted), call bzy_str_concat, then release the two operand
-   temporaries. Operands and result are spilled on the machine stack so nested
-   concats compose. */
-static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
+/* The maximum operands a single concat chain flattens into one bzy_str_concat_n
+   call. Longer chains (vanishingly rare) fall back to pairwise lowering. */
+#define CONCAT_MAX 64
+
+/* Collect the leaf operands of a maximal string-concat tree into out[], left to
+   right. A '+' whose result type is string is a concat node; anything else is a
+   leaf. String concat is associative, so a flat left-to-right join is identical
+   to the nested evaluation, and the left-to-right walk preserves side-effect
+   order. Returns the operand count, or -1 if the chain exceeds CONCAT_MAX. */
+static int cg_collect_concat(Expr *e, Expr **out, int n, int cap)
+{
+	if (n < 0)
+	{
+		return -1;                       /* Propagate an earlier overflow. */
+	}
+
+	if (e->kind==EX_BINARY && e->type.kind==TY_STRING)
+	{
+		n = cg_collect_concat(e->lhs, out, n, cap);
+		n = cg_collect_concat(e->rhs, out, n, cap);
+		return n;
+	}
+
+	if (n >= cap)
+	{
+		return -1;                       /* Too many operands: signal the fallback. */
+	}
+
+	out[n++] = e;
+	return n;
+}
+
+/* Fallback pairwise concat for chains longer than CONCAT_MAX: produce an owned
+   string for each operand (strings as-is, scalars converted), call bzy_str_concat,
+   then release the two operand temporaries. Operands and result are spilled on the
+   machine stack so nested concats compose. */
+static void cg_str_concat_pair(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_concat_operand(cg,tt,e->lhs);
 	cg_emit(cg,"    sub rsp, 32");
@@ -359,6 +391,48 @@ static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_release_rcx(cg);
 	cg_emit(cg,"    mov rax, [rsp + 16]");
 	cg_emit(cg,"    add rsp, 32");
+}
+
+/* String concatenation: flatten the whole '+' chain and join it in one
+   bzy_str_concat_n call (one allocation, O(n) copying). Each operand is
+   evaluated to an owned (+1) string in a reserved stack array; after the join
+   every operand temporary is released. Falls back to pairwise lowering only if
+   the chain exceeds CONCAT_MAX operands. */
+static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	Expr *ops[CONCAT_MAX];
+	int n = cg_collect_concat(e, ops, 0, CONCAT_MAX);
+	if (n < 0)
+	{
+		cg_str_concat_pair(cg,tt,e);
+		return;
+	}
+
+	/* Reserve an aligned region: n operand pointers + 1 result slot. cg_aligned_call
+	   realigns and restores rsp around each inner call, so this region (above rsp)
+	   survives operand evaluation; Breezy locals are rbp-relative, so moving rsp is
+	   safe for them too. */
+	int slots = ((n + 1) * 8 + 15) & ~15;
+	cg_emit(cg,"    sub rsp, %d", slots);
+	for (int i = 0; i < n; i++)
+	{
+		cg_concat_operand(cg,tt,ops[i]);                  /* Owned (+1) string in rax. */
+		cg_emit(cg,"    mov [rsp + %d], rax", i*8);
+	}
+
+	cg_emit(cg,"    mov %s, rsp", cg_iarg(cg, 0));        /* parts = &ops[0]. */
+	cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), n);      /* count. */
+	cg_aligned_call(cg,"bzy_str_concat_n");              /* Owned (+1) result in rax. */
+	cg_emit(cg,"    mov [rsp + %d], rax", n*8);          /* Stash the result above the operands. */
+
+	for (int i = 0; i < n; i++)                          /* Release each operand temporary. */
+	{
+		cg_emit(cg,"    mov %s, [rsp + %d]", cg_iarg(cg, 0), i*8);
+		cg_release_rcx(cg);
+	}
+
+	cg_emit(cg,"    mov rax, [rsp + %d]", n*8);          /* Result back into rax. */
+	cg_emit(cg,"    add rsp, %d", slots);
 }
 
 /* Widen the operand just evaluated (an integer in rax, or a float/double already
@@ -4491,6 +4565,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_print_f64");
 	cg_emit(cg,"extern bzy_str_new");
 	cg_emit(cg,"extern bzy_str_concat");
+	cg_emit(cg,"extern bzy_str_concat_n");
 	cg_emit(cg,"extern bzy_str_from_i64");
 	cg_emit(cg,"extern bzy_str_from_u64");
 	cg_emit(cg,"extern bzy_str_from_bool");

@@ -1,0 +1,14 @@
+// A long string-concatenation chain must lower to a single bzy_str_concat_n call
+// and produce the same bytes as nested pairwise concatenation.
+void main()
+{
+	string a;
+	a = "a";
+	string b;
+	b = "b";
+	string c;
+	c = "c";
+
+	print(a + b + c + "d" + "e" + a + b);   // abcdeab
+	print("n=" + 1 + 2 + 3);                // n=123
+}
