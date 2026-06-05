@@ -198,11 +198,13 @@ int main(int argc, char *argv[])
 	int off;
 	if (target == TARGET_LINUX)
 	{
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -l_breezy -lpthread -lm -lcurl");
+		/* -L. finds a co-located lib_breezy.a (distribution); -Lbuild/linux finds
+		   the per-host build output when running from the project tree. */
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl");
 	}
 	else
 	{
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -l_breezy -lws2_32 -lwinhttp");
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp");
 	}
 	for (int i = 0; i < cfg.nlib_paths; i++)
 	{

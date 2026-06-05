@@ -45,7 +45,7 @@ On a Linux host, `breezy` builds and runs native ELF64 for compute, concurrency,
 
 **Per-host difference:** a few [`File`](../stdlib/file.md) attributes (`HIDDEN`, `SYSTEM`, `ARCHIVE`) are Windows concepts with no POSIX equivalent.
 
-> **Cross-building from one tree:** object files share paths, so run `make clean` when switching between the Windows and Linux builds.
+> **Cross-building from one tree:** Windows and Linux build artifacts live in separate per-host directories (`build/win/`, `build/linux/`), so you can build for both from one shared tree without running `make clean` between them.
 
 ---
 

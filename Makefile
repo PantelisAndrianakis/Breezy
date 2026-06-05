@@ -9,11 +9,13 @@ ifeq ($(findstring Linux,$(UNAME)),Linux)
   PLATFORM_LIBS = -lpthread
   STACKFLAG     =
   PLATFORM_DEFS = -D_GNU_SOURCE   # Expose POSIX (clock_gettime/sem_timedwait) + GNU (accept4/SOCK_NONBLOCK/MSG_NOSIGNAL) under -std=c99.
+  OBJDIR        = build/linux
 else
   CORO_SRC      = runtime/coroutine_win.c
   PLATFORM_LIBS =
   STACKFLAG     = -Wl,--stack,0x4000000
   PLATFORM_DEFS =
+  OBJDIR        = build/win
 endif
 
 CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc $(STACKFLAG) $(PLATFORM_DEFS)
@@ -46,20 +48,23 @@ else
   RT_NAMES = $(RT_COMMON) coroutine_win file offload system iocp socket udp filechannel logger http
 endif
 RT_SRC  = $(addprefix runtime/,$(addsuffix .c,$(RT_NAMES)))
-RT_OBJ  = $(addprefix runtime/,$(addsuffix .o,$(RT_NAMES))) runtime/entry.o
+# Objects and the runtime archive live in a per-host build dir (build/win or
+# build/linux) so Windows and Linux artifacts never collide in a shared tree.
+RT_OBJ  = $(addprefix $(OBJDIR)/,$(addsuffix .o,$(RT_NAMES))) $(OBJDIR)/entry.o
 RT_HDR  = runtime/breezy.h runtime/coroutine.h runtime/platform.h runtime/network_internal.h
+LIB     = $(OBJDIR)/lib_breezy.a
 
 .PHONY: all clean test integration release
 
 all: breezy
 
-breezy: src/main.c $(OBJS) lib_breezy.a
+breezy: src/main.c $(OBJS) $(LIB)
 	$(CC) $(CFLAGS) -o breezy src/main.c $(OBJS)
 
 # Stripped, garbage-collected build of the compiler. Produces the same
 # 'breezy' binary as 'all' but a fraction of the size (no debug symbols,
 # unused functions removed). Use this for distribution.
-release: src/main.c $(OBJS) lib_breezy.a
+release: src/main.c $(OBJS) $(LIB)
 	$(CC) $(RELEASE_CFLAGS) -o breezy src/main.c $(OBJS)
 
 test_lexer: tests/test_lexer.c src/lexer.c
@@ -92,13 +97,17 @@ test_ownership: tests/test_ownership.c $(OBJS)
 test_escape: tests/test_escape.c $(OBJS)
 	$(CC) $(CFLAGS) -o test_escape tests/test_escape.c $(OBJS)
 
-# Each runtime object from its source (host-selected set in RT_OBJ).
-runtime/%.o: runtime/%.c $(RT_HDR)
+# Each runtime object compiles into the per-host build dir (host-selected set in
+# RT_OBJ), so Windows and Linux objects never collide in one tree.
+$(OBJDIR)/%.o: runtime/%.c $(RT_HDR) | $(OBJDIR)
 	$(CC) $(CFLAGS) -Iruntime -c $< -o $@
 
-lib_breezy.a: $(RT_OBJ)
-	rm -f lib_breezy.a   # Rebuild from scratch so renamed/removed members never linger in the archive.
-	ar rcs lib_breezy.a $(RT_OBJ)
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+$(LIB): $(RT_OBJ)
+	rm -f $(LIB)   # Rebuild from scratch so renamed/removed members never linger in the archive.
+	ar rcs $(LIB) $(RT_OBJ)
 
 test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
 	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
@@ -117,8 +126,9 @@ test: test_lexer test_ast test_config test_parser test_types test_resolve test_o
 	./test_runtime
 	bash tests/run_integration.sh
 
-integration: breezy lib_breezy.a
+integration: breezy $(LIB)
 	bash tests/run_integration.sh
 
 clean:
-	rm -f breezy test_lexer test_ast test_config test_codegen test_coroutine test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe out_cg_test.asm
+	rm -rf build
+	rm -f breezy breezy.exe test_lexer test_ast test_config test_codegen test_coroutine test_parser test_types test_resolve test_ownership test_escape test_runtime lib_breezy.a runtime/*.o *.o src/*.o out.asm out.obj out.exe out_cg_test.asm out_elf.o

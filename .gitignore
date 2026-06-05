@@ -5,7 +5,9 @@ out.asm
 out.obj
 out.exe
 out_cg_test.asm
+out_elf.o
 lib_breezy.a
+/build/
 
 # Unit test binaries
 test_lexer
