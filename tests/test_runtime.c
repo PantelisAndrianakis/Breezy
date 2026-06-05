@@ -854,6 +854,20 @@ static void test_channel_is_shared(void)
 	bzy_release(c);
 }
 
+/* The small-object pool must actually recycle: a freed block of a pooled size is
+   handed straight back to the next same-size allocation (on this thread), and the
+   live count returns to baseline so nothing leaks. */
+static void test_pool_recycles_block(void)
+{
+	int64_t before = bzy_live_count();
+	void *a = bzy_alloc(40);
+	bzy_release(a);                            /* Returns the block to the thread pool. */
+	void *b = bzy_alloc(40);                   /* Same size class: should reuse a's block. */
+	ASSERT(b == a);
+	bzy_release(b);
+	ASSERT_INT(bzy_live_count(), before);      /* No leak: pooled blocks are still logically freed. */
+}
+
 static int g_timer_hits;            /* A timer target for tests that only need a side effect. */
 static void timer_test_target(void)
 {
@@ -1551,6 +1565,7 @@ int main(void)
 	RUN(test_scheduler_multicore);
 	RUN(test_channel_roundtrip);
 	RUN(test_channel_is_shared);
+	RUN(test_pool_recycles_block);
 	RUN(test_timer_heap_orders_by_deadline);
 	RUN(test_timer_periodic_coalesces_missed_ticks);
 	RUN(test_timer_cancel_is_skipped);

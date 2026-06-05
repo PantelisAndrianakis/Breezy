@@ -1,7 +1,6 @@
 #include "breezy.h"
 #include <stdlib.h>
-
-static int64_t g_live = 0;
+#include <string.h>
 
 /* Cycle-collector colors, stored in the low two bits of gcinfo at offset 16. */
 enum { BLACK = 0, GRAY = 1, WHITE = 2, PURPLE = 3 };
@@ -132,17 +131,155 @@ static void roots_push(void *o)
 	g_roots[g_roots_n++] = o;
 }
 
-void *bzy_alloc(int64_t size)
+/* ---- Small-object size-class free lists (per worker thread) -----------------
+   Every Breezy object is its own heap block; under churn the calloc/free
+   round-trip dominates allocation cost. Each thread keeps one free list per size
+   class and recycles blocks locally: a free pushes onto the running thread's list
+   and an allocation pops from it, so no list is ever shared between threads. This
+   is lock-free and correct even as breezes migrate across workers - a block
+   simply moves from one thread's pool to another's, and each list is only ever
+   touched by its owner.
+
+   The size class (1..POOL_NCLASS-1; 0 means "too big to pool") is recorded in
+   gcinfo bits 4-7, which the color/buffered/shared/crc machinery never touches.
+   Recycled blocks are re-zeroed to preserve calloc semantics, and per-class depth
+   is capped so a producer/consumer split cannot grow a pool without bound. Pooled
+   blocks are returned to the OS only implicitly at process exit.
+
+   Both arrays live in ONE __thread struct so the hot path pays a single TLS
+   resolution per call - on the MinGW target __thread is emulated (a call to
+   __emutls_get_address), so minimizing distinct TLS accesses is what makes the
+   pool a net win rather than a loss. */
+
+#define POOL_MAX_SIZE 256
+#define POOL_NCLASS   11        /* Index 0 = unpooled; 1..10 are real classes. */
+#define POOL_CAP      256       /* Max recycled blocks held per class, per thread. */
+
+static const int g_class_size[POOL_NCLASS] =
 {
-	void *o = calloc(1, (size_t)size);
-	if (!o)
+	0, 32, 48, 64, 80, 96, 128, 160, 192, 224, 256
+};
+
+/* Per-thread allocator state. `live` is this thread's share of the global
+   live-object count: bzy_alloc increments the running thread's `live` and a free
+   decrements the freeing thread's `live`, so the hot path never writes a shared
+   cache line (the old single global g_live counter serialized every concurrent
+   alloc/free - its line ping-ponged across cores). The true count is the sum of
+   every thread's shard, computed only when bzy_live_count() is called; a block
+   allocated on one thread and freed on another leaves the two shards unbalanced
+   but their sum exact. Folding `live` into PoolTLS means the whole hot path still
+   costs a single TLS resolution. */
+typedef struct
+{
+	void    *head[POOL_NCLASS];   /* Free-list head per class (next link @ block offset 0). */
+	int32_t  n[POOL_NCLASS];      /* Current depth per class. */
+	int64_t  live;                /* This thread's contribution to the live-object count. */
+	int      registered;          /* 1 once this shard is linked into g_shards. */
+} PoolTLS;
+
+static __thread PoolTLS t_pool;
+
+/* Registry of every thread's shard, so bzy_live_count can sum them. A thread
+   registers its shard once, on its first alloc or free, via a lock-free append.
+   MAX_SHARDS comfortably exceeds the 64-worker cap plus the main/offload/IOCP
+   threads; a thread beyond it simply is not summed (its objects are rare). */
+#define MAX_SHARDS 256
+static PoolTLS *g_shards[MAX_SHARDS];
+static int      g_nshards;   /* Appended via __atomic; read back to bound the sum. */
+
+static PoolTLS *pool_tls(void)
+{
+	PoolTLS *p = &t_pool;   /* The one (possibly emulated) TLS resolution per call. */
+	if (!p->registered)
 	{
-		abort();
+		p->registered = 1;
+		int i = __atomic_fetch_add(&g_nshards, 1, __ATOMIC_SEQ_CST);
+		if (i < MAX_SHARDS)
+		{
+			g_shards[i] = p;
+		}
 	}
 
-	*RC(o) = 1;        /* The refcount starts at one. */
-	*GI(o) = 0;        /* BLACK, not buffered, crc zero. */
-	__atomic_add_fetch(&g_live, 1, __ATOMIC_RELAXED);   /* Objects alloc on any worker thread. */
+	return p;
+}
+
+/* Smallest class whose block fits size, or 0 when size exceeds the pooled range. */
+static int class_index(int64_t size)
+{
+	if (size > POOL_MAX_SIZE)
+	{
+		return 0;
+	}
+
+	for (int c = 1; c < POOL_NCLASS; c++)
+	{
+		if (size <= g_class_size[c])
+		{
+			return c;
+		}
+	}
+
+	return 0;
+}
+
+/* Account one freed object against the running thread's live shard, then return
+   its block to that thread's size-class pool - or to the system allocator when it
+   is too big to pool or the pool is full. The caller has already run the
+   finalizer / released children. */
+static void pool_free(void *o)
+{
+	PoolTLS *p = pool_tls();   /* One TLS resolution for the decrement and the push. */
+	p->live--;
+
+	int c = (int)((*GI(o) >> 4) & 0xF);
+	if (c && c < POOL_NCLASS && p->n[c] < POOL_CAP)
+	{
+		*(void**)o = p->head[c];
+		p->head[c] = o;
+		p->n[c]++;
+		return;
+	}
+
+	free(o);
+}
+
+void *bzy_alloc(int64_t size)
+{
+	PoolTLS *p = pool_tls();   /* One TLS resolution for the count and the pop. */
+	p->live++;
+
+	int c = class_index(size);
+	void *o;
+	if (c)
+	{
+		o = p->head[c];
+		if (o)
+		{
+			p->head[c] = *(void**)o;
+			p->n[c]--;
+		}
+		else
+		{
+			o = malloc((size_t)g_class_size[c]);
+			if (!o)
+			{
+				abort();
+			}
+		}
+
+		memset(o, 0, (size_t)g_class_size[c]);   /* Match calloc's zero-fill, on reuse and on fresh blocks. */
+	}
+	else
+	{
+		o = calloc(1, (size_t)size);
+		if (!o)
+		{
+			abort();
+		}
+	}
+
+	*RC(o) = 1;                 /* The refcount starts at one. */
+	*GI(o) = (int64_t)c << 4;   /* Class nibble in bits 4-7; color BLACK, not buffered, not shared, crc zero. */
 	return o;
 }
 
@@ -194,8 +331,7 @@ static void free_object(void *obj)
 		return;
 	}
 
-	__atomic_sub_fetch(&g_live, 1, __ATOMIC_RELAXED);
-	free(obj);
+	pool_free(obj);   /* Decrements the freeing thread's live shard. */
 }
 
 void bzy_release(void *obj)
@@ -253,7 +389,23 @@ void bzy_release(void *obj)
 
 int64_t bzy_live_count(void)
 {
-	return __atomic_load_n(&g_live, __ATOMIC_RELAXED);
+	/* Sum every registered thread's shard. Per-shard reads are unsynchronized -
+	   a concurrent alloc/free may make the total off by a few in flight - but each
+	   aligned int64 read is tear-free, and with a single mutator (the usual leak
+	   check at a quiescent point) it is exact. */
+	int64_t n = 0;
+	int k = __atomic_load_n(&g_nshards, __ATOMIC_SEQ_CST);
+	if (k > MAX_SHARDS)
+	{
+		k = MAX_SHARDS;
+	}
+
+	for (int i = 0; i < k; i++)
+	{
+		n += g_shards[i]->live;
+	}
+
+	return n;
 }
 
 int64_t bzy_roots_buffered(void)
@@ -382,8 +534,7 @@ void bzy_collect_cycles(void)
 			{
 				/* A node freed while still buffered (deferred by free_object):
 				   reclaim its memory now that it leaves the roots buffer. */
-				__atomic_sub_fetch(&g_live, 1, __ATOMIC_RELAXED);
-				free(s);
+				pool_free(s);   /* Decrements this thread's live shard. */
 			}
 		}
 	}
@@ -420,8 +571,7 @@ void bzy_collect_cycles(void)
 			fin(g_white[i]);
 		}
 
-		__atomic_sub_fetch(&g_live, 1, __ATOMIC_RELAXED);
-		free(g_white[i]);
+		pool_free(g_white[i]);   /* Decrements this thread's live shard. */
 	}
 
 	g_white_n = 0;
