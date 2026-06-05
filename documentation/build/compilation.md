@@ -35,15 +35,22 @@ The runtime is written in C and compiled ahead of time into `lib_breezy.a`. Your
 **Linux (ELF64):**
 
 ```sh
-breezy app.bzy
+breezy app.bzy app
 ./app
 ```
 
 **Windows (PE64):**
 
 ```sh
-breezy app.bzy --target windows
+breezy app.bzy app.exe --target windows
 app.exe
+```
+
+An optional second positional argument names the final executable. Omit it and the
+binary is written to `out.exe` in the current directory:
+
+```sh
+breezy app.bzy   # → out.exe
 ```
 
 The target backend is selectable with `--target`; see [Building the compiler](building.md) for the full target details.

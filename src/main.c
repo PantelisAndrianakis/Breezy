@@ -77,6 +77,7 @@ int main(int argc, char *argv[])
 	LinkConfig cfg;
 	memset(&cfg, 0, sizeof(cfg));
 	const char *src_arg = NULL;
+	const char *out_arg = NULL;   /* Optional second positional: final executable path. */
 #ifdef _WIN32
 	Target target = TARGET_WINDOWS;   /* Default to the build host. */
 #else
@@ -112,12 +113,20 @@ int main(int argc, char *argv[])
 		{
 			src_arg = argv[i];
 		}
+		else if (!out_arg)
+		{
+			out_arg = argv[i];
+		}
 	}
 
 	if (!src_arg)
 	{
-		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [--link <lib>]... [--target linux|windows]\n");
+		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [output] [--link <lib>]... [--target linux|windows]\n");
 		return 1;
+	}
+	if (!out_arg)
+	{
+		out_arg = "out.exe";   /* Backward-compatible default. */
 	}
 
 	config_load(src_arg, &cfg);   /* Merge libs/lib_paths from <project>/breezy.toml. */
@@ -215,13 +224,13 @@ int main(int argc, char *argv[])
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",cfg.libs[i]);
 	}
-	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o out.exe");
+	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o %s",out_arg);
 	if (system(link_cmd)!=0)
 	{
 		fprintf(stderr,"Gcc link failed.\n");
 		return 1;
 	}
-	printf("Built out.exe\n");
+	printf("Built %s\n",out_arg);
 
 	ast_free_all();
 	return 0;
