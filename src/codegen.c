@@ -4048,10 +4048,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		   The block pointer lives on the native stack so it survives the arg
 		   evaluations (which clobber rax and use val_save). */
 		int n = s->expr->arg_count;
-		cg_emit(cg,"    sub rsp, 16");
+		int b = cg_scratch_alloc(cg, 16);
 		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), n * 8);
 		cg_aligned_call(cg,"malloc");
-		cg_emit(cg,"    mov [rsp], rax");                  /* Save the block pointer. */
+		cg_emit(cg,"    mov [rbp - %d], rax", b);           /* Save the block pointer. */
 		for (int i=0; i<n; i++)
 		{
 			TypeKind k = s->expr->args[i]->type.kind;
@@ -4064,7 +4064,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				cg_expr(cg,tt,s->expr->args[i]);           /* Plain value (no retain). */
 			}
 
-			cg_emit(cg,"    mov rdx, [rsp]");   /* rdx: block base for the stores below (scratch, no call). */
+			cg_emit(cg,"    mov rdx, [rbp - %d]", b);   /* rdx: block base for the stores below (scratch, no call). */
 			if (ty_is_float(k))
 			{
 				cg_emit(cg, k==TY_FLOAT ? "    movd [rdx + %d], xmm0" : "    movq [rdx + %d], xmm0", i*8);
@@ -4076,9 +4076,9 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 
 		cg_emit(cg,"    lea %s, [rel __breeze_%s]", cg_iarg(cg, 0), fi->asm_label);
-		cg_emit(cg,"    mov %s, [rsp]", cg_iarg(cg, 1));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b);
 		cg_aligned_call(cg,"bzy_spawn_args");
-		cg_emit(cg,"    add rsp, 16");
+		cg_scratch_free(cg, 16);
 		cg_request_breeze_thunk(cg, fi);
 		break;
 	}
