@@ -20,6 +20,14 @@ endif
 
 CFLAGS  = -std=c99 -Wall -Wextra -g -Isrc $(STACKFLAG) $(PLATFORM_DEFS)
 
+# The runtime archive (lib_breezy.a) is statically linked into every compiled
+# Breezy program, so its allocator, ARC, scheduler, channel, and I/O hot paths
+# are always built optimized (-O2) regardless of debug/release - shipping the
+# runtime at -O0 would tax every user binary. Runtime debugging is unaffected:
+# the test_runtime/test_coroutine targets compile the sources directly with the
+# debug CFLAGS; only the archive objects use these flags.
+RT_CFLAGS = -std=c99 -Wall -Wextra -O2 -Iruntime $(PLATFORM_DEFS)
+
 # Release flags: optimize, drop debug info, and let the linker garbage-collect
 # unreferenced functions so stages a binary never calls are not carried along.
 # -s strips the symbol table at link time (the bulk of the debug-build size).
@@ -101,7 +109,7 @@ $(OBJDIR)/test_escape: tests/test_escape.c $(OBJS) | $(OBJDIR)
 # Each runtime object compiles into the per-host build dir (host-selected set in
 # RT_OBJ), so Windows and Linux objects never collide in one tree.
 $(OBJDIR)/%.o: runtime/%.c $(RT_HDR) | $(OBJDIR)
-	$(CC) $(CFLAGS) -Iruntime -c $< -o $@
+	$(CC) $(RT_CFLAGS) -c $< -o $@
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)

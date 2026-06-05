@@ -301,10 +301,14 @@ void escape_annotate(TypeTable *tt, Func *f)
 	g_esc_n = 0;
 	f->stack_alloc_bytes = 0;
 
-	/* The stack-object region sits below the 64-byte ARC scratch area, which
-	   itself sits below the locals; this base must match cg_emit_func. */
+	/* The stack-object region sits below the ARC scratch area, which itself sits
+	   below the locals; this base MUST match cg_emit_func's scratch size. The
+	   scratch slots run sp_save..fp_save (locals+8..locals+64) plus the rbx_save
+	   slot at locals+72, so the deepest scratch byte is at locals+72 and stack
+	   objects must start there -- otherwise the first object overwrites the saved
+	   rbx and corrupts any -O2 caller that kept a value in rbx across the call. */
 	int locals = f->frame_size < 16 ? 16 : f->frame_size;
-	int base = locals + 64;
+	int base = locals + 72;
 
 	scan_block_escapes(f->body);
 	mark_block_stack(tt, f->body, f, base);
