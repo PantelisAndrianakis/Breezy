@@ -71,6 +71,26 @@ int64_t bzy_str_eq(void *a, void *b)
 	return (la == lb && memcmp(bzy_str_data(a), bzy_str_data(b), (size_t)la) == 0) ? 1 : 0;
 }
 
+/* A 32-bit FNV-1a content hash, NULL-safe. Used by synthesized record hashCode
+   for string fields so value-equal strings always hash the same. */
+int64_t bzy_str_hashcode(void *s)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	int64_t n = bzy_str_len(s);
+	const unsigned char *p = (const unsigned char*)bzy_str_data(s);
+	uint32_t h = 2166136261u;
+	for (int64_t i = 0; i < n; i++)
+	{
+		h = (h ^ p[i]) * 16777619u;
+	}
+
+	return (int64_t)h;
+}
+
 /* First index of needle in s, or -1. An empty needle matches at 0. */
 static int64_t str_find(const char *s, int64_t sl, const char *n, int64_t nl)
 {

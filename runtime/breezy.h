@@ -37,6 +37,8 @@ void   *bzy_str_from_u64(uint64_t v);                /* Owned (+1) decimal text 
 void   *bzy_str_from_bool(int64_t v);                /* Owned (+1) "true"/"false". */
 void   *bzy_str_from_f64(double v);                  /* Owned (+1) text of a double (matches print). */
 int64_t bzy_str_eq(void *a, void *b);                /* 1 if byte-equal (NULL-safe, identity fast path). */
+int64_t bzy_str_hashcode(void *s);                   /* 32-bit FNV-1a content hash (NULL-safe). */
+int64_t bzy_ptr_hash(void *p);                       /* Identity hash of a pointer (NULL-safe). */
 int64_t bzy_str_contains(void *s, void *needle);     /* 1 if needle occurs in s (empty needle -> 1). */
 int64_t bzy_str_starts_with(void *s, void *pre);     /* 1 if s begins with pre. */
 int64_t bzy_str_ends_with(void *s, void *suf);       /* 1 if s ends with suf. */

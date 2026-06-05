@@ -1,0 +1,23 @@
+record Point
+{
+	int x;
+	int y;
+	Point(int x, int y)
+	{
+		this.x = x;
+		this.y = y;
+	}
+}
+
+void main()
+{
+	Point a;
+	a = new Point(3, 4);
+	Point b;
+	b = new Point(3, 4);   // Equal but distinct.
+	Point c;
+	c = new Point(3, 9);
+	print(a.equals(b));                   // true
+	print(a.equals(c));                   // false
+	print(a.hashCode() == b.hashCode());  // true
+}

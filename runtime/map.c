@@ -75,6 +75,13 @@ static uint64_t mix64(uint64_t x)
 	return x;
 }
 
+/* Identity hash of an object pointer, NULL-safe. Used by synthesized record
+   hashCode for plain-object fields (compared by identity, hashed by address). */
+int64_t bzy_ptr_hash(void *p)
+{
+	return p ? (int64_t)(uint32_t)mix64((uint64_t)p) : 0;
+}
+
 static uint64_t hash_bytes(const char *p, int64_t n)
 {
 	uint64_t h = 0x9e3779b97f4a7c15ULL;

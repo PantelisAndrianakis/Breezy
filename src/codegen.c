@@ -4071,6 +4071,214 @@ static void cg_emit_vtable(Codegen *cg, ClassInfo *c)
 	cg_emit(cg,"__classname_%s: db \"%s\", 0", c->name, refl);   /* NUL-terminated dynamic class name. */
 }
 
+/* True if field type 'f' is a record (value-equality) object type. */
+static int cg_field_is_record(Codegen *cg, TypeTable *tt, FieldInfo *f)
+{
+	(void)cg;
+	if (f->type.kind != TY_OBJECT)
+	{
+		return 0;
+	}
+
+	ClassInfo *ci = types_find_class(tt, f->type.class_name);
+	return ci && ci->is_record;
+}
+
+/* Emit a 16-byte-aligned indirect call to the function pointer in r11 (used for a
+   record field's recursive hashCode/equals via the callee's vtable). */
+static void cg_aligned_call_r11(Codegen *cg)
+{
+	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
+	cg_emit(cg,"    and rsp, -16");
+	cg_emit(cg,"    sub rsp, 32");
+	cg_emit(cg,"    call r11");
+	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
+}
+
+/* Synthesize the bodies of a record's hashCode (vtable slot 0) and equals (slot 1).
+   Frame: [rbp-8]=this, [rbp-16]=other, [rbp-24]=aligned-call sp save (cg->sp_save),
+   [rbp-32]=h accumulator, [rbp-40]=field contribution, [rbp-48]=record-field temp.
+   Field rules mirror equals<->hashCode so equal records always hash equal:
+   int/bool width-canonical; float/double by bits; string by content; record by
+   recursion; any other object/collection by identity. */
+static void cg_emit_record_methods(Codegen *cg, TypeTable *tt, ClassInfo *c)
+{
+	int saved_sp = cg->sp_save;
+	cg->sp_save = 24;
+	InterfaceInfo *h = types_find_interface(tt,"__Hashable");
+	int hc_slot = h->vslot[0], eq_slot = h->vslot[1];
+	char mem[64];
+
+	/* ---------- equals(this, other) -> rax in {0,1} ---------- */
+	cg_emit(cg,"global __rec_equals_%s", c->name);
+	cg_emit(cg,"__rec_equals_%s:", c->name);
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, 64");
+	cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg,0));
+	cg_emit(cg,"    mov [rbp - 16], %s", cg_iarg(cg,1));
+	int eq_ret0 = cg_label(cg), eq_done = cg_label(cg);
+	int lne = cg_label(cg);
+	cg_emit(cg,"    mov rax, [rbp - 8]");
+	cg_emit(cg,"    cmp rax, [rbp - 16]");
+	cg_emit(cg,"    jne .L%d", lne);            /* this == other -> equal. */
+	cg_emit(cg,"    mov eax, 1");
+	cg_emit(cg,"    jmp .L%d", eq_done);
+	cg_emit(cg,".L%d:", lne);
+	cg_emit(cg,"    cmp qword [rbp - 16], 0");  /* other == null -> not equal. */
+	cg_emit(cg,"    je .L%d", eq_ret0);
+	for (int i=0; i<c->field_count; i++)
+	{
+		FieldInfo *f=&c->fields[i];
+		if (f->is_static)
+		{
+			continue;
+		}
+
+		int off=f->offset;
+		TypeKind tk=f->type.kind;
+		if (tk==TY_STRING)
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov %s, [rax + %d]", cg_iarg(cg,0), off);
+			cg_emit(cg,"    mov rax, [rbp - 16]");
+			cg_emit(cg,"    mov %s, [rax + %d]", cg_iarg(cg,1), off);
+			cg_aligned_call(cg,"bzy_str_eq");
+			cg_emit(cg,"    test rax, rax");
+			cg_emit(cg,"    jz .L%d", eq_ret0);
+		}
+		else if (cg_field_is_record(cg,tt,f))
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov rax, [rax + %d]", off);
+			cg_emit(cg,"    mov [rbp - 32], rax");          /* thisF */
+			cg_emit(cg,"    mov rax, [rbp - 16]");
+			cg_emit(cg,"    mov rax, [rax + %d]", off);
+			cg_emit(cg,"    mov [rbp - 40], rax");          /* otherF */
+			int fok=cg_label(cg);
+			cg_emit(cg,"    mov rax, [rbp - 32]");
+			cg_emit(cg,"    cmp rax, [rbp - 40]");
+			cg_emit(cg,"    je .L%d", fok);                 /* same ref / both null. */
+			cg_emit(cg,"    cmp qword [rbp - 32], 0");
+			cg_emit(cg,"    je .L%d", eq_ret0);             /* thisF null, otherF not. */
+			cg_emit(cg,"    mov %s, [rbp - 32]", cg_iarg(cg,0));
+			cg_emit(cg,"    mov %s, [rbp - 40]", cg_iarg(cg,1));
+			cg_emit(cg,"    mov rax, [rbp - 32]");
+			cg_emit(cg,"    mov rax, [rax]");               /* thisF vtable. */
+			cg_emit(cg,"    mov r11, [rax + %d]", eq_slot*8);
+			cg_aligned_call_r11(cg);
+			cg_emit(cg,"    test rax, rax");
+			cg_emit(cg,"    jz .L%d", eq_ret0);
+			cg_emit(cg,".L%d:", fok);
+		}
+		else if (ty_is_int(tk) || tk==TY_BOOL)
+		{
+			snprintf(mem,sizeof(mem),"[rax + %d]",off);
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_load_scalar(cg,tk,mem);                      /* width-canonical. */
+			cg_emit(cg,"    mov [rbp - 32], rax");
+			cg_emit(cg,"    mov rax, [rbp - 16]");
+			cg_load_scalar(cg,tk,mem);
+			cg_emit(cg,"    cmp rax, [rbp - 32]");
+			cg_emit(cg,"    jne .L%d", eq_ret0);
+		}
+		else   /* float/double by bits; any other object/collection by identity. */
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov rax, [rax + %d]", off);
+			cg_emit(cg,"    mov [rbp - 32], rax");
+			cg_emit(cg,"    mov rax, [rbp - 16]");
+			cg_emit(cg,"    mov rax, [rax + %d]", off);
+			cg_emit(cg,"    cmp rax, [rbp - 32]");
+			cg_emit(cg,"    jne .L%d", eq_ret0);
+		}
+	}
+
+	cg_emit(cg,"    mov eax, 1");
+	cg_emit(cg,"    jmp .L%d", eq_done);
+	cg_emit(cg,".L%d:", eq_ret0);
+	cg_emit(cg,"    xor eax, eax");
+	cg_emit(cg,".L%d:", eq_done);
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
+
+	/* ---------- hashCode(this) -> rax (int) ---------- */
+	cg_emit(cg,"global __rec_hashCode_%s", c->name);
+	cg_emit(cg,"__rec_hashCode_%s:", c->name);
+	cg_emit(cg,"    push rbp");
+	cg_emit(cg,"    mov rbp, rsp");
+	cg_emit(cg,"    sub rsp, 64");
+	cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg,0));
+	cg_emit(cg,"    mov qword [rbp - 32], 17");             /* h = 17 */
+	for (int i=0; i<c->field_count; i++)
+	{
+		FieldInfo *f=&c->fields[i];
+		if (f->is_static)
+		{
+			continue;
+		}
+
+		int off=f->offset;
+		TypeKind tk=f->type.kind;
+		if (tk==TY_STRING)
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov %s, [rax + %d]", cg_iarg(cg,0), off);
+			cg_aligned_call(cg,"bzy_str_hashcode");
+			cg_emit(cg,"    mov [rbp - 40], rax");
+		}
+		else if (cg_field_is_record(cg,tt,f))
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov rax, [rax + %d]", off);
+			cg_emit(cg,"    mov [rbp - 48], rax");          /* thisF */
+			cg_emit(cg,"    mov qword [rbp - 40], 0");
+			int hskip=cg_label(cg);
+			cg_emit(cg,"    cmp qword [rbp - 48], 0");
+			cg_emit(cg,"    je .L%d", hskip);
+			cg_emit(cg,"    mov %s, [rbp - 48]", cg_iarg(cg,0));
+			cg_emit(cg,"    mov rax, [rbp - 48]");
+			cg_emit(cg,"    mov rax, [rax]");
+			cg_emit(cg,"    mov r11, [rax + %d]", hc_slot*8);
+			cg_aligned_call_r11(cg);
+			cg_emit(cg,"    mov [rbp - 40], rax");
+			cg_emit(cg,".L%d:", hskip);
+		}
+		else if (ty_is_int(tk) || tk==TY_BOOL)
+		{
+			snprintf(mem,sizeof(mem),"[rax + %d]",off);
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_load_scalar(cg,tk,mem);                      /* width-canonical, matches equals. */
+			cg_emit(cg,"    mov [rbp - 40], rax");
+		}
+		else if (ty_is_float(tk))
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov rax, [rax + %d]", off);      /* raw bits. */
+			cg_emit(cg,"    mov [rbp - 40], rax");
+		}
+		else   /* any other object/collection: identity hash of the pointer. */
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov %s, [rax + %d]", cg_iarg(cg,0), off);
+			cg_aligned_call(cg,"bzy_ptr_hash");
+			cg_emit(cg,"    mov [rbp - 40], rax");
+		}
+
+		cg_emit(cg,"    mov rax, [rbp - 32]");              /* h = h*31 + contribution. */
+		cg_emit(cg,"    imul rax, rax, 31");
+		cg_emit(cg,"    add rax, [rbp - 40]");
+		cg_emit(cg,"    mov [rbp - 32], rax");
+	}
+
+	cg_emit(cg,"    mov rax, [rbp - 32]");
+	cg_emit(cg,"    mov rsp, rbp");
+	cg_emit(cg,"    pop rbp");
+	cg_emit(cg,"    ret");
+	cg->sp_save = saved_sp;
+}
+
 /* Class-load init: construct each enum constant's singleton via the ordinary
    new + ctor path, stamp its hidden __ordinal/__name, and store it in its data
    slot (which holds the one permanent reference). Called at main's entry. */
@@ -4365,6 +4573,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_key_at");
 	cg_emit(cg,"extern bzy_map_val_at");
 	cg_emit(cg,"extern bzy_str_eq");
+	cg_emit(cg,"extern bzy_str_hashcode");
+	cg_emit(cg,"extern bzy_ptr_hash");
 	cg_emit(cg,"extern bzy_str_contains");
 	cg_emit(cg,"extern bzy_str_starts_with");
 	cg_emit(cg,"extern bzy_str_ends_with");
@@ -4521,6 +4731,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		if (u->klass->ctor)
 		{
 			cg_emit_func(cg,tt,c->ctor_asm_label,u->klass->ctor,c->name);
+		}
+
+		if (c->is_record)
+		{
+			cg_emit_record_methods(cg,tt,c);   /* Synthesized hashCode/equals at slots 0/1. */
 		}
 	}
 

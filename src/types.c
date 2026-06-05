@@ -503,6 +503,34 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		}
 	}
 
+	if (c->is_record)
+	{
+		/* Synthesize hashCode (slot 0) and equals (slot 1) over __Hashable's reserved
+		   slots. ast=NULL: codegen emits the bodies directly (cg_emit_record_methods),
+		   but the MethodInfo makes them resolvable/callable and vtable-placed. */
+		InterfaceInfo *h=types_find_interface(tt,"__Hashable");
+		MethodInfo *hc=&c->methods[c->method_count++];
+		memset(hc,0,sizeof(*hc));
+		strcpy(hc->name,"hashCode");
+		hc->vtable_slot=h->vslot[0];
+		strcpy(hc->owner_class,c->name);
+		snprintf(hc->asm_label,sizeof(hc->asm_label),"__rec_hashCode_%s",c->name);
+		hc->ast=NULL;
+		hc->ret_type=(TypeRef){.kind=TY_INT};
+		hc->param_count=0;
+		MethodInfo *eq=&c->methods[c->method_count++];
+		memset(eq,0,sizeof(*eq));
+		strcpy(eq->name,"equals");
+		eq->vtable_slot=h->vslot[1];
+		strcpy(eq->owner_class,c->name);
+		snprintf(eq->asm_label,sizeof(eq->asm_label),"__rec_equals_%s",c->name);
+		eq->ast=NULL;
+		eq->ret_type=(TypeRef){.kind=TY_BOOL};
+		eq->param_count=1;
+		eq->param_types[0]=(TypeRef){.kind=TY_OBJECT};
+		strcpy(eq->param_types[0].class_name,c->name);
+	}
+
 	if (d->ctor)
 	{
 		c->has_ctor=1;
