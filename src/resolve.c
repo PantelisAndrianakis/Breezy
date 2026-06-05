@@ -1160,6 +1160,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Modulo '%' requires integer operands.",NULL);
 			}
 
+			if (e->op==TOKEN_SHL || e->op==TOKEN_SHR)
+			{
+				die(e->line,"Shift operators '<<'/'>>' require integer operands.",NULL);
+			}
+
 			TypeKind ft = (a==TY_DOUBLE || b==TY_DOUBLE) ? TY_DOUBLE : TY_FLOAT;
 			int cmp = e->op==TOKEN_EQ || e->op==TOKEN_NEQ || e->op==TOKEN_LT
 					  || e->op==TOKEN_GT || e->op==TOKEN_LTE || e->op==TOKEN_GTE;
@@ -1199,6 +1204,20 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			e->type.kind=TY_BOOL;
+			break;
+		}
+
+		if (e->op==TOKEN_SHL || e->op==TOKEN_SHR)
+		{
+			if (!ty_is_int(a) || !ty_is_int(b))
+			{
+				die(e->line,"Shift operators '<<'/'>>' require integer operands.",NULL);
+			}
+
+			/* C-style: the result takes the left operand's type; the shift count's
+			   type and signedness do not affect the result. A signed left operand
+			   shifts arithmetically ('>>' = sar), an unsigned one logically (shr). */
+			e->type.kind = a;
 			break;
 		}
 

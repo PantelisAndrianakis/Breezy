@@ -79,6 +79,29 @@ print(i);            // 2
 
 ---
 
+## Bitwise shift operators
+
+`<<` (left shift) and `>>` (right shift) move an integer's bits, with compound forms `<<=` and `>>=`. They **require integer operands** (a `float`/`double` is a compile error) and sit at their own precedence level: **looser than `+`/`-`, tighter than the comparisons** - so `1 + 1 << 3` is `(1 + 1) << 3` and `4 >> 1 == 2` is `(4 >> 1) == 2`, matching C and Java.
+
+The result takes the **left operand's type**; the shift count's type does not affect it. Right shift follows the left operand's signedness: a **signed** value shifts arithmetically (the sign bit is preserved), an **unsigned** value shifts logically (zeros fill from the top).
+
+```breezy
+print(1 << 4);       // 16
+print(256 >> 2);     // 64
+print(-16 >> 2);     // -4   -- signed: arithmetic shift preserves the sign.
+
+uint u;
+u = 4000000000u;
+print(u >> 1);       // 2000000000  -- unsigned: logical shift fills with zeros.
+
+int a;
+a = 1;
+a <<= 5;
+print(a);            // 32
+```
+
+---
+
 ## Reference types
 
 `string`, arrays, maps, collections, channels, and your own classes are **reference types** - they live on the heap (when they escape their scope) and are managed automatically by [ARC and the cycle collector](../memory/automatic-memory.md). You never free them.

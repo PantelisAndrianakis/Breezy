@@ -685,6 +685,28 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rax, rdx");
 		cg_extend_reg(cg,e->type.kind);
 		break;
+	case TOKEN_SHL:
+		/* Shift count must be in cl. lhs in rax, rhs (count) in rbx. */
+		cg_emit(cg,"    mov rcx, rbx");
+		cg_emit(cg,"    shl rax, cl");
+		cg_extend_reg(cg,e->type.kind);
+		break;
+	case TOKEN_SHR:
+		/* Right shift kind follows the LEFT operand: arithmetic (sar) for a
+		   signed lhs, logical (shr) for an unsigned lhs - the combined `uns`
+		   is wrong here, so test the lhs alone. */
+		cg_emit(cg,"    mov rcx, rbx");
+		if (ty_is_unsigned(e->lhs->type.kind))
+		{
+			cg_emit(cg,"    shr rax, cl");
+		}
+		else
+		{
+			cg_emit(cg,"    sar rax, cl");
+		}
+
+		cg_extend_reg(cg,e->type.kind);
+		break;
 	case TOKEN_EQ:
 	case TOKEN_NEQ:
 	case TOKEN_LT:

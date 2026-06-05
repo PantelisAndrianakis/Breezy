@@ -349,7 +349,20 @@ Token lexer_next(Lexer *l)
 		t.type = TOKEN_DOT;
 		return t;
 	case '<':
-		if (peek_ch(l)=='=')
+		if (peek_ch(l)=='<')
+		{
+			next_ch(l);
+			if (peek_ch(l)=='=')
+			{
+				next_ch(l);
+				t.type=TOKEN_SHL_ASSIGN;
+			}
+			else
+			{
+				t.type=TOKEN_SHL;
+			}
+		}
+		else if (peek_ch(l)=='=')
 		{
 			next_ch(l);
 			t.type=TOKEN_LTE;
@@ -361,7 +374,20 @@ Token lexer_next(Lexer *l)
 
 		return t;
 	case '>':
-		if (peek_ch(l)=='=')
+		if (peek_ch(l)=='>')
+		{
+			next_ch(l);
+			if (peek_ch(l)=='=')
+			{
+				next_ch(l);
+				t.type=TOKEN_SHR_ASSIGN;
+			}
+			else
+			{
+				t.type=TOKEN_SHR;
+			}
+		}
+		else if (peek_ch(l)=='=')
 		{
 			next_ch(l);
 			t.type=TOKEN_GTE;
@@ -529,12 +555,20 @@ const char *token_type_name(TokenType t)
 		return "/=";
 	case TOKEN_PERCENT_ASSIGN:
 		return "%=";
+	case TOKEN_SHL_ASSIGN:
+		return "<<=";
+	case TOKEN_SHR_ASSIGN:
+		return ">>=";
 	case TOKEN_STAR:
 		return "*";
 	case TOKEN_SLASH:
 		return "/";
 	case TOKEN_PERCENT:
 		return "%";
+	case TOKEN_SHL:
+		return "<<";
+	case TOKEN_SHR:
+		return ">>";
 	case TOKEN_ASSIGN:
 		return "=";
 	case TOKEN_EQ:

@@ -47,6 +47,7 @@ void parser_init(Parser *p, const char *src)
 }
 
 static Expr *parse_comparison(Parser *p);
+static Expr *parse_shift(Parser *p);
 static Expr *parse_additive(Parser *p);
 static Expr *parse_multiplicative(Parser *p);
 static Expr *parse_unary(Parser *p);
@@ -69,7 +70,7 @@ static int is_cmp(TokenType t)
 
 static Expr *parse_comparison(Parser *p)
 {
-	Expr *left = parse_additive(p);
+	Expr *left = parse_shift(p);
 	if (is_cmp(p->cur.type))
 	{
 		int op = p->cur.type, line = p->cur.line;
@@ -77,8 +78,27 @@ static Expr *parse_comparison(Parser *p)
 		Expr *e = expr_new(EX_BINARY, line);
 		e->op=op;
 		e->lhs=left;
-		e->rhs=parse_additive(p);
+		e->rhs=parse_shift(p);
 		return e;
+	}
+	return left;
+}
+
+/* Shift level: binds looser than '+'/'-' but tighter than the comparisons,
+   matching C/Java. `a + b << c` is `(a + b) << c`; `a << b < c` is
+   `(a << b) < c`. Left-associative. */
+static Expr *parse_shift(Parser *p)
+{
+	Expr *left = parse_additive(p);
+	while (check(p,TOKEN_SHL)||check(p,TOKEN_SHR))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_additive(p);
+		left=e;
 	}
 	return left;
 }
@@ -449,6 +469,22 @@ static int is_generic_template(const char *name)
 		   || strcmp(name,"Set")==0;
 }
 
+/* Consume the single '>' that closes a generic type. Nested generics such as
+   map<Box,map<Box,int>> end in a '>>' which the lexer scans as one TOKEN_SHR
+   (the shift operator); here we split it - consuming one '>' by demoting the
+   current token to a lone '>' that the enclosing generic's close then consumes.
+   This is the standard generics-vs-shift disambiguation (cf. javac, Roslyn). */
+static void expect_gt(Parser *p)
+{
+	if (p->cur.type==TOKEN_SHR)
+	{
+		p->cur.type=TOKEN_GT;   /* One '>' consumed; one '>' remains as cur. */
+		return;
+	}
+
+	expect(p,TOKEN_GT);
+}
+
 /* Parse a base (non-array) type: scalar / string / map / generic / IDENT class. */
 static int parse_base_type(Parser *p, TypeRef *out)
 {
@@ -494,7 +530,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 			while (match(p,TOKEN_COMMA));
 		}
 
-		expect(p,TOKEN_GT);
+		expect_gt(p);
 		return 1;
 	}
 	if (check(p,TOKEN_MAP))
@@ -505,7 +541,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		parse_type(p,&key);
 		expect(p,TOKEN_COMMA);
 		parse_type(p,&val);
-		expect(p,TOKEN_GT);
+		expect_gt(p);
 		out->kind=TY_MAP;
 		out->class_name[0]='\0';
 		out->elem=typeref_box(key);
@@ -518,7 +554,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		expect(p,TOKEN_LT);
 		TypeRef el;
 		parse_type(p,&el);
-		expect(p,TOKEN_GT);
+		expect_gt(p);
 		out->kind=TY_CHANNEL;
 		out->class_name[0]='\0';
 		out->elem=typeref_box(el);
@@ -750,6 +786,12 @@ static int compound_to_binop(TokenType t, int *op)
 		return 1;
 	case TOKEN_PERCENT_ASSIGN:
 		*op=TOKEN_PERCENT;
+		return 1;
+	case TOKEN_SHL_ASSIGN:
+		*op=TOKEN_SHL;
+		return 1;
+	case TOKEN_SHR_ASSIGN:
+		*op=TOKEN_SHR;
 		return 1;
 	default:
 		return 0;
@@ -1288,7 +1330,7 @@ static ClassDecl *parse_class(Parser *p)
 			c->type_param_count++;
 		}
 		while (match(p,TOKEN_COMMA));
-		expect(p,TOKEN_GT);
+		expect_gt(p);
 	}
 
 	if (match(p,TOKEN_EXTENDS))
