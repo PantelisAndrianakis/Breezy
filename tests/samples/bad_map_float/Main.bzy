@@ -1,0 +1,6 @@
+void main()
+{
+	map<double,int> m;
+	m = new map<double,int>();
+	m.put(1.5, 1);
+}

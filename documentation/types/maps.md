@@ -1,6 +1,6 @@
 # Maps
 
-A `map<K,V>` associates **keys** with **values** - a phone book, a cache, a set of counters. Breezy's map is an open-addressing hash table (Swiss-style control bytes) keyed by `int` or `string`, with any value type. Keys and values that are objects are reference-counted automatically, and a map caught in a reference cycle is reclaimed by the cycle collector.
+A `map<K,V>` associates **keys** with **values** - a phone book, a cache, a set of counters. Breezy's map is an open-addressing hash table (Swiss-style control bytes) keyed by any integer type, `string`, an `enum`, or an object, with any value type. Keys and values that are objects are reference-counted automatically, and a map caught in a reference cycle is reclaimed by the cycle collector.
 
 ← [Back to the guide](../guide.md)
 
@@ -17,7 +17,7 @@ counts.put("apples", 3);
 counts.put("apples", counts.get("apples") + 1);   // Overwrite with 4.
 ```
 
-Keys must be `int` or `string`; values can be any type.
+Map keys may be any integer type, `string`, an `enum`, or any object; values can be any type. Integer and string keys match by value. Enum and object keys match by **identity** (reference equality) - a distinct but structurally-equal object is a different key, the same as Java's `IdentityHashMap`. (Value-equality keys via a `hashCode`/`equals` protocol are planned but not yet available.)
 
 ---
 
@@ -80,7 +80,7 @@ Managed keys and values are **retained** while stored and **released** when remo
 
 ## Rules & gotchas
 
-- **Keys are `int` or `string` only**; values can be any type.
+- **Keys** may be any integer type, `string`, an `enum`, or an object; values can be any type. Enum and object keys match by **identity**.
 - **`put` overwrites** an existing key's value.
 - **`.size` is a field**, not a method.
 - **`getKeys`/`getValues`/`getEntries` return owned snapshots** - iterating them is safe.

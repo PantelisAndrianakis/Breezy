@@ -16,7 +16,7 @@ Breezy is **statically typed**: every variable has a type known at compile time,
 | `boolean` | `true` / `false`. |
 | `string` | Immutable UTF-8 text; concatenate with `+` / `+=`. |
 | `T[]` | Heap-allocated array of any type, bounds-checked. |
-| `map<K,V>` | Hash map (open addressing, Swiss-style control bytes), `int` or `string` keys. |
+| `map<K,V>` | Hash map (open addressing, Swiss-style control bytes); keys are any integer type, `string`, an `enum`, or an object. |
 | `List<T>` `Stack<T>` `Queue<T>` `Deque<T>` `Set<T>` | Monomorphized generic collections (no boxing). |
 | `channel<T>` | Bounded buffered channel for passing values between breezes. |
 | `Timer` | Handle for a scheduled or periodic breeze. |
@@ -89,7 +89,7 @@ There are two layers of generics, and both are **monomorphized** (specialized pe
 - **`int` is 32-bit; `long` is 64-bit.** There is no automatic widening on overflow.
 - **No unsigned floating point.**
 - **Reference types are managed automatically** - no manual allocation or freeing.
-- **Map keys are `int` or `string`**; values can be any type.
+- **Map keys** may be any integer type, `string`, an `enum`, or an object; values can be any type. Integer and string keys match by value; enum and object keys match by **identity** (reference equality).
 
 ---
 
