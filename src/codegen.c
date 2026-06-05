@@ -47,6 +47,12 @@ static const char *cg_iarg(Codegen *cg, int i)
 	return (cg->target == TARGET_LINUX) ? sysv[i] : win[i];
 }
 
+/* Frame temp-slot helpers (defined below; forward-declared for early users like
+   the bounds-check helper). See the fixed-rsp frame plan. */
+static void cg_temp_push(Codegen *cg);
+static void cg_temp_pop(Codegen *cg);
+static void cg_temp_pop_reg(Codegen *cg, const char *reg);
+
 /* Load a scalar from 'mem' into rax, sign- or zero-extending to 64 bits per its
    declared width. Objects and 64-bit integers load with a plain mov. */
 /* Load a scalar of kind k from mem into the named register, widening to 64 bits
@@ -213,10 +219,10 @@ static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
 static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
-	cg_emit(cg,"    push rax");
+	cg_temp_push(cg);
 	cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */
 	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-	cg_emit(cg,"    pop rax");             /* base */
+	cg_temp_pop(cg);             /* base */
 	cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
 	int ok = cg_label(cg);
 	int pc = cg_label(cg);
@@ -271,10 +277,15 @@ static void cg_temp_push(Codegen *cg)
 	cg->cur_temp_depth++;
 }
 
-static void cg_temp_pop(Codegen *cg)
+static void cg_temp_pop_reg(Codegen *cg, const char *reg)
 {
 	cg->cur_temp_depth--;
-	cg_emit(cg,"    mov rax, [rbp - %d]", cg->temp_base + cg->cur_temp_depth*8);
+	cg_emit(cg,"    mov %s, [rbp - %d]", reg, cg->temp_base + cg->cur_temp_depth*8);
+}
+
+static void cg_temp_pop(Codegen *cg)
+{
+	cg_temp_pop_reg(cg,"rax");
 }
 
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
@@ -1764,10 +1775,10 @@ static void cg_enum_instance(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (owned)
 	{
-		cg_emit(cg,"    push rax");                              /* Preserve the result. */
+		cg_temp_push(cg);                              /* Preserve the result. */
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);
 		cg_release_rcx(cg);
-		cg_emit(cg,"    pop rax");
+		cg_temp_pop(cg);
 	}
 }
 
@@ -1875,10 +1886,10 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			cg_expr(cg,tt,e->args[0]);
-			cg_emit(cg,"    push rax");
+			cg_temp_push(cg);
 			cg_expr(cg,tt,e->args[1]);
 			cg_emit(cg,"    mov rbx, rax");
-			cg_emit(cg,"    pop rax");
+			cg_temp_pop(cg);
 			cg_emit(cg,"    cmp rax, rbx");
 			cg_emit(cg, ismin ? "    cmovg rax, rbx" : "    cmovl rax, rbx");
 		}
@@ -2150,9 +2161,9 @@ static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
 	if (owned)
 	{
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
-		cg_emit(cg,"    push rax");
+		cg_temp_push(cg);
 		cg_release_rcx(cg);
-		cg_emit(cg,"    pop rax");
+		cg_temp_pop(cg);
 	}
 
 	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the Logger across io_check. */
@@ -2432,10 +2443,10 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 	if (e->arg_count==2)
 	{
 		cg_expr(cg,tt,e->args[1]);            /* wait (bool) -> rax. */
-		cg_emit(cg,"    push rax");
+		cg_temp_push(cg);
 		cg_expr(cg,tt,e->args[0]);            /* command (string) -> rax. */
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-		cg_emit(cg,"    pop rdx");
+		cg_temp_pop_reg(cg,"rdx");
 	}
 	else
 	{
@@ -2454,9 +2465,9 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 	if (owned)
 	{
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
-		cg_emit(cg,"    push rax");            /* Preserve the int result across the release. */
+		cg_temp_push(cg);            /* Preserve the int result across the release. */
 		cg_release_rcx(cg);
-		cg_emit(cg,"    pop rax");
+		cg_temp_pop(cg);
 	}
 }
 
@@ -2515,10 +2526,10 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 		if (e->arg_count==2)
 		{
 			cg_expr(cg,tt,e->args[1]);            /* bufferBytes -> rax. */
-			cg_emit(cg,"    push rax");
+			cg_temp_push(cg);
 			cg_expr(cg,tt,e->args[0]);            /* path -> rax. */
 			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-			cg_emit(cg,"    pop r8");
+			cg_temp_pop_reg(cg,"r8");
 		}
 		else
 		{
@@ -2538,9 +2549,9 @@ static void cg_file(Codegen *cg, TypeTable *tt, Expr *e)
 		if (owned)
 		{
 			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
-			cg_emit(cg,"    push rax");                 /* Preserve the writer across the path release. */
+			cg_temp_push(cg);                 /* Preserve the writer across the path release. */
 			cg_release_rcx(cg);
-			cg_emit(cg,"    pop rax");
+			cg_temp_pop(cg);
 		}
 
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the writer across io_check. */
@@ -2876,9 +2887,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_emit(cg,"    mov rax, [rel __enum_%s_%s]", e->lhs->name, e->name);
 			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-			cg_emit(cg,"    push rax");
+			cg_temp_push(cg);
 			cg_aligned_call(cg,"bzy_retain");
-			cg_emit(cg,"    pop rax");
+			cg_temp_pop(cg);
 			break;
 		}
 
@@ -2900,9 +2911,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			if (ty_is_managed(e->type.kind))
 			{
 				cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-				cg_emit(cg,"    push rax");
+				cg_temp_push(cg);
 				cg_aligned_call(cg,"bzy_retain");
-				cg_emit(cg,"    pop rax");
+				cg_temp_pop(cg);
 			}
 
 			break;
@@ -3045,9 +3056,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			if (owned)
 			{
 				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
-				cg_emit(cg,"    push rax");               /* Preserve the string across the release. */
+				cg_temp_push(cg);               /* Preserve the string across the release. */
 				cg_release_rcx(cg);
-				cg_emit(cg,"    pop rax");
+				cg_temp_pop(cg);
 			}
 		}
 		else
@@ -3095,9 +3106,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			if (owned)
 			{
 				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
-				cg_emit(cg,"    push rax");        /* Preserve the length across the release. */
+				cg_temp_push(cg);        /* Preserve the length across the release. */
 				cg_release_rcx(cg);
-				cg_emit(cg,"    pop rax");
+				cg_temp_pop(cg);
 			}
 		}
 		else if (strncmp(e->name,"Math.",5)==0)
@@ -3170,9 +3181,9 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		}
 		else
 		{
-			cg_emit(cg,"    push rax");      /* The integer value. */
+			cg_temp_push(cg);      /* The integer value. */
 			cg_index_addr(cg,tt,target);
-			cg_emit(cg,"    pop rax");
+			cg_temp_pop(cg);
 			cg_emit(cg,"    mov [rbx], rax");
 		}
 
@@ -3216,10 +3227,10 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	}
 	else             /* EX_FIELD, integer/object value in rax. */
 	{
-		cg_emit(cg,"    push rax");
+		cg_temp_push(cg);
 		cg_expr(cg,tt,target->lhs);
 		cg_emit(cg,"    mov rbx, rax");
-		cg_emit(cg,"    pop rax");
+		cg_temp_pop(cg);
 		cg_emit(cg,"    mov [rbx + %d], rax", target->anno_int);
 	}
 }
@@ -3231,9 +3242,9 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 	if (target->kind==EX_INDEX)
 	{
 		cg_expr_owned(cg,tt,value);          /* +1 new element -> rax. */
-		cg_emit(cg,"    push rax");
+		cg_temp_push(cg);
 		cg_index_addr(cg,tt,target);         /* rbx = element address. */
-		cg_emit(cg,"    pop rax");
+		cg_temp_pop(cg);
 		cg_emit(cg,"    mov rdx, [rbx]");     /* Old element. */
 		cg_emit(cg,"    mov [rbx], rax");     /* Store new (transfers the +1). */
 		cg_emit(cg,"    mov %s, rdx", cg_iarg(cg, 0));

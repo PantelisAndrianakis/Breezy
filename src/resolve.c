@@ -2725,77 +2725,41 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 		return 0;
 	}
 
-	int d = 0;
-	switch (e->kind)
-	{
-	case EX_BINARY:
-	{
-		int l = frame_expr_depth(e->lhs, depth_out, args_out);
-		int leaf = e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL
-				   || e->rhs->kind==EX_NULL || e->rhs->kind==EX_IDENT;
-		int r = frame_expr_depth(e->rhs, depth_out, args_out);
-		d = leaf ? (l > r ? l : r) : ((1 + r) > l ? (1 + r) : l);   /* Non-leaf rhs: lhs is preserved across it. */
-		break;
-	}
-	case EX_INDEX:
-	{
-		int b = frame_expr_depth(e->lhs, depth_out, args_out);
-		int i = frame_expr_depth(e->rhs, depth_out, args_out);
-		d = (1 + i) > b ? (1 + i) : b;   /* Base preserved across index evaluation. */
-		break;
-	}
-	case EX_CALL:
-	case EX_METHOD_CALL:
-	case EX_NEW:
+	/* Conservative upper bound: the expression-tree HEIGHT. Codegen preserves at
+	   most one value per nesting level descended (a binary lhs, an index base, or a
+	   result held across a release), so the count of simultaneously-live temp slots
+	   never exceeds the height. Leaves preserve nothing (height 0). This over-counts
+	   slightly (a few wasted 8-byte slots) but can never under-count, so converting
+	   every push site to temp slots is safe and the overflow trap stays silent. */
+	int is_call = e->kind==EX_CALL || e->kind==EX_METHOD_CALL || e->kind==EX_NEW;
+	if (is_call)
 	{
 		int n = e->arg_count + (e->kind==EX_METHOD_CALL ? 1 : 0);
 		if (n > *args_out)
 		{
 			*args_out = n;
 		}
+	}
 
-		if (e->lhs)
-		{
-			int s = frame_expr_depth(e->lhs, depth_out, args_out);
-			if (s > d)
-			{
-				d = s;
-			}
-		}
+	int leaf = e->kind==EX_INT || e->kind==EX_BOOL || e->kind==EX_FLOAT
+			   || e->kind==EX_STR || e->kind==EX_IDENT || e->kind==EX_THIS
+			   || e->kind==EX_NULL;
 
+	int ch = 0;
+	int c = frame_expr_depth(e->lhs, depth_out, args_out);
+	if (c > ch) { ch = c; }
+	c = frame_expr_depth(e->rhs, depth_out, args_out);
+	if (c > ch) { ch = c; }
+	if (is_call)
+	{
 		for (int i = 0; i < e->arg_count; i++)
 		{
-			int a = frame_expr_depth(e->args[i], depth_out, args_out);
-			if (a > d)
-			{
-				d = a;
-			}
+			c = frame_expr_depth(e->args[i], depth_out, args_out);
+			if (c > ch) { ch = c; }
 		}
-
-		break;
-	}
-	default:
-		if (e->lhs)
-		{
-			int a = frame_expr_depth(e->lhs, depth_out, args_out);
-			if (a > d)
-			{
-				d = a;
-			}
-		}
-
-		if (e->rhs)
-		{
-			int b = frame_expr_depth(e->rhs, depth_out, args_out);
-			if (b > d)
-			{
-				d = b;
-			}
-		}
-
-		break;
 	}
 
+	int d = leaf ? 0 : (1 + ch);
 	if (d > *depth_out)
 	{
 		*depth_out = d;
@@ -2842,7 +2806,12 @@ static void frame_annotate(Func *f)
 {
 	int d = 0, a = 0;
 	frame_block(f->body, &d, &a);
-	f->max_temp_depth = d;
+	/* d is the expression-tree height. A single construct can hold up to two
+	   simultaneous preserves at one level (e.g. an array/field store keeps both the
+	   value and the receiver/base across a sub-evaluation), so the live-temp count
+	   can reach ~2x the height; 2*d+2 is a safe over-estimate. The cg_temp_push
+	   overflow trap remains the backstop if any path still exceeds it. */
+	f->max_temp_depth = d > 0 ? (2*d + 2) : 0;
 	f->max_outgoing_args = a;
 }
 
