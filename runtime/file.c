@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
+#include <sys/xattr.h>
 #endif
 
 extern char __vtable_IOException[];   /* Emitted per-program by codegen. */
@@ -601,6 +602,38 @@ void *bzy_file_search_recursive(void *folder, void *pattern)
 	return build_search(folder, bzy_str_data(pattern), 1, "File.searchRecursive: not a folder.");
 }
 
+#ifndef _WIN32
+/* HIDDEN/SYSTEM/ARCHIVE have no native Linux equivalent, so persist them as
+   user.* extended attributes. Unlike a dotfile rename, an xattr keeps the path
+   stable, so the same path can both set and query the flag. */
+static void file_set_xattr(const char *p, const char *name, int64_t on)
+{
+	int r;
+	if (on)
+	{
+		r = setxattr(p, name, "1", 1, 0);
+	}
+	else
+	{
+		r = removexattr(p, name);
+		if (r != 0 && errno == ENODATA)   /* Clearing a flag that is not set is not an error. */
+		{
+			r = 0;
+		}
+	}
+
+	if (r != 0)
+	{
+		io_fail("File.setAttribute: could not set attributes.");
+	}
+}
+
+static int64_t file_has_xattr(const char *p, const char *name)
+{
+	return getxattr(p, name, NULL, 0) >= 0 ? 1 : 0;
+}
+#endif
+
 /* Attribute bits match the Windows FILE_ATTRIBUTE_* constants:
    READONLY=1, HIDDEN=2, SYSTEM=4, ARCHIVE=32. */
 void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
@@ -635,7 +668,7 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 		return;
 	}
 
-	if (attr & 1)   /* READONLY: the only portable attribute. */
+	if (attr & 1)   /* READONLY maps to the write permission bits. */
 	{
 		mode_t m = on ? (st.st_mode & ~(mode_t)0222) : (st.st_mode | 0200);
 		if (chmod(p, m) != 0)
@@ -643,7 +676,10 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 			io_fail("File.setAttribute: could not set attributes.");
 		}
 	}
-	/* HIDDEN/SYSTEM/ARCHIVE have no portable equivalent: no-op. */
+
+	if (attr & 2)   /* HIDDEN.  */ { file_set_xattr(p, "user.bzy.hidden",  on); }
+	if (attr & 4)   /* SYSTEM.  */ { file_set_xattr(p, "user.bzy.system",  on); }
+	if (attr & 32)  /* ARCHIVE. */ { file_set_xattr(p, "user.bzy.archive", on); }
 #endif
 }
 
@@ -669,6 +705,10 @@ int64_t bzy_file_has_attribute(void *path, int64_t attr)
 	{
 		return (st.st_mode & 0222) ? 0 : 1;   /* READONLY = no write bits. */
 	}
+
+	if (attr & 2)  { return file_has_xattr(p, "user.bzy.hidden");  }   /* HIDDEN.  */
+	if (attr & 4)  { return file_has_xattr(p, "user.bzy.system");  }   /* SYSTEM.  */
+	if (attr & 32) { return file_has_xattr(p, "user.bzy.archive"); }   /* ARCHIVE. */
 
 	return 0;
 #endif
