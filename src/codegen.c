@@ -4576,7 +4576,24 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 	cg->assign_save=locals+56;
 	cg->fp_save=locals+64;
 	cg->rbx_save=locals+72;
-	int frame=locals+80;
+	int scratch=80;
+	/* This hand-rolled frame runs each enum constant's constructor via cg_new ->
+	   cg_ctor_call, which now preserves temporaries in frame temp slots and marshals
+	   args through the scratch arena. cg_emit_func sets those regions up per function;
+	   this synthetic frame must do the same or the arena addresses land outside it
+	   (the cause of a hard crash). Size both regions generously - __enum_init runs
+	   once at startup - and arm the overflow traps as the backstop for an unusually
+	   complex constant argument. No fixed outgoing-arg region is needed: the inner
+	   calls still reserve their shadow space dynamically. */
+	int temps=32*8;
+	int arena=512;
+	cg->temp_base=locals+scratch+8;
+	cg->cur_temp_depth=0;
+	cg->cur_temp_cap=32;
+	cg->scratch_base=locals+scratch+temps;
+	cg->cur_scratch=0;
+	cg->cur_scratch_cap=arena;
+	int frame=locals+scratch+temps+arena;
 	if (frame%16!=0)
 	{
 		frame=(frame/16+1)*16;
