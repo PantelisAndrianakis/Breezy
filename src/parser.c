@@ -102,7 +102,7 @@ static Expr *parse_additive(Parser *p)
 static Expr *parse_multiplicative(Parser *p)
 {
 	Expr *left = parse_unary(p);
-	while (check(p,TOKEN_STAR)||check(p,TOKEN_SLASH))
+	while (check(p,TOKEN_STAR)||check(p,TOKEN_SLASH)||check(p,TOKEN_PERCENT))
 	{
 		int op=p->cur.type, line=p->cur.line;
 		advance(p);
@@ -747,6 +747,9 @@ static int compound_to_binop(TokenType t, int *op)
 		return 1;
 	case TOKEN_SLASH_ASSIGN:
 		*op=TOKEN_SLASH;
+		return 1;
+	case TOKEN_PERCENT_ASSIGN:
+		*op=TOKEN_PERCENT;
 		return 1;
 	default:
 		return 0;

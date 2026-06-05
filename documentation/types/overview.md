@@ -61,6 +61,24 @@ The result type is what the expression *produces*; assigning it to a narrower or
 
 ---
 
+## Arithmetic operators
+
+The arithmetic operators are `+`, `-`, `*`, `/`, and `%` (modulo / remainder), each with a compound-assignment form (`+=`, `-=`, `*=`, `/=`, `%=`). `*`, `/`, and `%` share the same precedence and bind tighter than `+` and `-`, as in C and Java.
+
+`%` returns the remainder of an integer division and **requires integer operands** - applying it to a `float` or `double` is a compile error (use a library routine for floating-point remainder). The result follows the **sign of the dividend**, matching C: `-7 % 3` is `-1`, and `7 % -3` is `1`. Mixed-width and mixed-signedness operands promote by the same rules as the other arithmetic operators above.
+
+```breezy
+print(17 % 5);       // 2
+print(-7 % 3);       // -1  -- sign follows the dividend.
+
+int i;
+i = 100;
+i %= 7;
+print(i);            // 2
+```
+
+---
+
 ## Reference types
 
 `string`, arrays, maps, collections, channels, and your own classes are **reference types** - they live on the heap (when they escape their scope) and are managed automatically by [ARC and the cycle collector](../memory/automatic-memory.md). You never free them.

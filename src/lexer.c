@@ -295,6 +295,18 @@ Token lexer_next(Lexer *l)
 		}
 
 		return t;
+	case '%':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_PERCENT_ASSIGN;
+		}
+		else
+		{
+			t.type=TOKEN_PERCENT;
+		}
+
+		return t;
 	case '(':
 		t.type = TOKEN_LPAREN;
 		return t;
@@ -515,10 +527,14 @@ const char *token_type_name(TokenType t)
 		return "*=";
 	case TOKEN_SLASH_ASSIGN:
 		return "/=";
+	case TOKEN_PERCENT_ASSIGN:
+		return "%=";
 	case TOKEN_STAR:
 		return "*";
 	case TOKEN_SLASH:
 		return "/";
+	case TOKEN_PERCENT:
+		return "%";
 	case TOKEN_ASSIGN:
 		return "=";
 	case TOKEN_EQ:

@@ -668,6 +668,23 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 
 		cg_extend_reg(cg,e->type.kind);
 		break;
+	case TOKEN_PERCENT:
+		/* Same divide as '/', but the result is the remainder (rdx), not the
+		   quotient (rax). div/idiv leave the remainder in rdx; move it back. */
+		if (uns)
+		{
+			cg_emit(cg,"    xor edx, edx");
+			cg_emit(cg,"    div rbx");
+		}
+		else
+		{
+			cg_emit(cg,"    cqo");
+			cg_emit(cg,"    idiv rbx");
+		}
+
+		cg_emit(cg,"    mov rax, rdx");
+		cg_extend_reg(cg,e->type.kind);
+		break;
 	case TOKEN_EQ:
 	case TOKEN_NEQ:
 	case TOKEN_LT:

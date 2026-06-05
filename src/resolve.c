@@ -1155,6 +1155,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Non-numeric operand.",NULL);
 			}
 
+			if (e->op==TOKEN_PERCENT)
+			{
+				die(e->line,"Modulo '%' requires integer operands.",NULL);
+			}
+
 			TypeKind ft = (a==TY_DOUBLE || b==TY_DOUBLE) ? TY_DOUBLE : TY_FLOAT;
 			int cmp = e->op==TOKEN_EQ || e->op==TOKEN_NEQ || e->op==TOKEN_LT
 					  || e->op==TOKEN_GT || e->op==TOKEN_LTE || e->op==TOKEN_GTE;
