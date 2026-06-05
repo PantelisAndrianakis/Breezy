@@ -6,7 +6,8 @@
 /* Map layout (object_size = 80):
    0 vtable | 8 rc | 16 gcinfo | 24 size | 32 cap | 40 ctrl ptr (raw bytes) |
    48 keys BzyArray | 56 vals BzyArray | 64 key_kind | 72 val_is_managed.
-   key_kind: 0=int family, 1=string, 2=object identity, 3=value-protocol (reserved).
+   key_kind: 0=int family, 1=string, 2=object identity,
+             3=record value (key's vtable slot 0 = hashCode, slot 1 = equals).
    Keys/vals live in managed arrays, so ARC and the cycle collector reach map
    contents through the array span descriptor; the finalizer only frees ctrl. */
 
@@ -95,8 +96,15 @@ static uint64_t hash_bytes(const char *p, int64_t n)
 
 static uint64_t hash_key(void *m, int64_t key)
 {
-	/* kind 1 = string content; kind 2 (object) falls through to raw identity;
-	   kind 3 (reserved) will dispatch to the key's hashCode here. */
+	/* kind 1 = string content; kind 3 = record value (vtable slot 0 = hashCode);
+	   kind 2 (object) falls through to raw pointer identity. */
+	if (*M_KKIND(m) == 3)
+	{
+		void *k = (void*)key;
+		int64_t (*hc)(void*) = (int64_t(*)(void*))(*(void***)k)[0];   /* vtable slot 0. */
+		return mix64((uint64_t)(uint32_t)hc(k));
+	}
+
 	if (*M_KKIND(m) == 1)
 	{
 		void *s = (void*)key;
@@ -108,8 +116,20 @@ static uint64_t hash_key(void *m, int64_t key)
 
 static int key_eq(void *m, int64_t a, int64_t b)
 {
-	/* kind 1 = string content; kind 2 (object) falls through to raw identity;
-	   kind 3 (reserved) will dispatch to the key's equals here. */
+	/* kind 1 = string content; kind 3 = record value (vtable slot 1 = equals);
+	   kind 2 (object) falls through to raw pointer identity. */
+	if (*M_KKIND(m) == 3)
+	{
+		if (a == b)
+		{
+			return 1;   /* Identity fast path (also covers both-null). */
+		}
+
+		void *x = (void*)a;
+		int64_t (*eq)(void*, void*) = (int64_t(*)(void*, void*))(*(void***)x)[1];   /* vtable slot 1. */
+		return eq(x, (void*)b) != 0;
+	}
+
 	if (*M_KKIND(m) == 1)
 	{
 		void *x = (void*)a, *y = (void*)b;
