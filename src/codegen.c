@@ -679,6 +679,47 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Callee address (freed by call time). */
 	}
 
+	/* Fast path for a single register argument - the common call shape (a one-arg
+	   function like fib(n-1), or a zero-arg method whose only operand is `this`).
+	   Pass it straight in the first argument register: no spill block, no
+	   store-then-reload. The rsp delta is still a 16-multiple (just the 32-byte
+	   shadow space), so alignment is unchanged. Excluded: float args (xmm routing),
+	   owned temporaries (their pointer must outlive the call for the release pass),
+	   and cstr marshalling - those keep the general path below. */
+	{
+		Expr *only = self ? self : (argc==1 ? args[0] : NULL);
+		if (total==1 && only && !expr_is_owned(only))
+		{
+			TypeKind pk = self ? TY_OBJECT : ((param_count>0) ? params[0].kind : args[0]->type.kind);
+			int is_cstr = marshal_cstr && !self && args[0]->type.kind==TY_STRING;
+			if (!ty_is_float(pk) && !is_cstr)
+			{
+				cg_expr(cg,tt,only);
+				if (!self)
+				{
+					cg_coerce(cg,pk,args[0]->type.kind);
+				}
+
+				cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+				if (indirect)
+				{
+					cg_emit(cg,"    mov r11, [rbp - %d]", cg->val_save);
+					cg_emit(cg,"    sub rsp, 32");
+					cg_emit(cg,"    call r11");
+					cg_emit(cg,"    add rsp, 32");
+				}
+				else
+				{
+					cg_emit(cg,"    sub rsp, 32");
+					cg_emit(cg,"    call %s", target);
+					cg_emit(cg,"    add rsp, 32");
+				}
+
+				return;
+			}
+		}
+	}
+
 	int block = ((total*8 + 15)/16)*16;   /* 16-aligned scratch for spilled args. */
 	if (block)
 	{
