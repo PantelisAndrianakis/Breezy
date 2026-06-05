@@ -498,31 +498,30 @@ static void cg_str_concat(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	/* Reserve an aligned region: n operand pointers + 1 result slot. cg_aligned_call
-	   realigns and restores rsp around each inner call, so this region (above rsp)
-	   survives operand evaluation; Breezy locals are rbp-relative, so moving rsp is
-	   safe for them too. */
+	/* Reserve an arena region: n operand pointers + 1 result slot. The region is
+	   rbp-relative, so it survives operand evaluation (and the inner cg_aligned_call's
+	   rsp dance) unconditionally. */
 	int slots = ((n + 1) * 8 + 15) & ~15;
-	cg_emit(cg,"    sub rsp, %d", slots);
+	int b = cg_scratch_alloc(cg, slots);
 	for (int i = 0; i < n; i++)
 	{
 		cg_concat_operand(cg,tt,ops[i]);                  /* Owned (+1) string in rax. */
-		cg_emit(cg,"    mov [rsp + %d], rax", i*8);
+		cg_emit(cg,"    mov [rbp - %d], rax", b - i*8);
 	}
 
-	cg_emit(cg,"    mov %s, rsp", cg_iarg(cg, 0));        /* parts = &ops[0]. */
+	cg_emit(cg,"    lea %s, [rbp - %d]", cg_iarg(cg, 0), b);   /* parts = &ops[0]. */
 	cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), n);      /* count. */
 	cg_aligned_call(cg,"bzy_str_concat_n");              /* Owned (+1) result in rax. */
-	cg_emit(cg,"    mov [rsp + %d], rax", n*8);          /* Stash the result above the operands. */
+	cg_emit(cg,"    mov [rbp - %d], rax", b - n*8);       /* Stash the result above the operands. */
 
 	for (int i = 0; i < n; i++)                          /* Release each operand temporary. */
 	{
-		cg_emit(cg,"    mov %s, [rsp + %d]", cg_iarg(cg, 0), i*8);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - i*8);
 		cg_release_rcx(cg);
 	}
 
-	cg_emit(cg,"    mov rax, [rsp + %d]", n*8);          /* Result back into rax. */
-	cg_emit(cg,"    add rsp, %d", slots);
+	cg_emit(cg,"    mov rax, [rbp - %d]", b - n*8);       /* Result back into rax. */
+	cg_scratch_free(cg, slots);
 }
 
 /* Widen the operand just evaluated (an integer in rax, or a float/double already
@@ -549,13 +548,13 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 	const char *sfx = (ct==TY_DOUBLE) ? "sd" : "ss";
 	cg_expr(cg,tt,e->lhs);
 	cg_fp_promote(cg, e->lhs->type.kind, ct);
-	cg_emit(cg,"    sub rsp, 8");
-	cg_emit(cg,"    movsd qword [rsp], xmm0");   /* Spill lhs (float lives in the low 4 bytes). */
+	int b = cg_scratch_alloc(cg, 8);
+	cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);   /* Spill lhs (float lives in the low 4 bytes). */
 	cg_expr(cg,tt,e->rhs);
 	cg_fp_promote(cg, e->rhs->type.kind, ct);
 	cg_emit(cg,"    movsd xmm1, xmm0");          /* rhs -> xmm1. */
-	cg_emit(cg,"    movsd xmm0, qword [rsp]");   /* lhs -> xmm0. */
-	cg_emit(cg,"    add rsp, 8");
+	cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);   /* lhs -> xmm0. */
+	cg_scratch_free(cg, 8);
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
