@@ -416,6 +416,53 @@ static void test_vec_contains_string(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_vec_lazy_backing(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(0);                     /* int elements. */
+	ASSERT_INT(bzy_live_count(), before + 1);     /* Only the header: no backing array yet. */
+	ASSERT_INT(bzy_vec_len(v), 0);
+	ASSERT_INT(bzy_vec_index_of(v, 5), -1);       /* Safe scan on a never-grown vector. */
+	ASSERT_INT(bzy_vec_contains(v, 5), 0);
+
+	for (int i = 0; i < 20; i++)                  /* First push allocates; then several grows. */
+	{
+		bzy_vec_push_back(v, i);
+	}
+
+	ASSERT_INT(bzy_vec_len(v), 20);
+	ASSERT_INT(bzy_vec_get(v, 7), 7);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+static void test_vec_wraparound_mask(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(0);
+	/* Interleave both ends to drive head around the ring and force several grows. */
+	for (int i = 0; i < 50; i++)
+	{
+		bzy_vec_push_back(v, i);
+		bzy_vec_push_front(v, -i - 1);
+	}
+
+	ASSERT_INT(bzy_vec_len(v), 100);              /* Logical [-50, -49, ..., -1, 0, ..., 49]. */
+	ASSERT_INT(bzy_vec_get(v, 0), -50);
+	ASSERT_INT(bzy_vec_get(v, 49), -1);
+	ASSERT_INT(bzy_vec_get(v, 50), 0);
+	ASSERT_INT(bzy_vec_get(v, 99), 49);
+
+	for (int i = 0; i < 100; i++)                 /* Drain from the front; order survives wraparound. */
+	{
+		ASSERT_INT(bzy_vec_pop_front(v), i - 50);
+	}
+
+	ASSERT_INT(bzy_vec_len(v), 0);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_rnd(void)
 {
 	for (int i=0; i<2000; i++)
@@ -1468,6 +1515,8 @@ int main(void)
 	RUN(test_vec_ring);
 	RUN(test_vec_contains_and_remove);
 	RUN(test_vec_contains_string);
+	RUN(test_vec_lazy_backing);
+	RUN(test_vec_wraparound_mask);
 	RUN(test_rnd);
 	RUN(test_clock);
 	RUN(test_builder_append_tostring);

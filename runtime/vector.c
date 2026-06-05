@@ -46,7 +46,7 @@ static int vec_managed(void *v)
 
 static int64_t vec_phys(void *v, int64_t i)
 {
-	return (*V_HEAD(v) + i) % *V_CAP(v);
+	return (*V_HEAD(v) + i) & (*V_CAP(v) - 1);   /* cap is always a power of two, so mask == modulo. */
 }
 
 /* Runtime-owned vtable/descriptor: no finalizer, one managed child at offset 48. */
@@ -61,15 +61,12 @@ static void *vec_vtable(void)
 
 void *bzy_vec_new(int64_t elem_kind)
 {
-	int64_t cap = 8;
 	void *v = bzy_alloc(64);
 	*(void**)v = vec_vtable();
-	*V_LEN(v) = 0;
-	*V_CAP(v) = cap;
-	*V_HEAD(v) = 0;
-	*V_DATA(v) = bzy_array_new(cap, elem_kind >= 3 ? 1 : 0);   /* +1, owned by the vector. */
+	/* The backing array is allocated lazily on the first push, so an unused vector
+	   costs only its header. vec_grow handles the cap == 0 case. */
 	*V_KIND(v) = elem_kind;
-	return v;
+	return v;   /* len, cap, head and data are left zero by bzy_alloc. */
 }
 
 int64_t bzy_vec_len(void *v)
@@ -79,7 +76,7 @@ int64_t bzy_vec_len(void *v)
 
 static void vec_grow(void *v)
 {
-	int64_t oldcap = *V_CAP(v), newcap = oldcap * 2, n = *V_LEN(v);
+	int64_t oldcap = *V_CAP(v), newcap = oldcap ? oldcap * 2 : 8, n = *V_LEN(v);
 	void *olddata = *V_DATA(v);
 	int64_t *os = (int64_t*)((char*)olddata + 32);
 	void *newdata = bzy_array_new(newcap, vec_managed(v) ? 1 : 0);
@@ -189,7 +186,7 @@ void bzy_vec_push_front(void *v, int64_t val)
 	}
 
 	int64_t cap = *V_CAP(v);
-	*V_HEAD(v) = (*V_HEAD(v) - 1 + cap) % cap;
+	*V_HEAD(v) = (*V_HEAD(v) - 1 + cap) & (cap - 1);   /* Power-of-two cap: mask == modulo. */
 	vec_slots(v)[*V_HEAD(v)] = val;
 	(*V_LEN(v))++;
 }
@@ -204,7 +201,7 @@ int64_t bzy_vec_pop_front(void *v)
 	int64_t p = *V_HEAD(v);
 	int64_t val = vec_slots(v)[p];
 	vec_slots(v)[p] = 0;                    /* Transfer out (owned). */
-	*V_HEAD(v) = (p + 1) % *V_CAP(v);
+	*V_HEAD(v) = (p + 1) & (*V_CAP(v) - 1);   /* Power-of-two cap: mask == modulo. */
 	(*V_LEN(v))--;
 	return val;
 }
