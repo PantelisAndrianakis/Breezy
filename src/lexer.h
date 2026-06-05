@@ -8,6 +8,7 @@ typedef enum
 	TOKEN_BREAK, TOKEN_CONTINUE,                         /* Loop control. */
 	TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT,             /* Switch. */
 	TOKEN_CLASS, TOKEN_EXTENDS, TOKEN_NEW, TOKEN_THIS,
+	TOKEN_RECORD,                                       /* `record` declaration: final class with synthesized hashCode/equals. */
 	TOKEN_INTERFACE, TOKEN_IMPLEMENTS,                   /* Interfaces. */
 	TOKEN_ENUM,                                          /* `enum` declaration. */
 	TOKEN_EXTERN,                                        /* `extern` C FFI declaration. */

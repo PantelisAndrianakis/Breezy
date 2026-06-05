@@ -242,6 +242,7 @@ typedef struct
 {
 	char  name[64];
 	int is_static;            /* `static class`: every member is static, not instantiable. */
+	int is_record;            /* `record`: final class with compiler-synthesized hashCode/equals. */
 	char parent_name[64];
 	int has_parent;
 	char implements[8][64];   /* Interface names this class implements. */

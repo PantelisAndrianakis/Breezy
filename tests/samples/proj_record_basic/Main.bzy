@@ -1,0 +1,18 @@
+record Point
+{
+	int x;
+	int y;
+	Point(int x, int y)
+	{
+		this.x = x;
+		this.y = y;
+	}
+}
+
+void main()
+{
+	Point p;
+	p = new Point(3, 4);
+	print(p.x);   // 3
+	print(p.y);   // 4
+}

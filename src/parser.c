@@ -1643,6 +1643,16 @@ Unit *parse_unit(Parser *p)
 			}
 			u->klass=parse_class(p);
 		}
+		else if (check(p,TOKEN_RECORD))
+		{
+			if (u->klass)
+			{
+				fprintf(stderr,"line %d: Only one class per file.\n",p->cur.line);
+				exit(1);
+			}
+			u->klass=parse_class(p);   /* Same body grammar; advance() consumed `record`. */
+			u->klass->is_record=1;
+		}
 		else if (check(p,TOKEN_ENUM))
 		{
 			if (u->enum_count>=8)
