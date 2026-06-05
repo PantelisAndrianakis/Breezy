@@ -49,11 +49,14 @@ static const char *cg_iarg(Codegen *cg, int i)
 
 /* Load a scalar from 'mem' into rax, sign- or zero-extending to 64 bits per its
    declared width. Objects and 64-bit integers load with a plain mov. */
-static void cg_load_scalar(Codegen *cg, TypeKind k, const char *mem)
+/* Load a scalar of kind k from mem into the named register, widening to 64 bits
+   with the kind's signedness. r64 is the full register ("rax"); r32 is its 32-bit
+   name ("eax"), used for the unsigned-32 zero-extending load. */
+static void cg_load_scalar_into(Codegen *cg, TypeKind k, const char *mem, const char *r64, const char *r32)
 {
 	if (k==TY_BOOL)
 	{
-		cg_emit(cg,"    movzx rax, byte %s", mem);
+		cg_emit(cg,"    movzx %s, byte %s", r64, mem);
 		return;
 	}
 
@@ -62,40 +65,45 @@ static void cg_load_scalar(Codegen *cg, TypeKind k, const char *mem)
 	case 8:
 		if (ty_is_signed(k))
 		{
-			cg_emit(cg,"    movsx rax, byte %s", mem);
+			cg_emit(cg,"    movsx %s, byte %s", r64, mem);
 		}
 		else
 		{
-			cg_emit(cg,"    movzx rax, byte %s", mem);
+			cg_emit(cg,"    movzx %s, byte %s", r64, mem);
 		}
 
 		break;
 	case 16:
 		if (ty_is_signed(k))
 		{
-			cg_emit(cg,"    movsx rax, word %s", mem);
+			cg_emit(cg,"    movsx %s, word %s", r64, mem);
 		}
 		else
 		{
-			cg_emit(cg,"    movzx rax, word %s", mem);
+			cg_emit(cg,"    movzx %s, word %s", r64, mem);
 		}
 
 		break;
 	case 32:
 		if (ty_is_signed(k))
 		{
-			cg_emit(cg,"    movsxd rax, dword %s", mem);
+			cg_emit(cg,"    movsxd %s, dword %s", r64, mem);
 		}
 		else
 		{
-			cg_emit(cg,"    mov eax, dword %s", mem);   /* Writing eax zero-extends rax. */
+			cg_emit(cg,"    mov %s, dword %s", r32, mem);   /* Writing the 32-bit reg zero-extends its 64-bit parent. */
 		}
 
 		break;
 	default:
-		cg_emit(cg,"    mov rax, %s", mem);             /* 64-bit integer or object. */
+		cg_emit(cg,"    mov %s, %s", r64, mem);             /* 64-bit integer or object. */
 		break;
 	}
+}
+
+static void cg_load_scalar(Codegen *cg, TypeKind k, const char *mem)
+{
+	cg_load_scalar_into(cg,k,mem,"rax","eax");
 }
 
 /* Runtime map key_kind from a key type: 0=int family (raw value), 1=string
@@ -527,11 +535,35 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	cg_expr(cg,tt,e->lhs);
-	cg_emit(cg,"    push rax");
-	cg_expr(cg,tt,e->rhs);
-	cg_emit(cg,"    mov rbx, rax");
-	cg_emit(cg,"    pop rax");
+	cg_expr(cg,tt,e->lhs);                  /* lhs -> rax. */
+	/* Fast path: a side-effect-free leaf rhs (literal, null, or a local read) is
+	   loaded straight into rbx, skipping the push/pop the general path needs to
+	   preserve lhs across an rhs evaluation that would clobber rax. lhs is already
+	   in rax and none of these loads disturb it, so evaluation order (lhs then rhs)
+	   is preserved. The op switch below is unchanged: it still reads lhs=rax,
+	   rhs=rbx. */
+	if (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
+	{
+		cg_emit(cg,"    mov rbx, %lld", e->rhs->int_val);
+	}
+	else if (e->rhs->kind==EX_NULL)
+	{
+		cg_emit(cg,"    mov rbx, 0");
+	}
+	else if (e->rhs->kind==EX_IDENT)
+	{
+		char mem[32];
+		sprintf(mem,"[rbp - %d]", e->rhs->anno_int);
+		cg_load_scalar_into(cg,e->rhs->type.kind,mem,"rbx","ebx");
+	}
+	else
+	{
+		cg_emit(cg,"    push rax");
+		cg_expr(cg,tt,e->rhs);
+		cg_emit(cg,"    mov rbx, rax");
+		cg_emit(cg,"    pop rax");
+	}
+
 	/* Unsigned if either operand is unsigned: division then uses the unsigned
 	   form (C-style "unsigned wins"), and comparisons — where the resolver still
 	   requires matching signedness — see the operands' shared signedness. */
