@@ -258,6 +258,26 @@ int types_is_interface(TypeTable *tt, const char *name)
 	return types_find_interface(tt,name) != NULL;
 }
 
+/* Reserve global vtable slots 0 and 1 for the synthesized record methods, before
+   any user interface claims a slot. Every vtable then has slot 0 = hashCode and
+   slot 1 = equals (zero/gap for non-records), so the runtime can hardcode those
+   offsets for key_kind==3 keys. Must run once, before types_register_interfaces. */
+void types_reserve_hashable(TypeTable *tt)
+{
+	InterfaceInfo *itf=&tt->interfaces[tt->interface_count++];
+	memset(itf,0,sizeof(*itf));
+	strcpy(itf->name,"__Hashable");
+	itf->method_count=2;
+	strcpy(itf->methods[0],"hashCode");
+	itf->ret_types[0]=(TypeRef){.kind=TY_INT};
+	itf->param_counts[0]=0;
+	itf->vslot[0]=tt->iface_slots++;   /* Global slot 0. */
+	strcpy(itf->methods[1],"equals");
+	itf->ret_types[1]=(TypeRef){.kind=TY_BOOL};
+	itf->param_counts[1]=1;            /* (other); param type is the record itself, set per record. */
+	itf->vslot[1]=tt->iface_slots++;   /* Global slot 1. */
+}
+
 /* Register each interface, assigning every method a global vtable slot in [0..K).
    Must run for all units before any class members (so K = tt->iface_slots is final
    before vtable-slot assignment shifts class methods above it). */
@@ -363,6 +383,12 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 	ClassDecl *d=u->klass;
 	ClassInfo *c=types_find_class(tt,d->name);
 	c->is_static=d->is_static;
+	c->is_record=d->is_record;
+	if (d->is_record && d->has_parent)
+	{
+		fprintf(stderr,"A record may not extend another type: %s.\n",d->name);
+		exit(1);
+	}
 	if (d->is_static)
 	{
 		if (d->ctor)
@@ -388,6 +414,12 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 	}
 
 	link_parent(tt,c,d);
+	if (c->parent && c->parent->is_record)
+	{
+		fprintf(stderr,"Cannot extend record %s; records are final.\n",c->parent->name);
+		exit(1);
+	}
+
 	c->implements_count=d->implements_count;
 	memcpy(c->implements,d->implements,sizeof(c->implements));
 	if (c->parent)

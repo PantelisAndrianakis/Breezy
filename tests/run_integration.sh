@@ -170,6 +170,7 @@ check_fail enum_arity      tests/samples/bad_enum_arity.bzy
 check_fail enum_extends    tests/samples/bad_enum_extends.bzy
 check_fail enum_bad_label  tests/samples/bad_enum_switch_label.bzy
 check record_basic tests/samples/proj_record_basic $'3\n4'
+check_fail record_extends tests/samples/bad_record_extends
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

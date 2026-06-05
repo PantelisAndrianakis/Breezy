@@ -43,6 +43,7 @@ typedef struct ClassInfo
 	char implements[8][64];        /* Interface names this class implements. */
 	int implements_count;
 	int is_static;                 /* `static class`: not instantiable; all members static. */
+	int is_record;                 /* `record`: final class with synthesized hashCode/equals. */
 } ClassInfo;
 typedef struct
 {
@@ -78,6 +79,7 @@ typedef struct
 
 void       types_init(TypeTable *tt);
 void       types_register_builtins(TypeTable *tt);
+void       types_reserve_hashable(TypeTable *tt);              /* Before interfaces: reserves slots 0/1 for record hashCode/equals. */
 void       types_register_interfaces(TypeTable *tt, Unit *u);   /* Before members: reserves slots [0..K). */
 void       types_register_unit_names(TypeTable *tt, Unit *u);
 void       types_register_unit_members(TypeTable *tt, Unit *u);

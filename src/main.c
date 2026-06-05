@@ -163,6 +163,7 @@ int main(int argc, char *argv[])
 	{
 		types_register_unit_names(&tt,units[i]);
 	}
+	types_reserve_hashable(&tt);   /* Reserve slots 0/1 for record hashCode/equals, before any interface. */
 	for (int i=0; i<total; i++)
 	{
 		types_register_interfaces(&tt,units[i]);   /* Reserve vtable slots [0..K) before members. */
