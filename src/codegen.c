@@ -3681,6 +3681,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			cg_emit(cg,"    xor eax, eax");
 		}
 
+		cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 		cg_emit(cg,"    mov rsp, rbp");
 		cg_emit(cg,"    pop rbp");
 		cg_emit(cg,"    ret");
@@ -3896,7 +3897,8 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->argtmp_base = locals + 24;
 	cg->assign_save = locals + 56;
 	cg->fp_save     = locals + 64;
-	int scratch = 72;        /* sp_save, val_save, four arg temps, assign_save, fp_save. */
+	cg->rbx_save    = locals + 72;
+	int scratch = 80;        /* sp_save, val_save, four arg temps, assign_save, fp_save, rbx_save. */
 	int stack_objs = f->stack_alloc_bytes;
 	if (stack_objs % 16 != 0)
 	{
@@ -3914,6 +3916,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    push rbp");
 	cg_emit(cg,"    mov rbp, rsp");
 	cg_emit(cg,"    sub rsp, %d", frame);
+	cg_emit(cg,"    mov [rbp - %d], rbx", cg->rbx_save);   /* Preserve the caller's callee-saved rbx. */
 
 	/* Spill incoming args: this at [rbp-8], then params at [rbp-16], [rbp-24], and so on.
 	   Win64 numbers both register classes by argument position; System V numbers
@@ -3973,6 +3976,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		cg_emit(cg,"    xor eax, eax");
 	}
 
+	cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");
@@ -4062,7 +4066,8 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 	cg->argtmp_base=locals+24;
 	cg->assign_save=locals+56;
 	cg->fp_save=locals+64;
-	int frame=locals+72;
+	cg->rbx_save=locals+72;
+	int frame=locals+80;
 	if (frame%16!=0)
 	{
 		frame=(frame/16+1)*16;
@@ -4073,6 +4078,7 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 	cg_emit(cg,"    push rbp");
 	cg_emit(cg,"    mov rbp, rsp");
 	cg_emit(cg,"    sub rsp, %d", frame);
+	cg_emit(cg,"    mov [rbp - %d], rbx", cg->rbx_save);   /* Preserve the caller's callee-saved rbx. */
 	for (int i=0; i<enum_total(); i++)
 	{
 		const EnumInfo *e=enum_at(i);
@@ -4102,6 +4108,7 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 		}
 	}
 
+	cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");
@@ -4182,7 +4189,8 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 	cg->argtmp_base=locals+24;
 	cg->assign_save=locals+56;
 	cg->fp_save=locals+64;
-	int frame=locals+72;
+	cg->rbx_save=locals+72;
+	int frame=locals+80;
 	if (frame%16!=0)
 	{
 		frame=(frame/16+1)*16;
@@ -4193,6 +4201,7 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 	cg_emit(cg,"    push rbp");
 	cg_emit(cg,"    mov rbp, rsp");
 	cg_emit(cg,"    sub rsp, %d", frame);
+	cg_emit(cg,"    mov [rbp - %d], rbx", cg->rbx_save);   /* Preserve the caller's callee-saved rbx. */
 	for (int i=0; i<n; i++)
 	{
 		ClassDecl *d=units[i]->klass;
@@ -4229,6 +4238,7 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 		}
 	}
 
+	cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");

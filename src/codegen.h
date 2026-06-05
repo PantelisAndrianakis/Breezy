@@ -16,6 +16,9 @@ typedef struct
 	int argtmp_base;   /* The rbp offset of ARGTMP[0]; ARGTMP[i] is argtmp_base + i*8. */
 	int assign_save;   /* The rbp offset that holds a new field-store value across receiver evaluation. */
 	int fp_save;       /* The rbp offset for spilling xmm0 (FP return / FP field store). */
+	int rbx_save;      /* The rbp offset holding the caller's rbx. rbx is callee-saved in both ABIs;
+	                      codegen uses it as scratch, so every function must save/restore it or it
+	                      corrupts a caller (e.g. the C runtime) that kept a value in rbx across the call. */
 	int cur_break_label;     /* Enclosing loop's end label (-1 if not in a loop). */
 	int cur_continue_label;  /* Enclosing loop's continue target (-1 if not in a loop). */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */

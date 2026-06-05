@@ -26,6 +26,8 @@ source.bzy → Breezy compiler → output.asm → NASM → output.o ─┐
 
 The compiled program links against a small **Breezy runtime** (`lib_breezy.a`) that provides the allocator, [ARC and the cycle collector](../memory/automatic-memory.md), the [breeze scheduler](../concurrency/breezes.md), [channels](../concurrency/channels.md), and the [async I/O facade](../io/native-io.md) - plus whatever native C libraries you linked via [FFI](../ffi/c-interop.md).
 
+The runtime is written in C and compiled ahead of time into `lib_breezy.a`. Your program's *logic* is lowered to fresh assembly by the compiler; the runtime services it calls (allocate an object, send on a channel, open a socket) are pre-written C that the generated assembly simply calls into. So a finished binary is **your code as native assembly, statically linked against the C runtime** - there is no separate runtime to install or ship.
+
 ---
 
 ## Compiling a program
