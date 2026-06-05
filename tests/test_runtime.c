@@ -1329,6 +1329,36 @@ static void test_string_parse_values(void)
 	bzy_release(sb);
 }
 
+static void test_str_concat_n(void)
+{
+	int64_t before = bzy_live_count();
+	void *a = bzy_str_new("foo", 3);
+	void *b = bzy_str_new("", 0);                 /* Empty operand in the middle. */
+	void *c = bzy_str_new("bar", 3);
+	void *d = bzy_str_new("baz", 3);
+	void *parts[4] = { a, b, c, d };
+
+	void *r = bzy_str_concat_n(parts, 4);
+	ASSERT_INT(bzy_str_len(r), 9);
+	ASSERT_STR(bzy_str_data(r), "foobarbaz");
+
+	void *one = bzy_str_concat_n(parts, 1);       /* Single operand. */
+	ASSERT_STR(bzy_str_data(one), "foo");
+
+	void *none = bzy_str_concat_n(parts, 0);      /* Empty join. */
+	ASSERT_INT(bzy_str_len(none), 0);
+	ASSERT_STR(bzy_str_data(none), "");
+
+	bzy_release(r);
+	bzy_release(one);
+	bzy_release(none);
+	bzy_release(a);
+	bzy_release(b);
+	bzy_release(c);
+	bzy_release(d);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_str_idempotent_reuse(void)
 {
 	int64_t before = bzy_live_count();
@@ -1419,6 +1449,7 @@ int main(void)
 	RUN(test_unmanaged_object_ignored);
 	RUN(test_string_new_and_len);
 	RUN(test_string_concat);
+	RUN(test_str_concat_n);
 	RUN(test_array_value_roundtrip);
 	RUN(test_array_object_elements_released);
 	RUN(test_map_int_keys);

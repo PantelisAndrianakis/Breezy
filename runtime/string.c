@@ -55,6 +55,33 @@ void *bzy_str_concat(void *a, void *b)
 	return c;
 }
 
+/* Join n strings into one owned (+1) result with a single allocation: sum the
+   lengths, allocate once, then memcpy each piece. Replaces a chain of pairwise
+   bzy_str_concat calls (O(n) allocations, O(n^2) copying) with O(n) copying. */
+void *bzy_str_concat_n(void **parts, int64_t n)
+{
+	int64_t total = 0;
+	for (int64_t i = 0; i < n; i++)
+	{
+		total += bzy_str_len(parts[i]);
+	}
+
+	void *c = bzy_str_new(NULL, total);            /* Allocates total + 1, already NUL-terminated. */
+	char *d = (char*)c + 32;
+	for (int64_t i = 0; i < n; i++)
+	{
+		int64_t li = bzy_str_len(parts[i]);
+		if (li)
+		{
+			memcpy(d, bzy_str_data(parts[i]), (size_t)li);
+		}
+
+		d += li;
+	}
+
+	return c;
+}
+
 int64_t bzy_str_eq(void *a, void *b)
 {
 	if (a == b)
