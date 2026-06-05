@@ -8,7 +8,7 @@ Control flow decides *which* statements run and *how many times*. Breezy's contr
 
 ## if / else
 
-Run a block when a condition is true, with an optional `else` for the alternative. The condition must be a `boolean` expression in parentheses.
+Run a block when a condition is true, with an optional `else` for the alternative. The condition must be a `bool` expression in parentheses.
 
 ```breezy
 if (x < 10)
@@ -138,7 +138,7 @@ switch (code)
 }
 ```
 
-`switch` accepts any integer type (`byte short int long` and the unsigned variants), `boolean`, `string`, and [enum](enums.md) values (enums are matched by ordinal, and `case` labels use the unqualified constant name). It **rejects** `float` and `double`, because exact-equality matching is unreliable for them.
+`switch` accepts any integer type (`byte short int long` and the unsigned variants), `bool`, `string`, and [enum](enums.md) values (enums are matched by ordinal, and `case` labels use the unqualified constant name). It **rejects** `float` and `double`, because exact-equality matching is unreliable for them.
 
 ---
 
@@ -161,7 +161,7 @@ A `void` function may use a bare `return;` to exit early.
 
 ## Rules & gotchas
 
-- **Conditions are `boolean` expressions** in parentheses.
+- **Conditions are `bool` expressions** in parentheses.
 - **`for` headers are the only place to combine declaration and assignment** (`for (int i = 0; ...)`); elsewhere, declare then assign on separate lines.
 - **`switch` falls through** - add `break` unless you intend a case to run into the next.
 - **`switch` rejects `float`/`double`** - use `if`/`else` for floating-point comparisons.

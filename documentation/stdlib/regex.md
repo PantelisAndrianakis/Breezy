@@ -9,10 +9,10 @@
 ## The four operations
 
 ```breezy
-boolean ok;
+bool ok;
 ok = Regex.matches("a+b", "aaab");          // Full match -> true.
 
-boolean found;
+bool found;
 found = Regex.test("[0-9]+", "abc123");     // Search anywhere -> true.
 
 string hit;
@@ -22,8 +22,8 @@ string masked;
 masked = Regex.replace("[0-9]+", "a1b22c333", "#");   // -> "a#b#c#".
 ```
 
-- `matches(pattern, text)` - returns `boolean`; the pattern must match the **whole** text.
-- `test(pattern, text)` - returns `boolean`; succeeds if the pattern matches **anywhere**.
+- `matches(pattern, text)` - returns `bool`; the pattern must match the **whole** text.
+- `test(pattern, text)` - returns `bool`; succeeds if the pattern matches **anywhere**.
 - `find(pattern, text)` - returns the **leftmost** matching substring, or `""` if none.
 - `replace(pattern, text, with)` - replaces **every** non-overlapping match.
 

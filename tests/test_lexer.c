@@ -20,9 +20,9 @@ static void test_scalar_keywords(void)
 {
 	Lexer l;
 	Token t;
-	lexer_init(&l, "byte short long ubyte ushort uint ulong boolean true false");
+	lexer_init(&l, "byte short long ubyte ushort uint ulong bool true false");
 	TokenType e[] = {TOKEN_BYTE,TOKEN_SHORT,TOKEN_LONG,TOKEN_UBYTE,TOKEN_USHORT,
-					 TOKEN_UINT,TOKEN_ULONG,TOKEN_BOOLEAN,TOKEN_TRUE,TOKEN_FALSE,TOKEN_EOF
+					 TOKEN_UINT,TOKEN_ULONG,TOKEN_BOOL,TOKEN_TRUE,TOKEN_FALSE,TOKEN_EOF
 					};
 	for (int i = 0; i < 11; i++)
 	{

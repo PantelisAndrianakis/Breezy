@@ -282,7 +282,7 @@ static void test_int_literal_widths(void)
 
 static void test_bool_literal_type(void)
 {
-	Func *f=build1("void main() { boolean t; t = true; }")->funcs[0];
+	Func *f=build1("void main() { bool t; t = true; }")->funcs[0];
 	Stmt *assign=f->body->stmts[1];
 	ASSERT_INT(assign->value->kind, EX_BOOL);
 	ASSERT_INT(assign->value->type.kind, TY_BOOL);
@@ -296,9 +296,9 @@ static void test_arithmetic_widens_to_wider_operand(void)
 	ASSERT_INT(assign->value->type.kind, TY_LONG);
 }
 
-static void test_comparison_is_boolean(void)
+static void test_comparison_is_bool(void)
 {
-	Func *f=build1("void main() { int x; boolean r; x = 0; r = x < 2; }")->funcs[0];
+	Func *f=build1("void main() { int x; bool r; x = 0; r = x < 2; }")->funcs[0];
 	Stmt *assign=f->body->stmts[3];
 	ASSERT_INT(assign->value->kind, EX_BINARY);
 	ASSERT_INT(assign->value->type.kind, TY_BOOL);
@@ -347,9 +347,9 @@ static void test_implicit_int_to_double_init(void)
 	ASSERT_INT(f->body->stmts[1]->decl_type.kind, TY_DOUBLE);
 }
 
-static void test_float_compare_is_boolean(void)
+static void test_float_compare_is_bool(void)
 {
-	Func *f=build1("void main() { double a; double b; boolean r; r = a < b; }")->funcs[0];
+	Func *f=build1("void main() { double a; double b; bool r; r = a < b; }")->funcs[0];
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);
 }
 
@@ -468,7 +468,7 @@ static void test_newgen_type(void)
 
 static void test_box_method_types(void)
 {
-	Func *f=build1("void main() { Box<int> b; int x; boolean c; "
+	Func *f=build1("void main() { Box<int> b; int x; bool c; "
 				   "b = new Box<int>(); b.set(7); x = b.get(); c = b.contains(7); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);    /* b.get() */
 	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_BOOL);   /* b.contains(7) */
@@ -476,7 +476,7 @@ static void test_box_method_types(void)
 
 static void test_list_method_types(void)
 {
-	Func *f=build1("void main() { List<int> l; int x; int n; boolean c; "
+	Func *f=build1("void main() { List<int> l; int x; int n; bool c; "
 				   "l = new List<int>(); l.add(5); x = l.get(0); n = l.size; c = l.contains(5); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT);    /* l.get(0) */
 	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);    /* l.size */
@@ -500,17 +500,17 @@ static void test_math_types(void)
 
 static void test_random_types(void)
 {
-	Func *f=build1("void main() { int a; double d; boolean b; "
-				   "a = Random.get(10); d = Random.nextDouble(); b = Random.nextBoolean(); }")->funcs[0];
+	Func *f=build1("void main() { int a; double d; bool b; "
+				   "a = Random.get(10); d = Random.nextDouble(); b = Random.nextBool(); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);     /* get(int) -> int */
 	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_DOUBLE);  /* nextDouble -> double */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* nextBoolean -> boolean */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* nextBool -> bool */
 }
 
 static void test_string_method_types(void)
 {
-	Func *f=build1("void main() { string s; s = \"hi\"; boolean b; b = s.contains(\"h\"); int i; i = s.indexOf(\"i\"); int n; n = s.length(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* contains -> boolean */
+	Func *f=build1("void main() { string s; s = \"hi\"; bool b; b = s.contains(\"h\"); int i; i = s.indexOf(\"i\"); int n; n = s.length(); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* contains -> bool */
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);    /* indexOf -> int */
 	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);    /* length -> int */
 }
@@ -518,8 +518,8 @@ static void test_string_method_types(void)
 static void test_regex_types(void)
 {
 	Func *f=build1("void main() { string p; string t; p = \"a+\"; t = \"aa\"; "
-				   "boolean b; b = Regex.matches(p, t); string m; m = Regex.find(p, t); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* matches -> boolean */
+				   "bool b; b = Regex.matches(p, t); string m; m = Regex.find(p, t); }")->funcs[0];
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* matches -> bool */
 	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_STRING);  /* find -> string */
 }
 
@@ -538,7 +538,7 @@ static void test_clock_date_types(void)
 
 static void test_map_contains(void)
 {
-	Func *f=build1("void main() { map<string,int> m; boolean a; boolean b;"
+	Func *f=build1("void main() { map<string,int> m; bool a; bool b;"
 				   " a = m.containsKey(\"x\"); b = m.containsValue(5); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* containsKey -> bool */
 	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL);   /* containsValue -> bool */
@@ -600,14 +600,14 @@ static void test_spawn_args_resolve(void)
 
 static void test_file_basic_types(void)
 {
-	Func *f=build1("void main() { boolean b; b = File.exists(\"x\"); File.createFile(\"y\"); }")->funcs[0];
+	Func *f=build1("void main() { bool b; b = File.exists(\"x\"); File.createFile(\"y\"); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_BOOL);   /* exists -> bool */
 	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);    /* createFile -> void */
 }
 
 static void test_file_attr_types(void)
 {
-	Func *f=build1("void main() { int a; a = File.READONLY; File.setAttribute(\"x\", File.HIDDEN, true); boolean b; b = File.hasAttribute(\"x\", File.READONLY); }")->funcs[0];
+	Func *f=build1("void main() { int a; a = File.READONLY; File.setAttribute(\"x\", File.HIDDEN, true); bool b; b = File.hasAttribute(\"x\", File.READONLY); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);   /* File.READONLY -> int */
 	ASSERT_INT(f->body->stmts[1]->value->int_val, 1);
 	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL);  /* hasAttribute -> bool */
@@ -787,7 +787,7 @@ static void test_logger_resolves(void)
 static void test_string_parse_types(void)
 {
 	Func *f=build1("void main() { int a; a = \"1\".toInt(); long b; b = \"2\".toLong();"
-				   " double c; c = \"3.0\".toDouble(); boolean d; d = \"true\".toBool(); }")->funcs[0];
+				   " double c; c = \"3.0\".toDouble(); bool d; d = \"true\".toBool(); }")->funcs[0];
 	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_LONG);
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_DOUBLE);
@@ -796,7 +796,7 @@ static void test_string_parse_types(void)
 
 static void test_null_resolves(void)
 {
-	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); boolean b; b = (s == null);"
+	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); bool b; b = (s == null);"
 				   " byte[] x; x = null; }")->funcs[0];
 	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* (s == null) -> bool. */
 	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_NULL);   /* null assigns to a managed byte[]. */
@@ -829,14 +829,14 @@ int main(void)
 	RUN(test_int_literal_widths);
 	RUN(test_bool_literal_type);
 	RUN(test_arithmetic_widens_to_wider_operand);
-	RUN(test_comparison_is_boolean);
+	RUN(test_comparison_is_bool);
 	RUN(test_implicit_widening_init);
 	RUN(test_cast_result_type);
 	RUN(test_float_literal_types);
 	RUN(test_double_arithmetic_type);
 	RUN(test_int_promotes_to_double);
 	RUN(test_implicit_int_to_double_init);
-	RUN(test_float_compare_is_boolean);
+	RUN(test_float_compare_is_bool);
 	RUN(test_string_literal_type);
 	RUN(test_concat_is_string);
 	RUN(test_length_is_int);

@@ -3,11 +3,11 @@ void main()
 	string s;
 	s = "Hello";
 
-	boolean eq;
+	bool eq;
 	eq = s.equalsIgnoreCase("HELLO");
 	print(eq);                  // true
 
-	boolean empty;
+	bool empty;
 	empty = s.isEmpty();
 	print(empty);               // false
 

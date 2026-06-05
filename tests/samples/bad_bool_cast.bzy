@@ -1,6 +1,6 @@
 void main()
 {
-	boolean f;
+	bool f;
 	int x;
 	f = true;
 	x = (int)f;

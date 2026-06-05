@@ -1,6 +1,6 @@
 void main()
 {
-	boolean f;
+	bool f;
 	f = true;
 	switch (f)
 	{

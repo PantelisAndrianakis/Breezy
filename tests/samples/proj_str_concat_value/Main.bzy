@@ -13,7 +13,7 @@ void main()
 	y = 7;
 	print("x=" + x + " y=" + y);   // x=3 y=7 (chained).
 
-	boolean flag;
+	bool flag;
 	flag = true;
 	print("ok? " + flag);          // ok? true
 

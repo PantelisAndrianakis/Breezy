@@ -91,7 +91,7 @@ static TypeKind literal_type(Expr *e)
 
 /* Can a value of kind 'from' be stored into a slot of kind 'to' without a cast?
    Scalars widen only within the same signedness; objects stay permissive (subtype
-   checking is out of scope). Boolean<->integer and narrowing need an explicit cast. */
+   checking is out of scope). Bool<->integer and narrowing need an explicit cast. */
 /* Structural type equality (used for invariant array element comparison). */
 static int typeref_equal(const TypeRef *x, const TypeRef *y)
 {
@@ -494,12 +494,12 @@ static void resolve_system(Expr *e)
 	{
 		if (e->arg_count<1 || e->arg_count>2 || e->args[0]->type.kind!=TY_STRING)
 		{
-			die(e->line,"System.shell(command[, wait]) takes a string and an optional boolean.",NULL);
+			die(e->line,"System.shell(command[, wait]) takes a string and an optional bool.",NULL);
 		}
 
 		if (e->arg_count==2 && e->args[1]->type.kind!=TY_BOOL)
 		{
-			die(e->line,"System.shell wait argument must be a boolean.",NULL);
+			die(e->line,"System.shell wait argument must be a bool.",NULL);
 		}
 
 		e->type.kind=TY_INT;   /* Async: pid. Wait: exit code. */
@@ -607,7 +607,7 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
-	/* Path -> boolean predicates. */
+	/* Path -> bool predicates. */
 	if (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0)
 	{
 		if (e->arg_count != 1)
@@ -733,7 +733,7 @@ static void resolve_file(Expr *e)
 		file_arg_string(e,0);
 		if (!ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind != TY_BOOL)
 		{
-			die(e->line,"File.setAttribute(path, attr, on): attr is int, on is boolean.",NULL);
+			die(e->line,"File.setAttribute(path, attr, on): attr is int, on is bool.",NULL);
 		}
 
 		e->type.kind = TY_VOID;
@@ -763,7 +763,7 @@ static void resolve_file(Expr *e)
 static void resolve_random(Expr *e)
 {
 	const char *m = e->name + 7;   /* After "Random.". */
-	if (strcmp(m,"nextBoolean")==0)
+	if (strcmp(m,"nextBool")==0)
 	{
 		e->type.kind = TY_BOOL;
 	}
@@ -1031,7 +1031,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		{
 			if (to != from)
 			{
-				die(e->line,"Cannot cast between boolean and a number.",NULL);
+				die(e->line,"Cannot cast between bool and a number.",NULL);
 			}
 		}
 		else if (!to_num || !from_num)
@@ -1131,7 +1131,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (a==TY_STRING || b==TY_STRING)
 		{
 			/* Concatenation with '+': when either operand is a string, the other
-			   may be a string or any scalar (integer, floating, or boolean) — the
+			   may be a string or any scalar (integer, floating, or bool) — the
 			   scalar is converted to its text form. Objects/arrays are rejected. */
 			int a_ok = a==TY_STRING || ty_is_int(a) || ty_is_float(a) || a==TY_BOOL;
 			int b_ok = b==TY_STRING || ty_is_int(b) || ty_is_float(b) || b==TY_BOOL;
@@ -2395,7 +2395,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		resolve_expr(st,s->cond,tc);
 		if (s->cond->type.kind!=TY_BOOL)
 		{
-			die(s->line,"'if' condition must be boolean.",NULL);
+			die(s->line,"'if' condition must be bool.",NULL);
 		}
 
 		resolve_block(st,s->then_blk,tc);
@@ -2408,7 +2408,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		resolve_expr(st,s->cond,tc);
 		if (s->cond->type.kind!=TY_BOOL)
 		{
-			die(s->line,"'while' condition must be boolean.",NULL);
+			die(s->line,"'while' condition must be bool.",NULL);
 		}
 
 		g_loop_depth++;
@@ -2512,7 +2512,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		resolve_expr(st,s->cond,tc);
 		if (s->cond->type.kind!=TY_BOOL)
 		{
-			die(s->line,"'for' condition must be boolean.",NULL);
+			die(s->line,"'for' condition must be bool.",NULL);
 		}
 
 		resolve_stmt(st,s->for_post,tc);
@@ -2595,7 +2595,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 				{
 					if (c->value->kind!=EX_BOOL)
 					{
-						die(c->line,"Boolean switch case must be true or false.",NULL);
+						die(c->line,"Bool switch case must be true or false.",NULL);
 					}
 				}
 				else if (c->value->kind!=EX_INT)

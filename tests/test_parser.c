@@ -304,7 +304,7 @@ static void test_parse_function_with_vardecl(void)
 
 static void test_parse_scalar_vardecls(void)
 {
-	Unit *u = parse_unit_str("void m() { ubyte b; long n; boolean f; }");
+	Unit *u = parse_unit_str("void m() { ubyte b; long n; bool f; }");
 	Block *body = u->funcs[0]->body;
 	ASSERT_INT(body->count, 3);
 	ASSERT_INT(body->stmts[0]->decl_type.kind, TY_UBYTE);

@@ -50,7 +50,7 @@ void main()
 
 ## equals - component-wise comparison
 
-`equals` returns a `boolean` and compares every component exactly:
+`equals` returns a `bool` and compares every component exactly:
 
 ```breezy
 Vector2i p;

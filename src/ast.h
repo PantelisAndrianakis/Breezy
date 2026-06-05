@@ -36,7 +36,7 @@ typedef struct TypeRef
 	int targ_count;          /* 0 for built-in templates (Box/List/...), which use elem/elem2. */
 } TypeRef;
 
-/* Width in bits of a scalar kind. Booleans report 1; objects/strings are
+/* Width in bits of a scalar kind. A bool reports 1; objects/strings are
  * 64-bit pointers; void has no width and reports 0. */
 static inline int ty_bits(TypeKind k)
 {
@@ -84,7 +84,7 @@ static inline int ty_bits(TypeKind k)
 	return 0;
 }
 
-/* True for any integer kind (byte..ulong); excludes boolean. */
+/* True for any integer kind (byte..ulong); excludes bool. */
 static inline int ty_is_int(TypeKind k)
 {
 	return k == TY_BYTE || k == TY_SHORT || k == TY_INT || k == TY_LONG

@@ -761,6 +761,6 @@ int64_t bzy_str_to_bool(void *s)
 		return 0;
 	}
 
-	parse_fail("String.toBool: not a boolean.");
+	parse_fail("String.toBool: not a bool.");
 	return 0;
 }

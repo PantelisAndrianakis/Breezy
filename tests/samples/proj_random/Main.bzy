@@ -6,8 +6,8 @@ void main()
 	print(Random.nextDouble() < 1.0);  // true
 	print(Random.get(2.0) < 2.0);      // true  (double bound)
 	print(Random.get(2.0f) < 2.0f);    // true  (float bound)
-	boolean b;
-	b = Random.nextBoolean();
+	bool b;
+	b = Random.nextBool();
 	print(b == b);                     // true
 	byte[] buf;
 	buf = new byte[4];

@@ -1,6 +1,6 @@
 # File
 
-`File` is a **static namespace** for filesystem work - creating, reading, writing, searching, and inspecting files and folders. Predicates (`exists`, `isFile`, `isFolder`) return a `boolean`; everything else **throws an `IOException`** on failure, so errors surface where they happen instead of silently corrupting state.
+`File` is a **static namespace** for filesystem work - creating, reading, writing, searching, and inspecting files and folders. Predicates (`exists`, `isFile`, `isFolder`) return a `bool`; everything else **throws an `IOException`** on failure, so errors surface where they happen instead of silently corrupting state.
 
 ← [Back to the guide](../guide.md)
 
@@ -90,7 +90,7 @@ File.deleteRecursive("data");             // Remove the whole tree.
 - **Read / write binary:** `readBytes`, `writeBytes` (over `byte[]`).
 - **Search:** `list(folder)`, `search(folder, glob)`, `searchRecursive(folder, glob)` -> `string[]` of full paths.
 - **Attributes:** `setAttribute(path, attr, on)`, `hasAttribute(path, attr)` with the `READONLY` / `HIDDEN` / `SYSTEM` / `ARCHIVE` constants.
-- **Predicates:** `exists`, `isFile`, `isFolder` -> `boolean`.
+- **Predicates:** `exists`, `isFile`, `isFolder` -> `bool`.
 
 ---
 
@@ -102,7 +102,7 @@ The **data** operations (the reads and writes) run on the [offload pool](../io/n
 
 ## Rules & gotchas
 
-- **Predicates return `boolean`; everything else throws `IOException`** on failure - wrap risky calls in `try`/`catch`.
+- **Predicates return `bool`; everything else throws `IOException`** on failure - wrap risky calls in `try`/`catch`.
 - **`createFolder` makes intermediate folders** (like `mkdir -p`).
 - **Search returns full paths**; globs use `*` and `?`.
 - **Attributes are Windows concepts** - `HIDDEN`/`SYSTEM`/`ARCHIVE` have no POSIX equivalent.

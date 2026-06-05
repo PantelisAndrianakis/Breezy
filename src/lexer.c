@@ -19,7 +19,7 @@ static const struct
 	{"interface",TOKEN_INTERFACE},{"implements",TOKEN_IMPLEMENTS},{"enum",TOKEN_ENUM},{"static",TOKEN_STATIC},
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
-	{"ulong",TOKEN_ULONG},{"boolean",TOKEN_BOOLEAN},
+	{"ulong",TOKEN_ULONG},{"bool",TOKEN_BOOL},
 	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"string",TOKEN_STRING},
 	{"map",TOKEN_MAP},{"channel",TOKEN_CHANNEL},
 	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{"null",TOKEN_NULL},{NULL,0}
@@ -473,8 +473,8 @@ const char *token_type_name(TokenType t)
 		return "uint";
 	case TOKEN_ULONG:
 		return "ulong";
-	case TOKEN_BOOLEAN:
-		return "boolean";
+	case TOKEN_BOOL:
+		return "bool";
 	case TOKEN_FLOAT:
 		return "float";
 	case TOKEN_DOUBLE:

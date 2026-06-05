@@ -84,7 +84,7 @@ Arrays are heap-allocated reference types. An array of **objects** participates 
 - **Indexes are zero-based**; valid range is `0 .. length - 1`.
 - **Out-of-range access throws `IndexOutOfBounds`** - it never reads stray memory.
 - **`.length` is a field**, not a method call.
-- **A new array is zero-filled** (numbers `0`, booleans `false`, object references empty).
+- **A new array is zero-filled** (numbers `0`, bools `false`, object references empty).
 
 ---
 

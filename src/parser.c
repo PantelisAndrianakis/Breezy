@@ -399,7 +399,7 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 	case TOKEN_VOID:
 		*out=TY_VOID;
 		return 1;
-	case TOKEN_BOOLEAN:
+	case TOKEN_BOOL:
 		*out=TY_BOOL;
 		return 1;
 	case TOKEN_BYTE:

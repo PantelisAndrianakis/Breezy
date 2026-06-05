@@ -34,10 +34,10 @@ How Breezy types map to C:
 | `int` / `byte` / `short` | 32-/8-/16-bit int. |
 | `long` | 64-bit int (a handle or pointer). |
 | `float` / `double` | C `float` / `double`. |
-| `boolean` | C int. |
+| `bool` | C int. |
 | `string` **argument** | NUL-terminated `char*` (the string's data pointer). |
 
-**Returns** are limited to `void`, the int family, `long`, `float`, `double`, and `boolean`. A C function that returns `char*` is declared to return `long` and wrapped by hand for now. An embedded NUL in a `string` argument truncates on the C side, since C strings end at the first NUL.
+**Returns** are limited to `void`, the int family, `long`, `float`, `double`, and `bool`. A C function that returns `char*` is declared to return `long` and wrapped by hand for now. An embedded NUL in a `string` argument truncates on the C side, since C strings end at the first NUL.
 
 ---
 
@@ -89,7 +89,7 @@ A [non-moving heap](../memory/automatic-memory.md) means an object's address nev
 
 - **Declare each C function with `extern`** and a matching signature.
 - **`string` arguments marshal to `char*`** (NUL-terminated); embedded NULs truncate.
-- **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`boolean`; treat returned `char*` as `long`.
+- **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`bool`; treat returned `char*` as `long`.
 - **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core.
 - **Link with `--link <lib>` or `breezy.toml [link]`** - the two compose.
 

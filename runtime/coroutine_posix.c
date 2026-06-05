@@ -39,13 +39,9 @@ BzyCoroutine *bzy_coroutine_thread_enter(void)
 static void co_trampoline(void)
 {
 	BzyCoroutine *c = t_current;
-	for (;;)
-	{
-		c->fn(c->arg);                                       /* Runs to completion; a breeze body returns here. */
-		bzy_coroutine_switch(bzy_coroutine_thread_enter());  /* Park: back to THIS thread's scheduler. */
-		/* Resumed only after the scheduler re-armed c->fn/c->arg. t_current is c again, so the
-		   next iteration reads the freshly-armed fn/arg. */
-	}
+	c->fn(c->arg);
+	/* A breeze body always switches back to the scheduler before returning, so
+	   control never falls off the end here (mirrors the fiber contract). */
 }
 
 BzyCoroutine *bzy_coroutine_create(BzyCoroutineFn fn, void *arg)
@@ -60,12 +56,6 @@ BzyCoroutine *bzy_coroutine_create(BzyCoroutineFn fn, void *arg)
 	c->ctx.uc_link = NULL;
 	makecontext(&c->ctx, co_trampoline, 0);
 	return c;
-}
-
-void bzy_coroutine_rearm(BzyCoroutine *c, BzyCoroutineFn fn, void *arg)
-{
-	c->fn = fn;     /* The coroutine is parked at the trampoline's switch; next resume runs fn. */
-	c->arg = arg;
 }
 
 void bzy_coroutine_switch(BzyCoroutine *to)

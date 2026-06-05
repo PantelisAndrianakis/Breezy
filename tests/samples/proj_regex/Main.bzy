@@ -3,11 +3,11 @@ void main()
 	string digits;
 	digits = "[0-9]+";
 
-	boolean ok;
+	bool ok;
 	ok = Regex.matches("a+b", "aaab");
 	print(ok);                                  // true
 
-	boolean found;
+	bool found;
 	found = Regex.test(digits, "abc123");
 	print(found);                               // true
 

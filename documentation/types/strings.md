@@ -8,7 +8,7 @@ A `string` is **immutable UTF-8 text**. It is a heap-allocated, length-prefixed 
 
 ## Creating and joining strings
 
-Write a string literal in double quotes, and join values with `+` (or `+=`). When either side of `+` is a string, the other operand may be a string or any scalar (a number or boolean), which is converted to its text form - so `"n = " + n` works.
+Write a string literal in double quotes, and join values with `+` (or `+=`). When either side of `+` is a string, the other operand may be a string or any scalar (a number or bool), which is converted to its text form - so `"n = " + n` works.
 
 ```breezy
 string greeting;
@@ -48,7 +48,7 @@ Because strings are immutable, every **transforming** method returns a **new** s
 string path;
 path = "/api/users";
 
-boolean ok;
+bool ok;
 ok = path.startsWith("/api");   // true.
 
 int at;
@@ -58,7 +58,7 @@ string up;
 up = path.toUpper();            // /API/USERS  (path itself is unchanged).
 ```
 
-**Query methods** (return a `boolean`, `int`, or character):
+**Query methods** (return a `bool`, `int`, or character):
 
 - `length()`, `isEmpty()`
 - `isNumeric()` - non-empty and all digits `0-9`
@@ -113,7 +113,7 @@ See [Exceptions](../language/exceptions.md) for the `try`/`catch` mechanics.
 - **Use `StringBuilder` for loops** of many appends to avoid O(n²) copying.
 - **`charAt(i)` returns an `int`** (the byte value), or `-1` when out of range.
 - **Parsing throws `NumberFormatException`** - wrap it in `try`/`catch` if the input might be invalid.
-- **`+` builds strings** - when one operand is a string, a scalar (number or boolean) on the other side is converted to its text form; objects cannot be concatenated.
+- **`+` builds strings** - when one operand is a string, a scalar (number or bool) on the other side is converted to its text form; objects cannot be concatenated.
 - **Strings are ARC-managed** - you never free them.
 
 ---

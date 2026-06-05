@@ -16,7 +16,7 @@ typedef enum
 	TOKEN_STATIC,                                        /* `static` member / class modifier. */
 	TOKEN_BYTE, TOKEN_SHORT, TOKEN_LONG,                 /* Signed width keywords. */
 	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* Unsigned width keywords. */
-	TOKEN_BOOLEAN, TOKEN_TRUE, TOKEN_FALSE,              /* Boolean type + literals. */
+	TOKEN_BOOL, TOKEN_TRUE, TOKEN_FALSE,                 /* Bool type + literals. */
 	TOKEN_NULL,                                          /* `null` literal (managed bottom). */
 	TOKEN_FLOAT, TOKEN_DOUBLE, TOKEN_FLOAT_LIT,          /* Float/double types + literal. */
 	TOKEN_STR_LIT,                                       /* "..." string literal. */

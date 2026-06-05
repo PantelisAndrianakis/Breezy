@@ -3,11 +3,11 @@ void main()
 	string path;
 	path = "/api/users";
 
-	boolean api;
+	bool api;
 	api = path.startsWith("/api");
 	print(api);                 // true
 
-	boolean has;
+	bool has;
 	has = path.contains("user");
 	print(has);                 // true
 

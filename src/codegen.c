@@ -480,7 +480,7 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 	case TOKEN_SLASH:
 		cg_emit(cg,"    div%s xmm0, xmm1", sfx);
 		break;
-	default:   /* comparison -> boolean in rax (unordered/NaN compares false except !=). */
+	default:   /* comparison -> bool in rax (unordered/NaN compares false except !=). */
 	{
 		const char *set;
 		switch (e->op)
@@ -1834,7 +1834,7 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	exit(1);
 }
 
-/* string.method(...) -> bzy_str_* (receiver passed as self; boolean/int or owned result). */
+/* string.method(...) -> bzy_str_* (receiver passed as self; bool/int or owned result). */
 static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *nm = e->name;
@@ -2280,7 +2280,7 @@ static void cg_logger_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 /* Clock.* builtins: zero-arg time reads, or getDateString (owned-string result). */
 /* System.shell(command[, wait]) -> bzy_system_shell(command, wait). command in
-   rcx, wait in rdx (0 when the optional boolean is absent). The command string is
+   rcx, wait in rdx (0 when the optional bool is absent). The command string is
    only read by the runtime, so an owned temporary is released after the call. */
 static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 {
@@ -2299,7 +2299,7 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (e->arg_count==2)
 	{
-		cg_expr(cg,tt,e->args[1]);            /* wait (boolean) -> rax. */
+		cg_expr(cg,tt,e->args[1]);            /* wait (bool) -> rax. */
 		cg_emit(cg,"    push rax");
 		cg_expr(cg,tt,e->args[0]);            /* command (string) -> rax. */
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
@@ -2347,7 +2347,7 @@ static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_aligned_call(cg, strcmp(m,"currentTimeNanos")==0 ? "bzy_clock_nanos" : "bzy_clock_millis");
 }
 
-/* Regex.* builtins -> bzy_regex_* (string args, boolean or owned-string result). */
+/* Regex.* builtins -> bzy_regex_* (string args, bool or owned-string result). */
 static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Regex.". */
@@ -2556,7 +2556,7 @@ static void cg_random(Codegen *cg, TypeTable *tt, Expr *e)
 	TypeRef ps[2];
 	int np = 0;
 
-	if (strcmp(m,"nextBoolean")==0)
+	if (strcmp(m,"nextBool")==0)
 	{
 		fn="bzy_rnd_bool";
 	}

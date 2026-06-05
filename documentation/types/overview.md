@@ -13,7 +13,7 @@ Breezy is **statically typed**: every variable has a type known at compile time,
 | `byte` `short` `int` `long` | Signed integers: 8, 16, **32**, 64-bit (two's complement). |
 | `ubyte` `ushort` `uint` `ulong` | Unsigned integers: 8, 16, 32, 64-bit. |
 | `float` `double` | IEEE-754 floating point: 32, 64-bit. |
-| `boolean` | `true` / `false`. |
+| `bool` | `true` / `false`. |
 | `string` | Immutable UTF-8 text; concatenate with `+` / `+=`. |
 | `T[]` | Heap-allocated array of any type, bounds-checked. |
 | `map<K,V>` | Hash map (open addressing, Swiss-style control bytes); keys are any integer type, `string`, an `enum`, or an object. |

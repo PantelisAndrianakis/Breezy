@@ -8,7 +8,7 @@ Reading from and writing to the console needs **no imports and no ceremony**. `p
 
 ## print - write a line
 
-`print` writes its argument followed by a newline. It accepts a `string`, and also prints numbers and booleans directly.
+`print` writes its argument followed by a newline. It accepts a `string`, and also prints numbers and bools directly.
 
 ```breezy
 void main()
@@ -23,14 +23,14 @@ void main()
 }
 ```
 
-To combine text and values, build a `string` with `+`. When either side of `+` is a string, the other operand may be a number or boolean, which is converted to its text form automatically:
+To combine text and values, build a `string` with `+`. When either side of `+` is a string, the other operand may be a number or bool, which is converted to its text form automatically:
 
 ```breezy
 int score;
 score = 42;
 print("Your score is " + score + ".");   // Your score is 42.
 
-boolean ok;
+bool ok;
 ok = true;
 print("Passed: " + ok);                   // Passed: true
 ```
@@ -79,7 +79,7 @@ If you need to parse text you already have (rather than read a fresh line), use 
 
 - **No imports needed** - `print`, `input`, and `inputInt` are part of the language.
 - **`print` adds a newline** automatically.
-- **Build composite output with `+`**: when one side is a string, a number or boolean on the other side is converted to text, so `"x = " + x` produces a `string`.
+- **Build composite output with `+`**: when one side is a string, a number or bool on the other side is converted to text, so `"x = " + x` produces a `string`.
 - **`input` returns a `string`; `inputInt` returns an `int`.** To read other numeric types, read a line with `input()` and parse it with the appropriate [string method](../types/strings.md).
 
 ---

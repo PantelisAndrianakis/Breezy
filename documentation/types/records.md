@@ -30,7 +30,7 @@ record Point
 
 The compiler generates two methods over the declared fields:
 
-- `boolean equals(Point other)` - true when every field is equal.
+- `bool equals(Point other)` - true when every field is equal.
 - `int hashCode()` - a hash consistent with `equals` (equal records hash equal).
 
 Both are callable directly, like any method:
@@ -76,7 +76,7 @@ object is always a distinct key, no matter its field values.
 
 | Field type | Compared / hashed by |
 | --- | --- |
-| any integer, `boolean` | value |
+| any integer, `bool` | value |
 | `float` / `double` | value (bit pattern) |
 | `string` | content |
 | another **record** | recursively, by value |
