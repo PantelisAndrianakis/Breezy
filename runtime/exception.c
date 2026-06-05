@@ -141,8 +141,15 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 			bzy_release(*(void**)((char*)(uintptr_t)frame - f->objs[j]));
 		}
 
-		pc = *(int64_t*)((char*)(uintptr_t)frame + 8);   /* Return address into the caller. */
-		frame = *(int64_t*)((char*)(uintptr_t)frame);    /* Caller's saved rbp. */
+		/* The caller's return address points just past its `call`. Look it up as
+		   (return address - 1) so it lands inside the call instruction: a call that
+		   is the last instruction of a try would otherwise leave the return address
+		   exactly equal to the try-region's exclusive end and miss the handler. The
+		   throw-site PC of the first frame is an in-body label, so it is not walked
+		   through here and needs no adjustment. (This is the standard DWARF/Itanium
+		   return-address-minus-one rule.) */
+		pc = *(int64_t*)((char*)(uintptr_t)frame + 8) - 1;   /* Return address into the caller, biased into the call. */
+		frame = *(int64_t*)((char*)(uintptr_t)frame);        /* Caller's saved rbp. */
 		if (frame == 0)
 		{
 			break;

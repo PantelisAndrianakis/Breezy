@@ -233,13 +233,33 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    lea rbx, [rax + %s*8 + 32]", cg_iarg(cg, 0));   /* Index reg matches the OOB-check load above. */
 }
 
+/* Win64 requires the caller to reserve 32 bytes of shadow space below the return
+   address for the callee to spill its four register-arg slots; the SysV (Linux)
+   ABI requires none, so it is skipped there. The reservation is always a
+   16-multiple, so omitting it never changes stack alignment. */
+static void cg_shadow_sub(Codegen *cg)
+{
+	if (cg->target != TARGET_LINUX)
+	{
+		cg_emit(cg,"    sub rsp, 32");
+	}
+}
+
+static void cg_shadow_add(Codegen *cg)
+{
+	if (cg->target != TARGET_LINUX)
+	{
+		cg_emit(cg,"    add rsp, 32");
+	}
+}
+
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
    matter the current rsp alignment or pending pushes; the argument is in rcx. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
 {
 	cg_emit(cg,"    mov [rbp - %d], rsp", cg->sp_save);
 	cg_emit(cg,"    and rsp, -16");
-	cg_emit(cg,"    sub rsp, 32");
+	cg_shadow_sub(cg);
 	cg_emit(cg,"    call %s", fn);
 	cg_emit(cg,"    mov rsp, [rbp - %d]", cg->sp_save);
 }
@@ -704,15 +724,15 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 				if (indirect)
 				{
 					cg_emit(cg,"    mov r11, [rbp - %d]", cg->val_save);
-					cg_emit(cg,"    sub rsp, 32");
+					cg_shadow_sub(cg);
 					cg_emit(cg,"    call r11");
-					cg_emit(cg,"    add rsp, 32");
+					cg_shadow_add(cg);
 				}
 				else
 				{
-					cg_emit(cg,"    sub rsp, 32");
+					cg_shadow_sub(cg);
 					cg_emit(cg,"    call %s", target);
-					cg_emit(cg,"    add rsp, 32");
+					cg_shadow_add(cg);
 				}
 
 				return;
@@ -796,15 +816,15 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	if (indirect)
 	{
 		cg_emit(cg,"    mov r11, [rbp - %d]", cg->val_save);
-		cg_emit(cg,"    sub rsp, 32");
+		cg_shadow_sub(cg);
 		cg_emit(cg,"    call r11");
-		cg_emit(cg,"    add rsp, 32");
+		cg_shadow_add(cg);
 	}
 	else
 	{
-		cg_emit(cg,"    sub rsp, 32");
+		cg_shadow_sub(cg);
 		cg_emit(cg,"    call %s", target);
-		cg_emit(cg,"    add rsp, 32");
+		cg_shadow_add(cg);
 	}
 
 	if (owned_n > 0)
