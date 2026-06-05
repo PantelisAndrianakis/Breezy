@@ -1601,8 +1601,8 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 	}
 
 	int block = ((total*8 + 15)/16)*16;
-	cg_emit(cg,"    sub rsp, %d", block);
-	cg_emit(cg,"    mov [rsp + 0], rax");        /* this (borrowed). */
+	int b = cg_scratch_alloc(cg, block);
+	cg_emit(cg,"    mov [rbp - %d], rax", b);     /* this (borrowed). */
 
 	TypeKind slot_kind[4];
 	int owned_tmp[4];
@@ -1617,7 +1617,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 		slot_kind[slot] = pk;
 		if (ty_is_float(pk))
 		{
-			cg_emit(cg,"    movsd qword [rsp + %d], xmm0", slot*8);
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - slot*8);
 		}
 		else
 		{
@@ -1626,7 +1626,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 				owned_tmp[owned_n++] = slot;
 			}
 
-			cg_emit(cg,"    mov [rsp + %d], rax", slot*8);
+			cg_emit(cg,"    mov [rbp - %d], rax", b - slot*8);
 		}
 
 		slot++;
@@ -1638,17 +1638,17 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 		if (slot_kind[s]==TY_FLOAT)
 		{
 			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : s;
-			cg_emit(cg,"    movss xmm%d, dword [rsp + %d]", xi, s*8);
+			cg_emit(cg,"    movss xmm%d, dword [rbp - %d]", xi, b - s*8);
 		}
 		else if (slot_kind[s]==TY_DOUBLE)
 		{
 			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : s;
-			cg_emit(cg,"    movsd xmm%d, qword [rsp + %d]", xi, s*8);
+			cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]", xi, b - s*8);
 		}
 		else
 		{
 			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : s;
-			cg_emit(cg,"    mov %s, [rsp + %d]", cg_iarg(cg, ii), s*8);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, ii), b - s*8);
 		}
 	}
 
@@ -1658,12 +1658,12 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 
 	for (int i=0; i<owned_n; i++)
 	{
-		cg_emit(cg,"    mov %s, [rsp + %d]", cg_iarg(cg, 0), owned_tmp[i]*8);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - owned_tmp[i]*8);
 		cg_release_rcx(cg);
 	}
 
-	cg_emit(cg,"    mov rax, [rsp + 0]");        /* The object is the result of `new`. */
-	cg_emit(cg,"    add rsp, %d", block);
+	cg_emit(cg,"    mov rax, [rbp - %d]", b);     /* The object is the result of `new`. */
+	cg_scratch_free(cg, block);
 }
 
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
