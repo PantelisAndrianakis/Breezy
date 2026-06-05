@@ -4109,11 +4109,23 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		stack_objs = (stack_objs/16 + 1)*16;   /* Keep the frame 16-byte aligned. */
 	}
 
-	int frame = locals + scratch + stack_objs;
+	/* Fixed-rsp frame regions (reserved here, consumed by later tasks). The temp
+	   region replaces expression push/pop; the outgoing region (rounded arg slots
+	   plus 32 bytes of Win64 shadow) sits at the bottom of the frame, at rsp, so
+	   calls need no per-call rsp arithmetic. Existing locals/scratch/stack-object
+	   offsets are unchanged - the new regions only extend the frame downward. */
+	int temps   = f->max_temp_depth * 8;
+	int outargs = ((f->max_outgoing_args*8 + 15)/16)*16 + 32;
+	cg->temp_base      = locals + scratch + stack_objs + 8;
+	cg->cur_temp_depth = 0;
+
+	int frame = locals + scratch + stack_objs + temps + outargs;
 	if (frame % 16 != 0)
 	{
 		frame = (frame/16 + 1)*16;   /* Keep rsp 16-aligned after the prologue so calls are aligned. */
 	}
+
+	cg->outarg_base = frame;   /* rsp = rbp - frame; shadow [rsp,rsp+32), outgoing args at [rsp+32+i*8]. */
 
 	cg_emit(cg,"global %s", label);
 	cg_emit(cg,"%s:", label);
