@@ -2712,6 +2712,140 @@ static void resolve_block(SymTable *st, Block *b, const char *tc)
 	}
 }
 
+/* Frame analysis (Task 1 of the fixed-rsp plan, docs/superpowers/plans/
+   2026-06-05-fixed-rsp-frame.md). max_temp_depth approximates the deepest count
+   of values codegen must preserve across a sub-evaluation (today via push rax);
+   max_outgoing_args is the widest call. These size the future static-rsp frame.
+   Over-estimating only wastes a few frame bytes; the precise calibration cross-
+   check is Task 5's "no push remains" assertion. Nothing reads these yet. */
+static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	int d = 0;
+	switch (e->kind)
+	{
+	case EX_BINARY:
+	{
+		int l = frame_expr_depth(e->lhs, depth_out, args_out);
+		int leaf = e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL
+				   || e->rhs->kind==EX_NULL || e->rhs->kind==EX_IDENT;
+		int r = frame_expr_depth(e->rhs, depth_out, args_out);
+		d = leaf ? (l > r ? l : r) : ((1 + r) > l ? (1 + r) : l);   /* Non-leaf rhs: lhs is preserved across it. */
+		break;
+	}
+	case EX_INDEX:
+	{
+		int b = frame_expr_depth(e->lhs, depth_out, args_out);
+		int i = frame_expr_depth(e->rhs, depth_out, args_out);
+		d = (1 + i) > b ? (1 + i) : b;   /* Base preserved across index evaluation. */
+		break;
+	}
+	case EX_CALL:
+	case EX_METHOD_CALL:
+	case EX_NEW:
+	{
+		int n = e->arg_count + (e->kind==EX_METHOD_CALL ? 1 : 0);
+		if (n > *args_out)
+		{
+			*args_out = n;
+		}
+
+		if (e->lhs)
+		{
+			int s = frame_expr_depth(e->lhs, depth_out, args_out);
+			if (s > d)
+			{
+				d = s;
+			}
+		}
+
+		for (int i = 0; i < e->arg_count; i++)
+		{
+			int a = frame_expr_depth(e->args[i], depth_out, args_out);
+			if (a > d)
+			{
+				d = a;
+			}
+		}
+
+		break;
+	}
+	default:
+		if (e->lhs)
+		{
+			int a = frame_expr_depth(e->lhs, depth_out, args_out);
+			if (a > d)
+			{
+				d = a;
+			}
+		}
+
+		if (e->rhs)
+		{
+			int b = frame_expr_depth(e->rhs, depth_out, args_out);
+			if (b > d)
+			{
+				d = b;
+			}
+		}
+
+		break;
+	}
+
+	if (d > *depth_out)
+	{
+		*depth_out = d;
+	}
+
+	return d;
+}
+
+static void frame_stmt(Stmt *s, int *d, int *a);
+
+static void frame_block(Block *b, int *d, int *a)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		frame_stmt(b->stmts[i], d, a);
+	}
+}
+
+static void frame_stmt(Stmt *s, int *d, int *a)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	frame_expr_depth(s->decl_init, d, a);
+	frame_expr_depth(s->target, d, a);
+	frame_expr_depth(s->value, d, a);
+	frame_expr_depth(s->cond, d, a);
+	frame_expr_depth(s->ret_val, d, a);
+	frame_expr_depth(s->expr, d, a);
+	frame_stmt(s->for_init, d, a);
+	frame_stmt(s->for_post, d, a);
+	frame_block(s->then_blk, d, a);
+	frame_block(s->else_blk, d, a);
+}
+
+static void frame_annotate(Func *f)
+{
+	int d = 0, a = 0;
+	frame_block(f->body, &d, &a);
+	f->max_temp_depth = d;
+	f->max_outgoing_args = a;
+}
+
 void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 {
 	g_types=tt;
@@ -2764,6 +2898,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	f->frame_size=sym_frame_size(&st);
 	ownership_annotate(f);
 	escape_annotate(g_types,f);
+	frame_annotate(f);
 }
 
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)

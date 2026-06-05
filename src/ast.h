@@ -228,6 +228,8 @@ typedef struct
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
 	int     stack_alloc_bytes;      /* Escape pass: total frame bytes reserved for stack objects. */
+	int     max_temp_depth;         /* Frame pass: deepest simultaneously-live preserve-across-call temporaries. */
+	int     max_outgoing_args;      /* Frame pass: most argument slots any call in this body needs (0..4). */
 } Func;
 
 typedef struct
