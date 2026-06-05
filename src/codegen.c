@@ -536,13 +536,28 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_expr(cg,tt,e->lhs);                  /* lhs -> rax. */
-	/* Fast path: a side-effect-free leaf rhs (literal, null, or a local read) is
-	   loaded straight into rbx, skipping the push/pop the general path needs to
-	   preserve lhs across an rhs evaluation that would clobber rax. lhs is already
-	   in rax and none of these loads disturb it, so evaluation order (lhs then rhs)
-	   is preserved. The op switch below is unchanged: it still reads lhs=rax,
-	   rhs=rbx. */
-	if (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
+
+	/* The rhs operand for add/sub/cmp. Default is the rbx register; a small enough
+	   integer literal is folded straight into the instruction (rhsop = the literal)
+	   so no rbx load is emitted at all. imul/idiv have no usable immediate form here
+	   and always read rbx, which the fuse condition below excludes. */
+	const char *rhsop = "rbx";
+	char immbuf[24];
+	int fuse = (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
+			   && e->rhs->int_val >= -2147483648LL && e->rhs->int_val <= 2147483647LL
+			   && (e->op==TOKEN_PLUS || e->op==TOKEN_MINUS || e->op==TOKEN_EQ
+				   || e->op==TOKEN_NEQ || e->op==TOKEN_LT || e->op==TOKEN_GT
+				   || e->op==TOKEN_LTE || e->op==TOKEN_GTE);
+	if (fuse)
+	{
+		snprintf(immbuf,sizeof(immbuf),"%lld", e->rhs->int_val);
+		rhsop = immbuf;
+	}
+	/* Otherwise load a side-effect-free leaf rhs (literal, null, or a local read)
+	   straight into rbx, skipping the push/pop the general path needs to preserve
+	   lhs across an rhs evaluation that would clobber rax. lhs is already in rax and
+	   none of these loads disturb it, so evaluation order (lhs then rhs) holds. */
+	else if (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
 	{
 		cg_emit(cg,"    mov rbx, %lld", e->rhs->int_val);
 	}
@@ -571,11 +586,11 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
-		cg_emit(cg,"    add rax, rbx");
+		cg_emit(cg,"    add rax, %s", rhsop);
 		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_MINUS:
-		cg_emit(cg,"    sub rax, rbx");
+		cg_emit(cg,"    sub rax, %s", rhsop);
 		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_STAR:
@@ -626,7 +641,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
-		cg_emit(cg,"    cmp rax, rbx");
+		cg_emit(cg,"    cmp rax, %s", rhsop);
 		cg_emit(cg,"    %s al", set);
 		cg_emit(cg,"    movzx rax, al");
 		break;
