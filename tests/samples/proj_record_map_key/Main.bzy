@@ -1,0 +1,10 @@
+void main()
+{
+	map<Point,int> m;
+	m = new map<Point,int>();
+	m.put(new Point(3, 4), 42);
+	print(m.get(new Point(3, 4)));         // 42 -- rebuilt-equal record HITS.
+	print(m.containsKey(new Point(3, 4))); // true
+	print(m.containsKey(new Point(9, 9))); // false
+	print(m.size);                         // 1
+}

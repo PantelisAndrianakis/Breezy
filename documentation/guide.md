@@ -34,6 +34,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [Arrays](types/arrays.md) | Fixed-length, bounds-checked heap arrays. |
 | [Maps](types/maps.md) | `map<K,V>` hash maps, views, and key/value iteration. |
 | [Generic collections](types/collections.md) | `List`/`Stack`/`Queue`/`Deque`/`Set`, monomorphized with no boxing. |
+| [Records](types/records.md) | Final classes with synthesized value `equals`/`hashCode`, for value keys. |
 
 ## 3. Automatic memory
 

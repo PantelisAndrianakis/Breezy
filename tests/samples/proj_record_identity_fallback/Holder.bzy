@@ -1,0 +1,8 @@
+record Holder
+{
+	Tag tag;
+	Holder(Tag tag)
+	{
+		this.tag = tag;
+	}
+}

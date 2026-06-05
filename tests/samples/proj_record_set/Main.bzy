@@ -1,0 +1,11 @@
+void main()
+{
+	Set<Point> s;
+	s = new Set<Point>();
+	s.add(new Point(1, 2));
+	s.add(new Point(1, 2));             // Structurally equal -- deduped.
+	s.add(new Point(5, 6));
+	print(s.size);                      // 2
+	print(s.contains(new Point(1, 2))); // true
+	print(s.contains(new Point(0, 0))); // false
+}

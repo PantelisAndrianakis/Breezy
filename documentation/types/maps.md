@@ -17,7 +17,7 @@ counts.put("apples", 3);
 counts.put("apples", counts.get("apples") + 1);   // Overwrite with 4.
 ```
 
-Map keys may be any integer type, `string`, an `enum`, or any object; values can be any type. Integer and string keys match by value. Enum and object keys match by **identity** (reference equality) - a distinct but structurally-equal object is a different key, the same as Java's `IdentityHashMap`. (Value-equality keys via a `hashCode`/`equals` protocol are planned but not yet available.)
+Map keys may be any integer type, `string`, an `enum`, an object, or a [record](records.md); values can be any type. Integer and string keys match by value. Enum and plain object keys match by **identity** (reference equality) - a distinct but structurally-equal object is a different key, the same as Java's `IdentityHashMap`. A [record](records.md) key matches by **value**: a rebuilt, structurally-equal record finds the same entry.
 
 ---
 

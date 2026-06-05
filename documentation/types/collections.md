@@ -57,7 +57,7 @@ print(seen.size);          // 1.
 print(seen.contains("a")); // true.
 ```
 
-Because a `Set` is backed by the [map](maps.md) hash table, its elements must be **hashable**: any integer type, `string`, an `enum`, or an object. Integer and string elements deduplicate by value; enum and object elements deduplicate by **identity** (reference equality) - a distinct but structurally-equal object is a separate element. `float`/`double` elements are rejected, the same as map keys.
+Because a `Set` is backed by the [map](maps.md) hash table, its elements must be **hashable**: any integer type, `string`, an `enum`, an object, or a [record](records.md). Integer and string elements deduplicate by value; enum and plain object elements deduplicate by **identity** (reference equality) - a distinct but structurally-equal object is a separate element. A [record](records.md) element deduplicates by **value**, so two structurally-equal records collapse to one. `float`/`double` elements are rejected, the same as map keys.
 
 ---
 

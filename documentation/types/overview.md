@@ -71,6 +71,7 @@ Each has its own page:
 - [Arrays](arrays.md) - fixed-length, bounds-checked `T[]`.
 - [Maps](maps.md) - `map<K,V>` hash maps.
 - [Generic collections](collections.md) - `List`, `Stack`, `Queue`, `Deque`, `Set`.
+- [Records](records.md) - final classes with synthesized value `equals`/`hashCode`, for use as value keys.
 
 ---
 

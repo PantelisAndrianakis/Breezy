@@ -172,6 +172,11 @@ check_fail enum_bad_label  tests/samples/bad_enum_switch_label.bzy
 check record_basic tests/samples/proj_record_basic $'3\n4'
 check_fail record_extends tests/samples/bad_record_extends
 check record_methods tests/samples/proj_record_methods $'true\nfalse\ntrue'
+check record_map_key  tests/samples/proj_record_map_key  $'42\ntrue\nfalse\n1'
+check record_set      tests/samples/proj_record_set      $'2\ntrue\nfalse'
+check record_nested   tests/samples/proj_record_nested   $'7\nfalse'
+check record_identity_fallback tests/samples/proj_record_identity_fallback $'true\nfalse'
+check record_cycle    tests/samples/proj_record_cycle    $'0'
 check file_exists tests/samples/proj_file_exists   $'true\nfalse\nfalse\ncaught'
 check file_rw     tests/samples/proj_file_rw        $'alpha\nbeta\ngamma\n\n3\n14\n4\n3\n42'
 check file_search tests/samples/proj_file_search    $'4\n2\n3\nfalse'

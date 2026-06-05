@@ -1,0 +1,8 @@
+record Box
+{
+	int id;
+	Box(int id)
+	{
+		this.id = id;
+	}
+}

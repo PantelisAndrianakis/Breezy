@@ -1,0 +1,10 @@
+void main()
+{
+	Tag t;
+	t = new Tag(1);
+	map<Holder,int> m;
+	m = new map<Holder,int>();
+	m.put(new Holder(t), 5);
+	print(m.containsKey(new Holder(t)));          // true  -- same Tag reference.
+	print(m.containsKey(new Holder(new Tag(1)))); // false -- different Tag identity.
+}

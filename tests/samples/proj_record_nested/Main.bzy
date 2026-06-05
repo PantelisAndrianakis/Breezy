@@ -1,0 +1,8 @@
+void main()
+{
+	map<Segment,int> m;
+	m = new map<Segment,int>();
+	m.put(new Segment(new Point(0, 0), new Point(1, 1)), 7);
+	print(m.get(new Segment(new Point(0, 0), new Point(1, 1))));         // 7 -- recurses into Point.
+	print(m.containsKey(new Segment(new Point(0, 0), new Point(2, 2)))); // false
+}

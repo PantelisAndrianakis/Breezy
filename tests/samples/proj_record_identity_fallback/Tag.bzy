@@ -1,0 +1,8 @@
+class Tag
+{
+	int n;
+	Tag(int n)
+	{
+		this.n = n;
+	}
+}

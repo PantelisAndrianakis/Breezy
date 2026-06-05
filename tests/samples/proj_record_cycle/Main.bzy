@@ -1,0 +1,16 @@
+void main()
+{
+	build();
+	collectCycles();
+	print(liveCount());   // 0
+}
+
+void build()
+{
+	map<Box,map<Box,int>> outer;
+	outer = new map<Box,map<Box,int>>();
+	map<Box,int> inner;
+	inner = new map<Box,int>();
+	inner.put(new Box(1), 1);
+	outer.put(new Box(1), inner);
+}
