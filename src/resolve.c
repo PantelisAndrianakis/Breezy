@@ -2768,9 +2768,76 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 	return d;
 }
 
-static void frame_stmt(Stmt *s, int *d, int *a);
+/* Upper bound on the scratch block codegen reserves AT THIS NODE (the bytes its
+   `sub rsp,N` claims; 0 if it emits none). The static-rsp arena (Task 4 of the
+   fixed-rsp plan) replaces those `sub rsp,N` blocks with a software byte-stack, so
+   the frame must hold the peak sum of simultaneously-live blocks. Each value here
+   over-bounds the corresponding codegen site; the arena overflow trap is the
+   runtime backstop if a site is ever missed. */
+static int frame_node_block(Expr *e)
+{
+	switch (e->kind)
+	{
+	case EX_BINARY:
+		if (e->type.kind==TY_STRING)
+		{
+			return ((64 + 1) * 8 + 15) & ~15;   /* n-ary concat, n <= CONCAT_MAX (64): 528. */
+		}
 
-static void frame_block(Block *b, int *d, int *a)
+		if (e->type.kind==TY_FLOAT || e->type.kind==TY_DOUBLE)
+		{
+			return 16;                          /* cg_binary_fp spills the lhs (8, rounded to 16). */
+		}
+
+		return 0;                               /* Integer binary uses temp slots now, no sub rsp. */
+	case EX_CALL:
+	case EX_METHOD_CALL:
+	case EX_NEW:
+		return 48;                              /* Widest call-shaped block (blocking ctx); arg/builtin blocks <= 32. */
+	case EX_INDEX:
+		return 32;                              /* Map/array index marshaling block. */
+	default:
+		return 0;
+	}
+}
+
+/* Peak nested scratch-block bytes needed to evaluate e. A node's own block is live
+   while its children are evaluated (codegen reserves the block, then evaluates the
+   operands into it), so the requirement is this node's block plus the deepest child
+   requirement. Conservatively treats every child as evaluated under the block. */
+static int frame_scratch_bytes(Expr *e, int *max_out)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	int child = 0;
+	int c = frame_scratch_bytes(e->lhs, max_out);
+	if (c > child) { child = c; }
+	c = frame_scratch_bytes(e->rhs, max_out);
+	if (c > child) { child = c; }
+	if (e->kind==EX_CALL || e->kind==EX_METHOD_CALL || e->kind==EX_NEW)
+	{
+		for (int i = 0; i < e->arg_count; i++)
+		{
+			c = frame_scratch_bytes(e->args[i], max_out);
+			if (c > child) { child = c; }
+		}
+	}
+
+	int total = frame_node_block(e) + child;
+	if (total > *max_out)
+	{
+		*max_out = total;
+	}
+
+	return total;
+}
+
+static void frame_stmt(Stmt *s, int *d, int *a, int *sc);
+
+static void frame_block(Block *b, int *d, int *a, int *sc)
 {
 	if (!b)
 	{
@@ -2779,11 +2846,11 @@ static void frame_block(Block *b, int *d, int *a)
 
 	for (int i = 0; i < b->count; i++)
 	{
-		frame_stmt(b->stmts[i], d, a);
+		frame_stmt(b->stmts[i], d, a, sc);
 	}
 }
 
-static void frame_stmt(Stmt *s, int *d, int *a)
+static void frame_stmt(Stmt *s, int *d, int *a, int *sc)
 {
 	if (!s)
 	{
@@ -2796,16 +2863,22 @@ static void frame_stmt(Stmt *s, int *d, int *a)
 	frame_expr_depth(s->cond, d, a);
 	frame_expr_depth(s->ret_val, d, a);
 	frame_expr_depth(s->expr, d, a);
-	frame_stmt(s->for_init, d, a);
-	frame_stmt(s->for_post, d, a);
-	frame_block(s->then_blk, d, a);
-	frame_block(s->else_blk, d, a);
+	frame_scratch_bytes(s->decl_init, sc);
+	frame_scratch_bytes(s->target, sc);
+	frame_scratch_bytes(s->value, sc);
+	frame_scratch_bytes(s->cond, sc);
+	frame_scratch_bytes(s->ret_val, sc);
+	frame_scratch_bytes(s->expr, sc);
+	frame_stmt(s->for_init, d, a, sc);
+	frame_stmt(s->for_post, d, a, sc);
+	frame_block(s->then_blk, d, a, sc);
+	frame_block(s->else_blk, d, a, sc);
 }
 
 static void frame_annotate(Func *f)
 {
-	int d = 0, a = 0;
-	frame_block(f->body, &d, &a);
+	int d = 0, a = 0, sc = 0;
+	frame_block(f->body, &d, &a, &sc);
 	/* d is the expression-tree height. A single construct can hold up to two
 	   simultaneous preserves at one level (e.g. an array/field store keeps both the
 	   value and the receiver/base across a sub-evaluation), so the live-temp count
@@ -2813,6 +2886,10 @@ static void frame_annotate(Func *f)
 	   overflow trap remains the backstop if any path still exceeds it. */
 	f->max_temp_depth = d > 0 ? (2*d + 2) : 0;
 	f->max_outgoing_args = a;
+	/* sc is the expression-tree scratch peak. Statement-level codegen (spawn-arg
+	   marshaling, foreach iterators) reserves its own scratch outside the expression
+	   tree; a fixed margin over-covers it. The arena overflow trap stays the backstop. */
+	f->max_scratch_bytes = sc + 128;
 }
 
 void resolve_func(TypeTable *tt, Func *f, const char *this_class)

@@ -230,6 +230,7 @@ typedef struct
 	int     stack_alloc_bytes;      /* Escape pass: total frame bytes reserved for stack objects. */
 	int     max_temp_depth;         /* Frame pass: deepest simultaneously-live preserve-across-call temporaries. */
 	int     max_outgoing_args;      /* Frame pass: most argument slots any call in this body needs (0..4). */
+	int     max_scratch_bytes;      /* Frame pass: peak sum of nested scratch-block bytes (sizes the static-rsp arena). */
 } Func;
 
 typedef struct
