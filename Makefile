@@ -67,35 +67,36 @@ breezy: src/main.c $(OBJS) $(LIB)
 release: src/main.c $(OBJS) $(LIB)
 	$(CC) $(RELEASE_CFLAGS) -o breezy src/main.c $(OBJS)
 
-test_lexer: tests/test_lexer.c src/lexer.c
-	$(CC) $(CFLAGS) -o test_lexer tests/test_lexer.c src/lexer.c
+# Test binaries also build into the per-host dir, keeping the project root clean.
+$(OBJDIR)/test_lexer: tests/test_lexer.c src/lexer.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_lexer.c src/lexer.c
 
-test_ast: tests/test_ast.c src/ast.c
-	$(CC) $(CFLAGS) -o test_ast tests/test_ast.c src/ast.c
+$(OBJDIR)/test_ast: tests/test_ast.c src/ast.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_ast.c src/ast.c
 
-test_config: tests/test_config.c src/config.c
-	$(CC) $(CFLAGS) -o test_config tests/test_config.c src/config.c
+$(OBJDIR)/test_config: tests/test_config.c src/config.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_config.c src/config.c
 
-test_codegen: tests/test_codegen.c $(OBJS)
-	$(CC) $(CFLAGS) -o test_codegen tests/test_codegen.c $(OBJS)
+$(OBJDIR)/test_codegen: tests/test_codegen.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_codegen.c $(OBJS)
 
-test_coroutine: tests/test_coroutine.c $(CORO_SRC) runtime/coroutine.h
-	$(CC) $(CFLAGS) -Iruntime -Itests -o test_coroutine tests/test_coroutine.c $(CORO_SRC) $(PLATFORM_LIBS)
+$(OBJDIR)/test_coroutine: tests/test_coroutine.c $(CORO_SRC) runtime/coroutine.h | $(OBJDIR)
+	$(CC) $(CFLAGS) -Iruntime -Itests -o $@ tests/test_coroutine.c $(CORO_SRC) $(PLATFORM_LIBS)
 
-test_parser: tests/test_parser.c src/lexer.c src/ast.c src/parser.c
-	$(CC) $(CFLAGS) -o test_parser tests/test_parser.c src/lexer.c src/ast.c src/parser.c
+$(OBJDIR)/test_parser: tests/test_parser.c src/lexer.c src/ast.c src/parser.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_parser.c src/lexer.c src/ast.c src/parser.c
 
-test_types: tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c
-	$(CC) $(CFLAGS) -o test_types tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c
+$(OBJDIR)/test_types: tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c
 
-test_resolve: tests/test_resolve.c $(OBJS)
-	$(CC) $(CFLAGS) -o test_resolve tests/test_resolve.c $(OBJS)
+$(OBJDIR)/test_resolve: tests/test_resolve.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_resolve.c $(OBJS)
 
-test_ownership: tests/test_ownership.c $(OBJS)
-	$(CC) $(CFLAGS) -o test_ownership tests/test_ownership.c $(OBJS)
+$(OBJDIR)/test_ownership: tests/test_ownership.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_ownership.c $(OBJS)
 
-test_escape: tests/test_escape.c $(OBJS)
-	$(CC) $(CFLAGS) -o test_escape tests/test_escape.c $(OBJS)
+$(OBJDIR)/test_escape: tests/test_escape.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_escape.c $(OBJS)
 
 # Each runtime object compiles into the per-host build dir (host-selected set in
 # RT_OBJ), so Windows and Linux objects never collide in one tree.
@@ -109,21 +110,24 @@ $(LIB): $(RT_OBJ)
 	rm -f $(LIB)   # Rebuild from scratch so renamed/removed members never linger in the archive.
 	ar rcs $(LIB) $(RT_OBJ)
 
-test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR)
-	$(CC) $(CFLAGS) -Iruntime -o test_runtime tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
+$(OBJDIR)/test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR) | $(OBJDIR)
+	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
-test: test_lexer test_ast test_config test_parser test_types test_resolve test_ownership test_escape test_codegen test_coroutine test_runtime breezy
-	./test_lexer
-	./test_ast
-	./test_config
-	./test_parser
-	./test_types
-	./test_resolve
-	./test_ownership
-	./test_escape
-	./test_codegen
-	./test_coroutine
-	./test_runtime
+TEST_BINS = $(addprefix $(OBJDIR)/,test_lexer test_ast test_config test_parser test_types \
+            test_resolve test_ownership test_escape test_codegen test_coroutine test_runtime)
+
+test: $(TEST_BINS) breezy
+	$(OBJDIR)/test_lexer
+	$(OBJDIR)/test_ast
+	$(OBJDIR)/test_config
+	$(OBJDIR)/test_parser
+	$(OBJDIR)/test_types
+	$(OBJDIR)/test_resolve
+	$(OBJDIR)/test_ownership
+	$(OBJDIR)/test_escape
+	$(OBJDIR)/test_codegen
+	$(OBJDIR)/test_coroutine
+	$(OBJDIR)/test_runtime
 	bash tests/run_integration.sh
 
 integration: breezy $(LIB)

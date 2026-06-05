@@ -1,25 +1,17 @@
-# Build outputs
+# Build artifacts at the project root: the compiler binary (Linux has no .exe)
+# plus the per-compile working files written by `breezy` / the codegen test.
 breezy
-breezy.exe
 out.asm
 out.obj
-out.exe
 out_cg_test.asm
-out_elf.o
-lib_breezy.a
+
+# Per-host build dir: runtime objects, lib_breezy.a, and the test binaries.
 /build/
 
-# Unit test binaries
-test_lexer
-test_ast
-test_parser
-test_types
-test_resolve
+# Catch-alls (cover breezy.exe, out.exe, runtime objects, formatter backups).
 *.exe
-
-# Object files and formatter backups
 *.o
 *.orig
 
-# Editor / local tooling
+# Editor / local tooling.
 .claude/
