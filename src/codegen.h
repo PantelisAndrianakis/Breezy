@@ -22,6 +22,7 @@ typedef struct
 	int temp_base;       /* rbp offset of temp slot 0; slot i is [rbp - (temp_base + i*8)] (fixed-rsp plan). */
 	int outarg_base;     /* == frame; outgoing args/shadow sit at the bottom, addressed rsp-relative. */
 	int cur_temp_depth;  /* Emission-time count of live temp slots; reset to 0 per function. */
+	int cur_temp_cap;    /* This function's max_temp_depth; cg_temp_push traps on overflow. */
 	int cur_break_label;     /* Enclosing loop's end label (-1 if not in a loop). */
 	int cur_continue_label;  /* Enclosing loop's continue target (-1 if not in a loop). */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */

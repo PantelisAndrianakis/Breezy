@@ -253,6 +253,30 @@ static void cg_shadow_add(Codegen *cg)
 	}
 }
 
+/* Preserve rax in a fixed frame temp slot instead of on the hardware stack, so
+   the stack pointer stays static across the calls the caller is about to make.
+   Nesting is handled by the depth counter; the frame pass (max_temp_depth) sized
+   the region. The overflow trap turns an under-counted analysis into a loud
+   compile-time failure rather than silent stack corruption. */
+static void cg_temp_push(Codegen *cg)
+{
+	if (cg->cur_temp_depth >= cg->cur_temp_cap)
+	{
+		fprintf(stderr,"Codegen: temp-slot overflow (depth %d, cap %d) - frame analysis under-counted.\n",
+				cg->cur_temp_depth, cg->cur_temp_cap);
+		exit(1);
+	}
+
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->temp_base + cg->cur_temp_depth*8);
+	cg->cur_temp_depth++;
+}
+
+static void cg_temp_pop(Codegen *cg)
+{
+	cg->cur_temp_depth--;
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->temp_base + cg->cur_temp_depth*8);
+}
+
 /* Save rsp at an rbp-relative slot so a runtime call is 16-byte aligned no
    matter the current rsp alignment or pending pushes; the argument is in rcx. */
 static void cg_aligned_call(Codegen *cg, const char *fn)
@@ -593,10 +617,10 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	else
 	{
-		cg_emit(cg,"    push rax");
+		cg_temp_push(cg);            /* Preserve lhs in a frame slot across the rhs evaluation. */
 		cg_expr(cg,tt,e->rhs);
 		cg_emit(cg,"    mov rbx, rax");
-		cg_emit(cg,"    pop rax");
+		cg_temp_pop(cg);
 	}
 
 	/* Unsigned if either operand is unsigned: division then uses the unsigned
@@ -3780,6 +3804,15 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
+	/* No expression is mid-evaluation at a statement boundary, so every temp slot
+	   pushed during the previous statement must have been popped. A non-zero depth
+	   here means a converted push/pop pair is unbalanced. */
+	if (cg->cur_temp_depth != 0)
+	{
+		fprintf(stderr,"Codegen: temp depth %d at a statement boundary (unbalanced push/pop).\n", cg->cur_temp_depth);
+		exit(1);
+	}
+
 	switch (s->kind)
 	{
 	case ST_VARDECL:
@@ -4118,6 +4151,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	int outargs = ((f->max_outgoing_args*8 + 15)/16)*16 + 32;
 	cg->temp_base      = locals + scratch + stack_objs + 8;
 	cg->cur_temp_depth = 0;
+	cg->cur_temp_cap   = f->max_temp_depth;
 
 	int frame = locals + scratch + stack_objs + temps + outargs;
 	if (frame % 16 != 0)
