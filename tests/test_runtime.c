@@ -1361,6 +1361,30 @@ static void test_str_idempotent_reuse(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_map_lazy_backing(void)
+{
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(0, 0);                  /* int keys, unmanaged values. */
+	ASSERT_INT(bzy_live_count(), before + 1);     /* Only the header: no ctrl/keys/vals yet. */
+
+	/* Reads on a never-grown map are safe. */
+	ASSERT_INT(bzy_map_has(m, 42), 0);
+	ASSERT_INT(bzy_map_get(m, 42), 0);
+	ASSERT_INT(bzy_map_len(m), 0);
+	ASSERT_INT(bzy_map_iter(m, 0), -1);
+	bzy_map_remove(m, 42);                         /* No-op, must not crash. */
+
+	for (int i = 0; i < 20; i++)                   /* First put allocates; then several grows. */
+	{
+		bzy_map_put(m, i, i * i);
+	}
+
+	ASSERT_INT(bzy_map_len(m), 20);
+	ASSERT_INT(bzy_map_get(m, 7), 49);
+	bzy_release(m);
+	ASSERT_INT(bzy_live_count(), before);          /* Header + backing arrays all reclaimed. */
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1381,6 +1405,7 @@ int main(void)
 	RUN(test_map_string_keys_and_grow);
 	RUN(test_map_object_values_released);
 	RUN(test_map_iteration);
+	RUN(test_map_lazy_backing);
 	RUN(test_str_eq);
 	RUN(test_str_idempotent_reuse);
 	RUN(test_vec_value_back);

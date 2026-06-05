@@ -160,6 +160,11 @@ static void *map_vtable(void)
 static int64_t map_find(void *m, int64_t key, uint64_t h)
 {
 	int64_t cap = *M_CAP(m);
+	if (cap == 0)
+	{
+		return -1;   /* Never-grown map: nothing to find. */
+	}
+
 	uint8_t *ctrl = *M_CTRL(m);
 	int64_t *keys = keys_data(m);
 	uint8_t h2 = (uint8_t)(h & 0x7f);
@@ -430,23 +435,18 @@ static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 
 void *bzy_map_new(int64_t key_kind, int64_t val_is_managed)
 {
-	int64_t cap = 8;
 	void *m = bzy_alloc(80);
 	*(void**)m = map_vtable();
-	*M_SIZE(m) = 0;
-	*M_CAP(m) = cap;
-	*M_CTRL(m) = (uint8_t*)malloc((size_t)cap);
-	map_init_ctrl(*M_CTRL(m), cap);
-	*M_KEYS(m) = bzy_array_new(cap, key_kind != 0 ? 1 : 0);   /* +1, owned by the map. */
-	*M_VALS(m) = bzy_array_new(cap, val_is_managed);
+	/* The backing store (ctrl + keys + vals) is allocated lazily on the first put,
+	   so an unused map costs only its header. map_grow handles the cap == 0 case. */
 	*M_KKIND(m) = key_kind;
 	*M_VMAN(m) = val_is_managed;
-	return m;
+	return m;   /* size, cap, ctrl, keys and vals are left zero by bzy_alloc. */
 }
 
 static void map_grow(void *m)
 {
-	int64_t oldcap = *M_CAP(m), newcap = oldcap * 2;
+	int64_t oldcap = *M_CAP(m), newcap = oldcap ? oldcap * 2 : 8;
 	uint8_t *oldctrl = *M_CTRL(m);
 	void *oldkeys = *M_KEYS(m), *oldvals = *M_VALS(m);
 	int64_t *okeys = (int64_t*)((char*)oldkeys + 32);
