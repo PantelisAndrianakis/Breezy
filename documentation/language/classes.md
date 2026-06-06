@@ -106,6 +106,13 @@ a.speak();       // Prints "Woof." - not "...".
 
 This is **polymorphism**. The variable's declared type is `Animal`, but the call runs `Dog.speak` because the *actual object* is a `Dog`. In Breezy **every method is virtual by default**: the method that runs is chosen from the object's real type at run time, through a per-object **vtable** (a table of method pointers). There is no `virtual` keyword to remember and nothing to opt into - it just works.
 
+> **Note (performance):** Although every method is virtual in meaning, the
+> compiler emits a **direct call** wherever it can prove the target is unique -
+> when no subclass overrides the method (class-hierarchy analysis). Leaf classes,
+> `record`s, and any method that is never overridden pay no vtable indirection.
+> Genuinely polymorphic calls still dispatch through the vtable. You write the
+> same code; the compiler removes the cost where it is provably safe.
+
 ---
 
 ## Runtime class name

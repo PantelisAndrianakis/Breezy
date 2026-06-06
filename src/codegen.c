@@ -991,14 +991,82 @@ static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
 	cg_scratch_free(cg, 48);
 }
 
+/* Class-hierarchy analysis: true when a call to `method_name` on static type
+   `class_name` is monomorphic -- no strict descendant of that class declares its
+   own override, so every possible runtime type resolves the method to the same
+   implementation. The whole program is compiled at once, so the hierarchy is
+   complete. Returns 0 for unknown classes, static methods, or builtins. */
+static int method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name)
+{
+	ClassInfo *base = types_find_class(tt, class_name);
+	if (!base)
+	{
+		return 0;
+	}
+
+	MethodInfo *bm = types_find_method(base, method_name);
+	if (!bm || bm->vtable_slot < 0)
+	{
+		return 0;   /* Not found, or a static method (already called directly). */
+	}
+
+	for (int i = 0; i < tt->class_count; i++)
+	{
+		ClassInfo *d = &tt->classes[i];
+		if (d == base)
+		{
+			continue;
+		}
+
+		int is_descendant = 0;
+		for (ClassInfo *p = d->parent; p; p = p->parent)
+		{
+			if (p == base)
+			{
+				is_descendant = 1;
+				break;
+			}
+		}
+
+		if (!is_descendant)
+		{
+			continue;
+		}
+
+		MethodInfo *dm = types_find_method(d, method_name);
+		if (dm && strcmp(dm->owner_class, d->name) == 0)
+		{
+			return 0;   /* A descendant declares its own override -> polymorphic. */
+		}
+	}
+
+	return 1;
+}
+
 static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	ClassInfo *c=types_find_class(tt,e->anno_str);
+
+	/* Devirtualization: a monomorphic call site (concrete receiver type, no
+	   override below it) needs no vtable lookup. Emit a direct call to the
+	   resolved implementation and skip the two indirection loads. */
+	if (c)
+	{
+		MethodInfo *m=types_find_method(c,e->name);
+		if (m && m->vtable_slot>=0 && method_is_monomorphic(tt,e->anno_str,e->name))
+		{
+			cg_call_with_args(cg,tt,m->asm_label,e->lhs,e->args,e->arg_count,0,
+							  ty_is_managed(e->type.kind), ty_is_float(e->type.kind),
+							  m->param_types, m->param_count, 0);
+			return;
+		}
+	}
+
 	cg_expr(cg,tt,e->lhs);                       /* Receiver pointer in rax. */
 	cg_emit(cg,"    mov rax, [rax]");             /* Vtable pointer. */
 	cg_emit(cg,"    mov rax, [rax + %d]", e->anno_int * 8);   /* Method at its (virtual or interface) slot. */
 	const TypeRef *params;
 	int pcount;
-	ClassInfo *c=types_find_class(tt,e->anno_str);
 	if (c)
 	{
 		MethodInfo *m=types_find_method(c,e->name);

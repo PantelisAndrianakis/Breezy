@@ -8,9 +8,9 @@
 #define MAX_U 64
 static char g_asm[1 << 16];
 
-/* Compile `src` for `target` (prelude + the user unit, exactly as the driver
-   does) and load the emitted asm into g_asm. */
-static void emit(const char *src, Target target)
+/* Compile `nsrc` source strings for `target` (prelude first, then all srcs)
+   and load the emitted asm into g_asm. */
+static void emit_n(const char **srcs, int nsrc, Target target)
 {
 	static Parser parsers[MAX_U];
 	static Unit *units[MAX_U];
@@ -23,9 +23,12 @@ static void emit(const char *src, Target target)
 		units[i] = parse_unit(&parsers[i]);
 	}
 
-	parser_init(&parsers[np], src);
-	units[np] = parse_unit(&parsers[np]);
-	int total = np + 1;
+	for (int j = 0; j < nsrc; j++)
+	{
+		parser_init(&parsers[np + j], srcs[j]);
+		units[np + j] = parse_unit(&parsers[np + j]);
+	}
+	int total = np + nsrc;
 
 	types_init(&tt);
 	types_register_builtins(&tt);
@@ -60,6 +63,14 @@ static void emit(const char *src, Target target)
 	size_t n = fread(g_asm, 1, sizeof(g_asm) - 1, f);
 	g_asm[n] = '\0';
 	fclose(f);
+}
+
+/* Convenience wrapper: compile a single source string (prelude + the user unit,
+   exactly as the driver does) and load the emitted asm into g_asm. */
+static void emit(const char *src, Target target)
+{
+	const char *srcs[1] = { src };
+	emit_n(srcs, 1, target);
 }
 
 static void test_linux_arg_regs(void)
@@ -106,6 +117,44 @@ static void test_static_rsp_no_push_no_realign(void)
 	ASSERT_INT(strstr(g_asm, "and rsp, -16") == NULL, 1); /* No per-call realign remains. */
 }
 
+static void test_devirt_monomorphic_direct(void)
+{
+	/* A leaf class with no subclass: the call site is monomorphic, so dispatch
+	   must be a direct `call A__get` with no vtable indirection (`call r11`). */
+	emit("class A { int v; int get() { return this.v; } }"
+		 " void main() { A a; a = new A(); int x; x = a.get(); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "call A__get") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call r11") == NULL, 1);
+}
+
+static void test_devirt_polymorphic_stays_indirect(void)
+{
+	/* Base method overridden by a subclass: a base-typed receiver might hold the
+	   subclass, so dispatch MUST stay indirect (`call r11`). */
+	const char *srcs[] =
+	{
+		"class Animal { void speak() { print(0); } }",
+		"class Dog extends Animal { void speak() { print(1); } }",
+		"void main() { Animal a; a = new Dog(); a.speak(); }"
+	};
+	emit_n(srcs, 3, TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "call r11") != NULL, 1);
+}
+
+static void test_devirt_unoverridden_base_method(void)
+{
+	/* Animal has a subclass (Dog), but `tag` is never overridden. A call to
+	   tag() on an Animal-typed receiver is still monomorphic -> direct call. */
+	const char *srcs[] =
+	{
+		"class Animal { int tag() { return 7; } void speak() { print(0); } }",
+		"class Dog extends Animal { void speak() { print(1); } }",
+		"void main() { Animal a; a = new Dog(); int t; t = a.tag(); }"
+	};
+	emit_n(srcs, 3, TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "call Animal__tag") != NULL, 1);
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
@@ -113,6 +162,9 @@ int main(void)
 	RUN(test_linux_receiver_and_release);
 	RUN(test_linux_fp_arg_numbering);
 	RUN(test_static_rsp_no_push_no_realign);
+	RUN(test_devirt_monomorphic_direct);
+	RUN(test_devirt_polymorphic_stays_indirect);
+	RUN(test_devirt_unoverridden_base_method);
 	SUMMARY();
 	return 0;
 }
