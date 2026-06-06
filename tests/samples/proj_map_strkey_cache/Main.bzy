@@ -1,0 +1,24 @@
+// Exercises the cached string-key hash (B2) + identity fast path: the same long
+// key object is reused for put, get, and containsKey (cache hit + a == b), while a
+// distinct-but-equal key must still resolve by content. A multi-word key (>8 bytes)
+// exercises the word-at-a-time hash under caching.
+void main()
+{
+	map<string,int> m;
+	m = new map<string,int>();
+
+	string key;
+	key = "a-fairly-long-configuration-key-name";   // 36 bytes, reused below.
+	m.put(key, 7);
+
+	print(m.get(key));            // 7  -- same object: cache hit + identity.
+	print(m.containsKey(key));    // true.
+
+	string same;
+	same = "a-fairly-long-" + "configuration-key-name";   // distinct object, equal content.
+	print(m.get(same));           // 7  -- resolves by content, independent cache.
+
+	m.put(key, m.get(key) + 5);   // Overwrite via the reused key.
+	print(m.get(key));            // 12.
+	print(m.size);                // 1.
+}

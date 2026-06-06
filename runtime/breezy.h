@@ -39,6 +39,7 @@ void   *bzy_str_from_bool(int64_t v);                /* Owned (+1) "true"/"false
 void   *bzy_str_from_f64(double v);                  /* Owned (+1) text of a double (matches print). */
 int64_t bzy_str_eq(void *a, void *b);                /* 1 if byte-equal (NULL-safe, identity fast path). */
 int64_t bzy_str_hashcode(void *s);                   /* 32-bit FNV-1a content hash (NULL-safe). */
+void   *bzy_str_hashslot(void *s);                   /* Addr of the 8-byte cached map-hash slot (after the NUL). */
 int64_t bzy_ptr_hash(void *p);                       /* Identity hash of a pointer (NULL-safe). */
 int64_t bzy_str_contains(void *s, void *needle);     /* 1 if needle occurs in s (empty needle -> 1). */
 int64_t bzy_str_starts_with(void *s, void *pre);     /* 1 if s begins with pre. */

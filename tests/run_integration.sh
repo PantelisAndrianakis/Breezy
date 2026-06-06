@@ -79,6 +79,7 @@ check array_cycle tests/samples/proj_array_cycle $'0'
 check_abort array_oob tests/samples/bad_array_oob.bzy
 check stringbuilder tests/samples/proj_sb        $'ababab'
 check map         tests/samples/proj_map       $'11\n2\nfalse\n2'
+check map_strkey_cache tests/samples/proj_map_strkey_cache $'7\ntrue\n7\n12\n1'
 check map_contains tests/samples/proj_map_contains $'true\nfalse\ntrue\nfalse'
 check map_keys_values tests/samples/proj_map_keys_values $'60\n3'
 check map_entries tests/samples/proj_map_entries $'60\n3'

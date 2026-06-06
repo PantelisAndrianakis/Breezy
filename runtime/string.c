@@ -5,7 +5,13 @@
 #include <errno.h>
 
 /* Immutable string layout (one allocation):
-   0: vtable ptr  8: refcount  16: gcinfo  24: length  32: bytes[length+1].
+   0: vtable ptr  8: refcount  16: gcinfo  24: length  32: bytes[length+1]
+   then an 8-byte cached-hash slot immediately after the NUL terminator.
+   The data offset stays +32 (assumed across the runtime and the codegen FFI
+   marshalling); the hash slot is appended so nothing else moves. It is zeroed at
+   allocation (bzy_alloc zero-fills) and 0 means "not yet computed"; since strings
+   are immutable, a once-computed content hash is valid forever. The map uses it to
+   skip rehashing a reused key (see bzy_str_hashslot / map.c hash_key).
    The runtime owns the string's vtable/descriptor in C, since codegen never
    emits one. The descriptor has no finalizer and no object fields, so a string
    is reclaimed by a plain free and is invisible to the cycle collector. */
@@ -21,7 +27,7 @@ static void *string_vtable(void)
 
 void *bzy_str_new(const char *bytes, int64_t len)
 {
-	void *s = bzy_alloc(32 + len + 1);
+	void *s = bzy_alloc(32 + len + 1 + 8);   /* +8: cached-hash slot after the NUL (zeroed by bzy_alloc). */
 	*(void**)s = string_vtable();
 	*(int64_t*)((char*)s + 24) = len;
 	char *data = (char*)s + 32;
@@ -42,6 +48,14 @@ int64_t bzy_str_len(void *s)
 const char *bzy_str_data(void *s)
 {
 	return (const char*)s + 32;
+}
+
+/* Address of the 8-byte cached content-hash slot (immediately after the NUL).
+   Zeroed at allocation; 0 = not yet computed. Read/written via memcpy by the map,
+   so no alignment is assumed. */
+void *bzy_str_hashslot(void *s)
+{
+	return (char*)s + 32 + bzy_str_len(s) + 1;
 }
 
 void *bzy_str_concat(void *a, void *b)

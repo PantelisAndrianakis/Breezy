@@ -1,0 +1,39 @@
+// Shapes the recognizer must REFUSE to lower - each must still print correctly
+// via the unchanged per-iteration concat.
+void main()
+{
+	// (a) prepend, not append: leftmost leaf is not s.
+	string a;
+	a = "";
+	int i;
+	for (i = 0; i < 3; i++)
+	{
+		a = "x" + a;
+	}
+	print(a);                 // xxx
+
+	// (b) s read elsewhere in the body.
+	string b;
+	b = "";
+	int j;
+	for (j = 0; j < 3; j++)
+	{
+		b = b + "y";
+		print(b.length());    // 1, 2, 3  -- s is read mid-loop, must NOT lower.
+	}
+	print(b);                 // yyy
+
+	// (c) early break: only exit other than loop-end.
+	string c;
+	c = "";
+	int k;
+	for (k = 0; k < 10; k++)
+	{
+		if (k == 2)
+		{
+			break;
+		}
+		c = c + "z";
+	}
+	print(c);                 // zz
+}

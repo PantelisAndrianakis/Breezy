@@ -137,8 +137,26 @@ static uint64_t hash_key(void *m, int64_t key)
 
 	if (*M_KKIND(m) == 1)
 	{
+		/* String content hash, cached on the string object so a reused key hashes
+		   only once. The slot is 0 until computed; if a real hash happens to be 0
+		   it is stored as 1 (a one-in-2^64 case that costs only a hair more
+		   collisions for that one string, never correctness). */
 		void *s = (void*)key;
-		return hash_bytes(bzy_str_data(s), bzy_str_len(s));
+		void *slot = bzy_str_hashslot(s);
+		uint64_t h;
+		memcpy(&h, slot, sizeof h);
+		if (h == 0)
+		{
+			h = hash_bytes(bzy_str_data(s), bzy_str_len(s));
+			if (h == 0)
+			{
+				h = 1;
+			}
+
+			memcpy(slot, &h, sizeof h);
+		}
+
+		return h;
 	}
 
 	return mix64((uint64_t)key);
@@ -162,6 +180,11 @@ static int key_eq(void *m, int64_t a, int64_t b)
 
 	if (*M_KKIND(m) == 1)
 	{
+		if (a == b)
+		{
+			return 1;   /* Same string object (e.g. a reused key): equal, skip the memcmp. */
+		}
+
 		void *x = (void*)a, *y = (void*)b;
 		int64_t lx = bzy_str_len(x), ly = bzy_str_len(y);
 		return lx == ly && memcmp(bzy_str_data(x), bzy_str_data(y), (size_t)lx) == 0;
