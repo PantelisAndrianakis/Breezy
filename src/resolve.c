@@ -1144,6 +1144,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_UNARY:
 		resolve_expr(st,e->lhs,tc);
+		if (e->op==TOKEN_NOT)
+		{
+			if (e->lhs->type.kind!=TY_BOOL)
+			{
+				die(e->line,"Logical 'not' requires a boolean operand.",NULL);
+			}
+
+			e->type.kind=TY_BOOL;
+			break;
+		}
+
 		if (e->op==TOKEN_TILDE)
 		{
 			if (!ty_is_int(e->lhs->type.kind))
@@ -1176,6 +1187,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
 		TypeKind a=e->lhs->type.kind, b=e->rhs->type.kind;
+		if (e->op==TOKEN_AND || e->op==TOKEN_OR || e->op==TOKEN_XOR)
+		{
+			if (a!=TY_BOOL || b!=TY_BOOL)
+			{
+				die(e->line,"Logical 'and'/'or'/'xor' require boolean operands.",NULL);
+			}
+
+			e->type.kind=TY_BOOL;
+			break;
+		}
+
 		if (a==TY_STRING || b==TY_STRING)
 		{
 			/* Concatenation with '+': when either operand is a string, the other

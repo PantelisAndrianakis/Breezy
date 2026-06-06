@@ -159,6 +159,30 @@ static void test_bitwise_typing(void)
 	ASSERT_INT(n->body->stmts[0]->ret_val->type.kind, TY_INT);
 }
 
+static void test_logical_typing(void)
+{
+	const char *srcs[] =
+	{
+		"bool fand() { return true and false; }"
+		"bool forr() { return true or false; }"
+		"bool fxor() { return true xor false; }"
+		"bool fnot() { return not true; }"
+		"void main() { }"
+	};
+	build_program(srcs, 1);
+	Func *a = prog_find_func("fand");
+	ASSERT_INT(a->body->stmts[0]->ret_val->op, TOKEN_AND);
+	ASSERT_INT(a->body->stmts[0]->ret_val->type.kind, TY_BOOL);
+	Func *o = prog_find_func("forr");
+	ASSERT_INT(o->body->stmts[0]->ret_val->type.kind, TY_BOOL);
+	Func *x = prog_find_func("fxor");
+	ASSERT_INT(x->body->stmts[0]->ret_val->type.kind, TY_BOOL);
+	Func *n = prog_find_func("fnot");
+	ASSERT_INT(n->body->stmts[0]->ret_val->kind, EX_UNARY);
+	ASSERT_INT(n->body->stmts[0]->ret_val->op, TOKEN_NOT);
+	ASSERT_INT(n->body->stmts[0]->ret_val->type.kind, TY_BOOL);
+}
+
 static void test_enum_static_access(void)
 {
 	const char *srcs[] =
@@ -845,6 +869,7 @@ int main(void)
 	RUN(test_interface_call_resolves);
 	RUN(test_enum_lowers_to_class);
 	RUN(test_bitwise_typing);
+	RUN(test_logical_typing);
 	RUN(test_enum_static_access);
 	RUN(test_static_member_resolves);
 	RUN(test_generic_lowers_to_class);
