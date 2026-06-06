@@ -170,6 +170,24 @@ static void test_bitwise_emission(void)
 	ASSERT_INT(strstr(g_asm, "not rax") != NULL, 1);
 }
 
+static void test_logical_emission(void)
+{
+	/* Short-circuit and/or branch on the lhs (cmp + conditional jump). */
+	emit("bool f(bool a, bool b) { return a and b; } void main() { }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "je .L") != NULL, 1);
+
+	emit("bool g(bool a, bool b) { return a or b; } void main() { }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "jne .L") != NULL, 1);
+
+	/* xor evaluates both and xors the 0/1 values. */
+	emit("bool h(bool a, bool b) { return a xor b; } void main() { }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "xor rax, rbx") != NULL, 1);
+
+	/* not negates: cmp + sete. */
+	emit("bool n(bool a) { return not a; } void main() { }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "sete al") != NULL, 1);
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
@@ -181,6 +199,7 @@ int main(void)
 	RUN(test_devirt_polymorphic_stays_indirect);
 	RUN(test_devirt_unoverridden_base_method);
 	RUN(test_bitwise_emission);
+	RUN(test_logical_emission);
 	SUMMARY();
 	return 0;
 }

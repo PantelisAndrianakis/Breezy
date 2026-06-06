@@ -592,6 +592,23 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (e->op==TOKEN_AND || e->op==TOKEN_OR)
+	{
+		/* Short-circuit: evaluate lhs; if it already decides the result, skip rhs.
+		   Bool values are 0/1, so the surviving rhs value is the result as-is. */
+		int done = cg_label(cg);
+		int shortcut = cg_label(cg);
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg, e->op==TOKEN_AND ? "    je .L%d" : "    jne .L%d", shortcut);
+		cg_expr(cg,tt,e->rhs);
+		cg_emit(cg,"    jmp .L%d", done);
+		cg_emit(cg,".L%d:", shortcut);
+		cg_emit(cg, e->op==TOKEN_AND ? "    mov rax, 0" : "    mov rax, 1");
+		cg_emit(cg,".L%d:", done);
+		return;
+	}
+
 	cg_expr(cg,tt,e->lhs);                  /* lhs -> rax. */
 
 	/* The rhs operand for add/sub/cmp. Default is the rbx register; a small enough
@@ -718,6 +735,10 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	case TOKEN_CARET:
 		cg_emit(cg,"    xor rax, rbx");
 		cg_extend_reg(cg,e->type.kind);
+		break;
+	case TOKEN_XOR:
+		/* Logical xor of two 0/1 bool values; the result is already 0/1. */
+		cg_emit(cg,"    xor rax, rbx");
 		break;
 	case TOKEN_EQ:
 	case TOKEN_NEQ:
@@ -3097,6 +3118,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	case EX_UNARY:
 		cg_expr(cg,tt,e->lhs);
+		if (e->op==TOKEN_NOT)
+		{
+			cg_emit(cg,"    cmp rax, 0");
+			cg_emit(cg,"    sete al");
+			cg_emit(cg,"    movzx rax, al");
+			break;
+		}
+
 		if (ty_is_float(e->type.kind))
 		{
 			const char *sfx = e->type.kind==TY_FLOAT ? "ss" : "sd";
