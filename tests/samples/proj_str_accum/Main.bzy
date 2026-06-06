@@ -1,0 +1,33 @@
+// Accumulating a string in a loop must produce identical bytes whether or not the
+// compiler lowers it to a StringBuilder. Correctness oracle for P5.
+void main()
+{
+	string s;
+	s = "";
+	int i;
+	for (i = 0; i < 5; i++)
+	{
+		s = s + "ab" + i;       // Mixed string + scalar, accumulate on the end.
+	}
+	print(s);                   // ab0ab1ab2ab3ab4
+
+	string t;
+	t = "x";
+	int j;
+	j = 0;
+	while (j < 3)
+	{
+		t += "-";               // Compound-assignment form.
+		j = j + 1;
+	}
+	print(t);                   // x---
+
+	string u;                   // Empty loop body must still be correct.
+	u = "z";
+	int k;
+	for (k = 0; k < 0; k++)
+	{
+		u = u + "!";
+	}
+	print(u);                   // z
+}

@@ -2916,6 +2916,254 @@ static void frame_annotate(Func *f)
 	f->max_scratch_bytes = sc + 128;
 }
 
+/* ---- P5: string self-accumulation loop recognizer ----------------------------
+   Recognize the O(n^2) shape `s = s + ...` (and `s += ...`) repeated in a loop,
+   where `s` is a string local, the chain appends on the end (leftmost leaf is s),
+   and `s` is used nowhere else in the loop. When recognized, annotate the loop so
+   codegen (Task 2) can lower it to an O(n) StringBuilder. Annotation only here;
+   behaviour is unchanged until codegen consumes accum_sb_offset.
+
+   The escape check the design lists (condition 5) is unnecessary: escape.c only
+   tracks `new`-allocated object locals, never string locals, so esc_has(s) is
+   always false for a string. Condition 4 below (`s` appears nowhere else in the
+   body / cond / post) is strictly stronger -- if `s` is never read, passed, or
+   aliased in the loop and the loop cannot exit early (condition 6), materializing
+   `s` once at loop end is byte-identical to per-iteration concatenation. Being too
+   strict only forgoes the optimization; it can never change behaviour. */
+
+static int p5_expr_count_offset(Expr *e, int off)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	int n = (e->kind==EX_IDENT && e->anno_int==off) ? 1 : 0;
+	n += p5_expr_count_offset(e->lhs, off);
+	n += p5_expr_count_offset(e->rhs, off);
+	for (int i=0; i<e->arg_count; i++)
+	{
+		n += p5_expr_count_offset(e->args[i], off);
+	}
+
+	return n;
+}
+
+static int p5_stmt_mentions(Stmt *s, int off);
+
+static int p5_block_mentions(Block *b, int off)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i=0; i<b->count; i++)
+	{
+		if (p5_stmt_mentions(b->stmts[i], off))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int p5_stmt_mentions(Stmt *s, int off)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	if (p5_expr_count_offset(s->decl_init, off)
+			|| p5_expr_count_offset(s->target, off)
+			|| p5_expr_count_offset(s->value, off)
+			|| p5_expr_count_offset(s->cond, off)
+			|| p5_expr_count_offset(s->ret_val, off)
+			|| p5_expr_count_offset(s->expr, off))
+	{
+		return 1;
+	}
+
+	return p5_stmt_mentions(s->for_init, off)
+		   || p5_stmt_mentions(s->for_post, off)
+		   || p5_block_mentions(s->then_blk, off)
+		   || p5_block_mentions(s->else_blk, off);
+}
+
+/* True if the statement (recursively) can transfer control out of the enclosing
+   loop's single fall-off-the-end exit: return/throw leave the function; break
+   leaves a loop; try installs a handler the unwinder uses. Conservatively bails
+   on a break in a nested loop or switch too (safe, just a missed optimization). */
+static int p5_stmt_has_exit(Stmt *s);
+
+static int p5_block_has_exit(Block *b)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i=0; i<b->count; i++)
+	{
+		if (p5_stmt_has_exit(b->stmts[i]))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int p5_stmt_has_exit(Stmt *s)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	switch (s->kind)
+	{
+		case ST_RETURN:
+		case ST_THROW:
+		case ST_BREAK:
+		case ST_TRY:
+			return 1;
+		default:
+			break;
+	}
+
+	return p5_stmt_has_exit(s->for_init)
+		   || p5_stmt_has_exit(s->for_post)
+		   || p5_block_has_exit(s->then_blk)
+		   || p5_block_has_exit(s->else_blk);
+}
+
+static void p5_try_lower_accum(Stmt *loop, Func *f)
+{
+	Block *B = loop->then_blk;
+	if (!B)
+	{
+		return;
+	}
+
+	/* Find the single direct-child `s = <string + chain>` whose leftmost leaf is
+	   the assigned string local itself (append-on-end). Two such assignments -> bail. */
+	Stmt *A = NULL;
+	for (int i=0; i<B->count; i++)
+	{
+		Stmt *st = B->stmts[i];
+		if (st->kind != ST_ASSIGN || st->target->kind != EX_IDENT
+				|| st->target->type.kind != TY_STRING)
+		{
+			continue;
+		}
+
+		if (!st->value || st->value->kind != EX_BINARY || st->value->type.kind != TY_STRING)
+		{
+			continue;
+		}
+
+		Expr *leaf = st->value;
+		while (leaf->kind == EX_BINARY)
+		{
+			leaf = leaf->lhs;
+		}
+
+		if (leaf->kind != EX_IDENT || leaf->anno_int != st->target->anno_int)
+		{
+			continue;   /* Prepend (`s = x + s`) or some other shape. */
+		}
+
+		if (A)
+		{
+			return;     /* More than one accumulator into s -> keep v1 simple. */
+		}
+
+		A = st;
+	}
+
+	if (!A)
+	{
+		return;
+	}
+
+	int soff = A->target->anno_int;
+
+	/* Condition 4: s occurs exactly once in the chain (the leftmost leaf) and
+	   nowhere else in the body, cond, or for clauses. */
+	if (p5_expr_count_offset(A->value, soff) != 1)
+	{
+		return;
+	}
+
+	for (int i=0; i<B->count; i++)
+	{
+		if (B->stmts[i] != A && p5_stmt_mentions(B->stmts[i], soff))
+		{
+			return;
+		}
+	}
+
+	if (p5_expr_count_offset(loop->cond, soff) != 0)
+	{
+		return;
+	}
+
+	if (loop->kind == ST_FOR
+			&& (p5_stmt_mentions(loop->for_init, soff) || p5_stmt_mentions(loop->for_post, soff)))
+	{
+		return;
+	}
+
+	/* Condition 6: the only loop exit must be falling off the end. */
+	if (p5_block_has_exit(B))
+	{
+		return;
+	}
+
+	/* Recognized: reserve a frame slot for the builder and annotate. The slot is
+	   the next 8 bytes below the existing locals; codegen lays temps/scratch below
+	   frame_size, so [rbp - frame_size] does not collide with any local. */
+	f->frame_size += 8;
+	loop->accum_sb_offset = f->frame_size;
+	loop->accum_stmt = A;
+}
+
+static void p5_scan_block(Block *b, Func *f);
+
+static void p5_scan_stmt(Stmt *s, Func *f)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	if (s->kind == ST_WHILE || s->kind == ST_FOR)
+	{
+		p5_try_lower_accum(s, f);
+	}
+
+	p5_scan_stmt(s->for_init, f);
+	p5_scan_stmt(s->for_post, f);
+	p5_scan_block(s->then_blk, f);
+	p5_scan_block(s->else_blk, f);
+}
+
+static void p5_scan_block(Block *b, Func *f)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i=0; i<b->count; i++)
+	{
+		p5_scan_stmt(b->stmts[i], f);
+	}
+}
+
 void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 {
 	g_types=tt;
@@ -2968,6 +3216,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	f->frame_size=sym_frame_size(&st);
 	ownership_annotate(f);
 	escape_annotate(g_types,f);
+	p5_scan_block(f->body,f);   /* P5: recognize string self-accumulation loops (annotation only). */
 	frame_annotate(f);
 }
 

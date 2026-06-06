@@ -199,6 +199,8 @@ struct Stmt
 	Block   *else_blk;        /* Else-branch (NULL if none). */
 	Expr    *ret_val;         /* ST_RETURN (may be NULL). */
 	Expr    *expr;            /* ST_EXPR. */
+	Stmt    *accum_stmt;      /* P5: the recognized `s = s + ...` body statement, or NULL. */
+	int      accum_sb_offset; /* P5: frame slot for the lowering StringBuilder (0 = not lowered). */
 };
 
 struct Block
