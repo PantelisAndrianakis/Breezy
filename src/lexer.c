@@ -157,6 +157,38 @@ Token lexer_next(Lexer *l)
 	if (isdigit((unsigned char)c))
 	{
 		int i = 0;
+		/* Radix-prefixed literals: 0x.. (hex) and 0b.. (binary). The whole token
+		   text including the prefix is kept; the parser picks the conversion base. */
+		if (c == '0' && (l->src[l->pos + 1] == 'x' || l->src[l->pos + 1] == 'X'))
+		{
+			t.text[i++] = next_ch(l);   /* The '0'. */
+			t.text[i++] = next_ch(l);   /* The 'x'/'X'. */
+			while (isxdigit((unsigned char)peek_ch(l)) && i < 255)
+			{
+				t.text[i++] = next_ch(l);
+			}
+
+			t.text[i] = '\0';
+			t.suffix[0] = '\0';
+			t.type = TOKEN_INT_LIT;
+			return t;
+		}
+
+		if (c == '0' && (l->src[l->pos + 1] == 'b' || l->src[l->pos + 1] == 'B'))
+		{
+			t.text[i++] = next_ch(l);   /* The '0'. */
+			t.text[i++] = next_ch(l);   /* The 'b'/'B'. */
+			while ((peek_ch(l) == '0' || peek_ch(l) == '1') && i < 255)
+			{
+				t.text[i++] = next_ch(l);
+			}
+
+			t.text[i] = '\0';
+			t.suffix[0] = '\0';
+			t.type = TOKEN_INT_LIT;
+			return t;
+		}
+
 		while (isdigit((unsigned char)peek_ch(l)) && i < 255)
 		{
 			t.text[i++] = next_ch(l);

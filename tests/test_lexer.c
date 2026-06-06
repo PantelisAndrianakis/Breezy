@@ -245,6 +245,21 @@ static void test_bitwise_tokens(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_EOF);
 }
 
+static void test_hex_and_binary_literals(void)
+{
+	Lexer l;
+	lexer_init(&l, "0xFF 0x10 0b1010 42");
+	Token a = lexer_next(&l);
+	ASSERT_INT(a.type, TOKEN_INT_LIT);
+	ASSERT_STR(a.text, "0xFF");
+	Token b = lexer_next(&l);
+	ASSERT_STR(b.text, "0x10");
+	Token c = lexer_next(&l);
+	ASSERT_STR(c.text, "0b1010");
+	Token d = lexer_next(&l);
+	ASSERT_STR(d.text, "42");
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -325,6 +340,7 @@ int main(void)
 	RUN(test_block_comment);
 	RUN(test_compound_assign_ops);
 	RUN(test_bitwise_tokens);
+	RUN(test_hex_and_binary_literals);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);
