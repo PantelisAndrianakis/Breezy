@@ -22,6 +22,7 @@ static const struct
 	{"ulong",TOKEN_ULONG},{"bool",TOKEN_BOOL},
 	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"string",TOKEN_STRING},
 	{"map",TOKEN_MAP},{"channel",TOKEN_CHANNEL},
+	{"and",TOKEN_AND},{"or",TOKEN_OR},{"xor",TOKEN_XOR},{"not",TOKEN_NOT},
 	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{"null",TOKEN_NULL},{NULL,0}
 };
 
@@ -449,7 +450,12 @@ Token lexer_next(Lexer *l)
 
 		return t;
 	case '&':
-		if (peek_ch(l)=='=')
+		if (peek_ch(l)=='&')
+		{
+			next_ch(l);
+			t.type=TOKEN_AND;
+		}
+		else if (peek_ch(l)=='=')
 		{
 			next_ch(l);
 			t.type=TOKEN_AMP_ASSIGN;
@@ -461,7 +467,12 @@ Token lexer_next(Lexer *l)
 
 		return t;
 	case '|':
-		if (peek_ch(l)=='=')
+		if (peek_ch(l)=='|')
+		{
+			next_ch(l);
+			t.type=TOKEN_OR;
+		}
+		else if (peek_ch(l)=='=')
 		{
 			next_ch(l);
 			t.type=TOKEN_PIPE_ASSIGN;
@@ -495,8 +506,7 @@ Token lexer_next(Lexer *l)
 		}
 		else
 		{
-			fprintf(stderr,"line %d: Unexpected '!'\n",l->line);
-			exit(1);
+			t.type=TOKEN_NOT;
 		}
 
 		return t;
@@ -660,6 +670,14 @@ const char *token_type_name(TokenType t)
 		return "|=";
 	case TOKEN_CARET_ASSIGN:
 		return "^=";
+	case TOKEN_AND:
+		return "and";
+	case TOKEN_OR:
+		return "or";
+	case TOKEN_XOR:
+		return "xor";
+	case TOKEN_NOT:
+		return "not";
 	case TOKEN_ASSIGN:
 		return "=";
 	case TOKEN_EQ:

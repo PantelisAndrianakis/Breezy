@@ -260,6 +260,23 @@ static void test_hex_and_binary_literals(void)
 	ASSERT_STR(d.text, "42");
 }
 
+static void test_logical_tokens(void)
+{
+	Lexer l;
+	lexer_init(&l, "and or xor not && || !");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_AND);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_OR);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_XOR);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_NOT);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_AND);   /* && is a synonym for and. */
+	ASSERT_INT(lexer_next(&l).type, TOKEN_OR);    /* || is a synonym for or. */
+	ASSERT_INT(lexer_next(&l).type, TOKEN_NOT);   /* bare ! is not. */
+	ASSERT_INT(lexer_next(&l).type, TOKEN_EOF);
+	/* != must still be one token, not ! then =. */
+	lexer_init(&l, "!=");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_NEQ);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -341,6 +358,7 @@ int main(void)
 	RUN(test_compound_assign_ops);
 	RUN(test_bitwise_tokens);
 	RUN(test_hex_and_binary_literals);
+	RUN(test_logical_tokens);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);
