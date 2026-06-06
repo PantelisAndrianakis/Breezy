@@ -1144,6 +1144,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_UNARY:
 		resolve_expr(st,e->lhs,tc);
+		if (e->op==TOKEN_TILDE)
+		{
+			if (!ty_is_int(e->lhs->type.kind))
+			{
+				die(e->line,"Bitwise '~' requires an integer operand.",NULL);
+			}
+
+			e->type=e->lhs->type;
+			break;
+		}
+
 		if (!ty_is_int(e->lhs->type.kind) && !ty_is_float(e->lhs->type.kind))
 		{
 			die(e->line,"Unary '-' requires a numeric operand.",NULL);
@@ -1200,6 +1211,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			if (e->op==TOKEN_SHL || e->op==TOKEN_SHR)
 			{
 				die(e->line,"Shift operators '<<'/'>>' require integer operands.",NULL);
+			}
+
+			if (e->op==TOKEN_AMP || e->op==TOKEN_PIPE || e->op==TOKEN_CARET)
+			{
+				die(e->line,"Bitwise '&'/'|'/'^' require integer operands.",NULL);
 			}
 
 			TypeKind ft = (a==TY_DOUBLE || b==TY_DOUBLE) ? TY_DOUBLE : TY_FLOAT;

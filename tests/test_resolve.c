@@ -132,6 +132,33 @@ static void test_enum_lowers_to_class(void)
 	ASSERT_INT(enum_count_of("Color"), 3);
 }
 
+static void test_bitwise_typing(void)
+{
+	const char *srcs[] =
+	{
+		"int fand() { return 6 & 3; }"
+		"int forr() { return 6 | 1; }"
+		"int fxor() { return 5 ^ 1; }"
+		"int fnot() { return ~0; }"
+		"void main() { }"
+	};
+	build_program(srcs, 1);
+	Func *a = prog_find_func("fand");
+	ASSERT_INT(a->body->stmts[0]->ret_val->kind, EX_BINARY);
+	ASSERT_INT(a->body->stmts[0]->ret_val->op, TOKEN_AMP);
+	ASSERT_INT(a->body->stmts[0]->ret_val->type.kind, TY_INT);
+	Func *o = prog_find_func("forr");
+	ASSERT_INT(o->body->stmts[0]->ret_val->op, TOKEN_PIPE);
+	ASSERT_INT(o->body->stmts[0]->ret_val->type.kind, TY_INT);
+	Func *x = prog_find_func("fxor");
+	ASSERT_INT(x->body->stmts[0]->ret_val->op, TOKEN_CARET);
+	ASSERT_INT(x->body->stmts[0]->ret_val->type.kind, TY_INT);
+	Func *n = prog_find_func("fnot");
+	ASSERT_INT(n->body->stmts[0]->ret_val->kind, EX_UNARY);
+	ASSERT_INT(n->body->stmts[0]->ret_val->op, TOKEN_TILDE);
+	ASSERT_INT(n->body->stmts[0]->ret_val->type.kind, TY_INT);
+}
+
 static void test_enum_static_access(void)
 {
 	const char *srcs[] =
@@ -817,6 +844,7 @@ int main(void)
 	printf("Resolver tests\n");
 	RUN(test_interface_call_resolves);
 	RUN(test_enum_lowers_to_class);
+	RUN(test_bitwise_typing);
 	RUN(test_enum_static_access);
 	RUN(test_static_member_resolves);
 	RUN(test_generic_lowers_to_class);
