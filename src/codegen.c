@@ -4165,6 +4165,20 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			}
 		}
 
+		/* Each managed arg crosses to the spawned breeze (possibly another core);
+		   promote leaves to an atomic refcount before the breeze can run. The block
+		   still holds each arg; load and share it (object graphs are a no-op here
+		   and rely on the compile-time shared-set). */
+		for (int i=0; i<n; i++)
+		{
+			if (ty_is_managed(s->expr->args[i]->type.kind))
+			{
+				cg_emit(cg,"    mov rdx, [rbp - %d]", b);
+				cg_emit(cg,"    mov %s, [rdx + %d]", cg_iarg(cg, 0), i*8);
+				cg_aligned_call(cg,"bzy_share_crosscore");
+			}
+		}
+
 		cg_emit(cg,"    lea %s, [rel __breeze_%s]", cg_iarg(cg, 0), fi->asm_label);
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b);
 		cg_aligned_call(cg,"bzy_spawn_args");
@@ -4974,6 +4988,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern free");
 	cg_emit(cg,"extern bzy_alloc");
 	cg_emit(cg,"extern bzy_retain");
+	cg_emit(cg,"extern bzy_share_crosscore");
 	cg_emit(cg,"extern bzy_release");
 	cg_emit(cg,"extern bzy_live_count");
 	cg_emit(cg,"extern bzy_collect_cycles");

@@ -283,6 +283,40 @@ void *bzy_alloc(int64_t size)
 	return o;
 }
 
+/* Cross-core publication: an object handed to another worker thread (a channel
+   value, a spawn argument) needs an atomic refcount, or its non-atomic count
+   races across cores and is freed early (use-after-free). The SHARED bit is
+   normally fixed at allocation; promoting it here is safe ONLY for a leaf (no
+   managed children): a leaf is never cycle-buffered and never visited by the
+   collector, and at the first cross-core handoff the object is still confined to
+   this thread (an unshared object is single-core by invariant), so this thread is
+   its only accessor and the plain OR cannot race. Objects WITH managed children
+   can be cycle-buffered, and the roots buffer (g_roots) is shared across threads,
+   so promoting them here could race a collector running on another thread; those
+   are covered at compile time when their class is a channel element type (see
+   types_compute_shared_set). The remaining cases -- builtin containers of objects
+   crossing a channel, and spawn args that are objects with object fields -- are a
+   documented gap (bench/REPORT.md P7). Idempotent and NULL/unmanaged-safe. */
+void bzy_share_crosscore(void *o)
+{
+	if (!o || *RC(o) == 0)
+	{
+		return;   /* NULL or an unmanaged (stack) value: nothing to share. */
+	}
+
+	if (*GI(o) & BZY_GCINFO_SHARED)
+	{
+		return;   /* Already shared (idempotent). */
+	}
+
+	if (has_object_children(o))
+	{
+		return;   /* Not a leaf: promotion here would race the cycle collector. */
+	}
+
+	*GI(o) |= BZY_GCINFO_SHARED;
+}
+
 void bzy_retain(void *obj)
 {
 	if (!obj)

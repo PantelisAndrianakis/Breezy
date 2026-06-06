@@ -173,6 +173,16 @@ void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 
 void bzy_channel_send(void *c, int64_t v)
 {
+	/* The value is about to cross to a receiver that may run on another worker
+	   thread. If it is a managed leaf (string, value array, scalar-only object),
+	   promote it to an atomic refcount before it is published -- it is still
+	   confined to this thread here, so the promotion cannot race. Leaves only;
+	   object graphs are handled at compile time (see bzy_share_crosscore). */
+	if (*C_EMAN(c))
+	{
+		bzy_share_crosscore((void*)v);
+	}
+
 	bzy_mutex_lock(C_LOCK(c));
 
 	/* A receiver is already waiting (channel was empty): hand the value over. */

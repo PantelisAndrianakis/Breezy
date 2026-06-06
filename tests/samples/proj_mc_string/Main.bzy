@@ -1,0 +1,51 @@
+// Cross-core string aliasing: one payload string is shared by four producer
+// breezes (each spawn retains it) and main (which holds it and receives copies).
+// Every producer repeatedly sends the SAME object, retaining it on its core while
+// main releases each received reference on its core -> the refcount is mutated
+// concurrently on multiple cores. Without cross-core promotion (P7) that count is
+// non-atomic and races (corruption / early free / wrong total / crash). The fix
+// promotes the payload to an atomic refcount at the spawn handoff (a leaf string).
+// The total is deterministic: 4 producers x 250 sends x len("shared-payload!") (15)
+// = 15000, regardless of interleaving.
+void producer(channel<string> out, string payload, int count)
+{
+	int i;
+	for (i = 0; i < count; i++)
+	{
+		out.send(payload);
+	}
+}
+
+void main()
+{
+	channel<string> c;
+	c = new channel<string>(16);
+
+	string payload;
+	payload = "shared-payload!";   // 15 bytes.
+
+	int producers;
+	producers = 4;
+	int per;
+	per = 250;
+
+	int p;
+	for (p = 0; p < producers; p++)
+	{
+		spawn producer(c, payload, per);
+	}
+
+	int total;
+	total = producers * per;
+	long sum;
+	sum = 0;
+	int got;
+	for (got = 0; got < total; got++)
+	{
+		string s;
+		s = c.recv();
+		sum += s.length();
+	}
+
+	print(sum);                  // 15000
+}

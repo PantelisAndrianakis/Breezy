@@ -17,6 +17,7 @@
 void   *bzy_alloc(int64_t size);   /* Allocate, zero, set refcount to 1, bump live count; caller sets the vtable. */
 void    bzy_retain(void *obj);     /* Increment the refcount (NULL-safe). */
 void    bzy_release(void *obj);    /* Decrement the refcount; free acyclic garbage, buffer cycle candidates (NULL-safe). */
+void    bzy_share_crosscore(void *o); /* Mark a leaf SHARED before a cross-core handoff (channel send / spawn arg). */
 int64_t bzy_live_count(void);      /* Number of objects currently alive (for tests and leak checks). */
 
 void   *bzy_class_name(void *obj);  /* Owned (+1) string: the object's dynamic class name. */
