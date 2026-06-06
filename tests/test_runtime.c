@@ -1541,6 +1541,30 @@ static void test_map_grow_keeps_entries(void)
 	ASSERT_INT(bzy_live_count(), before);  /* No leak through grow/rehash. */
 }
 
+static void test_hash_bytes_stable(void)
+{
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(1, 0);
+
+	void *a = bzy_str_new("alpha", 5);
+	void *b = bzy_str_new("alphabet_long_key_padding_1234567890", 36);
+	void *a2 = bzy_str_new("alpha", 5);          /* Value-equal, distinct object. */
+
+	bzy_map_put(m, (int64_t)a, 11);
+	bzy_map_put(m, (int64_t)b, 22);
+
+	ASSERT_INT(bzy_map_get(m, (int64_t)a), 11);   /* Determinism: same bytes -> same slot. */
+	ASSERT_INT(bzy_map_get(m, (int64_t)a2), 11);  /* Content equality across short keys. */
+	ASSERT_INT(bzy_map_get(m, (int64_t)b), 22);   /* Long key resolves independently. */
+	ASSERT_INT(bzy_map_len(m), 2);
+
+	bzy_release(m);
+	bzy_release(a);
+	bzy_release(b);
+	bzy_release(a2);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1554,6 +1578,7 @@ int main(void)
 	RUN(test_string_concat);
 	RUN(test_str_concat_n);
 	RUN(test_map_grow_keeps_entries);
+	RUN(test_hash_bytes_stable);
 	RUN(test_array_value_roundtrip);
 	RUN(test_array_object_elements_released);
 	RUN(test_map_int_keys);

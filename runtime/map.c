@@ -106,12 +106,22 @@ int64_t bzy_ptr_hash(void *p)
 static uint64_t hash_bytes(const char *p, int64_t n)
 {
 	uint64_t h = 0x9e3779b97f4a7c15ULL;
-	for (int64_t i = 0; i < n; i++)
+	int64_t i = 0;
+	for (; i + 8 <= n; i += 8)        /* Eight bytes per mix instead of one. */
 	{
-		h = mix64(h ^ (uint8_t)p[i]);
+		uint64_t w;
+		memcpy(&w, p + i, 8);          /* memcpy: no alignment assumption; GCC emits a mov. */
+		h = mix64(h ^ w);
 	}
 
-	return mix64(h ^ (uint64_t)n);
+	uint64_t tail = 0;                 /* Remaining 0-7 bytes, low-to-high. */
+	for (int64_t j = 0; i + j < n; j++)
+	{
+		tail |= (uint64_t)(uint8_t)p[i + j] << (j * 8);
+	}
+
+	h = mix64(h ^ tail);
+	return mix64(h ^ (uint64_t)n);     /* Length-mix preserved (distinguishes trailing zeros). */
 }
 
 static uint64_t hash_key(void *m, int64_t key)
