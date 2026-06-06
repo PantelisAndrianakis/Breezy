@@ -15,6 +15,25 @@ static void test_int_literal(void)
 	ASSERT_INT(e->int_val, 42);
 }
 
+static void test_logical_precedence(void)
+{
+	/* `or` is loosest: a or b and c  ==>  a or (b and c). */
+	Expr *e = parse_str("a or b and c");
+	ASSERT_INT(e->kind, EX_BINARY);
+	ASSERT_INT(e->op, TOKEN_OR);
+	ASSERT_INT(e->rhs->kind, EX_BINARY);
+	ASSERT_INT(e->rhs->op, TOKEN_AND);
+
+	/* && / || are synonyms producing the same tokens. */
+	Expr *s = parse_str("a && b");
+	ASSERT_INT(s->op, TOKEN_AND);
+
+	/* not is a prefix unary. */
+	Expr *u = parse_str("not x");
+	ASSERT_INT(u->kind, EX_UNARY);
+	ASSERT_INT(u->op, TOKEN_NOT);
+}
+
 static void test_bitwise_precedence(void)
 {
 	/* `|` is loosest: a | b & c  ==>  a | (b & c). Top node is '|', rhs is '&'. */
@@ -625,6 +644,7 @@ int main(void)
 	RUN(test_int_literal);
 	RUN(test_hex_literal_value);
 	RUN(test_bitwise_precedence);
+	RUN(test_logical_precedence);
 	RUN(test_bool_literal);
 	RUN(test_null_literal);
 	RUN(test_cast);

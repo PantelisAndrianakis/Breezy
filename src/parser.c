@@ -64,6 +64,9 @@ void parser_init(Parser *p, const char *src)
 	advance(p);
 }
 
+static Expr *parse_or(Parser *p);
+static Expr *parse_xor(Parser *p);
+static Expr *parse_and(Parser *p);
 static Expr *parse_bitor(Parser *p);
 static Expr *parse_bitxor(Parser *p);
 static Expr *parse_bitand(Parser *p);
@@ -81,7 +84,59 @@ static int   scalar_type_kind(TokenType t, TypeKind *out);
 
 Expr *parse_expr(Parser *p)
 {
-	return parse_bitor(p);
+	return parse_or(p);
+}
+
+/* Logical OR - loosest operator. Left-associative, boolean. */
+static Expr *parse_or(Parser *p)
+{
+	Expr *left = parse_xor(p);
+	while (check(p,TOKEN_OR))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_xor(p);
+		left=e;
+	}
+	return left;
+}
+
+/* Logical XOR - between OR and AND. Left-associative, boolean. */
+static Expr *parse_xor(Parser *p)
+{
+	Expr *left = parse_and(p);
+	while (check(p,TOKEN_XOR))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_and(p);
+		left=e;
+	}
+	return left;
+}
+
+/* Logical AND - tightest logical level, looser than the bitwise operators.
+   Left-associative, boolean. */
+static Expr *parse_and(Parser *p)
+{
+	Expr *left = parse_bitor(p);
+	while (check(p,TOKEN_AND))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_bitor(p);
+		left=e;
+	}
+	return left;
 }
 
 /* Bitwise OR - loosest of the bitwise operators, looser than comparison.
@@ -228,6 +283,15 @@ static Expr *parse_unary(Parser *p)
 		Expr *e=expr_new(EX_CAST,line);
 		parse_type(p,&e->type);     /* Cast target lives in the result type slot. */
 		expect(p,TOKEN_RPAREN);
+		e->lhs=parse_unary(p);
+		return e;
+	}
+	if (check(p,TOKEN_NOT))
+	{
+		int line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_UNARY,line);
+		e->op=TOKEN_NOT;
 		e->lhs=parse_unary(p);
 		return e;
 	}
