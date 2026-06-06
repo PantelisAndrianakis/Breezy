@@ -15,6 +15,20 @@ static void test_int_literal(void)
 	ASSERT_INT(e->int_val, 42);
 }
 
+static void test_equality_words(void)
+{
+	/* `a equals b` lexes `equals` as an identifier; the parser treats it as ==. */
+	Expr *e = parse_str("a equals b");
+	ASSERT_INT(e->kind, EX_BINARY);
+	ASSERT_INT(e->op, TOKEN_EQ);
+	Expr *d = parse_str("a differs b");
+	ASSERT_INT(d->kind, EX_BINARY);
+	ASSERT_INT(d->op, TOKEN_NEQ);
+	/* The words remain usable as plain identifiers. */
+	Expr *id = parse_str("equals");
+	ASSERT_INT(id->kind, EX_IDENT);
+}
+
 static void test_logical_precedence(void)
 {
 	/* `or` is loosest: a or b and c  ==>  a or (b and c). */
@@ -645,6 +659,7 @@ int main(void)
 	RUN(test_hex_literal_value);
 	RUN(test_bitwise_precedence);
 	RUN(test_logical_precedence);
+	RUN(test_equality_words);
 	RUN(test_bool_literal);
 	RUN(test_null_literal);
 	RUN(test_cast);

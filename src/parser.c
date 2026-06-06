@@ -200,9 +200,23 @@ static int is_cmp(TokenType t)
 static Expr *parse_comparison(Parser *p)
 {
 	Expr *left = parse_shift(p);
+	int op = 0;
 	if (is_cmp(p->cur.type))
 	{
-		int op = p->cur.type, line = p->cur.line;
+		op = p->cur.type;
+	}
+	else if (p->cur.type==TOKEN_IDENT && strcmp(p->cur.text,"equals")==0)
+	{
+		op = TOKEN_EQ;   /* Soft keyword: == in infix position only. */
+	}
+	else if (p->cur.type==TOKEN_IDENT && strcmp(p->cur.text,"differs")==0)
+	{
+		op = TOKEN_NEQ;  /* Soft keyword: != in infix position only. */
+	}
+
+	if (op)
+	{
+		int line = p->cur.line;
 		advance(p);
 		Expr *e = expr_new(EX_BINARY, line);
 		e->op=op;

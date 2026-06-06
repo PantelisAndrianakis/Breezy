@@ -1,0 +1,9 @@
+// The equals/differs soft keywords are readable synonyms for == and !=.
+// Expected: true false false true.
+void main()
+{
+	print(3 equals 3);    // true.
+	print(3 equals 4);    // false.
+	print(3 differs 3);   // false.
+	print(3 differs 4);   // true.
+}

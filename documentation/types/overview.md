@@ -135,6 +135,17 @@ print(0b1010);       // 10
 
 ---
 
+## Equality word synonyms
+
+`equals` and `differs` are readable synonyms for `==` and `!=`: `a equals b` is `a == b`, and `a differs b` is `a != b`. They are **soft keywords** - recognized as operators only between two expressions - so the words remain usable as identifiers and method names (`a.equals(b)`, the record value-equality method, is unaffected).
+
+```breezy
+print(3 equals 3);    // true
+print(3 differs 4);   // true
+```
+
+---
+
 ## Reference types
 
 `string`, arrays, maps, collections, channels, and your own classes are **reference types** - they live on the heap (when they escape their scope) and are managed automatically by [ARC and the cycle collector](../memory/automatic-memory.md). You never free them.
