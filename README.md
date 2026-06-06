@@ -2,7 +2,7 @@
 
 ## What is Breezy?
 
-Breezy is a statically-typed, object-oriented language with clean, familiar syntax that compiles **straight to native x86-64 assembly**. No virtual machine. No bytecode. No tracing garbage collector. Just your code, lowered to the metal - with memory and concurrency handled *for* you, automatically.
+Breezy is a statically-typed, object-oriented language with clean, familiar syntax that compiles **straight to native x86-64 assembly**. No virtual machine. No bytecode. No tracing heap garbage collector. Just your code, lowered to the metal - with memory and concurrency handled *for* you, automatically.
 
 The promise is simple: **the ergonomics of a managed language, the footprint and latency of C.**
 
@@ -35,7 +35,7 @@ void main()
 }
 ```
 
-Familiar on purpose. If you've written Java or C#, you already know how to read it - and it compiles straight to a native executable with no runtime to ship.
+Familiar on purpose. If you've written Java or C#, you already know how to read it - and it compiles straight to a native executable with no separate runtime to install.
 
 ---
 
@@ -47,7 +47,7 @@ Most "easy" languages buy their convenience with a heavy runtime: a JIT that war
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 🚀 **Native execution**               | Compiles directly to x86-64 assembly. No interpreter, no bytecode, and no JIT compilation.                                                                         |
 | 🪶 **Low memory usage**               | Automatic Reference Counting (ARC) releases objects when their reference count reaches zero, keeping memory usage close to the application's live data.            |
-| ⚡ **Predictable latency**             | No tracing garbage collector and no stop-the-world collection cycles. Memory reclamation occurs incrementally as objects become unreachable.                       |
+| ⚡ **Predictable latency**             | No stop-the-world heap scans. Memory reclamation occurs incrementally as objects become unreachable, with a bounded cycle collector only for reference cycles.     |
 | 🧵 **Scalable concurrency**           | Lightweight coroutines ("breezes") allow large numbers of concurrent tasks to be multiplexed across a small number of operating-system threads.                    |
 | 🔌 **Direct native interoperability** | Objects are never relocated in memory, allowing pointers to be passed directly to C libraries without pinning or object movement.                                  |
 | ✍️ **Automatic resource management**  | Memory management and concurrency are handled by the language, eliminating manual deallocation, ownership tracking, and lifetime management from application code. |
@@ -111,10 +111,10 @@ The language aims to provide:
 
 * Automatic memory management
 * Automatic concurrency management
-* No garbage collector
+* No tracing heap garbage collector
 * No manual locking
 * No manual allocation
-* No unpredictable runtime pauses
+* No stop-the-world runtime pauses
 * No unnecessary runtime overhead
 
 The compiler should perform as much analysis and optimization as possible, allowing developers to focus on solving problems rather than managing resources.
@@ -129,7 +129,7 @@ The language should not favor one platform over another, nor should developers b
 
 The objective is simple:
 
-Create a language that makes memory management and concurrency largely disappear from application code without relying on a garbage collector, a virtual machine, or a heavyweight runtime.
+Create a language that makes memory management and concurrency largely disappear from application code without relying on a tracing garbage collector, a virtual machine, or a heavyweight runtime.
 
 Developers should be able to write clear, familiar, object-oriented code while the compiler handles the complexity of resource management and execution.
 
