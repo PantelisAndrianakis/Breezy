@@ -132,6 +132,8 @@ check compound    tests/samples/proj_compound      $'6\n10\nabc'
 check bitwise     tests/samples/bitwise.bzy        $'255\n15\n4\n-1\n10\n16'
 check_fail bitwise_float tests/samples/bad_bitwise_float.bzy
 check equals_words tests/samples/equals_words.bzy $'true\nfalse\nfalse\ntrue'
+check logical     tests/samples/logical.bzy        $'false\ntrue\nfalse\ntrue\ntrue\n7'
+check_fail logical_int tests/samples/bad_logical_int.bzy
 check math_basic  tests/samples/proj_math_basic    $'4\n5\n2.5'
 check math_minmax tests/samples/proj_math_minmax   $'7\n3\n5\n0\n2.5'
 check math_round  tests/samples/proj_math_round    $'2\n3\n2\n3\ntrue\nfalse'

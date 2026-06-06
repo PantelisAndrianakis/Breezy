@@ -1,0 +1,6 @@
+// Logical operators require booleans, not integers.
+void main()
+{
+	bool b;
+	b = 3 and 4;
+}

@@ -1,0 +1,24 @@
+// Logical operators: and/or (short-circuit), xor, not, and composition with
+// comparisons. The fail() call must never run, proving `or` short-circuits.
+// Expected: false true false true true 7.
+int fail()
+{
+	print(999);   // Must never print if short-circuit works.
+	return 1;
+}
+
+void main()
+{
+	print(true and false);     // false.
+	print(true or false);      // true.
+	print(true xor true);      // false.
+	print(not false);          // true.
+	print(2 > 1 and 3 > 1);    // true.
+	int n;
+	n = 0;
+	if (n == 0 or fail() > 0)   // Short-circuit: fail() must not run.
+	{
+		n = 7;
+	}
+	print(n);                  // 7.
+}
