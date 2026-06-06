@@ -3242,6 +3242,8 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main);
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);
 static int cg_tt_has_statics(TypeTable *tt);
+static void cg_accum_loop(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);   /* P5. */
+static void cg_accum_append(Codegen *cg, TypeTable *tt, Stmt *a);                       /* P5. */
 
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {
@@ -3954,7 +3956,11 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 		break;
 	case ST_ASSIGN:
-		if (ty_is_managed(s->target->type.kind))
+		if (s == cg->cur_accum_stmt)   /* P5: lower this iteration's accumulation to sb appends. */
+		{
+			cg_accum_append(cg,tt,s);
+		}
+		else if (ty_is_managed(s->target->type.kind))
 		{
 			cg_assign_object(cg,tt,s->target,s->value);
 		}
@@ -4055,6 +4061,12 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	}
 	case ST_WHILE:
 	{
+		if (s->accum_sb_offset)   /* P5: string self-accumulation -> StringBuilder. */
+		{
+			cg_accum_loop(cg,tt,f,s,in_main);
+			break;
+		}
+
 		int top=cg_label(cg), end=cg_label(cg);
 		int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 		cg->cur_break_label=end;
@@ -4080,7 +4092,14 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,"    jmp .L%d", cg->cur_continue_label);
 		break;
 	case ST_FOR:
-		cg_for(cg,tt,f,s,in_main);
+		if (s->accum_sb_offset)   /* P5: string self-accumulation -> StringBuilder. */
+		{
+			cg_accum_loop(cg,tt,f,s,in_main);
+		}
+		else
+		{
+			cg_for(cg,tt,f,s,in_main);
+		}
 		break;
 	case ST_SWITCH:
 		cg_switch(cg,tt,f,s,in_main);
@@ -4162,6 +4181,100 @@ static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main)
 	{
 		cg_stmt(cg,tt,f,b->stmts[i],in_main);
 	}
+}
+
+/* P5: emit the body's recognized `s = s + ...` as appends to the active builder.
+   The chain's leftmost leaf is s (the accumulator, already in the builder), so
+   only the leaves after it are appended. Each non-s leaf is evaluated to an owned
+   (+1) string, appended (bzy_sb_append copies the bytes), then released. The
+   recognizer guaranteed the chain fits the flattener (<= CONCAT_MAX leaves). */
+static void cg_accum_append(Codegen *cg, TypeTable *tt, Stmt *a)
+{
+	int off = cg->cur_accum_sb_off;
+	Expr *ops[CONCAT_MAX];
+	int n = cg_collect_concat(a->value, ops, 0, CONCAT_MAX);
+	for (int i=1; i<n; i++)   /* Skip ops[0] = the leftmost leaf s. */
+	{
+		int b = cg_scratch_alloc(cg, 16);
+		cg_concat_operand(cg,tt,ops[i]);                  /* Owned (+1) string in rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), off);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b);
+		cg_aligned_call(cg,"bzy_sb_append");
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+		cg_release_rcx(cg);                               /* Release the owned leaf. */
+		cg_scratch_free(cg, 16);
+	}
+}
+
+/* P5: lower a recognized string self-accumulation loop to an O(n) StringBuilder.
+   Prologue: sb = bzy_sb_new(); seed it with s's pre-loop value. Body: the
+   recognized accumulation statement is replaced (via cur_accum_stmt) by appends
+   of the non-s leaves. Epilogue: s = bzy_sb_to_string(sb), releasing the old s
+   and the builder. The loop skeleton mirrors the normal ST_FOR / ST_WHILE paths
+   exactly (same labels and continue target); break is impossible here (the
+   recognizer rejects any early exit). */
+static void cg_accum_loop(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	int off = s->accum_sb_offset;
+	int soff = s->accum_stmt->target->anno_int;
+
+	cg_aligned_call(cg,"bzy_sb_new");                 /* Owned (+1) builder in rax. */
+	cg_emit(cg,"    mov [rbp - %d], rax", off);
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), off);
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), soff);   /* Seed with the borrowed initial s. */
+	cg_aligned_call(cg,"bzy_sb_append");
+
+	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
+	int sbk=cg->cur_break_label, sc=cg->cur_continue_label;
+	Stmt *sa=cg->cur_accum_stmt;
+	int saoff=cg->cur_accum_sb_off;
+	cg->cur_accum_stmt = s->accum_stmt;
+	cg->cur_accum_sb_off = off;
+
+	if (s->kind==ST_FOR)
+	{
+		cg_stmt(cg,tt,f,s->for_init,in_main);
+		cg_emit(cg,".L%d:", top);
+		cg_expr(cg,tt,s->cond);
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    je .L%d", end);
+		cg->cur_break_label=end;
+		cg->cur_continue_label=cont;
+		cg_block(cg,tt,f,s->then_blk,in_main);
+		cg->cur_break_label=sbk;
+		cg->cur_continue_label=sc;
+		cg_emit(cg,".L%d:", cont);
+		cg_stmt(cg,tt,f,s->for_post,in_main);
+		cg_emit(cg,"    jmp .L%d", top);
+		cg_emit(cg,".L%d:", end);
+	}
+	else   /* ST_WHILE. */
+	{
+		cg->cur_break_label=end;
+		cg->cur_continue_label=top;
+		cg_emit(cg,".L%d:", top);
+		cg_expr(cg,tt,s->cond);
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    je .L%d", end);
+		cg_block(cg,tt,f,s->then_blk,in_main);
+		cg_emit(cg,"    jmp .L%d", top);
+		cg_emit(cg,".L%d:", end);
+		cg->cur_break_label=sbk;
+		cg->cur_continue_label=sc;
+	}
+
+	cg->cur_accum_stmt=sa;
+	cg->cur_accum_sb_off=saoff;
+
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), off);
+	cg_aligned_call(cg,"bzy_sb_to_string");           /* Owned (+1) result string in rax. */
+	cg_emit(cg,"    mov rbx, [rbp - %d]", soff);       /* Old accumulator. */
+	cg_emit(cg,"    mov [rbp - %d], rax", soff);       /* Store the materialized result (transfers +1). */
+	cg_emit(cg,"    mov %s, rbx", cg_iarg(cg, 0));
+	cg_release_rcx(cg);                                /* Release old s. */
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), off);
+	cg_release_rcx(cg);                                /* Release the builder. */
 }
 
 /* Emits one per-function exception record into .data (PC range, frame size, name,

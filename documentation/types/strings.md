@@ -28,7 +28,7 @@ The parts of a `+` chain are joined in a single pass into one new string sized t
 
 ## StringBuilder - efficient accumulation
 
-Building a string by repeated `+` in a loop is O(n²) because each step copies everything so far. For heavy accumulation, use a **`StringBuilder`**, which appends into a doubling buffer (O(n) total) and snapshots to an immutable `string` with `toString()`.
+Building a string by repeated `+` in a loop is O(n²) because each step copies everything so far. The compiler **automatically lowers the common `s = s + …` (and `s += …`) accumulation loop to a StringBuilder** (O(n) total), so the straightforward code is already fast. An explicit **`StringBuilder`** is still the right choice when the accumulator is read mid-loop, the loop can exit early, or the accumulation isn't a simple append-on-the-end — the cases the automatic lowering deliberately leaves untouched. It appends into a doubling buffer (O(n) total) and snapshots to an immutable `string` with `toString()`.
 
 ```breezy
 StringBuilder sb;

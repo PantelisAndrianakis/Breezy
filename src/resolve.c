@@ -3040,6 +3040,19 @@ static int p5_stmt_has_exit(Stmt *s)
 		   || p5_block_has_exit(s->else_blk);
 }
 
+/* Count the leaf operands of a string-concat chain (a '+' whose result is string
+   is an interior node). Mirrors codegen's cg_collect_concat so the recognizer can
+   refuse a chain the flattener would overflow (CONCAT_MAX). */
+static int p5_count_leaves(Expr *e)
+{
+	if (e->kind == EX_BINARY && e->type.kind == TY_STRING)
+	{
+		return p5_count_leaves(e->lhs) + p5_count_leaves(e->rhs);
+	}
+
+	return 1;
+}
+
 static void p5_try_lower_accum(Stmt *loop, Func *f)
 {
 	Block *B = loop->then_blk;
@@ -3090,6 +3103,13 @@ static void p5_try_lower_accum(Stmt *loop, Func *f)
 	}
 
 	int soff = A->target->anno_int;
+
+	/* The chain must fit codegen's concat flattener (CONCAT_MAX == 64 leaves);
+	   longer chains are vanishingly rare and are simply left unlowered. */
+	if (p5_count_leaves(A->value) > 64)
+	{
+		return;
+	}
 
 	/* Condition 4: s occurs exactly once in the chain (the leftmost leaf) and
 	   nowhere else in the body, cond, or for clauses. */

@@ -28,6 +28,8 @@ typedef struct
 	int cur_scratch_cap; /* This function's arena size (max_scratch_bytes, 16-aligned); cg_scratch_alloc traps on overflow. */
 	int cur_break_label;     /* Enclosing loop's end label (-1 if not in a loop). */
 	int cur_continue_label;  /* Enclosing loop's continue target (-1 if not in a loop). */
+	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
+	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
 	int exception_try_count; /* File-unique try-region label counter (__exceptiontry<k>_*). */
 	int cur_try_count;       /* Try-regions in the function currently being emitted. */

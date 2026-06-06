@@ -71,6 +71,8 @@ check promote_signed tests/samples/proj_promote_signed $'8\n2\n15\n1\n0\n1000000
 check string      tests/samples/proj_string    $'Hello, Breezy\n13'
 check str_concat_val tests/samples/proj_str_concat_value $'Score: 42\n42 points\nx=3 y=7\nok? true\nd=1.5\nab'
 check concat_chain    tests/samples/proj_concat_chain  $'abcdeab\nn=123'
+check str_accum    tests/samples/proj_str_accum  $'ab0ab1ab2ab3ab4\nx---\nz'
+check str_accum_guard tests/samples/proj_str_accum_guard  $'xxx\n1\n2\n3\nyyy\nzz'
 check array       tests/samples/proj_array     $'30'
 check array_obj   tests/samples/proj_array_obj $'4\n5'
 check array_cycle tests/samples/proj_array_cycle $'0'
