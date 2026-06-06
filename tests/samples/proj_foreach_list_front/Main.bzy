@@ -1,0 +1,29 @@
+// Value-collection foreach with a non-zero ring head: addFirst moves the head
+// off 0, so the inlined value-foreach ring mask (P8) is exercised. foreach must
+// still yield logical order (1, 5, 10, 20), not physical slot order.
+void main()
+{
+	List<int> xs;
+	xs = new List<int>();
+	xs.add(10);
+	xs.add(20);
+	xs.addFirst(5);
+	xs.addFirst(1);
+
+	int first;
+	first = -1;
+	int sum;
+	sum = 0;
+	foreach (int v in xs)
+	{
+		if (first < 0)
+		{
+			first = v;
+		}
+
+		sum = sum + v;
+	}
+
+	print(first);   // 1  -- first logical element after the front-inserts.
+	print(sum);     // 36 -- 1 + 5 + 10 + 20.
+}

@@ -112,6 +112,7 @@ check set_enum    tests/samples/proj_set_enum      $'2\ntrue\nfalse'
 check set_long    tests/samples/proj_set_long      $'2\ntrue\ntrue'
 check_fail set_float tests/samples/bad_set_float
 check foreach_list tests/samples/proj_foreach_list $'12'
+check foreach_list_front tests/samples/proj_foreach_list_front $'1\n36'
 check foreach_set  tests/samples/proj_foreach_set  $'30\n2'
 check list_obj    tests/samples/proj_list_obj      $'6\n8\n7'
 check list_cycle  tests/samples/proj_list_cycle    $'0'

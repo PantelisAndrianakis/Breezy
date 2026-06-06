@@ -3399,13 +3399,33 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	else if (gen_vec)
 	{
 		TypeKind et = s->expr->type.elem->kind;
+		int managed = ty_is_managed(et);
 		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
 		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_coll_offset);
 		cg_emit(cg,"    cmp rcx, [rdx + 24]");           /* index vs length@24 */
 		cg_emit(cg,"    jge .L%d", end);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
-		cg_aligned_call(cg,"bzy_vec_get");               /* Element (managed -> retained) in rax. */
+		if (managed)
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
+			cg_aligned_call(cg,"bzy_vec_get");           /* Element (owned -> retained) in rax. */
+		}
+		else
+		{
+			/* Value element: inline the ring load, skipping the bzy_vec_get
+			   call, its redundant bounds check, and the value-case no-op
+			   retain. rcx=index, rdx=coll survive from the bounds check above.
+			   Vector layout: cap@32, head@40, data array@48; the data array
+			   holds its 8-byte slots at +32. phys = (head+i) & (cap-1) (cap is
+			   a power of two). No call here, so r8/rax/rcx scratch is safe. */
+			cg_emit(cg,"    mov rax, [rdx + 48]");        /* data array ptr */
+			cg_emit(cg,"    mov r8, [rdx + 40]");         /* head */
+			cg_emit(cg,"    add rcx, r8");                /* head + index */
+			cg_emit(cg,"    mov r8, [rdx + 32]");         /* cap */
+			cg_emit(cg,"    dec r8");                     /* cap - 1 */
+			cg_emit(cg,"    and rcx, r8");                /* phys = (head+i) & (cap-1) */
+			cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
+		}
 		if (ty_is_float(et))
 		{
 			char mem[32];
@@ -3418,7 +3438,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
 		}
 
-		if (ty_is_managed(et))   /* bzy_vec_get returned owned; the loop var is borrowed. */
+		if (managed)   /* bzy_vec_get returned owned; the loop var is borrowed. */
 		{
 			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->decl_offset);
 			cg_release_rcx(cg);
