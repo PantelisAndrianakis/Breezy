@@ -155,6 +155,21 @@ static void test_devirt_unoverridden_base_method(void)
 	ASSERT_INT(strstr(g_asm, "call Animal__tag") != NULL, 1);
 }
 
+static void test_bitwise_emission(void)
+{
+	emit("void main() { int a; a = 6 & 3; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "and rax, rbx") != NULL, 1);
+
+	emit("void main() { int a; a = 6 | 1; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "or rax, rbx") != NULL, 1);
+
+	emit("void main() { int a; a = 5 ^ 1; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "xor rax, rbx") != NULL, 1);
+
+	emit("void main() { int a; a = ~0; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "not rax") != NULL, 1);
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
@@ -165,6 +180,7 @@ int main(void)
 	RUN(test_devirt_monomorphic_direct);
 	RUN(test_devirt_polymorphic_stays_indirect);
 	RUN(test_devirt_unoverridden_base_method);
+	RUN(test_bitwise_emission);
 	SUMMARY();
 	return 0;
 }

@@ -707,6 +707,18 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 
 		cg_extend_reg(cg,e->type.kind);
 		break;
+	case TOKEN_AMP:
+		cg_emit(cg,"    and rax, rbx");
+		cg_extend_reg(cg,e->type.kind);
+		break;
+	case TOKEN_PIPE:
+		cg_emit(cg,"    or rax, rbx");
+		cg_extend_reg(cg,e->type.kind);
+		break;
+	case TOKEN_CARET:
+		cg_emit(cg,"    xor rax, rbx");
+		cg_extend_reg(cg,e->type.kind);
+		break;
 	case TOKEN_EQ:
 	case TOKEN_NEQ:
 	case TOKEN_LT:
@@ -3094,7 +3106,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else
 		{
-			cg_emit(cg,"    neg rax");
+			cg_emit(cg, e->op==TOKEN_TILDE ? "    not rax" : "    neg rax");
 			cg_extend_reg(cg,e->type.kind);
 		}
 
