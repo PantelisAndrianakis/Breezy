@@ -48,6 +48,26 @@ static int64_t  *M_VMAN(void *m)
 	return (int64_t*)((char*)m + 72);
 }
 
+/* Caching the per-slot hash only pays off for keys whose hash is expensive to
+   recompute on grow: string content (kind 1, FNV + a pointer chase into the key)
+   and record value (kind 3, a user hashCode call). Integer (0) and object
+   identity (2) keys hash in a couple of instructions, so caching them would only
+   add a per-insert store to a separate cache line - a measured net loss. */
+static int hash_is_cached(void *m)
+{
+	return *M_KKIND(m) == 1 || *M_KKIND(m) == 3;
+}
+
+/* When cached, the per-slot full hash lives in the same block as ctrl: cap
+   control bytes followed by cap 8-byte hashes. map_grow then re-places every
+   entry without recomputing - no re-hash and no pointer chase into each
+   scattered key object (the dominant string-key insert cost). Only valid when
+   hash_is_cached(m); the hashes region is not allocated otherwise. */
+static uint64_t *map_hashes(void *m)
+{
+	return (uint64_t*)((*M_CTRL(m)) + *M_CAP(m));
+}
+
 /* A key slot holds a managed reference (retain/release applies) for every kind
    except the raw integer family. Kept separate from the string-vs-identity
    hashing decision so the two never re-tangle. */
@@ -257,6 +277,11 @@ void bzy_map_put(void *m, int64_t key, int64_t val)
 	keys[slot] = key;
 	vals[slot] = val;
 	ctrl[slot] = (uint8_t)(h & 0x7f);
+	if (hash_is_cached(m))
+	{
+		map_hashes(m)[slot] = h;
+	}
+
 	(*M_SIZE(m))++;
 }
 
@@ -447,13 +472,18 @@ void *bzy_map_new(int64_t key_kind, int64_t val_is_managed)
 static void map_grow(void *m)
 {
 	int64_t oldcap = *M_CAP(m), newcap = oldcap ? oldcap * 2 : 8;
+	int cached = hash_is_cached(m);
 	uint8_t *oldctrl = *M_CTRL(m);
+	uint64_t *oldhashes = (cached && oldctrl) ? (uint64_t*)(oldctrl + oldcap) : NULL;
 	void *oldkeys = *M_KEYS(m), *oldvals = *M_VALS(m);
-	int64_t *okeys = (int64_t*)((char*)oldkeys + 32);
-	int64_t *ovals = (int64_t*)((char*)oldvals + 32);
+	int64_t *okeys = oldkeys ? (int64_t*)((char*)oldkeys + 32) : NULL;
+	int64_t *ovals = oldvals ? (int64_t*)((char*)oldvals + 32) : NULL;
 
-	uint8_t *nctrl = (uint8_t*)malloc((size_t)newcap);
+	/* When caching, one block holds newcap control bytes + newcap 8-byte hashes;
+	   otherwise just the control bytes (cheap-hash keys recompute on grow). */
+	uint8_t *nctrl = (uint8_t*)malloc((size_t)newcap + (cached ? (size_t)newcap * 8 : 0));
 	map_init_ctrl(nctrl, newcap);
+	uint64_t *nhashes = cached ? (uint64_t*)(nctrl + newcap) : NULL;
 	void *nkeys = bzy_array_new(newcap, key_managed(m) ? 1 : 0);
 	void *nvals = bzy_array_new(newcap, *M_VMAN(m));
 	int64_t *nk = (int64_t*)((char*)nkeys + 32);
@@ -468,17 +498,24 @@ static void map_grow(void *m)
 	{
 		if (oldctrl[i] != CTRL_EMPTY && oldctrl[i] != CTRL_DELETED)
 		{
-			uint64_t h = hash_key(m, okeys[i]);
+			/* Reuse the cached hash (no recompute, no key pointer-chase); for
+			   cheap-hash keys recompute - it costs only a couple of instructions. */
+			uint64_t h = cached ? oldhashes[i] : hash_key(m, okeys[i]);
 			int64_t s = map_find_insert(m, okeys[i], h);   /* Into the new arrays. */
 			nk[s] = okeys[i];
 			nv[s] = ovals[i];
 			nctrl[s] = (uint8_t)(h & 0x7f);
+			if (cached)
+			{
+				nhashes[s] = h;
+			}
+
 			okeys[i] = 0;       /* Transfer ownership: blank the old slot. */
 			ovals[i] = 0;
 		}
 	}
 
-	free(oldctrl);
+	free(oldctrl);             /* Frees the (combined, when cached) ctrl block. */
 	bzy_release(oldkeys);      /* Old element slots are now NULL: frees the block only. */
 	bzy_release(oldvals);
 }

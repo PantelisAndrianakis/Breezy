@@ -1510,6 +1510,37 @@ static void test_map_lazy_backing(void)
 	ASSERT_INT(bzy_live_count(), before);          /* Header + backing arrays all reclaimed. */
 }
 
+static void test_map_grow_keeps_entries(void)
+{
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(1, 0);          /* String keys, unmanaged int values. */
+
+	/* Insert enough distinct string keys to force several map_grow doublings. */
+	enum { N = 5000 };
+	void *keys[N];
+	for (int i = 0; i < N; i++)
+	{
+		char buf[32];
+		int len = sprintf(buf, "key_%d", i);
+		keys[i] = bzy_str_new(buf, len);
+		bzy_map_put(m, (int64_t)keys[i], (int64_t)i);
+	}
+
+	ASSERT_INT(bzy_map_len(m), N);
+	for (int i = 0; i < N; i++)            /* Every key still resolves to its value. */
+	{
+		ASSERT_INT(bzy_map_get(m, (int64_t)keys[i]), i);
+	}
+
+	bzy_release(m);                        /* Releases the map; its string keys were retained on put. */
+	for (int i = 0; i < N; i++)
+	{
+		bzy_release(keys[i]);              /* Release our own +1 from bzy_str_new. */
+	}
+
+	ASSERT_INT(bzy_live_count(), before);  /* No leak through grow/rehash. */
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -1522,6 +1553,7 @@ int main(void)
 	RUN(test_string_new_and_len);
 	RUN(test_string_concat);
 	RUN(test_str_concat_n);
+	RUN(test_map_grow_keeps_entries);
 	RUN(test_array_value_roundtrip);
 	RUN(test_array_object_elements_released);
 	RUN(test_map_int_keys);
