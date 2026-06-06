@@ -1,0 +1,10 @@
+// Value List.set(index, value) out of range must abort (the inlined value-set
+// path preserves bzy_vec_set's hard-abort behaviour).
+void main()
+{
+	List<long> xs;
+	xs = new List<long>();
+	xs.add(1);
+	xs.set(9, 5);
+	print(0);
+}

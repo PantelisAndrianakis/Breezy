@@ -1582,14 +1582,42 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 
 		cg_emit(cg,"    mov [rbp - %d], rax", b - 16);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 2), b - 16);
-		cg_aligned_call(cg,"bzy_vec_set");
-		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[1]))
+		if (ty_is_managed(tk))
 		{
-			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 16);
-			cg_release_rcx(cg);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 2), b - 16);
+			cg_aligned_call(cg,"bzy_vec_set");       /* Retains new, releases old occupant. */
+			if (expr_is_owned(e->args[1]))
+			{
+				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 16);
+				cg_release_rcx(cg);
+			}
+		}
+		else
+		{
+			/* Value element: inline the bounds check + ring store, skipping the
+			   bzy_vec_set call (value sets have no retain/release). Out-of-range
+			   still calls bzy_oob_abort(index, length) -- behaviour-identical to
+			   bzy_vec_set. No call on the in-range path, so r8/r9 scratch is free. */
+			int ok = cg_label(cg);
+			cg_emit(cg,"    mov rdx, [rbp - %d]", b);      /* receiver */
+			cg_emit(cg,"    mov rcx, [rbp - %d]", b - 8);  /* index */
+			cg_emit(cg,"    mov r8, [rdx + 24]");          /* length */
+			cg_emit(cg,"    cmp rcx, r8");
+			cg_emit(cg,"    jb .L%d", ok);                 /* unsigned: catches <0 and >=length */
+			cg_emit(cg,"    mov %s, rcx", cg_iarg(cg, 0)); /* OOB: bzy_oob_abort(index, length) */
+			cg_emit(cg,"    mov %s, r8", cg_iarg(cg, 1));
+			cg_aligned_call(cg,"bzy_oob_abort");          /* Never returns. */
+			cg_emit(cg,".L%d:", ok);
+			cg_emit(cg,"    mov rax, [rdx + 48]");         /* data array ptr */
+			cg_emit(cg,"    mov r8, [rdx + 40]");          /* head */
+			cg_emit(cg,"    add rcx, r8");                 /* head + index */
+			cg_emit(cg,"    mov r8, [rdx + 32]");          /* cap */
+			cg_emit(cg,"    dec r8");                      /* cap - 1 */
+			cg_emit(cg,"    and rcx, r8");                 /* phys = (head+i) & (cap-1) */
+			cg_emit(cg,"    mov r9, [rbp - %d]", b - 16);  /* value bits */
+			cg_emit(cg,"    mov [rax + rcx*8 + 32], r9");  /* store slot */
 		}
 
 		cg_scratch_free(cg, 32);

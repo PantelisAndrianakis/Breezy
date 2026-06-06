@@ -1,0 +1,19 @@
+// Value-collection set(i, v) with a non-zero ring head: addFirst moves the head
+// off 0, so the inlined value-set ring mask is exercised. set(i,v) must address
+// the logical element, not the physical slot.
+void main()
+{
+	List<int> xs;
+	xs = new List<int>();
+	xs.add(10);
+	xs.add(20);
+	xs.addFirst(5);
+	xs.addFirst(1);   // logical order: 1, 5, 10, 20.
+
+	xs.set(0, 100);   // logical index 0.
+	xs.set(3, 400);   // logical index 3.
+
+	print(xs.get(0)); // 100.
+	print(xs.get(1)); // 5  -- untouched.
+	print(xs.get(3)); // 400.
+}
