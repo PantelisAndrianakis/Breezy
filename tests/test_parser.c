@@ -15,6 +15,21 @@ static void test_int_literal(void)
 	ASSERT_INT(e->int_val, 42);
 }
 
+static void test_bitwise_precedence(void)
+{
+	/* `|` is loosest: a | b & c  ==>  a | (b & c). Top node is '|', rhs is '&'. */
+	Expr *e = parse_str("a | b & c");
+	ASSERT_INT(e->kind, EX_BINARY);
+	ASSERT_INT(e->op, TOKEN_PIPE);
+	ASSERT_INT(e->rhs->kind, EX_BINARY);
+	ASSERT_INT(e->rhs->op, TOKEN_AMP);
+
+	/* `~` is a prefix unary. */
+	Expr *u = parse_str("~x");
+	ASSERT_INT(u->kind, EX_UNARY);
+	ASSERT_INT(u->op, TOKEN_TILDE);
+}
+
 static void test_hex_literal_value(void)
 {
 	Expr *e = parse_str("0xFF");
@@ -609,6 +624,7 @@ int main(void)
 	printf("Parser (expr) tests\n");
 	RUN(test_int_literal);
 	RUN(test_hex_literal_value);
+	RUN(test_bitwise_precedence);
 	RUN(test_bool_literal);
 	RUN(test_null_literal);
 	RUN(test_cast);

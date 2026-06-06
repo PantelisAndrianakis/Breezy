@@ -64,6 +64,9 @@ void parser_init(Parser *p, const char *src)
 	advance(p);
 }
 
+static Expr *parse_bitor(Parser *p);
+static Expr *parse_bitxor(Parser *p);
+static Expr *parse_bitand(Parser *p);
 static Expr *parse_comparison(Parser *p);
 static Expr *parse_shift(Parser *p);
 static Expr *parse_additive(Parser *p);
@@ -78,7 +81,60 @@ static int   scalar_type_kind(TokenType t, TypeKind *out);
 
 Expr *parse_expr(Parser *p)
 {
-	return parse_comparison(p);
+	return parse_bitor(p);
+}
+
+/* Bitwise OR - loosest of the bitwise operators, looser than comparison.
+   Left-associative. */
+static Expr *parse_bitor(Parser *p)
+{
+	Expr *left = parse_bitxor(p);
+	while (check(p,TOKEN_PIPE))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_bitxor(p);
+		left=e;
+	}
+	return left;
+}
+
+/* Bitwise XOR - between OR and AND. Left-associative. */
+static Expr *parse_bitxor(Parser *p)
+{
+	Expr *left = parse_bitand(p);
+	while (check(p,TOKEN_CARET))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_bitand(p);
+		left=e;
+	}
+	return left;
+}
+
+/* Bitwise AND - tightest bitwise level, still looser than the comparisons.
+   Left-associative. */
+static Expr *parse_bitand(Parser *p)
+{
+	Expr *left = parse_comparison(p);
+	while (check(p,TOKEN_AMP))
+	{
+		int op=p->cur.type, line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_BINARY,line);
+		e->op=op;
+		e->lhs=left;
+		e->rhs=parse_comparison(p);
+		left=e;
+	}
+	return left;
 }
 
 static int is_cmp(TokenType t)
@@ -172,6 +228,15 @@ static Expr *parse_unary(Parser *p)
 		Expr *e=expr_new(EX_CAST,line);
 		parse_type(p,&e->type);     /* Cast target lives in the result type slot. */
 		expect(p,TOKEN_RPAREN);
+		e->lhs=parse_unary(p);
+		return e;
+	}
+	if (check(p,TOKEN_TILDE))
+	{
+		int line=p->cur.line;
+		advance(p);
+		Expr *e=expr_new(EX_UNARY,line);
+		e->op=TOKEN_TILDE;
 		e->lhs=parse_unary(p);
 		return e;
 	}
@@ -810,6 +875,15 @@ static int compound_to_binop(TokenType t, int *op)
 		return 1;
 	case TOKEN_SHR_ASSIGN:
 		*op=TOKEN_SHR;
+		return 1;
+	case TOKEN_AMP_ASSIGN:
+		*op=TOKEN_AMP;
+		return 1;
+	case TOKEN_PIPE_ASSIGN:
+		*op=TOKEN_PIPE;
+		return 1;
+	case TOKEN_CARET_ASSIGN:
+		*op=TOKEN_CARET;
 		return 1;
 	default:
 		return 0;
