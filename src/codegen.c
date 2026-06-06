@@ -1489,10 +1489,39 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_expr(cg,tt,e->lhs);
 		int b = cg_scratch_alloc(cg, 16);
 		cg_emit(cg,"    mov [rbp - %d], rax", b);
-		cg_expr(cg,tt,e->args[0]);
-		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
-		cg_aligned_call(cg,"bzy_vec_get");
+		cg_expr(cg,tt,e->args[0]);                       /* Index -> rax. */
+		if (ty_is_managed(tk))
+		{
+			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+			cg_aligned_call(cg,"bzy_vec_get");           /* Element (owned -> retained) in rax. */
+		}
+		else
+		{
+			/* Value element: inline the bounds check + ring load, skipping the
+			   bzy_vec_get call and the value-case no-op retain. Out-of-range
+			   still calls bzy_oob_abort(index, length) -- behaviour-identical to
+			   bzy_vec_get (a hard abort, not the catchable array-subscript
+			   throw). Vector layout: length@24, cap@32, head@40, data array@48
+			   (its 8-byte slots at +32); phys = (head+i) & (cap-1). */
+			int ok = cg_label(cg);
+			cg_emit(cg,"    mov rcx, rax");               /* index */
+			cg_emit(cg,"    mov rdx, [rbp - %d]", b);     /* receiver */
+			cg_emit(cg,"    mov r8, [rdx + 24]");         /* length */
+			cg_emit(cg,"    cmp rcx, r8");
+			cg_emit(cg,"    jb .L%d", ok);                /* unsigned: catches <0 and >=length */
+			cg_emit(cg,"    mov %s, rcx", cg_iarg(cg, 0));/* OOB: bzy_oob_abort(index, length) */
+			cg_emit(cg,"    mov %s, r8", cg_iarg(cg, 1));
+			cg_aligned_call(cg,"bzy_oob_abort");         /* Never returns. */
+			cg_emit(cg,".L%d:", ok);
+			cg_emit(cg,"    mov rax, [rdx + 48]");        /* data array ptr */
+			cg_emit(cg,"    mov r8, [rdx + 40]");         /* head */
+			cg_emit(cg,"    add rcx, r8");                /* head + index */
+			cg_emit(cg,"    mov r8, [rdx + 32]");         /* cap */
+			cg_emit(cg,"    dec r8");                     /* cap - 1 */
+			cg_emit(cg,"    and rcx, r8");                /* phys = (head+i) & (cap-1) */
+			cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
+		}
 		if (fp)
 		{
 			cg_emit(cg, tk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
@@ -4826,6 +4855,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_array_new");
 	cg_emit(cg,"extern bzy_array_len");
 	cg_emit(cg,"extern bzy_oob");
+	cg_emit(cg,"extern bzy_oob_abort");
 	cg_emit(cg,"extern bzy_map_new");
 	cg_emit(cg,"extern bzy_map_put");
 	cg_emit(cg,"extern bzy_map_get");

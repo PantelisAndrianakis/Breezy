@@ -1,0 +1,16 @@
+// Value-collection get(i) with a non-zero ring head: addFirst moves the head
+// off 0, so the inlined value-get ring mask (P8 follow-up) is exercised. get(i)
+// must return the logical element, not the physical slot.
+void main()
+{
+	List<int> xs;
+	xs = new List<int>();
+	xs.add(10);
+	xs.add(20);
+	xs.addFirst(5);
+	xs.addFirst(1);
+
+	print(xs.get(0));   // 1  -- logical order is 1, 5, 10, 20.
+	print(xs.get(2));   // 10.
+	print(xs.get(3));   // 20.
+}

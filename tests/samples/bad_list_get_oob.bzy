@@ -1,0 +1,10 @@
+// Value List.get(index) out of range must abort (the inlined value-get path
+// preserves bzy_vec_get's hard-abort behaviour, not a catchable throw).
+void main()
+{
+	List<long> xs;
+	xs = new List<long>();
+	xs.add(1);
+	xs.add(2);
+	print(xs.get(5));
+}
