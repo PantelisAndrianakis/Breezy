@@ -231,6 +231,20 @@ static void test_compound_assign_ops(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_SLASH_ASSIGN);
 }
 
+static void test_bitwise_tokens(void)
+{
+	Lexer l;
+	lexer_init(&l, "& | ^ ~ &= |= ^=");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_AMP);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_PIPE);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_CARET);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_TILDE);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_AMP_ASSIGN);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_PIPE_ASSIGN);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_CARET_ASSIGN);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_EOF);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -310,6 +324,7 @@ int main(void)
 	RUN(test_switch_keywords);
 	RUN(test_block_comment);
 	RUN(test_compound_assign_ops);
+	RUN(test_bitwise_tokens);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);

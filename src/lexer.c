@@ -416,6 +416,45 @@ Token lexer_next(Lexer *l)
 		}
 
 		return t;
+	case '&':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_AMP_ASSIGN;
+		}
+		else
+		{
+			t.type=TOKEN_AMP;
+		}
+
+		return t;
+	case '|':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_PIPE_ASSIGN;
+		}
+		else
+		{
+			t.type=TOKEN_PIPE;
+		}
+
+		return t;
+	case '^':
+		if (peek_ch(l)=='=')
+		{
+			next_ch(l);
+			t.type=TOKEN_CARET_ASSIGN;
+		}
+		else
+		{
+			t.type=TOKEN_CARET;
+		}
+
+		return t;
+	case '~':
+		t.type=TOKEN_TILDE;
+		return t;
 	case '!':
 		if (peek_ch(l)=='=')
 		{
@@ -575,6 +614,20 @@ const char *token_type_name(TokenType t)
 		return "<<";
 	case TOKEN_SHR:
 		return ">>";
+	case TOKEN_AMP:
+		return "&";
+	case TOKEN_PIPE:
+		return "|";
+	case TOKEN_CARET:
+		return "^";
+	case TOKEN_TILDE:
+		return "~";
+	case TOKEN_AMP_ASSIGN:
+		return "&=";
+	case TOKEN_PIPE_ASSIGN:
+		return "|=";
+	case TOKEN_CARET_ASSIGN:
+		return "^=";
 	case TOKEN_ASSIGN:
 		return "=";
 	case TOKEN_EQ:
