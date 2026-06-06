@@ -1055,6 +1055,43 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		Symbol *s=sym_find(st,e->name);
 		if (!s)
 		{
+			/* Not a local or parameter. Inside a method, a bare name may refer
+			   to a field of the enclosing class: desugar `x` to `this.x` (or, for
+			   a static field, to the `Class.field` form). This rewrites the node
+			   into the exact EX_FIELD shape the parser builds for explicit field
+			   access, so resolve/codegen handle it through their existing paths. */
+			if (tc)
+			{
+				ClassInfo *cc=types_find_class(g_types,tc);
+				FieldInfo *fld=cc ? types_find_field(cc,e->name) : NULL;
+				if (fld)
+				{
+					if (fld->is_static)
+					{
+						/* Mirror the parser's `Class.field` shape: EX_FIELD with an
+						   EX_IDENT class-name lhs. Downstream passes assume every
+						   EX_FIELD has a non-NULL lhs, so the lhs must be present. */
+						Expr *cls=expr_new(EX_IDENT,e->line);
+						strcpy(cls->name,tc);
+						e->kind=EX_FIELD;
+						e->lhs=cls;
+						e->type=fld->type;
+						e->anno_int=-1;             /* Static-field sentinel (see codegen). */
+						strcpy(e->anno_str,tc);
+						break;
+					}
+
+					Expr *self=expr_new(EX_THIS,e->line);
+					self->type.kind=TY_OBJECT;
+					strcpy(self->type.class_name,tc);
+					e->kind=EX_FIELD;
+					e->lhs=self;
+					e->type=fld->type;
+					e->anno_int=fld->offset;
+					break;
+				}
+			}
+
 			die(e->line,"Unknown variable: ",e->name);
 		}
 

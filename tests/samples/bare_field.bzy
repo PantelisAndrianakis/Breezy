@@ -1,0 +1,46 @@
+// Bare field access: inside a method a field may be read and written by its
+// simple name (no `this.` required), matching the documentation. Covers an
+// instance field (count) read+written bare, and a static field (total)
+// read+written bare from an instance method.
+class Counter
+{
+	int count;
+	static int total = 0;
+
+	Counter()
+	{
+		count = 0;               // Bare instance-field write in the constructor.
+	}
+
+	void bump()
+	{
+		count = count + 1;       // Bare instance-field read + write.
+		total = total + 1;       // Bare static-field read + write.
+	}
+
+	int get()
+	{
+		return count;            // Bare instance-field read.
+	}
+
+	static int grandTotal()
+	{
+		return Counter.total;    // Static method has no `this`: address by class.
+	}
+}
+
+void main()
+{
+	Counter a;
+	a = new Counter();
+	Counter b;
+	b = new Counter();
+
+	a.bump();
+	a.bump();
+	b.bump();
+
+	print(a.get());              // 2
+	print(b.get());              // 1
+	print(Counter.grandTotal()); // 3
+}

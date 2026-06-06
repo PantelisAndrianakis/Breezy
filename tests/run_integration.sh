@@ -59,6 +59,7 @@ check inheritance tests/samples/proj_inherit  "2"
 check ctor        tests/samples/proj_ctor      $'3
 4
 7'
+check bare_field     tests/samples/bare_field.bzy     $'2\n1\n3'
 check default_args   tests/samples/proj_default_args  $'15\n6\n1\n2\n7\n2'
 check vector_zero    tests/samples/proj_vector_zero   $'0\n0\n0\n0\n0\n1\n2'
 check leak        tests/samples/proj_leak      "1"
