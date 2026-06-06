@@ -3,6 +3,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Convert an integer-literal token's text to its value, honouring the radix
+   prefix: 0x/0X is hex, 0b/0B is binary, anything else is decimal. A bare
+   leading zero is decimal (not octal), matching the lexer. */
+static long long parse_int_text(const char *s)
+{
+	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+	{
+		return strtoll(s, NULL, 16);
+	}
+
+	if (s[0] == '0' && (s[1] == 'b' || s[1] == 'B'))
+	{
+		return strtoll(s + 2, NULL, 2);
+	}
+
+	return strtoll(s, NULL, 10);
+}
+
 static void advance(Parser *p)
 {
 	p->cur = p->peek;
@@ -250,7 +268,7 @@ static Expr *parse_primary(Parser *p)
 	if (check(p,TOKEN_INT_LIT))
 	{
 		Expr *e=expr_new(EX_INT,line);
-		e->int_val=strtoll(p->cur.text,NULL,10);
+		e->int_val=parse_int_text(p->cur.text);
 		strcpy(e->int_suffix,p->cur.suffix);
 		advance(p);
 		return e;
@@ -927,7 +945,7 @@ static Expr *parse_case_const(Parser *p)
 
 	Token t=expect(p,TOKEN_INT_LIT);
 	Expr *e=expr_new(EX_INT,line);
-	e->int_val=strtoll(t.text,NULL,10);
+	e->int_val=parse_int_text(t.text);
 	if (neg)
 	{
 		e->int_val=-e->int_val;

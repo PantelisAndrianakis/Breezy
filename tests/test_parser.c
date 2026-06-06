@@ -15,6 +15,17 @@ static void test_int_literal(void)
 	ASSERT_INT(e->int_val, 42);
 }
 
+static void test_hex_literal_value(void)
+{
+	Expr *e = parse_str("0xFF");
+	ASSERT_INT(e->kind, EX_INT);
+	ASSERT_INT((int)e->int_val, 255);
+
+	Expr *e2 = parse_str("0b1010");
+	ASSERT_INT(e2->kind, EX_INT);
+	ASSERT_INT((int)e2->int_val, 10);
+}
+
 static void test_bool_literal(void)
 {
 	Expr *t = parse_str("true");
@@ -597,6 +608,7 @@ int main(void)
 {
 	printf("Parser (expr) tests\n");
 	RUN(test_int_literal);
+	RUN(test_hex_literal_value);
 	RUN(test_bool_literal);
 	RUN(test_null_literal);
 	RUN(test_cast);
