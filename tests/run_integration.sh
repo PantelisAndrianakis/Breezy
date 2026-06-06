@@ -129,6 +129,8 @@ check switch_dense  tests/samples/proj_switch_dense  $'100\n101\n102\n103\n104\n
 check switch_braces tests/samples/proj_switch_braces $'2'
 check block_comment tests/samples/proj_block_comment $'7'
 check compound    tests/samples/proj_compound      $'6\n10\nabc'
+check bitwise     tests/samples/bitwise.bzy        $'255\n15\n4\n-1\n10\n16'
+check_fail bitwise_float tests/samples/bad_bitwise_float.bzy
 check math_basic  tests/samples/proj_math_basic    $'4\n5\n2.5'
 check math_minmax tests/samples/proj_math_minmax   $'7\n3\n5\n0\n2.5'
 check math_round  tests/samples/proj_math_round    $'2\n3\n2\n3\ntrue\nfalse'

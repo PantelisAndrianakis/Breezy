@@ -1,0 +1,6 @@
+// The resolver must reject bitwise operators on floating-point operands.
+void main()
+{
+	int a;
+	a = 1.5 & 3;
+}

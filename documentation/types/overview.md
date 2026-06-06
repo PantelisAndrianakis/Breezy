@@ -107,6 +107,34 @@ print(a);            // 32
 
 ---
 
+## Bitwise logical operators
+
+`&` (AND), `|` (OR), `^` (XOR), and the prefix `~` (NOT) combine integers bit by bit, with compound forms `&=`, `|=`, and `^=`. Like the shifts, they **require integer operands** - applying them to a `float`/`double` is a compile error.
+
+Precedence follows C and Java: `|` is loosest, then `^`, then `&`, all **looser than the comparisons** (so `a & b == c` is `a & (b == c)`). A binary `& | ^` promotes its operands the same way arithmetic does - the wider operand's type wins, and unsigned wins on mixed signedness. `~` keeps its operand's type.
+
+```breezy
+print(0xF0 | 0x0F);  // 255
+print(0xFF & 0x0F);  // 15
+print(5 ^ 1);        // 4
+print(~0);           // -1
+
+int flags;
+flags = 0;
+flags |= 0x04;       // Set a bit.
+flags &= ~0x04;      // Clear it.
+print(flags);        // 0
+```
+
+Integer literals may be written in **hexadecimal** (`0x`/`0X`) or **binary** (`0b`/`0B`) as well as decimal; a bare leading zero stays decimal (there is no octal).
+
+```breezy
+print(0xFF);         // 255
+print(0b1010);       // 10
+```
+
+---
+
 ## Reference types
 
 `string`, arrays, maps, collections, channels, and your own classes are **reference types** - they live on the heap (when they escape their scope) and are managed automatically by [ARC and the cycle collector](../memory/automatic-memory.md). You never free them.
