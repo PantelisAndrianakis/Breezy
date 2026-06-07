@@ -42,7 +42,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
                  -s -Wl,--stack,0x4000000
 
 OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/types.c \
-          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/prelude.c src/config.c
+          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/promote.c src/prelude.c src/config.c
 
 # Runtime modules, per host. Common = portable (compute + concurrency core);
 # each host then adds its own I/O backends — Windows uses IOCP + WinHTTP +
@@ -100,6 +100,9 @@ $(OBJDIR)/test_types: tests/test_types.c src/lexer.c src/ast.c src/parser.c src/
 $(OBJDIR)/test_resolve: tests/test_resolve.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_resolve.c $(OBJS)
 
+$(OBJDIR)/test_promote: tests/test_promote.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_promote.c $(OBJS)
+
 $(OBJDIR)/test_ownership: tests/test_ownership.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_ownership.c $(OBJS)
 
@@ -122,7 +125,7 @@ $(OBJDIR)/test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR) | $(OBJDIR)
 	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
 TEST_BINS = $(addprefix $(OBJDIR)/,test_lexer test_ast test_config test_parser test_types \
-            test_resolve test_ownership test_escape test_codegen test_coroutine test_runtime)
+            test_resolve test_ownership test_escape test_promote test_codegen test_coroutine test_runtime)
 
 test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_lexer
@@ -133,6 +136,7 @@ test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_resolve
 	$(OBJDIR)/test_ownership
 	$(OBJDIR)/test_escape
+	$(OBJDIR)/test_promote
 	$(OBJDIR)/test_codegen
 	$(OBJDIR)/test_coroutine
 	$(OBJDIR)/test_runtime
