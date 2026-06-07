@@ -53,17 +53,22 @@ static void *fc_vtable(void)
 
 void *bzy_filechannel_open(void *path)
 {
-	bzy_iocp_ensure();
+	/* Synchronous handle (no FILE_FLAG_OVERLAPPED): a positioned ReadFile/WriteFile
+	   then blocks and returns its byte count inline, so readAt/writeAt run as a bare
+	   syscall on the calling worker with no IOCP round-trip. Overlapped file reads
+	   queue an async IRP even on a cache hit, so the completion-port path paid a
+	   thread round-trip per op; this is the Windows analogue of the inline pread the
+	   POSIX path uses. A cold op briefly blocks the worker - the work-stealing
+	   scheduler drains its other ready breezes. sync stays offloaded (it blocks). */
 	HANDLE h = CreateFileA(bzy_str_data(path), GENERIC_READ | GENERIC_WRITE,
 						   FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-						   FILE_FLAG_OVERLAPPED, NULL);
+						   FILE_ATTRIBUTE_NORMAL, NULL);
 	if (h == INVALID_HANDLE_VALUE)
 	{
 		bzy_io_fail("File.openChannel: could not open file.");
 		return NULL;   /* The codegen-emitted bzy_io_check throws before this is used. */
 	}
 
-	bzy_iocp_associate((void*)h);
 	void *o = bzy_alloc(40);
 	*(void**)o = fc_vtable();
 	FC_HANDLE(o) = h;
@@ -86,37 +91,26 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 
 	char *buf = (char*)malloc((size_t)maxbytes);
 
-	char opbuf[BZY_IOCP_OP_SIZE];
-	IocpOp *op = (IocpOp*)opbuf;
-	bzy_iocp_op_reset(op);
-	OVERLAPPED *ov = (OVERLAPPED*)bzy_iocp_op_overlapped(op);
-	ov->Offset = (DWORD)(offset & 0xffffffff);
-	ov->OffsetHigh = (DWORD)((offset >> 32) & 0xffffffff);
+	OVERLAPPED ov = {0};             /* Carries the offset only; the handle is synchronous. */
+	ov.Offset = (DWORD)(offset & 0xffffffff);
+	ov.OffsetHigh = (DWORD)((offset >> 32) & 0xffffffff);
 
 	int n;
-	BOOL ok = ReadFile(FC_HANDLE(ch), buf, (DWORD)maxbytes, NULL, ov);
-	if (!ok && GetLastError() == ERROR_HANDLE_EOF)
+	DWORD got = 0;
+	BOOL ok = ReadFile(FC_HANDLE(ch), buf, (DWORD)maxbytes, &got, &ov);   /* Blocks, returns inline. */
+	if (ok)
 	{
-		n = 0;                       /* Synchronous EOF: no completion posted; do not park. */
+		n = (int)got;
 	}
-	else if (!ok && GetLastError() != ERROR_IO_PENDING)
+	else if (GetLastError() == ERROR_HANDLE_EOF)
+	{
+		n = 0;                       /* At/past EOF. */
+	}
+	else
 	{
 		free(buf);
 		bzy_io_fail("FileChannel.readAt: read failed.");
 		return fc_to_array(NULL, 0);
-	}
-	else
-	{
-		bzy_iocp_park(op);           /* Completion (posted even on synchronous success). */
-		int e = bzy_iocp_op_err(op);
-		if (e && e != ERROR_HANDLE_EOF)
-		{
-			free(buf);
-			bzy_io_fail("FileChannel.readAt: read failed.");
-			return fc_to_array(NULL, 0);
-		}
-
-		n = (int)bzy_iocp_op_bytes(op);   /* 0 at/past EOF. */
 	}
 
 	void *arr = fc_to_array(buf, n);
@@ -143,35 +137,25 @@ int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data)
 	int64_t off = 0;
 	while (off < total)
 	{
-		char opbuf[BZY_IOCP_OP_SIZE];
-		IocpOp *op = (IocpOp*)opbuf;
-		bzy_iocp_op_reset(op);
-		OVERLAPPED *ov = (OVERLAPPED*)bzy_iocp_op_overlapped(op);
+		OVERLAPPED ov = {0};         /* Carries the offset only; the handle is synchronous. */
 		int64_t at = offset + off;
-		ov->Offset = (DWORD)(at & 0xffffffff);
-		ov->OffsetHigh = (DWORD)((at >> 32) & 0xffffffff);
+		ov.Offset = (DWORD)(at & 0xffffffff);
+		ov.OffsetHigh = (DWORD)((at >> 32) & 0xffffffff);
 
-		BOOL ok = WriteFile(FC_HANDLE(ch), buf + off, (DWORD)(total - off), NULL, ov);
-		if (!ok && GetLastError() != ERROR_IO_PENDING)
+		DWORD got = 0;
+		BOOL ok = WriteFile(FC_HANDLE(ch), buf + off, (DWORD)(total - off), &got, &ov);   /* Blocks. */
+		if (!ok)
 		{
 			bzy_io_fail("FileChannel.writeAt: write failed.");
 			break;
 		}
 
-		bzy_iocp_park(op);
-		if (bzy_iocp_op_err(op))
-		{
-			bzy_io_fail("FileChannel.writeAt: write failed.");
-			break;
-		}
-
-		DWORD w = bzy_iocp_op_bytes(op);
-		if (w == 0)
+		if (got == 0)
 		{
 			break;
 		}
 
-		off += (int64_t)w;
+		off += (int64_t)got;
 	}
 
 	free(buf);
