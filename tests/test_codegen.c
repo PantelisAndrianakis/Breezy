@@ -259,8 +259,31 @@ static void test_promotion_register_resident(void)
 	ASSERT_INT(strstr(g_asm, "mov rax, r12") != NULL, 1);   /* n is read from the register. */
 }
 
+static void test_inplace_register_arithmetic(void)
+{
+	/* state = state * C1 + C2 updates r13 in place (no `mov r13, rax`), and
+	   i = i + 1 becomes a single `add`. */
+	emit(
+		"long lcg(long iters)\n"
+		"{\n"
+		"	long state; state = 1;\n"
+		"	for (long i = 0; i < iters; i = i + 1)\n"
+		"	{\n"
+		"		state = state * 6364136223846793005L + 1442695040888963407L;\n"
+		"	}\n"
+		"	return state;\n"
+		"}\n"
+		"void main() { print(lcg(5)); }\n", TARGET_WINDOWS);
+	/* state (r13) updated in place by imul then add against rbx-held constants. */
+	ASSERT_INT(strstr(g_asm, "imul r13, rbx") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "add r13, rbx") != NULL, 1);
+	/* The loop induction is a bare in-place add, not a rax round-trip. */
+	ASSERT_INT(strstr(g_asm, "add r12, 1") != NULL, 1);
+}
+
 int main(void)
 {
+	RUN(test_inplace_register_arithmetic);
 	RUN(test_promotion_register_resident);
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);

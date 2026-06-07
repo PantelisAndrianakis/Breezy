@@ -78,6 +78,181 @@ static void cg_store_local_off(Codegen *cg, int off)
 	}
 }
 
+static void cg_load_scalar_into(Codegen *cg, TypeKind k, const char *mem, const char *r64, const char *r32);
+
+/* In-place arithmetic op support: the two-operand register ops we lower directly
+   onto a promoted target register. Shifts (<<,>>) and div/mod are excluded. */
+static int cg_op_inplace_ok(int op)
+{
+	return op==TOKEN_PLUS || op==TOKEN_MINUS || op==TOKEN_STAR
+		   || op==TOKEN_AMP || op==TOKEN_PIPE || op==TOKEN_CARET;
+}
+
+static int cg_op_commutative(int op)
+{
+	return op==TOKEN_PLUS || op==TOKEN_STAR
+		   || op==TOKEN_AMP || op==TOKEN_PIPE || op==TOKEN_CARET;
+}
+
+/* A "target-free leaf": an integer/bool literal, or a local that is NOT the target.
+   These are the only right-operands an in-place chain may carry, so incremental
+   mutation of the target register never feeds a later read a wrong value. */
+static int cg_is_inplace_leaf(Expr *e, Expr *target)
+{
+	if (e->kind==EX_INT || e->kind==EX_BOOL)
+	{
+		return 1;
+	}
+
+	return e->kind==EX_IDENT && e->anno_int > 0 && e->anno_int != target->anno_int;
+}
+
+/* Materialize an in-place leaf operand. A fits-imm32 literal returns its text in
+   `buf` and sets *is_imm=1; anything else is loaded (width-correct) into rbx and
+   "rbx" is returned with *is_imm=0. */
+static const char *cg_inplace_operand(Codegen *cg, Expr *leaf, char *buf, int *is_imm)
+{
+	if ((leaf->kind==EX_INT || leaf->kind==EX_BOOL)
+		&& leaf->int_val >= -2147483648LL && leaf->int_val <= 2147483647LL)
+	{
+		snprintf(buf, 24, "%lld", leaf->int_val);
+		*is_imm = 1;
+		return buf;
+	}
+
+	*is_imm = 0;
+	if (leaf->kind==EX_INT || leaf->kind==EX_BOOL)
+	{
+		cg_emit(cg, "    mov rbx, %lld", leaf->int_val);
+	}
+	else   /* EX_IDENT */
+	{
+		const char *r = cg_local_reg(cg, leaf->anno_int);
+		if (r)
+		{
+			cg_emit(cg, "    mov rbx, %s", r);
+		}
+		else
+		{
+			char mem[32];
+			sprintf(mem, "[rbp - %d]", leaf->anno_int);
+			cg_load_scalar_into(cg, leaf->type.kind, mem, "rbx", "ebx");
+		}
+	}
+
+	return "rbx";
+}
+
+/* Emit one in-place op `R <op>= operand`. */
+static void cg_inplace_step(Codegen *cg, const char *R, int op, Expr *leaf)
+{
+	char buf[24];
+	int is_imm;
+	const char *operand = cg_inplace_operand(cg, leaf, buf, &is_imm);
+	switch (op)
+	{
+	case TOKEN_PLUS:
+		cg_emit(cg, "    add %s, %s", R, operand);
+		break;
+	case TOKEN_MINUS:
+		cg_emit(cg, "    sub %s, %s", R, operand);
+		break;
+	case TOKEN_STAR:
+		if (is_imm)
+		{
+			cg_emit(cg, "    imul %s, %s, %s", R, R, operand);
+		}
+		else
+		{
+			cg_emit(cg, "    imul %s, rbx", R);
+		}
+
+		break;
+	case TOKEN_AMP:
+		cg_emit(cg, "    and %s, %s", R, operand);
+		break;
+	case TOKEN_PIPE:
+		cg_emit(cg, "    or %s, %s", R, operand);
+		break;
+	case TOKEN_CARET:
+		cg_emit(cg, "    xor %s, %s", R, operand);
+		break;
+	}
+}
+
+/* Try to emit `target = value` as in-place arithmetic on the target's promoted
+   register. Returns 1 if handled, 0 to fall through to the generic path.
+   Matches a left-spine chain rooted at the target: i=i+1, state=state*C1+C2,
+   n=3*n+1 (commutative reorder normalizes 3*n to n*3). */
+static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
+{
+	(void)tt;
+	if (target->kind != EX_IDENT)
+	{
+		return 0;
+	}
+
+	const char *R = cg_local_reg(cg, target->anno_int);
+	if (!R)
+	{
+		return 0;
+	}
+
+	/* Collect the chain top-down: ops[0]/leaves[0] is the outermost op. */
+	int ops[8];
+	Expr *leaves[8];
+	int n = 0;
+	Expr *e = value;
+	while (e->kind==EX_BINARY && cg_op_inplace_ok(e->op))
+	{
+		Expr *spine;
+		Expr *leaf;
+		if (cg_is_inplace_leaf(e->rhs, target))
+		{
+			spine = e->lhs;
+			leaf = e->rhs;
+		}
+		else if (cg_op_commutative(e->op) && cg_is_inplace_leaf(e->lhs, target))
+		{
+			spine = e->rhs;
+			leaf = e->lhs;
+		}
+		else
+		{
+			return 0;
+		}
+
+		if (n >= 8)
+		{
+			return 0;
+		}
+
+		ops[n] = e->op;
+		leaves[n] = leaf;
+		n++;
+		e = spine;
+	}
+
+	/* The spine must bottom out at the target itself, already in R. */
+	if (!(e->kind==EX_IDENT && e->anno_int==target->anno_int))
+	{
+		return 0;
+	}
+
+	if (n == 0)
+	{
+		return 0;   /* value is just the bare target; nothing to do (and not our job). */
+	}
+
+	/* Emit deepest-first (the leftmost op applies first): reverse of collection. */
+	for (int i = n - 1; i >= 0; i--)
+	{
+		cg_inplace_step(cg, R, ops[i], leaves[i]);
+	}
+
+	return 1;
+}
+
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi);
 /* The i-th integer/pointer argument register for the current target's ABI.
@@ -4277,6 +4452,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		else if (ty_is_managed(s->target->type.kind))
 		{
 			cg_assign_object(cg,tt,s->target,s->value);
+		}
+		else if (cg_try_inplace(cg,tt,s->target,s->value))
+		{
+			/* Emitted in place on the target's promoted register. */
 		}
 		else
 		{
