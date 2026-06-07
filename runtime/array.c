@@ -24,12 +24,18 @@ static void *array_obj_vtable(void)
 	return &g_array_obj_vtable[1];
 }
 
-void *bzy_array_new(int64_t n, int64_t elem_is_managed)
+void *bzy_array_new_sized(int64_t n, int64_t elem_size, int64_t elem_is_managed)
 {
-	void *a = bzy_alloc(32 + n * 8);   /* Elements zeroed by bzy_alloc. */
+	if (n < 0) n = 0;
+	void *a = bzy_alloc(32 + n * elem_size);   /* Elements zeroed by bzy_alloc. */
 	*(void**)a = elem_is_managed ? array_obj_vtable() : array_val_vtable();
 	*(int64_t*)((char*)a + 24) = n;
 	return a;
+}
+
+void *bzy_array_new(int64_t n, int64_t elem_is_managed)
+{
+	return bzy_array_new_sized(n, 8, elem_is_managed);   /* Legacy 8-byte slot arrays. */
 }
 
 int64_t bzy_array_len(void *a)
