@@ -336,14 +336,12 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 
 	char *buf = (char*)malloc((size_t)maxbytes);
 	RdCtx c = { (int)FC_FD(ch), buf, offset, maxbytes, 0, 0 };
-	if (bzy_sched_current())
-	{
-		bzy_offload_run(rd_run, &c);
-	}
-	else
-	{
-		rd_run(&c);
-	}
+	/* Run the pread inline on the calling worker instead of handing off to the
+	   offload pool. A positioned read is usually a cache hit that returns in well
+	   under a microsecond, so the two thread hops the pool costs dominate it; if a
+	   cold read does briefly block this worker, the work-stealing scheduler drains
+	   its other ready breezes. (sync stays offloaded - fsync genuinely blocks.) */
+	rd_run(&c);
 
 	if (c.err)
 	{
@@ -403,14 +401,9 @@ int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data)
 	}
 
 	WrCtx c = { (int)FC_FD(ch), buf, offset, total, 0, 0 };
-	if (bzy_sched_current())
-	{
-		bzy_offload_run(wr_run, &c);
-	}
-	else
-	{
-		wr_run(&c);
-	}
+	/* Inline pwrite on the calling worker (see readAt): the offload pool's two
+	   thread hops dwarf a cached positioned write. sync stays offloaded. */
+	wr_run(&c);
 
 	free(buf);
 	if (c.err)
