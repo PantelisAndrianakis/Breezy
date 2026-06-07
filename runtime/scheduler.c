@@ -271,7 +271,8 @@ static Breeze *inject_pop(void)
 
 static void breeze_run(void *p)
 {
-	Breeze *b = (Breeze*)p;
+	(void)p;   /* The Breeze rides on the coroutine's attach slot (pooled together). */
+	Breeze *b = bzy_coroutine_attach(bzy_coroutine_self());
 	if (b->thunk)
 	{
 		b->thunk(b->arg);            /* Arg'd spawn: the thunk loads args, calls the target, frees the block. */
@@ -347,8 +348,28 @@ void bzy_sched_init(void)
 
 static Breeze *make_breeze(void)
 {
-	Breeze *b = calloc(1, sizeof(*b));
-	b->coroutine = bzy_coroutine_create(breeze_run, b);
+	/* Recycle the Breeze along with the coroutine: a pooled coroutine carries its
+	   Breeze on its attach slot, so a reused coroutine brings the Breeze back with no
+	   allocation. This matters because make_breeze runs on the single-threaded spawn
+	   loop, the measured bottleneck of fan-out; allocating a Breeze per spawn (and
+	   freeing it cross-thread on completion) dominated that loop. */
+	BzyCoroutine *co = bzy_coroutine_create(breeze_run, NULL);
+	Breeze *b = bzy_coroutine_attach(co);
+	if (b)
+	{
+		b->entry = NULL;
+		b->thunk = NULL;
+		b->arg = NULL;
+		b->done = 0;
+		b->next = NULL;
+	}
+	else
+	{
+		b = calloc(1, sizeof(*b));
+		b->coroutine = co;
+		bzy_coroutine_set_attach(co, b);
+	}
+
 	__atomic_add_fetch(&g_live, 1, __ATOMIC_SEQ_CST);
 	return b;
 }
@@ -493,19 +514,18 @@ static void worker_loop(void)
 			   post/wait syscall pair per burst, and that churn - not lock contention -
 			   is what made throughput collapse as workers were added. Spinning briefly
 			   (still counted idle-free so producers skip the post) catches the work in
-			   userspace. Only genuinely idle workers fall through to the real sleep. */
+			   userspace. Only genuinely idle workers fall through to the real sleep.
+			   (Capping the number of spinners was tried and is worse here: the parked
+			   workers then need a wake syscall, which is the very churn we are avoiding.) */
+			for (int spun = 0; spun < SCHED_SPIN; spun++)
 			{
-				int spun = 0;
-				for (; spun < SCHED_SPIN; spun++)
+				b = find_work();
+				if (b)
 				{
-					b = find_work();
-					if (b)
-					{
-						goto run;
-					}
-
-					bzy_cpu_relax();
+					goto run;
 				}
+
+				bzy_cpu_relax();
 			}
 
 			/* About to block. Register as idle and re-poll: an enqueue that raced our
@@ -577,8 +597,7 @@ run:
 		}
 		else if (b->done)
 		{
-			bzy_coroutine_delete(b->coroutine);
-			free(b);
+			bzy_coroutine_delete(b->coroutine);   /* Pools the coroutine AND its attached Breeze; do not free b. */
 			if (__atomic_sub_fetch(&g_live, 1, __ATOMIC_SEQ_CST) == 0 && bzy_timer_next_deadline() < 0)
 			{
 				/* No breezes and no timer can ever fire again: shut down. A pending

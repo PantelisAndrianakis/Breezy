@@ -32,6 +32,7 @@ struct BzyCoroutine
 	void          *arg;
 	int            is_thread; /* 1 = promoted OS thread; never recycle or free it. */
 	BzyCoroutine  *pool_next; /* Free-list link while pooled. */
+	void          *attach;    /* Caller bookkeeping that rides through the pool (scheduler's Breeze). */
 };
 
 static __thread BzyCoroutine *t_current;
@@ -111,35 +112,63 @@ static void co_setup(BzyCoroutine *c)
 	uintptr_t ret = top - 8;
 	*(void**)ret = (void*)bzy_co_start;
 	uintptr_t sp = ret - BZY_CO_FRAME;
-	memset((void*)sp, 0, (size_t)(ret - sp));   /* Zero the saved-register slots. */
+	/* The saved-register slots are intentionally left uninitialized: the first
+	   switch-in restores them into callee-saved registers (rbp/rbx/r12-15, and
+	   xmm6-15 on Win64) that bzy_co_start -> bzy_co_run overwrites in its own
+	   prologue before any read, so their incoming values are dead. Skipping the
+	   ~BZY_CO_FRAME-byte zeroing here measurably speeds up each spawn (it is on the
+	   single-threaded spawn loop's critical path). */
 	c->sp = (void*)sp;
 }
 
 /* Free list of finished coroutines (with their stacks) for reuse. A coroutine is
-   created on the spawning worker and may be deleted on another (work-stealing),
-   so the pool is shared under a lock. */
+   created on the spawning worker and may be deleted on another (work-stealing), so
+   the pool is shared. The critical section is two pointer writes, so it is guarded
+   by a test-and-set SPIN lock rather than an OS mutex: under the fan-out spawn loop
+   the producer (popping) and the completing workers (pushing) collide constantly,
+   and a blocking mutex turned every collision into a futex syscall pair - on Linux
+   that was thousands of voluntary context switches and the dominant cost. Spinning
+   on a sub-microsecond critical section never sleeps, so there is no syscall. */
 static BzyCoroutine *g_pool;
-static bzy_mutex     g_pool_lock = BZY_MUTEX_INIT;
+static volatile int  g_pool_lk;
+
+static void pool_lock(void)
+{
+	while (__atomic_exchange_n(&g_pool_lk, 1, __ATOMIC_ACQUIRE))
+	{
+		while (__atomic_load_n(&g_pool_lk, __ATOMIC_RELAXED))   /* Spin read-only until it looks free. */
+		{
+#if defined(__x86_64__) || defined(__i386__)
+			__builtin_ia32_pause();
+#endif
+		}
+	}
+}
+
+static void pool_unlock(void)
+{
+	__atomic_store_n(&g_pool_lk, 0, __ATOMIC_RELEASE);
+}
 
 static BzyCoroutine *pool_pop(void)
 {
-	bzy_mutex_lock(&g_pool_lock);
+	pool_lock();
 	BzyCoroutine *c = g_pool;
 	if (c)
 	{
 		g_pool = c->pool_next;
 	}
 
-	bzy_mutex_unlock(&g_pool_lock);
+	pool_unlock();
 	return c;
 }
 
 static void pool_push(BzyCoroutine *c)
 {
-	bzy_mutex_lock(&g_pool_lock);
+	pool_lock();
 	c->pool_next = g_pool;
 	g_pool = c;
-	bzy_mutex_unlock(&g_pool_lock);
+	pool_unlock();
 }
 
 void bzy_coroutine_main_init(void)
@@ -195,6 +224,16 @@ void bzy_coroutine_switch(BzyCoroutine *to)
 BzyCoroutine *bzy_coroutine_self(void)
 {
 	return t_current;
+}
+
+void *bzy_coroutine_attach(BzyCoroutine *c)
+{
+	return c->attach;
+}
+
+void bzy_coroutine_set_attach(BzyCoroutine *c, void *p)
+{
+	c->attach = p;
 }
 
 void bzy_coroutine_delete(BzyCoroutine *c)
