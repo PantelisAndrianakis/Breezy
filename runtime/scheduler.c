@@ -3,6 +3,7 @@
 #include "platform.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <stddef.h>   /* offsetof, for recovering the Breeze from its inline argbuf. */
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
   #include <windows.h>
@@ -27,9 +28,13 @@ typedef struct Breeze
 	BzyCoroutine *coroutine;
 	void (*entry)(void);        /* Zero-arg spawn (6a-1). */
 	void (*thunk)(void*);       /* Arg'd spawn: codegen-emitted per-target thunk. */
-	void *arg;                  /* Arg block for the thunk. */
+	void *arg;                  /* Arg block for the thunk (points at argbuf below). */
 	int done;
 	struct Breeze *next;
+	int64_t argbuf[4];          /* Inline storage for the (<=4, per resolve.c) spawn args. The
+	                               Breeze is pooled with its coroutine, so this replaces the
+	                               per-spawn malloc/free of an arg block that otherwise sat on
+	                               the single-threaded spawn loop's critical path. */
 } Breeze;
 
 /* Lock-free Chase-Lev work-stealing deque. The owning worker pushes and pops the
@@ -386,6 +391,25 @@ void bzy_spawn_args(void (*thunk)(void*), void *arg)
 	Breeze *b = make_breeze();
 	b->thunk = thunk;
 	b->arg = arg;
+	enqueue_on(t_wid, b);
+}
+
+/* Inline-argument spawn (codegen fast path). begin() hands back the pooled Breeze's
+   own argbuf for the caller to fill (no malloc); commit() enqueues. The Breeze is
+   recovered from the buffer pointer since argbuf is a fixed-offset field, so no extra
+   state is threaded between the two calls (nested spawns during arg evaluation stay
+   independent - each has its own Breeze and buffer on the native stack). */
+void *bzy_spawn_args_begin(void (*thunk)(void*))
+{
+	Breeze *b = make_breeze();
+	b->thunk = thunk;
+	b->arg = b->argbuf;
+	return b->argbuf;
+}
+
+void bzy_spawn_args_commit(void *argbuf)
+{
+	Breeze *b = (Breeze*)((char*)argbuf - offsetof(Breeze, argbuf));
 	enqueue_on(t_wid, b);
 }
 

@@ -180,6 +180,8 @@ void    bzy_sched_init(void);              /* Promote the OS thread to the sched
 void    bzy_sched_set_workers(int n);      /* Set the worker-thread count before run (n<=0 => core count). */
 void    bzy_spawn(void (*entry)(void));    /* Enqueue a new breeze running entry (no args, 6a-1). */
 void    bzy_spawn_args(void (*thunk)(void*), void *arg); /* Enqueue a breeze that runs thunk(arg). */
+void   *bzy_spawn_args_begin(void (*thunk)(void*));      /* Inline-arg spawn: returns the pooled Breeze's argbuf to fill. */
+void    bzy_spawn_args_commit(void *argbuf);             /* Enqueue the breeze whose argbuf is `argbuf`. */
 void   *bzy_sched_current(void);           /* Opaque handle to the running breeze. */
 void    bzy_sched_park(void);              /* Suspend the running breeze (off the ready queue). */
 void    bzy_sched_park_unlock(void *srwlock); /* Park; the scheduler releases the SRWLOCK after the switch. */
