@@ -800,6 +800,16 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
    immbuf (>= 24 bytes) or the register "rbx" - and *uns is the combined operand
    unsignedness. Factored out of cg_binary so the conditional-branch path lowers
    comparison operands identically. */
+/* Ops whose rhs is consumed via *rhsop (so a promoted rhs can be used directly).
+   The others (*, /, <<, >>, & | ^) hardcode rbx in cg_binary, so they must keep
+   loading rbx. This set matches the immediate-fuse set. */
+static int cg_op_uses_rhsop(int op)
+{
+	return op==TOKEN_PLUS || op==TOKEN_MINUS
+		   || op==TOKEN_EQ || op==TOKEN_NEQ || op==TOKEN_LT
+		   || op==TOKEN_GT || op==TOKEN_LTE || op==TOKEN_GTE;
+}
+
 static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop, char *immbuf, int *uns)
 {
 	*rhsop = "rbx";
@@ -824,9 +834,13 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 	else if (e->rhs->kind==EX_IDENT)
 	{
 		const char *r = cg_local_reg(cg, e->rhs->anno_int);
-		if (r)
+		if (r && cg_op_uses_rhsop(e->op))
 		{
-			cg_emit(cg,"    mov rbx, %s", r);   /* Promoted RHS local: read from its register. */
+			*rhsop = r;   /* compare/+/- read the operand straight from its register. */
+		}
+		else if (r)
+		{
+			cg_emit(cg,"    mov rbx, %s", r);   /* imul/and/shift path needs rbx. */
 		}
 		else
 		{
@@ -1116,12 +1130,21 @@ static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
 	if (cond->kind==EX_BINARY && cg_op_is_compare(cond->op)
 		&& !ty_is_float(cond->lhs->type.kind) && !ty_is_float(cond->rhs->type.kind))
 	{
-		cg_expr(cg,tt,cond->lhs);            /* lhs -> rax. */
+		const char *lhsop = "rax";
+		if (cond->lhs->kind==EX_IDENT && cg_local_reg(cg, cond->lhs->anno_int))
+		{
+			lhsop = cg_local_reg(cg, cond->lhs->anno_int);   /* Compare straight from the register. */
+		}
+		else
+		{
+			cg_expr(cg,tt,cond->lhs);            /* lhs -> rax. */
+		}
+
 		const char *rhsop;
 		char immbuf[24];
 		int uns;
 		cg_binop_rhs(cg, tt, cond, &rhsop, immbuf, &uns);
-		cg_emit(cg,"    cmp rax, %s", rhsop);
+		cg_emit(cg,"    cmp %s, %s", lhsop, rhsop);
 
 		const char *jcc;                     /* Jump when the comparison is FALSE. */
 		switch (cond->op)

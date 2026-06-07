@@ -281,8 +281,24 @@ static void test_inplace_register_arithmetic(void)
 	ASSERT_INT(strstr(g_asm, "add r12, 1") != NULL, 1);
 }
 
+static void test_register_operand_compare(void)
+{
+	/* The loop test compares two promoted registers directly: cmp r12, r14,
+	   with no `mov rax, r12` staging the LHS. */
+	emit(
+		"long lcg(long iters)\n"
+		"{\n"
+		"	long state; state = 1;\n"
+		"	for (long i = 0; i < iters; i = i + 1) { state = state + 1; }\n"
+		"	return state;\n"
+		"}\n"
+		"void main() { print(lcg(5)); }\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "cmp r12, r14") != NULL, 1);
+}
+
 int main(void)
 {
+	RUN(test_register_operand_compare);
 	RUN(test_inplace_register_arithmetic);
 	RUN(test_promotion_register_resident);
 	RUN(test_linux_arg_regs);
