@@ -578,6 +578,49 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* Set up the rhs operand of an integer binary expression (lhs is already in rax).
+   On return *rhsop names the operand for the instruction - a folded immediate in
+   immbuf (>= 24 bytes) or the register "rbx" - and *uns is the combined operand
+   unsignedness. Factored out of cg_binary so the conditional-branch path lowers
+   comparison operands identically. */
+static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop, char *immbuf, int *uns)
+{
+	*rhsop = "rbx";
+	int fuse = (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
+			   && e->rhs->int_val >= -2147483648LL && e->rhs->int_val <= 2147483647LL
+			   && (e->op==TOKEN_PLUS || e->op==TOKEN_MINUS || e->op==TOKEN_EQ
+				   || e->op==TOKEN_NEQ || e->op==TOKEN_LT || e->op==TOKEN_GT
+				   || e->op==TOKEN_LTE || e->op==TOKEN_GTE);
+	if (fuse)
+	{
+		snprintf(immbuf,24,"%lld", e->rhs->int_val);
+		*rhsop = immbuf;
+	}
+	else if (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
+	{
+		cg_emit(cg,"    mov rbx, %lld", e->rhs->int_val);
+	}
+	else if (e->rhs->kind==EX_NULL)
+	{
+		cg_emit(cg,"    mov rbx, 0");
+	}
+	else if (e->rhs->kind==EX_IDENT)
+	{
+		char mem[32];
+		sprintf(mem,"[rbp - %d]", e->rhs->anno_int);
+		cg_load_scalar_into(cg,e->rhs->type.kind,mem,"rbx","ebx");
+	}
+	else
+	{
+		cg_temp_push(cg);            /* Preserve lhs in a frame slot across the rhs evaluation. */
+		cg_expr(cg,tt,e->rhs);
+		cg_emit(cg,"    mov rbx, rax");
+		cg_temp_pop(cg);
+	}
+
+	*uns = ty_is_unsigned(e->lhs->type.kind) || ty_is_unsigned(e->rhs->type.kind);
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (e->type.kind==TY_STRING)
@@ -662,52 +705,11 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	/* The rhs operand for add/sub/cmp. Default is the rbx register; a small enough
-	   integer literal is folded straight into the instruction (rhsop = the literal)
-	   so no rbx load is emitted at all. imul/idiv have no usable immediate form here
-	   and always read rbx, which the fuse condition below excludes. */
-	const char *rhsop = "rbx";
+	/* lhs is in rax; set up the rhs operand (immediate or rbx) and signedness. */
+	const char *rhsop;
 	char immbuf[24];
-	int fuse = (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
-			   && e->rhs->int_val >= -2147483648LL && e->rhs->int_val <= 2147483647LL
-			   && (e->op==TOKEN_PLUS || e->op==TOKEN_MINUS || e->op==TOKEN_EQ
-				   || e->op==TOKEN_NEQ || e->op==TOKEN_LT || e->op==TOKEN_GT
-				   || e->op==TOKEN_LTE || e->op==TOKEN_GTE);
-	if (fuse)
-	{
-		snprintf(immbuf,sizeof(immbuf),"%lld", e->rhs->int_val);
-		rhsop = immbuf;
-	}
-	/* Otherwise load a side-effect-free leaf rhs (literal, null, or a local read)
-	   straight into rbx, skipping the push/pop the general path needs to preserve
-	   lhs across an rhs evaluation that would clobber rax. lhs is already in rax and
-	   none of these loads disturb it, so evaluation order (lhs then rhs) holds. */
-	else if (e->rhs->kind==EX_INT || e->rhs->kind==EX_BOOL)
-	{
-		cg_emit(cg,"    mov rbx, %lld", e->rhs->int_val);
-	}
-	else if (e->rhs->kind==EX_NULL)
-	{
-		cg_emit(cg,"    mov rbx, 0");
-	}
-	else if (e->rhs->kind==EX_IDENT)
-	{
-		char mem[32];
-		sprintf(mem,"[rbp - %d]", e->rhs->anno_int);
-		cg_load_scalar_into(cg,e->rhs->type.kind,mem,"rbx","ebx");
-	}
-	else
-	{
-		cg_temp_push(cg);            /* Preserve lhs in a frame slot across the rhs evaluation. */
-		cg_expr(cg,tt,e->rhs);
-		cg_emit(cg,"    mov rbx, rax");
-		cg_temp_pop(cg);
-	}
-
-	/* Unsigned if either operand is unsigned: division then uses the unsigned
-	   form (C-style "unsigned wins"), and comparisons — where the resolver still
-	   requires matching signedness — see the operands' shared signedness. */
-	int uns = ty_is_unsigned(e->lhs->type.kind) || ty_is_unsigned(e->rhs->type.kind);
+	int uns;
+	cg_binop_rhs(cg, tt, e, &rhsop, immbuf, &uns);
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
@@ -830,6 +832,62 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		fprintf(stderr,"Codegen: bad binary op\n");
 		exit(1);
 	}
+}
+
+/* True for the relational and equality operators. */
+static int cg_op_is_compare(int op)
+{
+	return op==TOKEN_EQ || op==TOKEN_NEQ || op==TOKEN_LT
+		   || op==TOKEN_GT || op==TOKEN_LTE || op==TOKEN_GTE;
+}
+
+/* Branch to .L<label> when `cond` evaluates to false. An integer relational or
+   equality comparison is lowered to a single cmp + inverted conditional jump,
+   skipping the setcc/movzx/cmp-against-zero the value path would emit for it.
+   Everything else (float comparisons, bool variables, calls, ...) falls back to
+   evaluating the condition to 0/1 and testing that. */
+static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
+{
+	if (cond->kind==EX_BINARY && cg_op_is_compare(cond->op)
+		&& !ty_is_float(cond->lhs->type.kind) && !ty_is_float(cond->rhs->type.kind))
+	{
+		cg_expr(cg,tt,cond->lhs);            /* lhs -> rax. */
+		const char *rhsop;
+		char immbuf[24];
+		int uns;
+		cg_binop_rhs(cg, tt, cond, &rhsop, immbuf, &uns);
+		cg_emit(cg,"    cmp rax, %s", rhsop);
+
+		const char *jcc;                     /* Jump when the comparison is FALSE. */
+		switch (cond->op)
+		{
+		case TOKEN_EQ:
+			jcc = "jne";
+			break;
+		case TOKEN_NEQ:
+			jcc = "je";
+			break;
+		case TOKEN_LT:
+			jcc = uns ? "jae" : "jge";
+			break;
+		case TOKEN_GT:
+			jcc = uns ? "jbe" : "jle";
+			break;
+		case TOKEN_LTE:
+			jcc = uns ? "ja" : "jg";
+			break;
+		default: /* TOKEN_GTE */
+			jcc = uns ? "jb" : "jl";
+			break;
+		}
+
+		cg_emit(cg,"    %s .L%d", jcc, label);
+		return;
+	}
+
+	cg_expr(cg,tt,cond);
+	cg_emit(cg,"    cmp rax, 0");
+	cg_emit(cg,"    je .L%d", label);
 }
 
 /* Emit a Win64 call. Each positional argument is materialized into rcx/rdx/r8/r9
@@ -3533,9 +3591,7 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 	cg_stmt(cg,tt,f,s->for_init,in_main);
 	cg_emit(cg,".L%d:", top);
-	cg_expr(cg,tt,s->cond);
-	cg_emit(cg,"    cmp rax, 0");
-	cg_emit(cg,"    je .L%d", end);
+	cg_branch_unless(cg,tt,s->cond,end);
 	cg->cur_break_label=end;
 	cg->cur_continue_label=cont;
 	cg_block(cg,tt,f,s->then_blk,in_main);
@@ -4205,9 +4261,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_IF:
 	{
 		int else_l=cg_label(cg), end_l=cg_label(cg);
-		cg_expr(cg,tt,s->cond);
-		cg_emit(cg,"    cmp rax, 0");
-		cg_emit(cg,"    je .L%d", s->else_blk?else_l:end_l);
+		cg_branch_unless(cg,tt,s->cond, s->else_blk?else_l:end_l);
 		cg_block(cg,tt,f,s->then_blk,in_main);
 		if (s->else_blk)
 		{
@@ -4232,9 +4286,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg->cur_break_label=end;
 		cg->cur_continue_label=top;
 		cg_emit(cg,".L%d:",top);
-		cg_expr(cg,tt,s->cond);
-		cg_emit(cg,"    cmp rax, 0");
-		cg_emit(cg,"    je .L%d",end);
+		cg_branch_unless(cg,tt,s->cond,end);
 		cg_block(cg,tt,f,s->then_blk,in_main);
 		cg_emit(cg,"    jmp .L%d",top);
 		cg_emit(cg,".L%d:",end);
