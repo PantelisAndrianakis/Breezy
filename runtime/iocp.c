@@ -123,6 +123,12 @@ void bzy_iocp_op_reset(IocpOp *op)
 	o->breeze = bzy_sched_current();
 	o->bytes = 0;
 	o->err = 0;
+	/* Hold the handshake lock BEFORE the caller posts the overlapped op, not after
+	   (in bzy_iocp_park). IOCP queues a completion even on immediate success, and a
+	   completion thread blocks on this lock to wait for the park; taking it first
+	   guarantees it cannot wake a not-yet-parked breeze and resume the coroutine on
+	   two threads. (The Linux reactor had the mirror-image bug.) */
+	AcquireSRWLockExclusive(&o->lock);
 }
 
 void *bzy_iocp_op_overlapped(IocpOp *op)
@@ -134,7 +140,8 @@ void bzy_iocp_park(IocpOp *op)
 {
 	struct IocpOp *o = (struct IocpOp*)op;
 	InterlockedIncrement(&g_inflight);
-	AcquireSRWLockExclusive(&o->lock);   /* Held across the switch; scheduler releases it after. */
+	/* o->lock is already held (taken in bzy_iocp_op_reset, before the overlapped
+	   post); the scheduler releases it after the parking switch. */
 	bzy_sched_park_unlock(&o->lock);
 	/* Resumed: the completion thread filled bytes/err and woke us. */
 }
