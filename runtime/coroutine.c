@@ -17,6 +17,8 @@
 #include <string.h>
 #if defined(_WIN32)
 #include <intrin.h>
+#elif defined(__SANITIZE_ADDRESS__)
+#include <pthread.h>   /* pthread_getattr_np: real thread-stack bounds for ASan fiber tracking. */
 #endif
 
 #define BZY_CO_STACK (256 * 1024)   /* Per-coroutine stack (reserved; committed on touch). Reused
@@ -33,7 +35,18 @@ struct BzyCoroutine
 	int            is_thread; /* 1 = promoted OS thread; never recycle or free it. */
 	BzyCoroutine  *pool_next; /* Free-list link while pooled. */
 	void          *attach;    /* Caller bookkeeping that rides through the pool (scheduler's Breeze). */
+#if defined(__SANITIZE_ADDRESS__)
+	void          *asan_fake; /* ASan's saved fake-stack for this fiber while it is suspended. */
+#endif
 };
+
+#if defined(__SANITIZE_ADDRESS__)
+/* AddressSanitizer cannot follow a hand-rolled stack switch on its own; these
+   annotations tell it which fiber stack is becoming live across each switch.
+   Compiled in ONLY under -fsanitize=address, so ordinary builds are unaffected. */
+void __sanitizer_start_switch_fiber(void **fake_save, const void *bottom, size_t size);
+void __sanitizer_finish_switch_fiber(void *fake_save, const void **old_bottom, size_t *old_size);
+#endif
 
 static __thread BzyCoroutine *t_current;
 static __thread BzyCoroutine  t_main;
@@ -95,6 +108,9 @@ __asm__(
 
 void bzy_co_run(void)
 {
+#if defined(__SANITIZE_ADDRESS__)
+	__sanitizer_finish_switch_fiber(NULL, NULL, NULL);   /* Fresh fiber: no prior fake stack. */
+#endif
 	BzyCoroutine *c = t_current;
 	c->fn(c->arg);
 	/* A breeze body switches to the scheduler before returning, so control never
@@ -184,6 +200,21 @@ BzyCoroutine *bzy_coroutine_thread_enter(void)
 #if defined(_WIN32)
 		t_main.stack_hi = (void*)__readgsqword(0x08);   /* This OS thread's real stack bounds. */
 		t_main.stack_lo = (void*)__readgsqword(0x10);
+#elif defined(__SANITIZE_ADDRESS__)
+		/* ASan needs this worker thread's real stack bounds to track switches back
+		   to it; unused in ordinary (non-ASan) Linux builds. */
+		{
+			pthread_attr_t a;
+			if (pthread_getattr_np(pthread_self(), &a) == 0)
+			{
+				void *lo = NULL;
+				size_t sz = 0;
+				pthread_attr_getstack(&a, &lo, &sz);
+				pthread_attr_destroy(&a);
+				t_main.stack_lo = lo;
+				t_main.stack_hi = (char*)lo + sz;
+			}
+		}
 #endif
 		t_current = &t_main;
 	}
@@ -218,7 +249,14 @@ void bzy_coroutine_switch(BzyCoroutine *to)
 	}
 
 	t_current = to;
+#if defined(__SANITIZE_ADDRESS__)
+	__sanitizer_start_switch_fiber(&from->asan_fake, to->stack_lo,
+		(size_t)((char*)to->stack_hi - (char*)to->stack_lo));
+#endif
 	bzy_ctx_switch(&from->sp, to->sp, to->stack_hi, to->stack_lo);
+#if defined(__SANITIZE_ADDRESS__)
+	__sanitizer_finish_switch_fiber(from->asan_fake, NULL, NULL);   /* `from` just resumed. */
+#endif
 }
 
 BzyCoroutine *bzy_coroutine_self(void)

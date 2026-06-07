@@ -39,6 +39,27 @@ void *bzy_sock_wrap(SOCKET fd)
 	*(void**)o = sock_vtable();
 	SK_FD(o) = fd;
 	SK_CLOSED(o) = 0;
+	/* A socket/listener handle is routinely handed to a per-connection breeze on
+	   another worker (accept -> spawn handle), so its refcount must be atomic. Mark
+	   it SHARED at birth - the object is still thread-confined here, so the OR cannot
+	   race, the same fix channels use. Without this the README's headline accept/
+	   spawn server pattern races the refcount across cores and crashes under load. */
+	bzy_share_crosscore(o);
+
+	/* Disable Nagle on stream sockets. A request/response breeze does tiny writes,
+	   and Nagle holds each small segment behind the previous one's ACK - on a
+	   ping-pong that interacts with delayed-ACK for ~ms per round-trip. Go sets
+	   TCP_NODELAY by default; match it so latency is not paid in buffering. UDP
+	   shares this wrapper, so gate on the socket type. */
+	{
+		int stype = 0;
+		int slen = (int)sizeof(stype);
+		int one = 1;
+		if (getsockopt(fd, SOL_SOCKET, SO_TYPE, (char*)&stype, &slen) == 0 && stype == SOCK_STREAM)
+		{
+			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one));
+		}
+	}
 	return o;
 }
 
@@ -556,6 +577,27 @@ void *bzy_sock_wrap(int fd)
 	*(void**)o = sock_vtable();
 	SK_FD(o) = fd;
 	SK_CLOSED(o) = 0;
+	/* A socket/listener handle is routinely handed to a per-connection breeze on
+	   another worker (accept -> spawn handle), so its refcount must be atomic. Mark
+	   it SHARED at birth - the object is still thread-confined here, so the OR cannot
+	   race, the same fix channels use. Without this the README's headline accept/
+	   spawn server pattern races the refcount across cores and crashes under load. */
+	bzy_share_crosscore(o);
+
+	/* Disable Nagle on stream sockets. A request/response breeze does tiny writes,
+	   and Nagle holds each small segment behind the previous one's ACK - on a
+	   ping-pong that interacts with delayed-ACK for ~ms per round-trip. Go sets
+	   TCP_NODELAY by default; match it so latency is not paid in buffering. UDP
+	   shares this wrapper, so gate on the socket type. */
+	{
+		int stype = 0;
+		socklen_t slen = sizeof(stype);
+		int one = 1;
+		if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &stype, &slen) == 0 && stype == SOCK_STREAM)
+		{
+			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+		}
+	}
 	return o;
 }
 

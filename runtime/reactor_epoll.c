@@ -28,9 +28,12 @@ typedef struct
 	bzy_mutex lock;      /* Park handshake (scheduler releases after the switch). */
 } ReactorOp;
 
+#define REACTOR_MAX_THREADS 8      /* Cap on parallel reactor threads. */
+
 static int        g_ep = -1;       /* The epoll instance. */
 static int        g_evfd = -1;     /* eventfd: shutdown wakeup. */
-static bzy_thread  g_thread;
+static bzy_thread  g_threads[REACTOR_MAX_THREADS];   /* Pool draining one shared epoll fd. */
+static int        g_nthreads;      /* How many of g_threads are live. */
 static int        g_started;
 static int        g_inflight;      /* Breezes parked on the reactor (via __atomic). */
 static bzy_mutex  g_start_lock = BZY_MUTEX_INIT;
@@ -103,7 +106,29 @@ void bzy_reactor_ensure(void)
 		ev.events = EPOLLIN;
 		ev.data.ptr = NULL;   /* The shutdown sentinel. */
 		epoll_ctl(g_ep, EPOLL_CTL_ADD, g_evfd, &ev);
-		bzy_thread_start(&g_thread, reactor_loop, NULL);
+
+		/* Drain epoll on a pool of threads, not one: a single reactor thread
+		   serialises every wakeup, so per-round-trip latency grows linearly with
+		   concurrent connections. EPOLLONESHOT delivers each op's event to exactly
+		   one thread (and per-op state lives on the parked breeze's stack), so the
+		   threads need no coordination beyond the already-atomic inflight counter
+		   and the locked injection queue. Size to the cores, capped. */
+		int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
+		if (nt < 1)
+		{
+			nt = 1;
+		}
+		if (nt > REACTOR_MAX_THREADS)
+		{
+			nt = REACTOR_MAX_THREADS;
+		}
+
+		g_nthreads = nt;
+		for (int i = 0; i < g_nthreads; i++)
+		{
+			bzy_thread_start(&g_threads[i], reactor_loop, NULL);
+		}
+
 		g_started = 1;
 	}
 
@@ -129,6 +154,14 @@ int bzy_reactor_wait(int fd, int want_write, int64_t timeout_ms)
 	op.ready = 0;
 	op.done = 0;
 	bzy_mutex_init(&op.lock);
+	/* Hold op.lock BEFORE the fd is registered, not after. The reactor's wake path
+	   blocks on this lock until the scheduler releases it post-park, so taking it
+	   first guarantees the reactor can never observe the event and wake this breeze
+	   before it has finished parking. Registering first left a window in which a
+	   reactor thread could grab the lock and wake a not-yet-parked breeze, resuming
+	   the same coroutine on two workers (stack corruption). Rare with one reactor
+	   thread, frequent with several. */
+	bzy_mutex_lock(&op.lock);
 
 	struct epoll_event ev;
 	memset(&ev, 0, sizeof(ev));
@@ -136,6 +169,7 @@ int bzy_reactor_wait(int fd, int want_write, int64_t timeout_ms)
 	ev.data.ptr = &op;
 	if (epoll_ctl(g_ep, EPOLL_CTL_ADD, fd, &ev) != 0)
 	{
+		bzy_mutex_unlock(&op.lock);
 		return -1;
 	}
 
@@ -160,8 +194,7 @@ int bzy_reactor_wait(int fd, int want_write, int64_t timeout_ms)
 	}
 
 	__atomic_add_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST);
-	bzy_mutex_lock(&op.lock);            /* Held across the switch; scheduler releases it after. */
-	bzy_sched_park_unlock(&op.lock);
+	bzy_sched_park_unlock(&op.lock);     /* op.lock (already held) is released after the switch. */
 	/* Resumed: the reactor set op.ready and cleaned up the fd/timer registrations. */
 	return op.ready;
 }
@@ -178,9 +211,16 @@ void bzy_reactor_shutdown(void)
 	if (g_started)
 	{
 		uint64_t one = 1;
-		ssize_t w = write(g_evfd, &one, sizeof(one));   /* Wake the reactor to exit. */
+		ssize_t w = write(g_evfd, &one, sizeof(one));   /* Wake the reactors to exit. */
 		(void)w;
-		bzy_thread_join(g_thread);
+		/* The sentinel is level-triggered and never read, so it stays signalled and
+		   every reactor thread's epoll_wait returns it; join them all. */
+		for (int i = 0; i < g_nthreads; i++)
+		{
+			bzy_thread_join(g_threads[i]);
+		}
+
+		g_nthreads = 0;
 		close(g_evfd);
 		close(g_ep);
 		g_evfd = -1;
