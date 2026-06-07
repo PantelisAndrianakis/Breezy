@@ -401,6 +401,11 @@ Token lexer_next(Lexer *l)
 				t.type=TOKEN_SHL;
 			}
 		}
+		else if (peek_ch(l)=='>')
+		{
+			next_ch(l);
+			t.type=TOKEN_NEQ;   /* '<>' (less-or-greater) is a synonym for '!='. */
+		}
 		else if (peek_ch(l)=='=')
 		{
 			next_ch(l);

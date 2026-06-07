@@ -16,7 +16,7 @@ void main()
 	print(2 > 1 and 3 > 1);    // true.
 	int n;
 	n = 0;
-	if (n equals 0 or fail() > 0)   // Short-circuit: fail() must not run.
+	if (n == 0 or fail() > 0)   // Short-circuit: fail() must not run.
 	{
 		n = 7;
 	}

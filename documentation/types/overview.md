@@ -137,9 +137,9 @@ print(0b1010);       // 10
 
 ## Logical operators
 
-`and`, `or`, `xor`, and prefix `not` combine **booleans** and produce a boolean. The symbols `&&`, `||`, and `!` are exact synonyms for `and`, `or`, and `not`, but the **word forms are the idiomatic Breezy style**: logical operators (and equality - see below) are written as words, while arithmetic, bitwise, shift, and relational (`< > <= >=`) operators stay as symbols. `and`/`or` **short-circuit** - the right side is skipped once the left decides the result - so `a or expensive()` never calls `expensive()` when `a` is true. `xor` always evaluates both sides. Operands must be `bool`; an integer or float is a compile error.
+`and`, `or`, `xor`, and prefix `not` combine **booleans** and produce a boolean. `and`/`or` **short-circuit** - the right side is skipped once the left decides the result - so `a or expensive()` never calls `expensive()` when `a` is true. `xor` always evaluates both sides. Operands must be `bool`; an integer or float is a compile error.
 
-Precedence (loosest first): `or` → `xor` → `and`, all **looser than the bitwise and comparison operators**, so `a > 0 and b > 0` is `(a > 0) and (b > 0)`. `not`/`!` is a tight prefix, binding before the binary operators.
+Precedence (loosest first): `or` → `xor` → `and`, all **looser than the bitwise and comparison operators**, so `a > 0 and b > 0` is `(a > 0) and (b > 0)`. `not` is a tight prefix, binding before the binary operators.
 
 ```breezy
 print(true and false);   // false
@@ -158,14 +158,30 @@ if (ready and not done())   // `done()` only runs when `ready` is true.
 
 ---
 
-## Equality: equals and differs
+## Equality
 
-`equals` and `differs` are the **idiomatic** way to write equality in Breezy: `a equals b` is `a == b`, and `a differs b` is `a != b`. The `==` and `!=` symbols remain valid, but prefer the words - like the logical operators, equality reads as words. They are **soft keywords** - recognized as operators only between two expressions - so the words remain usable as identifiers and method names (`a.equals(b)`, the record value-equality method, is unaffected).
+`==` tests whether two values are equal and `!=` whether they differ, each producing a `bool`. Operands must be comparable: two integers of matching signedness, two booleans, two objects, or an object and `null`.
 
 ```breezy
-print(3 equals 3);    // true
-print(3 differs 4);   // true
+print(3 == 3);    // true
+print(3 != 4);    // true
 ```
+
+---
+
+## Alternative operator spellings
+
+Each operator above has one recommended spelling, used throughout this guide. The following alternatives are also accepted and mean exactly the same thing:
+
+| Recommended | Also accepted | Meaning |
+| --- | --- | --- |
+| `and` | `&&` | Logical AND. |
+| `or` | `\|\|` | Logical OR. |
+| `not` | `!` | Logical NOT. |
+| `==` | `equals` | Equality. |
+| `!=` | `differs`, `<>` | Inequality. |
+
+`equals` and `differs` are **soft keywords** - recognized as operators only between two expressions - so they remain usable as identifiers and method names (`a.equals(b)`, the record value-equality method, is unaffected).
 
 ---
 

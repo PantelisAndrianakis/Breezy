@@ -1,0 +1,13 @@
+// Every accepted alternative operator spelling must produce the same result as
+// its recommended form. This sample deliberately uses the alternatives (the
+// recommended style is words for logic, symbols for equality).
+// Expected: false true true true true true.
+void main()
+{
+	print(true && false);    // false  -- && is and.
+	print(true || false);    // true   -- || is or.
+	print(!false);           // true   -- ! is not.
+	print(3 <> 4);           // true   -- <> is !=.
+	print(3 equals 3);       // true   -- equals is ==.
+	print(3 differs 4);      // true   -- differs is !=.
+}

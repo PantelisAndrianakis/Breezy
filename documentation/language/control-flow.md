@@ -40,6 +40,31 @@ else
 
 ---
 
+## Combining conditions
+
+Combine boolean conditions with the logical operators `and`, `or`, and `not`. `and` and `or` **short-circuit** - the right side is skipped once the left decides the result.
+
+```breezy
+if (count > 0 and count < 10)   // Both must hold.
+{
+	process();
+}
+
+if (cached or load())           // load() runs only when cached is false.
+{
+	render();
+}
+
+if (not done)                   // Negation.
+{
+	step();
+}
+```
+
+Logical operators work on `bool` only; to manipulate the bits of an integer use the bitwise operators `&`, `|`, `^`, `~` instead. The symbols `&&`, `||`, and `!` are accepted as alternatives for `and`, `or`, and `not` - see [the alternative spellings table](../types/overview.md#alternative-operator-spellings).
+
+---
+
 ## while
 
 Repeat a block as long as a condition stays true. The condition is checked **before** each iteration.
@@ -161,7 +186,7 @@ A `void` function may use a bare `return;` to exit early.
 
 ## Rules & gotchas
 
-- **Conditions are `bool` expressions** in parentheses.
+- **Conditions are `bool` expressions** in parentheses - combine them with `and`, `or`, and `not`.
 - **`for` headers are the only place to combine declaration and assignment** (`for (int i = 0; ...)`); elsewhere, declare then assign on separate lines.
 - **`switch` falls through** - add `break` unless you intend a case to run into the next.
 - **`switch` rejects `float`/`double`** - use `if`/`else` for floating-point comparisons.

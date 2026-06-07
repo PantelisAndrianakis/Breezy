@@ -277,6 +277,18 @@ static void test_logical_tokens(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_NEQ);
 }
 
+static void test_less_or_greater(void)
+{
+	Lexer l;
+	/* '<>' (less-or-greater) is a synonym for !=; the other '<' forms are unaffected. */
+	lexer_init(&l, "<> < <= << !=");
+	ASSERT_INT(lexer_next(&l).type, TOKEN_NEQ);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_LT);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_LTE);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_SHL);
+	ASSERT_INT(lexer_next(&l).type, TOKEN_NEQ);
+}
+
 static void test_idents_and_ints(void)
 {
 	Lexer l;
@@ -359,6 +371,7 @@ int main(void)
 	RUN(test_bitwise_tokens);
 	RUN(test_hex_and_binary_literals);
 	RUN(test_logical_tokens);
+	RUN(test_less_or_greater);
 	RUN(test_int_suffixes);
 	RUN(test_idents_and_ints);
 	RUN(test_operators);
