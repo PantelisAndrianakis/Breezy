@@ -54,9 +54,14 @@ typedef struct CLArray
 
 typedef struct
 {
-	int64_t  top;      /* Steal end; thieves CAS this forward. */
-	int64_t  bottom;   /* Owner end; only the owner moves it. */
-	CLArray *array;    /* Backing store; swapped (release) by the owner on growth. */
+	int64_t  top;          /* Steal end; thieves CAS this forward. */
+	char     _pad[56];     /* Keep top and bottom on separate cache lines: the owner writes
+	                          bottom on every push while many thieves CAS top, and sharing one
+	                          line makes each push invalidate it for all stealers (false sharing
+	                          that cost ~5 ms at 20 workers on the fan-in benchmark). 64-byte
+	                          separation guarantees distinct lines regardless of base alignment. */
+	int64_t  bottom;       /* Owner end; only the owner moves it. */
+	CLArray *array;        /* Backing store; swapped (release) by the owner on growth. */
 } Deque;
 
 typedef struct Worker
