@@ -841,6 +841,22 @@ static int cg_op_is_compare(int op)
 		   || op==TOKEN_GT || op==TOKEN_LTE || op==TOKEN_GTE;
 }
 
+/* The integer literal 0. */
+static int cg_is_zero_lit(Expr *e)
+{
+	return e->kind==EX_INT && e->int_val==0;
+}
+
+/* `X % 2^k` with a positive power-of-two literal divisor (k>=1, divisor <= 2^31
+   so the mask is an imm32). */
+static int cg_is_pow2_mod(Expr *e)
+{
+	return e->kind==EX_BINARY && e->op==TOKEN_PERCENT
+		   && e->rhs->kind==EX_INT && e->rhs->int_val >= 2 && e->rhs->int_val <= 0x80000000LL
+		   && (e->rhs->int_val & (e->rhs->int_val - 1)) == 0
+		   && !ty_is_float(e->lhs->type.kind);
+}
+
 /* Branch to .L<label> when `cond` evaluates to false. An integer relational or
    equality comparison is lowered to a single cmp + inverted conditional jump,
    skipping the setcc/movzx/cmp-against-zero the value path would emit for it.
@@ -848,6 +864,30 @@ static int cg_op_is_compare(int op)
    evaluating the condition to 0/1 and testing that. */
 static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
 {
+	/* Divisibility test: (X % 2^k) == 0 / != 0. Only zero-ness is tested, which is
+	   sign-independent, so the signed-remainder reconstruction collapses to a single
+	   mask that sets ZF directly - no cmp needed. */
+	if (cond->kind==EX_BINARY && (cond->op==TOKEN_EQ || cond->op==TOKEN_NEQ))
+	{
+		Expr *m = NULL;
+		if (cg_is_zero_lit(cond->rhs) && cg_is_pow2_mod(cond->lhs))
+		{
+			m = cond->lhs;
+		}
+		else if (cg_is_zero_lit(cond->lhs) && cg_is_pow2_mod(cond->rhs))
+		{
+			m = cond->rhs;
+		}
+
+		if (m)
+		{
+			cg_expr(cg,tt,m->lhs);                          /* X -> rax. */
+			cg_emit(cg,"    and rax, %lld", m->rhs->int_val - 1);   /* Sets ZF; low bits == remainder magnitude. */
+			cg_emit(cg,"    %s .L%d", cond->op==TOKEN_EQ ? "jne" : "je", label);
+			return;
+		}
+	}
+
 	if (cond->kind==EX_BINARY && cg_op_is_compare(cond->op)
 		&& !ty_is_float(cond->lhs->type.kind) && !ty_is_float(cond->rhs->type.kind))
 	{

@@ -224,6 +224,18 @@ static void test_branch_fusion(void)
 	ASSERT_INT(strstr(g_asm, "cmp rax, 3\n    jge") != NULL, 1);
 }
 
+static void test_divisibility_test(void)
+{
+	/* (X % 2^k) == 0 / != 0 in a condition collapses to a single mask that sets ZF -
+	   no idiv, no signed-remainder reconstruction. == 0 inverts to jne, != 0 to je. */
+	emit("void main() { int n; n = 5; if (n % 2 == 0) { print(1); } }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "and rax, 1\n    jne") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+
+	emit("void main() { int n; n = 5; if (n % 8 != 0) { print(1); } }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "and rax, 7\n    je") != NULL, 1);
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
@@ -238,6 +250,7 @@ int main(void)
 	RUN(test_logical_emission);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
+	RUN(test_divisibility_test);
 	SUMMARY();
 	return 0;
 }
