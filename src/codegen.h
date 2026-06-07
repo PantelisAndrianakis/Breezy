@@ -19,6 +19,8 @@ typedef struct
 	int rbx_save;      /* The rbp offset holding the caller's rbx. rbx is callee-saved in both ABIs;
 	                      codegen uses it as scratch, so every function must save/restore it or it
 	                      corrupts a caller (e.g. the C runtime) that kept a value in rbx across the call. */
+	int callee_save[4];  /* rbp offsets holding the caller's r12..r15 when this frame promotes locals. */
+	Func *cur_func;      /* The Func currently being emitted, or NULL for synthesized/hand-rolled frames. */
 	int temp_base;       /* rbp offset of temp slot 0; slot i is [rbp - (temp_base + i*8)] (fixed-rsp plan). */
 	int outarg_base;     /* == frame; outgoing args/shadow sit at the bottom, addressed rsp-relative. */
 	int cur_temp_depth;  /* Emission-time count of live temp slots; reset to 0 per function. */
