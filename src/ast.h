@@ -169,6 +169,7 @@ struct Expr
 	Expr    *rhs;             /* Binary right. */
 	Expr    *args[8];         /* Call / method call. */
 	int      arg_count;
+	int      anno_nonneg;     /* Non-neg pass: 1 if this /,% node's dividend is provably >= 0. */
 };
 
 typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN } StmtKind;

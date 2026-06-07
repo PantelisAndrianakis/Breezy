@@ -296,8 +296,29 @@ static void test_register_operand_compare(void)
 	ASSERT_INT(strstr(g_asm, "cmp r12, r14") != NULL, 1);
 }
 
+static void test_nonneg_division_drops_sign_bias(void)
+{
+	/* Inside `while (n > 1)`, n is provably > 0, so n / 2 emits a bare shift with
+	   no sign-bias (`sar rdx, 63`). An UNguarded signed /2 keeps the bias. */
+	emit(
+		"long f(long n)\n"
+		"{\n"
+		"	long acc; acc = 0;\n"
+		"	while (n > 1) { acc = acc + (n / 2); n = n - 1; }\n"
+		"	return acc;\n"
+		"}\n"
+		"void main() { print(f(10)); }\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "sar rdx, 63") == NULL, 1);   /* bias dropped under the guard. */
+
+	emit(
+		"long g(long n) { return n / 2; }\n"
+		"void main() { print(g(10)); }\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "sar rdx, 63") != NULL, 1);   /* unguarded signed /2 keeps the bias. */
+}
+
 int main(void)
 {
+	RUN(test_nonneg_division_drops_sign_bias);
 	RUN(test_register_operand_compare);
 	RUN(test_inplace_register_arithmetic);
 	RUN(test_promotion_register_resident);

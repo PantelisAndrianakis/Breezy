@@ -915,6 +915,11 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_emit(cg,"    shr rax, %d", k);
 		}
+		else if (e->op==TOKEN_SLASH && e->anno_nonneg)
+		{
+			/* Dividend proven >= 0: no sign bias needed, a bare arithmetic shift. */
+			cg_emit(cg,"    sar rax, %d", k);
+		}
 		else if (e->op==TOKEN_SLASH)
 		{
 			/* Signed divide: bias a negative numerator by (2^k - 1) so the shift
