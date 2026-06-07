@@ -236,8 +236,32 @@ static void test_divisibility_test(void)
 	ASSERT_INT(strstr(g_asm, "and rax, 7\n    je") != NULL, 1);
 }
 
+static void test_promotion_register_resident(void)
+{
+	/* A hot 64-bit param (n) and loop-carried local (steps) are promoted to
+	   r12/r13: n is seeded from its arg register, r12 is saved in the prologue,
+	   and the loop reads n from the register instead of its [rbp-8] slot. */
+	emit(
+		"long collatzSteps(long n)\n"
+		"{\n"
+		"	long steps;\n"
+		"	steps = 0;\n"
+		"	while (n > 1)\n"
+		"	{\n"
+		"		if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; }\n"
+		"		steps = steps + 1;\n"
+		"	}\n"
+		"	return steps;\n"
+		"}\n"
+		"void main() { print(collatzSteps(7)); }\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "mov r12, rcx") != NULL, 1);   /* param n seeded into r12 (not spilled). */
+	ASSERT_INT(strstr(g_asm, "], r12") != NULL, 1);         /* prologue saves the caller's r12. */
+	ASSERT_INT(strstr(g_asm, "mov rax, r12") != NULL, 1);   /* n is read from the register. */
+}
+
 int main(void)
 {
+	RUN(test_promotion_register_resident);
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);
 	RUN(test_linux_receiver_and_release);

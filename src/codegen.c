@@ -36,6 +36,48 @@ int  cg_label(Codegen *cg)
 	return cg->label_count++;
 }
 
+/* Register promotion: the four callee-saved registers a promoting frame may use
+   to hold hot 64-bit integer locals (chosen because codegen never uses them as
+   scratch). Index i corresponds to f->promo_reg == i. */
+static const char *const CG_PROMO_REGS[4] = { "r12", "r13", "r14", "r15" };
+
+/* If local slot offset `off` is promoted in the function currently being emitted,
+   return its register name ("r12".."r15"); otherwise NULL (it lives in its stack
+   slot). Returns NULL for synthesized/hand-rolled frames (cur_func == NULL). */
+static const char *cg_local_reg(Codegen *cg, int off)
+{
+	Func *f = cg->cur_func;
+	if (!f)
+	{
+		return NULL;
+	}
+
+	for (int i = 0; i < f->promo_count; i++)
+	{
+		if (f->promo_off[i] == off)
+		{
+			return CG_PROMO_REGS[f->promo_reg[i]];
+		}
+	}
+
+	return NULL;
+}
+
+/* Store rax into local `off`: its register home if promoted, else its stack slot.
+   Slot-safe for any offset not in the map, so internal temporaries are unaffected. */
+static void cg_store_local_off(Codegen *cg, int off)
+{
+	const char *r = cg_local_reg(cg, off);
+	if (r)
+	{
+		cg_emit(cg, "    mov %s, rax", r);
+	}
+	else
+	{
+		cg_emit(cg, "    mov [rbp - %d], rax", off);
+	}
+}
+
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi);
 /* The i-th integer/pointer argument register for the current target's ABI.
@@ -606,9 +648,17 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 	}
 	else if (e->rhs->kind==EX_IDENT)
 	{
-		char mem[32];
-		sprintf(mem,"[rbp - %d]", e->rhs->anno_int);
-		cg_load_scalar_into(cg,e->rhs->type.kind,mem,"rbx","ebx");
+		const char *r = cg_local_reg(cg, e->rhs->anno_int);
+		if (r)
+		{
+			cg_emit(cg,"    mov rbx, %s", r);   /* Promoted RHS local: read from its register. */
+		}
+		else
+		{
+			char mem[32];
+			sprintf(mem,"[rbp - %d]", e->rhs->anno_int);
+			cg_load_scalar_into(cg,e->rhs->type.kind,mem,"rbx","ebx");
+		}
 	}
 	else
 	{
@@ -3204,7 +3254,15 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else
 		{
-			cg_load_scalar(cg,e->type.kind,mem);
+			const char *r = cg_local_reg(cg, e->anno_int);
+			if (r)
+			{
+				cg_emit(cg,"    mov rax, %s", r);   /* Promoted local: read from its register. */
+			}
+			else
+			{
+				cg_load_scalar(cg,e->type.kind,mem);
+			}
 		}
 
 		break;
@@ -3296,7 +3354,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_expr(cg,tt,e->lhs);                 /* Current value -> rax. */
 		cg_emit(cg, e->op==TOKEN_PLUSPLUS ? "    add rax, 1" : "    sub rax, 1");
 		cg_extend_reg(cg,e->type.kind);        /* Re-extend to the declared width. */
-		cg_emit(cg,"    mov [rbp - %d], rax", e->lhs->anno_int);
+		cg_store_local_off(cg, e->lhs->anno_int);   /* Register home if promoted, else slot. */
 		break;
 	case EX_NEW:
 		cg_new(cg,tt,e);
@@ -3533,7 +3591,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		}
 		else
 		{
-			cg_emit(cg,"    mov [rbp - %d], rax", target->anno_int);
+			cg_store_local_off(cg, target->anno_int);   /* Register home if promoted, else slot. */
 		}
 	}
 	else if (target->anno_int==-1)   /* Static field: a global slot (no receiver). */
@@ -3682,7 +3740,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
 		cg_aligned_call(cg,"bzy_map_key_at");    /* Key (borrowed) in rax. */
-		cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+		cg_store_local_off(cg, s->decl_offset);
 		if (s->fe_val_type.kind != TY_VOID)
 		{
 			TypeKind vt = s->fe_val_type.kind;
@@ -3709,7 +3767,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    jge .L%d", end);
 		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_aux_offset);
 		cg_emit(cg,"    movzx eax, byte [rax + rcx]");   /* byte -> int (zero-extended). */
-		cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+		cg_store_local_off(cg, s->decl_offset);
 	}
 	else if (gen_vec)
 	{
@@ -3750,7 +3808,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		}
 		else
 		{
-			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+			cg_store_local_off(cg, s->decl_offset);
 		}
 
 		if (managed)   /* bzy_vec_get returned owned; the loop var is borrowed. */
@@ -3777,7 +3835,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		else
 		{
 			cg_load_scalar(cg,et,"[rbx]");
-			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+			cg_store_local_off(cg, s->decl_offset);
 		}
 	}
 
@@ -4044,6 +4102,7 @@ static void cg_request_breeze_thunk(Codegen *cg, FuncInfo *fi)
    pooled breeze. */
 static void cg_emit_breeze_thunk(Codegen *cg, FuncInfo *fi)
 {
+	cg->cur_func = NULL;   /* Synthesized frame: promotion helpers must fall back to slots. */
 	const char *a0 = cg_iarg(cg, 0);   /* The thunk's incoming block ptr + every 1-arg call's arg0. */
 	cg_emit(cg,"__breeze_%s:", fi->asm_label);
 	cg_emit(cg,"    push rbp");
@@ -4113,6 +4172,7 @@ static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi)
    string to its char* data (+32), calls the raw C symbol, stores the result. */
 static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 {
+	cg->cur_func = NULL;   /* Synthesized frame: promotion helpers must fall back to slots. */
 	const char *a0 = cg_iarg(cg, 0);   /* The thunk's incoming ctx pointer (arg0). */
 	cg_emit(cg,"__blocking_%s:", fi->asm_label);
 	cg_emit(cg,"    push rbp");
@@ -4190,7 +4250,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			if (ty_is_managed(s->decl_type.kind))
 			{
 				cg_expr_owned(cg,tt,s->decl_init);
-				cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+				cg_store_local_off(cg, s->decl_offset);
 			}
 			else
 			{
@@ -4204,7 +4264,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				}
 				else
 				{
-					cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+					cg_store_local_off(cg, s->decl_offset);
 				}
 			}
 		}
@@ -4291,6 +4351,11 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			cg_emit(cg,"    xor eax, eax");
 		}
 
+		for (int i = 0; i < f->promo_count; i++)   /* Restore the caller's r12..r15. */
+		{
+			int ri = f->promo_reg[i];
+			cg_emit(cg,"    mov %s, [rbp - %d]", CG_PROMO_REGS[ri], cg->callee_save[ri]);
+		}
 		cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 		cg_emit(cg,"    mov rsp, rbp");
 		cg_emit(cg,"    pop rbp");
@@ -4611,6 +4676,7 @@ static void cg_emit_exception_record(Codegen *cg, const char *label, int frame, 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
+	cg->cur_func = f;            /* Promotion helpers consult this; hand-rolled frames clear it. */
 	cg->cur_try_count = 0;
 	int locals = f->frame_size;
 	if (locals < 16)
@@ -4624,7 +4690,15 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->assign_save = locals + 56;
 	cg->fp_save     = locals + 64;
 	cg->rbx_save    = locals + 72;
-	int scratch = 80;        /* sp_save, val_save, four arg temps, assign_save, fp_save, rbx_save. */
+	/* Register promotion reserves four more callee-save slots (r12..r15) just below
+	   rbx_save, but only when this function actually promotes locals, so a
+	   non-promoting frame is byte-identical to before. */
+	int promo_save  = (f->promo_count > 0) ? 32 : 0;
+	cg->callee_save[0] = locals + 80;    /* r12 */
+	cg->callee_save[1] = locals + 88;    /* r13 */
+	cg->callee_save[2] = locals + 96;    /* r14 */
+	cg->callee_save[3] = locals + 104;   /* r15 */
+	int scratch = 80 + promo_save;   /* sp_save, val_save, four arg temps, assign_save, fp_save, rbx_save, [+r12..r15]. */
 	int stack_objs = f->stack_alloc_bytes;
 	if (stack_objs % 16 != 0)
 	{
@@ -4665,6 +4739,11 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    mov rbp, rsp");
 	cg_emit(cg,"    sub rsp, %d", frame);
 	cg_emit(cg,"    mov [rbp - %d], rbx", cg->rbx_save);   /* Preserve the caller's callee-saved rbx. */
+	for (int i = 0; i < f->promo_count; i++)               /* Preserve the caller's r12..r15 we will use. */
+	{
+		int ri = f->promo_reg[i];
+		cg_emit(cg,"    mov [rbp - %d], %s", cg->callee_save[ri], CG_PROMO_REGS[ri]);
+	}
 
 	/* Spill incoming args: this at [rbp-8], then params at [rbp-16], [rbp-24], and so on.
 	   Win64 numbers both register classes by argument position; System V numbers
@@ -4694,7 +4773,15 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		else
 		{
 			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : pos;
-			cg_emit(cg,"    mov [rbp - %d], %s", slot, cg_iarg(cg, ii));
+			const char *pr = cg_local_reg(cg, slot);
+			if (pr)
+			{
+				cg_emit(cg,"    mov %s, %s", pr, cg_iarg(cg, ii));   /* Seed a promoted param straight into its register. */
+			}
+			else
+			{
+				cg_emit(cg,"    mov [rbp - %d], %s", slot, cg_iarg(cg, ii));
+			}
 		}
 	}
 
@@ -4724,6 +4811,11 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		cg_emit(cg,"    xor eax, eax");
 	}
 
+	for (int i = 0; i < f->promo_count; i++)   /* Restore the caller's r12..r15. */
+	{
+		int ri = f->promo_reg[i];
+		cg_emit(cg,"    mov %s, [rbp - %d]", CG_PROMO_REGS[ri], cg->callee_save[ri]);
+	}
 	cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
@@ -4827,6 +4919,7 @@ static void cg_aligned_call_r11(Codegen *cg)
    recursion; any other object/collection by identity. */
 static void cg_emit_record_methods(Codegen *cg, TypeTable *tt, ClassInfo *c)
 {
+	cg->cur_func = NULL;   /* Synthesized frames: promotion helpers must fall back to slots. */
 	int saved_sp = cg->sp_save;
 	cg->sp_save = 24;
 	InterfaceInfo *h = types_find_interface(tt,"__Hashable");
@@ -5008,6 +5101,7 @@ static void cg_emit_record_methods(Codegen *cg, TypeTable *tt, ClassInfo *c)
    slot (which holds the one permanent reference). Called at main's entry. */
 static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 {
+	cg->cur_func = NULL;   /* Synthesized frame: promotion helpers must fall back to slots. */
 	if (enum_total()==0)
 	{
 		return;
