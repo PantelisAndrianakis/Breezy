@@ -137,7 +137,7 @@ print(0b1010);       // 10
 
 ## Logical operators
 
-`and`, `or`, `xor`, and prefix `not` combine **booleans** and produce a boolean. The symbols `&&`, `||`, and `!` are exact synonyms for `and`, `or`, and `not`. `and`/`or` **short-circuit** - the right side is skipped once the left decides the result - so `a or expensive()` never calls `expensive()` when `a` is true. `xor` always evaluates both sides. Operands must be `bool`; an integer or float is a compile error.
+`and`, `or`, `xor`, and prefix `not` combine **booleans** and produce a boolean. The symbols `&&`, `||`, and `!` are exact synonyms for `and`, `or`, and `not`, but the **word forms are the idiomatic Breezy style**: logical operators (and equality - see below) are written as words, while arithmetic, bitwise, shift, and relational (`< > <= >=`) operators stay as symbols. `and`/`or` **short-circuit** - the right side is skipped once the left decides the result - so `a or expensive()` never calls `expensive()` when `a` is true. `xor` always evaluates both sides. Operands must be `bool`; an integer or float is a compile error.
 
 Precedence (loosest first): `or` → `xor` → `and`, all **looser than the bitwise and comparison operators**, so `a > 0 and b > 0` is `(a > 0) and (b > 0)`. `not`/`!` is a tight prefix, binding before the binary operators.
 
@@ -158,9 +158,9 @@ if (ready and not done())   // `done()` only runs when `ready` is true.
 
 ---
 
-## Equality word synonyms
+## Equality: equals and differs
 
-`equals` and `differs` are readable synonyms for `==` and `!=`: `a equals b` is `a == b`, and `a differs b` is `a != b`. They are **soft keywords** - recognized as operators only between two expressions - so the words remain usable as identifiers and method names (`a.equals(b)`, the record value-equality method, is unaffected).
+`equals` and `differs` are the **idiomatic** way to write equality in Breezy: `a equals b` is `a == b`, and `a differs b` is `a != b`. The `==` and `!=` symbols remain valid, but prefer the words - like the logical operators, equality reads as words. They are **soft keywords** - recognized as operators only between two expressions - so the words remain usable as identifiers and method names (`a.equals(b)`, the record value-equality method, is unaffected).
 
 ```breezy
 print(3 equals 3);    // true
