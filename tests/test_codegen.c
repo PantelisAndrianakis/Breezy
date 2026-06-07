@@ -316,8 +316,36 @@ static void test_nonneg_division_drops_sign_bias(void)
 	ASSERT_INT(strstr(g_asm, "sar rdx, 63") != NULL, 1);   /* unguarded signed /2 keeps the bias. */
 }
 
+static void test_loop_rotation_bottom_test(void)
+{
+	/* A while loop is rotated to a bottom-tested form: the condition becomes an
+	   entry guard (jump-if-false to end) plus a conditional back-edge (jump-if-true
+	   to top), dropping the unconditional jmp. For `while (n > 1)` that means the
+	   condition compare is emitted twice and a `jg` (jump-if-true) back-edge appears
+	   where the old form had only a `jle` guard + `jmp`. */
+	emit(
+		"long f(long n)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	while (n > 1) { s = s + n; n = n - 1; }\n"
+		"	return s;\n"
+		"}\n"
+		"void main() { print(f(5)); }\n", TARGET_WINDOWS);
+	int count = 0;
+	const char *p = g_asm;
+	while ((p = strstr(p, "cmp r12, 1")) != NULL)
+	{
+		count++;
+		p++;
+	}
+
+	ASSERT_INT(count, 2);                              /* guard + bottom test. */
+	ASSERT_INT(strstr(g_asm, "jg .L") != NULL, 1);    /* conditional back-edge. */
+}
+
 int main(void)
 {
+	RUN(test_loop_rotation_bottom_test);
 	RUN(test_nonneg_division_drops_sign_bias);
 	RUN(test_register_operand_compare);
 	RUN(test_inplace_register_arithmetic);

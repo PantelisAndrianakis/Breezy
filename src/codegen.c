@@ -1101,12 +1101,13 @@ static int cg_is_pow2_mod(Expr *e)
 		   && !ty_is_float(e->lhs->type.kind);
 }
 
-/* Branch to .L<label> when `cond` evaluates to false. An integer relational or
-   equality comparison is lowered to a single cmp + inverted conditional jump,
+/* Branch to .L<label> when `cond` is true (want=1) or false (want=0). An integer
+   relational or equality comparison is lowered to a single cmp + conditional jump,
    skipping the setcc/movzx/cmp-against-zero the value path would emit for it.
    Everything else (float comparisons, bool variables, calls, ...) falls back to
-   evaluating the condition to 0/1 and testing that. */
-static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
+   evaluating the condition to 0/1 and testing that. The want=0 emission is
+   byte-identical to the original cg_branch_unless. */
+static void cg_branch_cond(Codegen *cg, TypeTable *tt, Expr *cond, int label, int want)
 {
 	/* Divisibility test: (X % 2^k) == 0 / != 0. Only zero-ness is tested, which is
 	   sign-independent, so the signed-remainder reconstruction collapses to a single
@@ -1127,7 +1128,9 @@ static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
 		{
 			cg_expr(cg,tt,m->lhs);                          /* X -> rax. */
 			cg_emit(cg,"    and rax, %lld", m->rhs->int_val - 1);   /* Sets ZF; low bits == remainder magnitude. */
-			cg_emit(cg,"    %s .L%d", cond->op==TOKEN_EQ ? "jne" : "je", label);
+			/* (X%2^k)==0 true => ZF set => je; !=0 true => jne. want=0 inverts. */
+			int eq = (cond->op==TOKEN_EQ);
+			cg_emit(cg,"    %s .L%d", (eq==want) ? "je" : "jne", label);
 			return;
 		}
 	}
@@ -1151,26 +1154,26 @@ static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
 		cg_binop_rhs(cg, tt, cond, &rhsop, immbuf, &uns);
 		cg_emit(cg,"    cmp %s, %s", lhsop, rhsop);
 
-		const char *jcc;                     /* Jump when the comparison is FALSE. */
+		const char *jcc;                     /* want=0: jump when FALSE; want=1: jump when TRUE. */
 		switch (cond->op)
 		{
 		case TOKEN_EQ:
-			jcc = "jne";
+			jcc = want ? "je" : "jne";
 			break;
 		case TOKEN_NEQ:
-			jcc = "je";
+			jcc = want ? "jne" : "je";
 			break;
 		case TOKEN_LT:
-			jcc = uns ? "jae" : "jge";
+			jcc = want ? (uns ? "jb" : "jl") : (uns ? "jae" : "jge");
 			break;
 		case TOKEN_GT:
-			jcc = uns ? "jbe" : "jle";
+			jcc = want ? (uns ? "ja" : "jg") : (uns ? "jbe" : "jle");
 			break;
 		case TOKEN_LTE:
-			jcc = uns ? "ja" : "jg";
+			jcc = want ? (uns ? "jbe" : "jle") : (uns ? "ja" : "jg");
 			break;
 		default: /* TOKEN_GTE */
-			jcc = uns ? "jb" : "jl";
+			jcc = want ? (uns ? "jae" : "jge") : (uns ? "jb" : "jl");
 			break;
 		}
 
@@ -1180,7 +1183,19 @@ static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
 
 	cg_expr(cg,tt,cond);
 	cg_emit(cg,"    cmp rax, 0");
-	cg_emit(cg,"    je .L%d", label);
+	cg_emit(cg,"    %s .L%d", want ? "jne" : "je", label);
+}
+
+/* Branch to .L<label> when `cond` is false (the loop/if exit test). */
+static void cg_branch_unless(Codegen *cg, TypeTable *tt, Expr *cond, int label)
+{
+	cg_branch_cond(cg, tt, cond, label, 0);
+}
+
+/* Branch to .L<label> when `cond` is true (the rotated-loop back-edge). */
+static void cg_branch_if(Codegen *cg, TypeTable *tt, Expr *cond, int label)
+{
+	cg_branch_cond(cg, tt, cond, label, 1);
 }
 
 /* Emit a Win64 call. Each positional argument is materialized into rcx/rdx/r8/r9
@@ -3891,16 +3906,16 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
 	int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 	cg_stmt(cg,tt,f,s->for_init,in_main);
+	cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
 	cg_emit(cg,".L%d:", top);
-	cg_branch_unless(cg,tt,s->cond,end);
 	cg->cur_break_label=end;
 	cg->cur_continue_label=cont;
 	cg_block(cg,tt,f,s->then_blk,in_main);
 	cg->cur_break_label=sb;
 	cg->cur_continue_label=sc;
-	cg_emit(cg,".L%d:", cont);            /* Continue lands here -> post runs. */
+	cg_emit(cg,".L%d:", cont);            /* Continue lands here -> post runs, then re-test. */
 	cg_stmt(cg,tt,f,s->for_post,in_main);
-	cg_emit(cg,"    jmp .L%d", top);
+	cg_branch_if(cg,tt,s->cond,top);      /* Bottom test = back-edge; no unconditional jmp. */
 	cg_emit(cg,".L%d:", end);
 }
 
@@ -4591,14 +4606,15 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			break;
 		}
 
-		int top=cg_label(cg), end=cg_label(cg);
+		int top=cg_label(cg), cont=cg_label(cg), end=cg_label(cg);
 		int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 		cg->cur_break_label=end;
-		cg->cur_continue_label=top;
+		cg->cur_continue_label=cont;          /* continue re-tests the condition at the bottom. */
+		cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
 		cg_emit(cg,".L%d:",top);
-		cg_branch_unless(cg,tt,s->cond,end);
 		cg_block(cg,tt,f,s->then_blk,in_main);
-		cg_emit(cg,"    jmp .L%d",top);
+		cg_emit(cg,".L%d:",cont);
+		cg_branch_if(cg,tt,s->cond,top);      /* Bottom test = back-edge; no unconditional jmp. */
 		cg_emit(cg,".L%d:",end);
 		cg->cur_break_label=sb;
 		cg->cur_continue_label=sc;
