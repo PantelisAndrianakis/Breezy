@@ -1,6 +1,10 @@
 #include "breezy.h"
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>   /* TlsAlloc / Interlocked* for the TEB-slot allocator TLS. */
+#include <intrin.h>    /* __readgsqword / __writegsqword. */
+#endif
 
 /* Cycle-collector colors, stored in the low two bits of gcinfo at offset 16. */
 enum { BLACK = 0, GRAY = 1, WHITE = 2, PURPLE = 3 };
@@ -177,7 +181,9 @@ typedef struct
 	int      registered;          /* 1 once this shard is linked into g_shards. */
 } PoolTLS;
 
-static __thread PoolTLS t_pool;
+#ifndef _WIN32
+static __thread PoolTLS t_pool;   /* Linux/ELF: native fs:-relative TLS - one mov per resolution. */
+#endif
 
 /* Registry of every thread's shard, so bzy_live_count can sum them. A thread
    registers its shard once, on its first alloc or free, via a lock-free append.
@@ -187,21 +193,87 @@ static __thread PoolTLS t_pool;
 static PoolTLS *g_shards[MAX_SHARDS];
 static int      g_nshards;   /* Appended via __atomic; read back to bound the sum. */
 
+/* Link a freshly created shard into the registry so bzy_live_count can sum it. */
+static void register_shard(PoolTLS *p)
+{
+	p->registered = 1;
+	int i = __atomic_fetch_add(&g_nshards, 1, __ATOMIC_SEQ_CST);
+	if (i < MAX_SHARDS)
+	{
+		g_shards[i] = p;
+	}
+}
+
+#ifdef _WIN32
+/* The MinGW target emulates `__thread` as a call to __emutls_get_address on every
+   resolution - and pool_tls() is on the hottest path in the runtime. Instead, hold
+   the per-thread shard pointer in a reserved TEB TLS slot and read it with a single
+   gs:-relative load (no call), the same shape as the native fs:-relative access the
+   ELF build gets for free. TlsAlloc is taken once, on the first allocation (very
+   early, so the index lands inside the inline TlsSlots[64] array); a TlsGetValue
+   fallback covers the unlikely overflow case. */
+#define TEB_TLS_SLOTS 0x1480   /* Offset of TlsSlots[64] in the x64 TEB. */
+
+static volatile LONG g_slot_claim;   /* CAS gate: elects one thread to run TlsAlloc. */
+static volatile LONG g_slot_ready;   /* 1 once g_pool_slot is valid. */
+static DWORD         g_pool_slot;
+
 static PoolTLS *pool_tls(void)
 {
-	PoolTLS *p = &t_pool;   /* The one (possibly emulated) TLS resolution per call. */
-	if (!p->registered)
+	if (!g_slot_ready)
 	{
-		p->registered = 1;
-		int i = __atomic_fetch_add(&g_nshards, 1, __ATOMIC_SEQ_CST);
-		if (i < MAX_SHARDS)
+		if (InterlockedCompareExchange(&g_slot_claim, 1, 0) == 0)
 		{
-			g_shards[i] = p;
+			g_pool_slot = TlsAlloc();
+			InterlockedExchange(&g_slot_ready, 1);
+		}
+		else
+		{
+			while (!g_slot_ready)   /* Another thread is mid-TlsAlloc; brief startup-only spin. */
+			{
+				YieldProcessor();
+			}
+		}
+	}
+
+	DWORD slot = g_pool_slot;
+	PoolTLS *p;
+	if (slot < 64)
+	{
+		unsigned off = TEB_TLS_SLOTS + slot * 8u;
+		p = (PoolTLS*)__readgsqword(off);
+		if (!p)
+		{
+			p = (PoolTLS*)calloc(1, sizeof(PoolTLS));
+			__writegsqword(off, (DWORD64)(uintptr_t)p);
+			register_shard(p);
+		}
+	}
+	else
+	{
+		p = (PoolTLS*)TlsGetValue(slot);   /* Index beyond the inline array: correct, slower path. */
+		if (!p)
+		{
+			p = (PoolTLS*)calloc(1, sizeof(PoolTLS));
+			TlsSetValue(slot, p);
+			register_shard(p);
 		}
 	}
 
 	return p;
 }
+#else
+static PoolTLS *pool_tls(void)
+{
+	PoolTLS *p = &t_pool;   /* One fs:-relative resolution per call. */
+	if (!p->registered)
+	{
+		register_shard(p);
+	}
+
+	return p;
+}
+#endif
 
 /* Smallest class whose block fits size, or 0 when size exceeds the pooled range. */
 static int class_index(int64_t size)
