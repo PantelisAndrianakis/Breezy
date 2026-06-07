@@ -611,6 +611,57 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 
 	cg_expr(cg,tt,e->lhs);                  /* lhs -> rax. */
 
+	/* Strength-reduce '/' or '%' by a positive power-of-two literal: a 64-bit idiv
+	   (tens of cycles) collapses to a shift (and a mask/bias). The divisor is bounded
+	   to 2^31 so the '%' mask stays an imm32. Signedness follows the operands, exactly
+	   as the idiv path below; a signed numerator is biased toward zero before the
+	   arithmetic shift. General (non-power-of-two) constants still use idiv. */
+	if ((e->op==TOKEN_SLASH || e->op==TOKEN_PERCENT)
+		&& e->rhs->kind==EX_INT
+		&& e->rhs->int_val >= 2 && e->rhs->int_val <= 0x80000000LL
+		&& (e->rhs->int_val & (e->rhs->int_val - 1)) == 0)
+	{
+		long long d = e->rhs->int_val;
+		int k = 0;
+		while ((1LL << k) != d)
+		{
+			k++;        /* d == 2^k. */
+		}
+
+		int uns_div = ty_is_unsigned(e->lhs->type.kind) || ty_is_unsigned(e->rhs->type.kind);
+		if (e->op==TOKEN_SLASH && uns_div)
+		{
+			cg_emit(cg,"    shr rax, %d", k);
+		}
+		else if (e->op==TOKEN_SLASH)
+		{
+			/* Signed divide: bias a negative numerator by (2^k - 1) so the shift
+			   truncates toward zero, then arithmetic-shift. */
+			cg_emit(cg,"    mov rdx, rax");
+			cg_emit(cg,"    sar rdx, 63");
+			cg_emit(cg,"    shr rdx, %d", 64 - k);
+			cg_emit(cg,"    add rax, rdx");
+			cg_emit(cg,"    sar rax, %d", k);
+		}
+		else if (uns_div)
+		{
+			cg_emit(cg,"    and rax, %lld", d - 1);
+		}
+		else
+		{
+			/* Signed remainder = ((n + bias) & (d-1)) - bias, bias = (d-1) if n<0. */
+			cg_emit(cg,"    mov rdx, rax");
+			cg_emit(cg,"    sar rdx, 63");
+			cg_emit(cg,"    shr rdx, %d", 64 - k);
+			cg_emit(cg,"    add rax, rdx");
+			cg_emit(cg,"    and rax, %lld", d - 1);
+			cg_emit(cg,"    sub rax, rdx");
+		}
+
+		cg_extend_reg(cg,e->type.kind);
+		return;
+	}
+
 	/* The rhs operand for add/sub/cmp. Default is the rbx register; a small enough
 	   integer literal is folded straight into the instruction (rhsop = the literal)
 	   so no rbx load is emitted at all. imul/idiv have no usable immediate form here

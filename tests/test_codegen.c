@@ -188,6 +188,28 @@ static void test_logical_emission(void)
 	ASSERT_INT(strstr(g_asm, "sete al") != NULL, 1);
 }
 
+static void test_div_strength_reduction(void)
+{
+	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
+	emit("void main() { int n; n = 100; int a; a = n / 2; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "sar rax, 1") != NULL, 1);
+
+	/* '%' by a power-of-two literal becomes a mask, not idiv. */
+	emit("void main() { int n; n = 100; int a; a = n % 2; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "and rax, 1") != NULL, 1);
+
+	/* Unsigned divide uses a logical shift (no sign bias). */
+	emit("void main() { uint n; n = 100u; uint a; a = n / 4; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "shr rax, 2") != NULL, 1);
+
+	/* A non-power-of-two constant divisor still uses idiv (general path). */
+	emit("void main() { int n; n = 100; int a; a = n / 3; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "idiv") != NULL, 1);
+}
+
 int main(void)
 {
 	RUN(test_linux_arg_regs);
@@ -200,6 +222,7 @@ int main(void)
 	RUN(test_devirt_unoverridden_base_method);
 	RUN(test_bitwise_emission);
 	RUN(test_logical_emission);
+	RUN(test_div_strength_reduction);
 	SUMMARY();
 	return 0;
 }
