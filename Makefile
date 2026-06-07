@@ -5,13 +5,13 @@ CC      = gcc
 # link time (--stack is a PE-only ld flag). Linux uses ucontext + pthreads.
 UNAME := $(shell uname -s)
 ifeq ($(findstring Linux,$(UNAME)),Linux)
-  CORO_SRC      = runtime/coroutine_posix.c
+  CORO_SRC      = runtime/coroutine.c
   PLATFORM_LIBS = -lpthread
   STACKFLAG     =
   PLATFORM_DEFS = -D_GNU_SOURCE   # Expose POSIX (clock_gettime/sem_timedwait) + GNU (accept4/SOCK_NONBLOCK/MSG_NOSIGNAL) under -std=c99.
   OBJDIR        = build/linux
 else
-  CORO_SRC      = runtime/coroutine_win.c
+  CORO_SRC      = runtime/coroutine.c
   PLATFORM_LIBS =
   STACKFLAG     = -Wl,--stack,0x4000000
   PLATFORM_DEFS =
@@ -51,9 +51,9 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/type
 RT_COMMON = alloc print string strconv array map vector clock random exception regex \
             map_entry channel timer reflect args scheduler
 ifeq ($(findstring Linux,$(UNAME)),Linux)
-  RT_NAMES = $(RT_COMMON) coroutine_posix offload system file filechannel logger reactor_epoll socket udp http
+  RT_NAMES = $(RT_COMMON) coroutine offload system file filechannel logger reactor_epoll socket udp http
 else
-  RT_NAMES = $(RT_COMMON) coroutine_win file offload system iocp socket udp filechannel logger http
+  RT_NAMES = $(RT_COMMON) coroutine file offload system iocp socket udp filechannel logger http
 endif
 RT_SRC  = $(addprefix runtime/,$(addsuffix .c,$(RT_NAMES)))
 # Objects and the runtime archive live in a per-host build dir (build/win or

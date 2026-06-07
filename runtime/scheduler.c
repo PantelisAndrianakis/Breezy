@@ -11,6 +11,17 @@
   #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
 #endif
 
+#define SCHED_SPIN 64   /* find_work() polls before a worker commits to a sleeping wait. */
+
+/* Hint the CPU we are in a spin-wait: lets a hyperthread sibling proceed and avoids
+   a memory-order-violation pipeline flush when the value finally changes. */
+static inline void bzy_cpu_relax(void)
+{
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+	__builtin_ia32_pause();
+#endif
+}
+
 typedef struct Breeze
 {
 	BzyCoroutine *coroutine;
@@ -21,13 +32,159 @@ typedef struct Breeze
 	struct Breeze *next;
 } Breeze;
 
-/* One ready FIFO per worker. A worker pushes/pops its own queue and steals from
-   siblings when it runs dry (6a-3 Task 2). The lock makes both safe. */
+/* Lock-free Chase-Lev work-stealing deque. The owning worker pushes and pops the
+   bottom (LIFO for itself, which keeps freshly spawned work hot in cache); idle
+   sibling workers steal from the top. No lock on any path: the owner uses plain
+   loads/stores plus one CAS only when popping the last element (to race a thief),
+   and thieves use a single CAS. This replaces the per-worker mutex FIFO whose lock
+   serialized the producer against every stealer (the high-core collapse). */
+typedef struct CLArray
+{
+	int64_t          cap;     /* Number of slots (power of two). */
+	int64_t          mask;    /* cap - 1. */
+	Breeze         **slot;    /* cap entries; indexed by (pos & mask). */
+	struct CLArray  *older;   /* Previous, smaller array kept alive until deque free
+	                             (a thief may still hold a pointer into it). */
+} CLArray;
+
+typedef struct
+{
+	int64_t  top;      /* Steal end; thieves CAS this forward. */
+	int64_t  bottom;   /* Owner end; only the owner moves it. */
+	CLArray *array;    /* Backing store; swapped (release) by the owner on growth. */
+} Deque;
+
 typedef struct Worker
 {
-	Breeze *head, *tail;
-	bzy_mutex lock;
+	Deque dq;
 } Worker;
+
+static CLArray *cl_array_new(int64_t cap)
+{
+	CLArray *a = malloc(sizeof(*a));
+	a->cap = cap;
+	a->mask = cap - 1;
+	a->slot = malloc((size_t)cap * sizeof(Breeze*));
+	a->older = NULL;
+	return a;
+}
+
+static void cl_init(Deque *d)
+{
+	d->top = 0;
+	d->bottom = 0;
+	d->array = cl_array_new(256);   /* Grows on demand; 256 covers most fan-outs without a resize. */
+}
+
+static void cl_free(Deque *d)
+{
+	CLArray *a = d->array;
+	while (a)
+	{
+		CLArray *older = a->older;
+		free(a->slot);
+		free(a);
+		a = older;
+	}
+}
+
+/* Owner only. Doubles the backing array when full, copying the live range by
+   logical index so a slot's logical position is identical in both arrays (a thief
+   reading the old array through a stale pointer still sees the right value). */
+static CLArray *cl_grow(Deque *d, CLArray *a, int64_t b, int64_t t)
+{
+	CLArray *na = cl_array_new(a->cap * 2);
+	na->older = a;   /* Retain the old array; a concurrent thief may still read it. */
+	for (int64_t i = t; i < b; i++)
+	{
+		na->slot[i & na->mask] = a->slot[i & a->mask];
+	}
+
+	__atomic_store_n(&d->array, na, __ATOMIC_RELEASE);
+	return na;
+}
+
+/* Owner only (sole producer). Pushes at the bottom; never contends with consumers. */
+static void cl_push(Deque *d, Breeze *x)
+{
+	int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_RELAXED);
+	int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
+	CLArray *a = __atomic_load_n(&d->array, __ATOMIC_RELAXED);
+	if (b - t > a->cap - 1)
+	{
+		a = cl_grow(d, a, b, t);
+	}
+
+	__atomic_store_n(&a->slot[b & a->mask], x, __ATOMIC_RELAXED);
+	__atomic_thread_fence(__ATOMIC_RELEASE);          /* Publish the slot before bottom. */
+	__atomic_store_n(&d->bottom, b + 1, __ATOMIC_RELAXED);
+}
+
+/* Any consumer (the owning worker draining its own queue, or a thief stealing).
+   Both take from the top via CAS, which makes the queue FIFO in arrival order -
+   the documented "deterministic FIFO interleaving on a single scheduler" - while
+   the producer runs lock-free at the bottom. NULL if empty or the CAS lost the
+   slot to a racing consumer (the caller treats both as "no work here"). */
+static Breeze *cl_take(Deque *d)
+{
+	int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_ACQUIRE);
+	if (t >= b)
+	{
+		return NULL;   /* Empty. */
+	}
+
+	CLArray *a = __atomic_load_n(&d->array, __ATOMIC_ACQUIRE);
+	Breeze *x = __atomic_load_n(&a->slot[t & a->mask], __ATOMIC_RELAXED);
+	if (!__atomic_compare_exchange_n(&d->top, &t, t + 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED))
+	{
+		return NULL;   /* A sibling (or the owner) took this slot first. */
+	}
+
+	return x;
+}
+
+#define CL_STEAL_MAX 256   /* Cap on how many a thief lifts in one CAS (bounds the copy). */
+
+/* Steal up to half a victim's items in a single CAS, into out[0..return). The caller
+   runs one and pushes the rest onto its OWN deque. Without batching, a single producer
+   fanning out to many idle stealers serializes them all on the victim's `top` cacheline
+   (one CAS per task); taking a chunk at a time amortizes that ~chunk-fold, which is what
+   lets the scheduler scale to many workers. Order within the batch stays FIFO. */
+static int cl_steal_batch(Deque *d, Breeze **out, int max)
+{
+	int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_ACQUIRE);
+	int64_t n = b - t;
+	if (n <= 0)
+	{
+		return 0;   /* Empty. */
+	}
+
+	n = (n + 1) / 2;   /* Take about half; round up so a lone item is still taken. */
+	if (n > max)
+	{
+		n = max;
+	}
+
+	CLArray *a = __atomic_load_n(&d->array, __ATOMIC_ACQUIRE);
+	for (int64_t i = 0; i < n; i++)
+	{
+		out[i] = __atomic_load_n(&a->slot[(t + i) & a->mask], __ATOMIC_RELAXED);
+	}
+
+	/* The CAS commits all n at once: if it succeeds, no other consumer could have
+	   taken any of [t, t+n) (that would have moved top past t and failed us), so the
+	   copied slots are valid. If it fails, we took nothing. */
+	if (!__atomic_compare_exchange_n(&d->top, &t, t + n, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED))
+	{
+		return 0;
+	}
+
+	return (int)n;
+}
 
 static Worker *g_workers;
 static int     g_nworkers = 1;
@@ -35,6 +192,9 @@ static bzy_sem g_work_sem;          /* Released on every enqueue: "work may be a
 static int     g_sem_ready;         /* 1 once g_work_sem is initialized (nudge guard pre-run). */
 static int     g_live;              /* Breezes created but not finished (accessed via __atomic). */
 static int     g_shutdown;          /* Set when g_live hits 0; unblocks idle workers so they exit. */
+static int     g_idle;              /* Workers blocked (or about to block) on g_work_sem. enqueue_on
+                                       only posts the semaphore when this is > 0, so a spawn/wake onto
+                                       a busy pool costs no syscall - the work is found by polling. */
 
 static __thread BzyCoroutine *t_sched;       /* This thread's scheduler coroutine. */
 static __thread Breeze       *t_running;     /* Breeze currently on this CPU (NULL = scheduler). */
@@ -43,40 +203,69 @@ static __thread void         *t_park_unlock; /* bzy_mutex* the scheduler release
 static __thread int           t_requeue;     /* bzy_yield sets this; the scheduler re-enqueues the breeze
                                                 after the switch, when it is safely off its own CPU. */
 
+/* Wake an idle worker if any is parked on the semaphore. A busy worker finds new
+   work by polling/stealing, so a spawn or wake onto a running pool pays no syscall.
+   The matching re-poll in worker_loop (after it bumps g_idle) closes the race. */
+static void wake_one(void)
+{
+	if (__atomic_load_n(&g_idle, __ATOMIC_SEQ_CST) > 0)
+	{
+		bzy_sem_post(&g_work_sem, 1);
+	}
+}
+
+/* Push onto the current worker's own deque (owner-only path: spawn and wake both
+   run on a worker thread enqueuing locally; work-stealing rebalances). */
 static void enqueue_on(int wid, Breeze *b)
 {
-	Worker *w = &g_workers[wid];
-	bzy_mutex_lock(&w->lock);
+	cl_push(&g_workers[wid].dq, b);
+	wake_one();
+}
+
+/* Foreign-producer injection queue: a non-worker thread (offload / IOCP completion)
+   cannot push a Chase-Lev deque (owner-only), so external wakes land here under a
+   short lock and workers drain it in find_work. Untouched on the pure-breeze hot
+   path, so it adds no cost to spawn/channel workloads. */
+static Breeze   *g_inject_head, *g_inject_tail;
+static bzy_mutex g_inject_lock = BZY_MUTEX_INIT;
+
+static void inject(Breeze *b)
+{
+	bzy_mutex_lock(&g_inject_lock);
 	b->next = NULL;
-	if (w->tail)
+	if (g_inject_tail)
 	{
-		w->tail->next = b;
+		g_inject_tail->next = b;
 	}
 	else
 	{
-		w->head = b;
+		g_inject_head = b;
 	}
 
-	w->tail = b;
-	bzy_mutex_unlock(&w->lock);
-	bzy_sem_post(&g_work_sem, 1);
+	g_inject_tail = b;
+	bzy_mutex_unlock(&g_inject_lock);
+	wake_one();
 }
 
-static Breeze *dequeue_from(int wid)
+static Breeze *inject_pop(void)
 {
-	Worker *w = &g_workers[wid];
-	bzy_mutex_lock(&w->lock);
-	Breeze *b = w->head;
+	if (!__atomic_load_n(&g_inject_head, __ATOMIC_RELAXED))
+	{
+		return NULL;   /* Common case: nothing injected, no lock taken. */
+	}
+
+	bzy_mutex_lock(&g_inject_lock);
+	Breeze *b = g_inject_head;
 	if (b)
 	{
-		w->head = b->next;
-		if (!w->head)
+		g_inject_head = b->next;
+		if (!g_inject_head)
 		{
-			w->tail = NULL;
+			g_inject_tail = NULL;
 		}
 	}
 
-	bzy_mutex_unlock(&w->lock);
+	bzy_mutex_unlock(&g_inject_lock);
 	return b;
 }
 
@@ -137,9 +326,7 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 	g_workers = realloc(g_workers, (size_t)n * sizeof(Worker));
 	for (int i = old; i < n; i++)
 	{
-		g_workers[i].head = NULL;
-		g_workers[i].tail = NULL;
-		bzy_mutex_init(&g_workers[i].lock);
+		cl_init(&g_workers[i].dq);
 	}
 
 	g_nworkers = n;
@@ -205,7 +392,7 @@ void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again, on this 
 
 void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread (e.g. an offload worker). */
 {
-	enqueue_on(0, (Breeze*)breeze);   /* Worker 0's queue; stealing rebalances. No thread-local state needed. */
+	inject((Breeze*)breeze);   /* Not a worker thread: cannot push a deque, so go via the injection queue. */
 }
 
 void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re-checks timers. */
@@ -231,26 +418,35 @@ void bzy_yield(void)
 	bzy_coroutine_switch(t_sched);
 }
 
-/* Find a breeze: own queue first, then steal from siblings. NULL if none anywhere. */
+/* Find a breeze: own deque first, then steal from siblings, then the foreign
+   injection queue. NULL if none anywhere. */
 static Breeze *find_work(void)
 {
-	Breeze *b = dequeue_from(t_wid);
+	Breeze *b = cl_take(&g_workers[t_wid].dq);
 	if (b)
 	{
 		return b;
 	}
 
+	Breeze *batch[CL_STEAL_MAX];
 	for (int i = 1; i < g_nworkers; i++)
 	{
 		int victim = (t_wid + i) % g_nworkers;
-		b = dequeue_from(victim);
-		if (b)
+		int n = cl_steal_batch(&g_workers[victim].dq, batch, CL_STEAL_MAX);
+		if (n > 0)
 		{
-			return b;
+			/* Keep the first to run now; deposit the rest on our own deque (we own
+			   it, so the push is the uncontended producer path) for later/stealing. */
+			for (int j = 1; j < n; j++)
+			{
+				cl_push(&g_workers[t_wid].dq, batch[j]);
+			}
+
+			return batch[0];
 		}
 	}
 
-	return NULL;
+	return inject_pop();
 }
 
 /* The scheduler loop, run by every worker thread. */
@@ -291,6 +487,38 @@ static void worker_loop(void)
 				continue;                         /* Pick up the freshly spawned breezes. */
 			}
 
+			/* Spin-poll before sleeping. With one producer feeding many workers
+			   (fan-out), a worker that drains the queue finds fresh work again within
+			   a few hundred cycles; parking on the semaphore here instead would force a
+			   post/wait syscall pair per burst, and that churn - not lock contention -
+			   is what made throughput collapse as workers were added. Spinning briefly
+			   (still counted idle-free so producers skip the post) catches the work in
+			   userspace. Only genuinely idle workers fall through to the real sleep. */
+			{
+				int spun = 0;
+				for (; spun < SCHED_SPIN; spun++)
+				{
+					b = find_work();
+					if (b)
+					{
+						goto run;
+					}
+
+					bzy_cpu_relax();
+				}
+			}
+
+			/* About to block. Register as idle and re-poll: an enqueue that raced our
+			   earlier find_work() is now either visible here, or sees g_idle > 0 and
+			   posts. Either way no wakeup is lost. g_idle is dropped on the way out. */
+			__atomic_add_fetch(&g_idle, 1, __ATOMIC_SEQ_CST);
+			b = find_work();
+			if (b)
+			{
+				__atomic_sub_fetch(&g_idle, 1, __ATOMIC_SEQ_CST);
+				goto run;
+			}
+
 			int64_t nd = bzy_timer_next_deadline();
 			if (nd >= 0)
 			{
@@ -306,37 +534,28 @@ static void worker_loop(void)
 				}
 
 				bzy_sem_wait_ms(&g_work_sem, wait);   /* Sleep until the next deadline (or an enqueue). */
-				continue;
 			}
-
-			/* No ready work and no pending timer. */
-			if (bzy_offload_inflight() > 0 || bzy_iocp_inflight() > 0)
+			else if (bzy_offload_inflight() > 0 || bzy_iocp_inflight() > 0)
 			{
 				/* A breeze is parked on an offload or network op; a worker or the
 				   completion thread will wake it. Wait instead of declaring deadlock. */
 				bzy_sem_wait(&g_work_sem);
-				continue;
 			}
-
-			if (g_nworkers == 1 && __atomic_load_n(&g_live, __ATOMIC_SEQ_CST) > 0)
+			else if (g_nworkers == 1 && __atomic_load_n(&g_live, __ATOMIC_SEQ_CST) > 0)
 			{
-				/* Re-poll before declaring deadlock: an offload/IOCP worker enqueues
-				   the woken breeze *before* it decrements its inflight counter, so a
-				   wake that landed between the find_work() above and this inflight==0
-				   read is already in the ready queue. Only a still-empty queue is a
-				   genuine deadlock. */
-				b = find_work();
-				if (b)
-				{
-					goto run;
-				}
-
-				/* Single worker, breezes remain parked, nothing can ever wake them. */
+				/* Single worker, breezes remain parked, nothing can ever wake them.
+				   (The re-poll above already covered an offload/IOCP wake that raced
+				   the inflight==0 read.) */
+				__atomic_sub_fetch(&g_idle, 1, __ATOMIC_SEQ_CST);
 				fprintf(stderr, "Deadlock: all breezes blocked.\n");
 				abort();
 			}
+			else
+			{
+				bzy_sem_wait(&g_work_sem);
+			}
 
-			bzy_sem_wait(&g_work_sem);
+			__atomic_sub_fetch(&g_idle, 1, __ATOMIC_SEQ_CST);
 			continue;
 		}
 
@@ -445,6 +664,11 @@ void bzy_sched_run(void)
 
 	bzy_sem_destroy(&g_work_sem);
 	g_sem_ready = 0;
+	for (int i = 0; i < g_nworkers; i++)
+	{
+		cl_free(&g_workers[i].dq);
+	}
+
 	free(g_workers);
 	g_workers = NULL;
 	g_nworkers = 0;
