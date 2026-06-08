@@ -570,20 +570,58 @@ static void cg_aligned_call(Codegen *cg, const char *fn)
 	cg_emit(cg,"    call %s", fn);
 }
 
+/* Emit the per-thread pool-base fetch into `reg`, branching to .L<slow> when the
+   pool is not reachable inline. Returns the addressing prefix for PoolTLS field
+   access: "reg" on Windows (reg holds the PoolTLS pointer), "fs:reg" on Linux (reg
+   holds the constant TLS offset, so fields live at fs:[reg + offset]). The returned
+   pointer is a static buffer, valid until the next call. Shared by the inline
+   allocator (pop) and the inline release (pool_free push). */
+static const char *cg_emit_pool_base(Codegen *cg, const char *reg, int slow)
+{
+	static char base[16];
+	if (cg->target == TARGET_WINDOWS)
+	{
+		cg_emit(cg,"    cmp dword [rel bzy_pool_slot_ready], 0");
+		cg_emit(cg,"    je .L%d", slow);                  /* TLS slot not allocated yet. */
+		cg_emit(cg,"    mov eax, [rel bzy_pool_slot]");
+		cg_emit(cg,"    cmp eax, 64");
+		cg_emit(cg,"    jae .L%d", slow);                 /* Slot beyond the inline TEB array. */
+		cg_emit(cg,"    mov %s, [gs:0x1480 + rax*8]", reg);  /* PoolTLS* for the current thread. */
+		cg_emit(cg,"    test %s, %s", reg, reg);
+		cg_emit(cg,"    jz .L%d", slow);                  /* This thread has no pool yet. */
+		snprintf(base, sizeof base, "%s", reg);
+	}
+	else
+	{
+		cg_emit(cg,"    cmp dword [rel bzy_tpool_off_ready], 0");
+		cg_emit(cg,"    je .L%d", slow);                  /* Thread-pointer offset not known yet. */
+		cg_emit(cg,"    mov %s, [rel bzy_tpool_off]", reg);  /* &t_pool - thread pointer (constant). */
+		snprintf(base, sizeof base, "fs:%s", reg);        /* fs:[reg + N] reaches t_pool field N. */
+	}
+
+	return base;
+}
+
 /* Release the object pointer currently in the first integer-arg register; rax and
-   rdx are clobbered. The inline fast path finalizes only the case the runtime
-   would finish without freeing or buffering: a non-NULL, non-shared, managed
-   object whose refcount stays positive AND that is a leaf (no managed children,
-   so it can never root a dead cycle). Every other case - NULL, unmanaged (rc 0),
-   shared (needs an atomic dec), refcount reaching zero (free), or a survivor with
-   children (must be buffered as a cycle candidate) - falls through to bzy_release
-   with the refcount UNMODIFIED, because the runtime always performs the decrement
-   itself; decrementing inline before deferring would double-count. */
+   rdx are clobbered (so is r8 on the inline-free path). The inline path finalizes
+   two cases the runtime would otherwise be called for, and defers the rest:
+     - a survivor (rc stays > 0) that is a leaf: decrement inline. A survivor with
+       managed children might root a dead cycle and must be buffered -> runtime.
+     - a leaf with no finalizer whose rc reaches 0: recycle it inline via pool_free
+       (push onto its size-class free list). An object with children (free_object
+       must release them), a finalizer (must run), an unpooled/oversized class, or a
+       full pool -> runtime.
+   The descriptor is probed once (rdx) to classify children/finalizer. NULL,
+   unmanaged (rc 0), and shared (atomic dec) also defer. Crucially the refcount is
+   only ever mutated on a path that completes inline, never before deferring -
+   bzy_release always performs the decrement itself. */
 static void cg_release_rcx(Codegen *cg)
 {
 	const char *a0 = cg_iarg(cg, 0);
 	int slow = cg_label(cg);
-	int leaf = cg_label(cg);
+	int nodesc = cg_label(cg);
+	int surv = cg_label(cg);
+	int freeobj = cg_label(cg);
 	int done = cg_label(cg);
 
 	cg_emit(cg,"    test %s, %s", a0, a0);
@@ -594,23 +632,47 @@ static void cg_release_rcx(Codegen *cg)
 	cg_emit(cg,"    mov rax, [%s + 8]", a0);          /* refcount. */
 	cg_emit(cg,"    test rax, rax");
 	cg_emit(cg,"    jz .L%d", done);                  /* rc==0: unmanaged (stack) object. */
-	cg_emit(cg,"    cmp rax, 1");
-	cg_emit(cg,"    jle .L%d", slow);                 /* rc==1: reaches 0 -> free (runtime). */
-	/* rc>=2: the object will survive. Buffer it only if it can have managed
-	   children; a leaf (descriptor word ti[1] == 0) never buffers. Probe the
-	   descriptor with rdx so rax keeps the refcount for the inline decrement. */
+	/* Probe the descriptor once (rdx) to classify children + finalizer; rax keeps rc. */
 	cg_emit(cg,"    mov rdx, [%s]", a0);              /* vtable. */
 	cg_emit(cg,"    test rdx, rdx");
-	cg_emit(cg,"    jz .L%d", leaf);                  /* No vtable: treat as a leaf. */
+	cg_emit(cg,"    jz .L%d", nodesc);                /* No vtable: leaf, no finalizer. */
 	cg_emit(cg,"    mov rdx, [rdx - 8]");             /* type descriptor. */
 	cg_emit(cg,"    test rdx, rdx");
-	cg_emit(cg,"    jz .L%d", leaf);                  /* No descriptor: leaf. */
+	cg_emit(cg,"    jz .L%d", nodesc);                /* No descriptor: leaf, no finalizer. */
 	cg_emit(cg,"    cmp qword [rdx + 8], 0");         /* ti[1]: child count (-1 = array span). */
-	cg_emit(cg,"    jne .L%d", slow);                 /* Has children / is a span: buffer in runtime. */
-	cg_emit(cg,".L%d:", leaf);
+	cg_emit(cg,"    jne .L%d", slow);                 /* Has children/span: buffer or walk in runtime. */
+	cg_emit(cg,"    cmp rax, 1");
+	cg_emit(cg,"    jg .L%d", surv);                  /* rc>=2: survivor (leaf). */
+	cg_emit(cg,"    cmp qword [rdx], 0");             /* ti[0]: finalizer. */
+	cg_emit(cg,"    jne .L%d", slow);                 /* Has finalizer: must run in the runtime. */
+	cg_emit(cg,"    jmp .L%d", freeobj);              /* rc==1, leaf, no finalizer: recycle inline. */
+	cg_emit(cg,".L%d:", nodesc);                      /* Descriptor-less: no children, no finalizer. */
+	cg_emit(cg,"    cmp rax, 1");
+	cg_emit(cg,"    jle .L%d", freeobj);              /* rc==1: recycle inline. */
+	cg_emit(cg,".L%d:", surv);
 	cg_emit(cg,"    sub rax, 1");
 	cg_emit(cg,"    mov [%s + 8], rax", a0);          /* rc-- (survivor, leaf): finished inline. */
 	cg_emit(cg,"    jmp .L%d", done);
+	cg_emit(cg,".L%d:", freeobj);
+	/* Inline pool_free(obj): push the block onto its size-class free list. The class
+	   nibble lives in gcinfo bits 4-7; r8 holds the pool base (a0 keeps the object so
+	   the push can store it). Defers to the runtime for an unpooled class (c==0, freed
+	   with free()) or a full pool. */
+	{
+		const char *base = cg_emit_pool_base(cg, "r8", slow);
+		cg_emit(cg,"    mov rax, [%s + 16]", a0);            /* gcinfo. */
+		cg_emit(cg,"    shr rax, 4");
+		cg_emit(cg,"    and rax, 15");                       /* c = (gcinfo >> 4) & 0xF. */
+		cg_emit(cg,"    jz .L%d", slow);                     /* c==0: unpooled (free() in runtime). */
+		cg_emit(cg,"    cmp dword [%s + rax*4 + 88], 256", base);  /* n[c] >= POOL_CAP? */
+		cg_emit(cg,"    jge .L%d", slow);                    /* Pool full: free() in runtime. */
+		cg_emit(cg,"    mov rdx, [%s + rax*8]", base);       /* head[c]. */
+		cg_emit(cg,"    mov [%s], rdx", a0);                 /* obj->next = head[c] (link @ offset 0). */
+		cg_emit(cg,"    mov [%s + rax*8], %s", base, a0);    /* head[c] = obj. */
+		cg_emit(cg,"    inc dword [%s + rax*4 + 88]", base); /* n[c]++. */
+		cg_emit(cg,"    dec qword [%s + 136]", base);        /* live--. */
+		cg_emit(cg,"    jmp .L%d", done);
+	}
 	cg_emit(cg,".L%d:", slow);
 	cg_aligned_call(cg,"bzy_release");
 	cg_emit(cg,".L%d:", done);
@@ -2415,26 +2477,7 @@ static void cg_emit_alloc(Codegen *cg, int object_size)
 
 	int slow = cg_label(cg);
 	int done = cg_label(cg);
-	const char *base;
-	if (cg->target == TARGET_WINDOWS)
-	{
-		cg_emit(cg,"    cmp dword [rel bzy_pool_slot_ready], 0");
-		cg_emit(cg,"    je .L%d", slow);                  /* TLS slot not allocated yet. */
-		cg_emit(cg,"    mov eax, [rel bzy_pool_slot]");
-		cg_emit(cg,"    cmp eax, 64");
-		cg_emit(cg,"    jae .L%d", slow);                 /* Slot beyond the inline TEB array. */
-		cg_emit(cg,"    mov rcx, [gs:0x1480 + rax*8]");   /* PoolTLS* for the current thread. */
-		cg_emit(cg,"    test rcx, rcx");
-		cg_emit(cg,"    jz .L%d", slow);                  /* This thread has no pool yet. */
-		base = "rcx";
-	}
-	else
-	{
-		cg_emit(cg,"    cmp dword [rel bzy_tpool_off_ready], 0");
-		cg_emit(cg,"    je .L%d", slow);                  /* Thread-pointer offset not known yet. */
-		cg_emit(cg,"    mov rcx, [rel bzy_tpool_off]");   /* &t_pool - thread pointer (constant). */
-		base = "fs:rcx";                                  /* fs:[rcx + N] reaches t_pool field N. */
-	}
+	const char *base = cg_emit_pool_base(cg, "rcx", slow);
 
 	cg_emit(cg,"    mov rax, [%s + %d]", base, pc * 8);   /* head[pc]  (head @ offset 0). */
 	cg_emit(cg,"    test rax, rax");

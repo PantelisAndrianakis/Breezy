@@ -220,6 +220,7 @@ _Static_assert(offsetof(PoolTLS, head) == 0,   "inline alloc: PoolTLS.head offse
 _Static_assert(offsetof(PoolTLS, n)    == 88,  "inline alloc: PoolTLS.n offset moved");
 _Static_assert(offsetof(PoolTLS, live) == 136, "inline alloc: PoolTLS.live offset moved");
 _Static_assert(POOL_NCLASS == 11,              "inline alloc: POOL_NCLASS changed");
+_Static_assert(POOL_CAP == 256,                "inline free: POOL_CAP changed");
 
 #ifdef _WIN32
 /* The MinGW target emulates `__thread` as a call to __emutls_get_address on every

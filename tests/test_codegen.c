@@ -383,6 +383,8 @@ static void test_inline_arc_fast_paths(void)
 		 " void main() { A x; x = new A(); A[] arr; arr = new A[2]; arr[0] = x; }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "and qword [rax + 16], -4") != NULL, 1);  /* inline retain: set_color BLACK. */
 	ASSERT_INT(strstr(g_asm, "cmp qword [rdx + 8], 0") != NULL, 1);    /* inline release: leaf/child probe. */
+	ASSERT_INT(strstr(g_asm, "cmp qword [rdx], 0") != NULL, 1);        /* inline free: finalizer probe. */
+	ASSERT_INT(strstr(g_asm, "rax*4 + 88], 256") != NULL, 1);         /* inline free: n[c] < POOL_CAP push. */
 	ASSERT_INT(strstr(g_asm, "test dl, 8") != NULL, 1);                /* inline retain: SHARED-bit check. */
 	ASSERT_INT(strstr(g_asm, "test al, 8") != NULL, 1);                /* inline release: SHARED-bit check. */
 	ASSERT_INT(strstr(g_asm, "call bzy_retain") != NULL, 1);           /* slow path retained. */
