@@ -371,8 +371,27 @@ static void test_array_elem_stride(void)
 	ASSERT_INT(strstr(g_asm, "*8 + 32]") != NULL, 1);   /* long[] uses 8-byte stride. */
 }
 
+static void test_inline_arc_fast_paths(void)
+{
+	/* retain and release inline their common cases instead of always calling the
+	   runtime. A borrowed field store emits both: retain of the new occupant,
+	   release of the old. The inline retain ends in a recolor-to-BLACK mask; the
+	   inline release probes the type descriptor's child count to decide whether a
+	   survivor must be buffered. The runtime calls remain as the slow path (shared
+	   objects, refcount reaching zero, survivors with children). */
+	emit("class A { int v; }"
+		 " void main() { A x; x = new A(); A[] arr; arr = new A[2]; arr[0] = x; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "and qword [rax + 16], -4") != NULL, 1);  /* inline retain: set_color BLACK. */
+	ASSERT_INT(strstr(g_asm, "cmp qword [rdx + 8], 0") != NULL, 1);    /* inline release: leaf/child probe. */
+	ASSERT_INT(strstr(g_asm, "test dl, 8") != NULL, 1);                /* inline retain: SHARED-bit check. */
+	ASSERT_INT(strstr(g_asm, "test al, 8") != NULL, 1);                /* inline release: SHARED-bit check. */
+	ASSERT_INT(strstr(g_asm, "call bzy_retain") != NULL, 1);           /* slow path retained. */
+	ASSERT_INT(strstr(g_asm, "call bzy_release") != NULL, 1);          /* slow path retained. */
+}
+
 int main(void)
 {
+	RUN(test_inline_arc_fast_paths);
 	RUN(test_array_elem_stride);
 	RUN(test_loop_rotation_bottom_test);
 	RUN(test_nonneg_division_drops_sign_bias);

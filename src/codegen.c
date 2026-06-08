@@ -570,10 +570,50 @@ static void cg_aligned_call(Codegen *cg, const char *fn)
 	cg_emit(cg,"    call %s", fn);
 }
 
-/* Release the object pointer currently in rcx; rax is clobbered. */
+/* Release the object pointer currently in the first integer-arg register; rax and
+   rdx are clobbered. The inline fast path finalizes only the case the runtime
+   would finish without freeing or buffering: a non-NULL, non-shared, managed
+   object whose refcount stays positive AND that is a leaf (no managed children,
+   so it can never root a dead cycle). Every other case - NULL, unmanaged (rc 0),
+   shared (needs an atomic dec), refcount reaching zero (free), or a survivor with
+   children (must be buffered as a cycle candidate) - falls through to bzy_release
+   with the refcount UNMODIFIED, because the runtime always performs the decrement
+   itself; decrementing inline before deferring would double-count. */
 static void cg_release_rcx(Codegen *cg)
 {
+	const char *a0 = cg_iarg(cg, 0);
+	int slow = cg_label(cg);
+	int leaf = cg_label(cg);
+	int done = cg_label(cg);
+
+	cg_emit(cg,"    test %s, %s", a0, a0);
+	cg_emit(cg,"    jz .L%d", done);                  /* NULL: nothing to release. */
+	cg_emit(cg,"    mov rax, [%s + 16]", a0);         /* gcinfo. */
+	cg_emit(cg,"    test al, 8");                     /* BZY_GCINFO_SHARED (bit 3): cross-core. */
+	cg_emit(cg,"    jnz .L%d", slow);                 /* Shared: atomic dec in the runtime. */
+	cg_emit(cg,"    mov rax, [%s + 8]", a0);          /* refcount. */
+	cg_emit(cg,"    test rax, rax");
+	cg_emit(cg,"    jz .L%d", done);                  /* rc==0: unmanaged (stack) object. */
+	cg_emit(cg,"    cmp rax, 1");
+	cg_emit(cg,"    jle .L%d", slow);                 /* rc==1: reaches 0 -> free (runtime). */
+	/* rc>=2: the object will survive. Buffer it only if it can have managed
+	   children; a leaf (descriptor word ti[1] == 0) never buffers. Probe the
+	   descriptor with rdx so rax keeps the refcount for the inline decrement. */
+	cg_emit(cg,"    mov rdx, [%s]", a0);              /* vtable. */
+	cg_emit(cg,"    test rdx, rdx");
+	cg_emit(cg,"    jz .L%d", leaf);                  /* No vtable: treat as a leaf. */
+	cg_emit(cg,"    mov rdx, [rdx - 8]");             /* type descriptor. */
+	cg_emit(cg,"    test rdx, rdx");
+	cg_emit(cg,"    jz .L%d", leaf);                  /* No descriptor: leaf. */
+	cg_emit(cg,"    cmp qword [rdx + 8], 0");         /* ti[1]: child count (-1 = array span). */
+	cg_emit(cg,"    jne .L%d", slow);                 /* Has children / is a span: buffer in runtime. */
+	cg_emit(cg,".L%d:", leaf);
+	cg_emit(cg,"    sub rax, 1");
+	cg_emit(cg,"    mov [%s + 8], rax", a0);          /* rc-- (survivor, leaf): finished inline. */
+	cg_emit(cg,"    jmp .L%d", done);
+	cg_emit(cg,".L%d:", slow);
 	cg_aligned_call(cg,"bzy_release");
+	cg_emit(cg,".L%d:", done);
 }
 
 /* Release every object-typed local of the function, optionally skipping one
@@ -621,13 +661,34 @@ static int expr_is_owned(Expr *e)
 		   || e->kind==EX_NEWMAP || e->kind==EX_NEWGEN || e->kind==EX_NEWCHANNEL;
 }
 
-/* Retain the object pointer currently in rax; rax is preserved. */
+/* Retain the object pointer currently in rax; rax is preserved (rdx is clobbered,
+   as it would be by the runtime call anyway). The inline fast path handles the
+   common case - a non-NULL, non-shared, managed object - with a plain refcount
+   increment and a recolor to BLACK. NULL and unmanaged (rc 0) objects need no
+   work; a shared object needs an atomic increment, so it defers to bzy_retain. */
 static void cg_retain_rax(Codegen *cg)
 {
+	int slow = cg_label(cg);
+	int done = cg_label(cg);
+
+	cg_emit(cg,"    test rax, rax");
+	cg_emit(cg,"    jz .L%d", done);                  /* NULL: nothing to retain. */
+	cg_emit(cg,"    mov rdx, [rax + 16]");            /* gcinfo. */
+	cg_emit(cg,"    test dl, 8");                     /* BZY_GCINFO_SHARED (bit 3): cross-core. */
+	cg_emit(cg,"    jnz .L%d", slow);                 /* Shared: atomic inc in the runtime. */
+	cg_emit(cg,"    mov rdx, [rax + 8]");             /* refcount. */
+	cg_emit(cg,"    test rdx, rdx");
+	cg_emit(cg,"    jz .L%d", done);                  /* rc==0: unmanaged (stack) object. */
+	cg_emit(cg,"    add rdx, 1");
+	cg_emit(cg,"    mov [rax + 8], rdx");             /* rc++. */
+	cg_emit(cg,"    and qword [rax + 16], -4");       /* set_color BLACK (clear gcinfo bits 0-1). */
+	cg_emit(cg,"    jmp .L%d", done);
+	cg_emit(cg,".L%d:", slow);
 	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
 	cg_aligned_call(cg,"bzy_retain");
 	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+	cg_emit(cg,".L%d:", done);
 }
 
 /* Evaluate e leaving a +1 owned object in rax, retaining borrowed reads. */
