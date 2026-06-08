@@ -341,6 +341,60 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 		}
 	}
 
+	/* target = target <op> CONST for the multiplicative/bitwise self-updates
+	   (`hash = hash * 16777619`, `m = m & 0xFF`, `acc = acc ^ K`). All four ops are
+	   commutative, so the target may sit on either side. One immediate-form op runs
+	   on the register - no `mov rbx, CONST` materialization and no round-trip through
+	   rax that the generic path carries. An int target re-extends to stay a valid
+	   64-bit value (unless it is a deferred accumulator); a long target is exact. */
+	if (value->kind==EX_BINARY
+		&& (value->op==TOKEN_STAR || value->op==TOKEN_AMP || value->op==TOKEN_PIPE || value->op==TOKEN_CARET)
+		&& (target->type.kind==TY_INT || target->type.kind==TY_LONG || target->type.kind==TY_ULONG))
+	{
+		Expr *k = NULL;
+		if (value->lhs->kind==EX_IDENT && value->lhs->anno_int==target->anno_int && value->rhs->kind==EX_INT)
+		{
+			k = value->rhs;
+		}
+		else if (value->rhs->kind==EX_IDENT && value->rhs->anno_int==target->anno_int && value->lhs->kind==EX_INT)
+		{
+			k = value->lhs;
+		}
+
+		if (k && k->int_val >= -2147483648LL && k->int_val <= 2147483647LL)
+		{
+			if (target->type.kind==TY_INT)
+			{
+				char r32[8];
+				snprintf(r32, sizeof r32, "%sd", R);
+				switch (value->op)
+				{
+				case TOKEN_STAR:  cg_emit(cg,"    imul %s, %s, %lld", r32, r32, k->int_val); break;
+				case TOKEN_AMP:   cg_emit(cg,"    and %s, %lld", r32, k->int_val);  break;
+				case TOKEN_PIPE:  cg_emit(cg,"    or %s, %lld", r32, k->int_val);   break;
+				case TOKEN_CARET: cg_emit(cg,"    xor %s, %lld", r32, k->int_val);  break;
+				}
+
+				if (!cg_off_deferred(cg, target->anno_int))
+				{
+					cg_emit(cg,"    movsxd %s, %s", R, r32);
+				}
+			}
+			else
+			{
+				switch (value->op)
+				{
+				case TOKEN_STAR:  cg_emit(cg,"    imul %s, %s, %lld", R, R, k->int_val); break;
+				case TOKEN_AMP:   cg_emit(cg,"    and %s, %lld", R, k->int_val);  break;
+				case TOKEN_PIPE:  cg_emit(cg,"    or %s, %lld", R, k->int_val);   break;
+				case TOKEN_CARET: cg_emit(cg,"    xor %s, %lld", R, k->int_val);  break;
+				}
+			}
+
+			return 1;
+		}
+	}
+
 	/* General single-op in-place: `target = target <op> EXPR` (or, for a
 	   commutative op, `EXPR <op> target`) where EXPR is a non-leaf expression -
 	   most importantly an A*B product, i.e. a multiply-accumulate. EXPR evaluates
@@ -1453,6 +1507,21 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 	*uns = ty_is_unsigned(e->lhs->type.kind) || ty_is_unsigned(e->rhs->type.kind);
 }
 
+/* Peel a non-narrowing integer cast: `(int)b` over a byte/short value is only a
+   sign/zero extension, so when the consumer masks the result back to the source
+   width (x & 0xFF / 0xFFFF) the cast is irrelevant and the inner value can be
+   loaded directly. Returns the inner expr, or `e` unchanged when not such a cast. */
+static Expr *cg_peel_widening_cast(Expr *e)
+{
+	if (e->kind==EX_CAST && !ty_is_float(e->type.kind) && !ty_is_float(e->lhs->type.kind)
+		&& ty_bits(e->type.kind) >= ty_bits(e->lhs->type.kind))
+	{
+		return e->lhs;
+	}
+
+	return e;
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (e->type.kind==TY_STRING)
@@ -1481,6 +1550,33 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,".L%d:", shortcut);
 		cg_emit(cg, e->op==TOKEN_AND ? "    mov rax, 0" : "    mov rax, 1");
 		cg_emit(cg,".L%d:", done);
+		return;
+	}
+
+	/* Mask to an unsigned octet / halfword: `x & 0xFF` -> `movzx eax, al`,
+	   `x & 0xFFFF` -> `movzx eax, ax`. This is the universal unsigned-byte unpack
+	   `(int)b & 255` that every parse/codec inner loop runs. It replaces the generic
+	   `mov rbx,0xFF; and rax,rbx; movsxd rax,eax` with a single zero-extending move,
+	   and the result (0..255 / 0..65535) is already a valid non-negative 64-bit
+	   value, so no re-extension follows. When the masked operand is a strength-
+	   reduced byte/short array element (the cast over the index is pure widening and
+	   is peeled), the load and mask fuse to one `movzx eax, byte/word [base + iv]`. */
+	if (e->op==TOKEN_AMP && e->rhs->kind==EX_INT && e->type.kind==TY_INT
+		&& (e->rhs->int_val==0xFF || e->rhs->int_val==0xFFFF))
+	{
+		int w = (e->rhs->int_val==0xFF) ? 8 : 16;
+		const char *sz = (w==8) ? "byte" : "word";
+		Expr *inner = cg_peel_widening_cast(e->lhs);
+		char srm[40];
+		if (inner->kind==EX_INDEX && cg_elem_stride(inner->type.kind)==w/8
+			&& cg_sr_mode(cg, inner, srm))
+		{
+			cg_emit(cg, "    movzx eax, %s %s", sz, srm);
+			return;
+		}
+
+		cg_expr(cg,tt,e->lhs);                       /* lhs -> rax. */
+		cg_emit(cg, w==8 ? "    movzx eax, al" : "    movzx eax, ax");
 		return;
 	}
 
@@ -1600,6 +1696,26 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 
 		cg_emit(cg,"    shl rax, %d", k);
+		cg_extend_reg(cg,e->type.kind);
+		return;
+	}
+
+	/* Immediate-form multiply / bitwise by a fits-imm32 constant (lhs in rax): one
+	   instruction against the literal instead of `mov rbx, CONST` then the op against
+	   rbx. `imul` uses its three-operand immediate form. Re-extension narrows to the
+	   declared width exactly as the rbx path would, so the result is identical. */
+	if (!ty_is_float(e->type.kind) && e->rhs->kind==EX_INT
+		&& e->rhs->int_val >= -2147483648LL && e->rhs->int_val <= 2147483647LL
+		&& (e->op==TOKEN_STAR || e->op==TOKEN_AMP || e->op==TOKEN_PIPE || e->op==TOKEN_CARET))
+	{
+		switch (e->op)
+		{
+		case TOKEN_STAR:  cg_emit(cg,"    imul rax, rax, %lld", e->rhs->int_val); break;
+		case TOKEN_AMP:   cg_emit(cg,"    and rax, %lld", e->rhs->int_val);  break;
+		case TOKEN_PIPE:  cg_emit(cg,"    or rax, %lld", e->rhs->int_val);   break;
+		case TOKEN_CARET: cg_emit(cg,"    xor rax, %lld", e->rhs->int_val);  break;
+		}
+
 		cg_extend_reg(cg,e->type.kind);
 		return;
 	}
