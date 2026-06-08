@@ -216,6 +216,17 @@ static void test_fp_leaf_fusion(void)
 	ASSERT_INT(strstr(g_asm, "addsd xmm0, xmm1") != NULL, 1);
 }
 
+static void test_inplace_mac(void)
+{
+	/* A multiply-accumulate `acc = acc + a[i]*a[i]` onto a promoted accumulator
+	   evaluates the product into rax and adds it straight into the accumulator's
+	   callee-saved register - no stack spill of the accumulator across the rhs. */
+	emit("long f(long[] a) { long acc; acc = 0; long i; i = 0;"
+		 " while (i < 4) { acc = acc + a[i] * a[i]; i = i + 1; } return acc; }"
+		 " void main() { }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "imul rax, rbx\n    add r1") != NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -462,6 +473,7 @@ int main(void)
 	RUN(test_logical_emission);
 	RUN(test_mul_strength_reduction);
 	RUN(test_fp_leaf_fusion);
+	RUN(test_inplace_mac);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

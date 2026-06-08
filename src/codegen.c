@@ -88,6 +88,8 @@ static void cg_store_local_off(Codegen *cg, int off, TypeKind k)
 }
 
 static void cg_load_scalar_into(Codegen *cg, TypeKind k, const char *mem, const char *r64, const char *r32);
+static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
+static void cg_extend_reg(Codegen *cg, TypeKind k);
 
 /* In-place arithmetic op support: the two-operand register ops we lower directly
    onto a promoted target register. Shifts (<<,>>) and div/mod are excluded. */
@@ -189,13 +191,47 @@ static void cg_inplace_step(Codegen *cg, const char *R, int op, Expr *leaf)
 	}
 }
 
+/* Emit `R <op>= rax` in place, width-correct: a 64-bit op for a long target, or a
+   32-bit op plus a movsxd re-extension for an int target (so the register stays a
+   valid sign-extended 64-bit value for the bare-register read path). */
+static void cg_inplace_reg_rax(Codegen *cg, const char *R, int op, TypeKind k)
+{
+	if (k == TY_INT)
+	{
+		char r32[8];
+		snprintf(r32, sizeof r32, "%sd", R);   /* r12 -> r12d. */
+		switch (op)
+		{
+		case TOKEN_PLUS:  cg_emit(cg, "    add %s, eax", r32);  break;
+		case TOKEN_MINUS: cg_emit(cg, "    sub %s, eax", r32);  break;
+		case TOKEN_STAR:  cg_emit(cg, "    imul %s, eax", r32); break;
+		case TOKEN_AMP:   cg_emit(cg, "    and %s, eax", r32);  break;
+		case TOKEN_PIPE:  cg_emit(cg, "    or %s, eax", r32);   break;
+		case TOKEN_CARET: cg_emit(cg, "    xor %s, eax", r32);  break;
+		}
+
+		cg_emit(cg, "    movsxd %s, %s", R, r32);
+	}
+	else
+	{
+		switch (op)
+		{
+		case TOKEN_PLUS:  cg_emit(cg, "    add %s, rax", R);  break;
+		case TOKEN_MINUS: cg_emit(cg, "    sub %s, rax", R);  break;
+		case TOKEN_STAR:  cg_emit(cg, "    imul %s, rax", R); break;
+		case TOKEN_AMP:   cg_emit(cg, "    and %s, rax", R);  break;
+		case TOKEN_PIPE:  cg_emit(cg, "    or %s, rax", R);   break;
+		case TOKEN_CARET: cg_emit(cg, "    xor %s, rax", R);  break;
+		}
+	}
+}
+
 /* Try to emit `target = value` as in-place arithmetic on the target's promoted
    register. Returns 1 if handled, 0 to fall through to the generic path.
    Matches a left-spine chain rooted at the target: i=i+1, state=state*C1+C2,
    n=3*n+1 (commutative reorder normalizes 3*n to n*3). */
 static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 {
-	(void)tt;
 	if (target->kind != EX_IDENT)
 	{
 		return 0;
@@ -207,10 +243,40 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 		return 0;
 	}
 
-	/* In-place register arithmetic mutates R with 64-bit ops, which is exact only
-	   for a 64-bit target. A promoted 32-bit int needs its result wrapped to 32
-	   bits and sign-extended after each step, so defer it to the generic store
-	   path (cg_store_local_off re-applies movsxd). */
+	/* General single-op in-place: `target = target <op> EXPR` (or, for a
+	   commutative op, `EXPR <op> target`) where EXPR is a non-leaf expression -
+	   most importantly an A*B product, i.e. a multiply-accumulate. EXPR evaluates
+	   into rax without disturbing the target's callee-saved register, so the
+	   accumulator never spills to the stack (the generic path pushes it across the
+	   rhs evaluation). The op then runs in-place on the register, width-correct for
+	   int or long. This handles the cases the leaf-only chain below cannot. */
+	if (value->kind==EX_BINARY && cg_op_inplace_ok(value->op)
+		&& (target->type.kind==TY_LONG || target->type.kind==TY_ULONG || target->type.kind==TY_INT))
+	{
+		Expr *other = NULL;
+		if (value->lhs->kind==EX_IDENT && value->lhs->anno_int==target->anno_int)
+		{
+			other = value->rhs;
+		}
+		else if (cg_op_commutative(value->op)
+				 && value->rhs->kind==EX_IDENT && value->rhs->anno_int==target->anno_int)
+		{
+			other = value->lhs;
+		}
+
+		if (other && !cg_is_inplace_leaf(other, target))
+		{
+			cg_expr(cg, tt, other);                  /* EXPR -> rax; R is untouched. */
+			cg_extend_reg(cg, target->type.kind);    /* Width-correct in eax/rax. */
+			cg_inplace_reg_rax(cg, R, value->op, target->type.kind);
+			return 1;
+		}
+	}
+
+	/* The leaf-chain form below mutates R with 64-bit ops, which is exact only for
+	   a 64-bit target. A promoted 32-bit int needs its result wrapped to 32 bits
+	   and sign-extended after each step, so defer it to the generic store path
+	   (cg_store_local_off re-applies movsxd). */
 	if (target->type.kind != TY_LONG && target->type.kind != TY_ULONG)
 	{
 		return 0;
