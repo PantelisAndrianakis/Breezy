@@ -828,6 +828,54 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	   remains. Sound because anno_index_safe is set conservatively. */
 	int safe = e->anno_index_safe;
 
+	/* Index of the form `REG +/- CONST` - a promoted int local offset by a small
+	   constant, e.g. vx[b + 2] sweeping a flattened array-of-structs, or any
+	   arr[base + k] the strength-reducer misses because the index is not the bare
+	   loop counter. When the access is BCE-proved safe, the whole element address
+	   folds into a single lea: base + ireg*stride + (32 + k*stride). This replaces
+	   the materialize-index (load, add, re-extend) + park + reload-base sequence -
+	   the dominant per-access cost in the matrix / codec block sweeps - with one
+	   instruction. (A non-safe index keeps its bounds check via the paths below.) */
+	if (safe && e->rhs->kind==EX_BINARY
+		&& (e->rhs->op==TOKEN_PLUS || e->rhs->op==TOKEN_MINUS)
+		&& e->rhs->lhs->kind==EX_IDENT && e->rhs->lhs->anno_int > 0
+		&& e->rhs->rhs->kind==EX_INT
+		&& e->rhs->rhs->int_val >= 0 && e->rhs->rhs->int_val <= 0x10000000LL
+		&& !(cg->unrolling && e->rhs->lhs->anno_int == cg->unroll_iv_off))
+	{
+		const char *ir = cg_local_reg(cg, e->rhs->lhs->anno_int);
+		if (ir)
+		{
+			int stride = cg_elem_stride(e->type.kind);
+			long long k = (e->rhs->op==TOKEN_PLUS) ? e->rhs->rhs->int_val : -e->rhs->rhs->int_val;
+			long long disp = 32 + k * stride;
+			/* The base is loop-invariant, so it may live in a function-promoted
+			   register (r12-r15) or this loop's hoist cache (r8-r11); read it from
+			   whichever holds it, else materialize it into rax. */
+			const char *br = NULL;
+			if (e->lhs->kind==EX_IDENT && e->lhs->anno_int > 0)
+			{
+				br = cg_local_reg(cg, e->lhs->anno_int);
+				if (!br)
+				{
+					br = cg_hoist_reg(cg, e->lhs->anno_int);
+				}
+			}
+
+			if (br)
+			{
+				cg_emit(cg,"    lea rbx, [%s + %s*%d + %lld]", br, ir, stride, disp);
+			}
+			else
+			{
+				cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
+				cg_emit(cg,"    lea rbx, [rax + %s*%d + %lld]", ir, stride, disp);
+			}
+
+			return;
+		}
+	}
+
 	/* The register-resident-index fast path reads the index register directly; it
 	   must not fire for an unrolled loop's induction variable, whose live value is
 	   a compile-time constant this copy (the register is not maintained). Falling
