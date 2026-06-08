@@ -12,7 +12,14 @@
   #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
 #endif
 
-#define SCHED_SPIN 64   /* find_work() polls before a worker commits to a sleeping wait. */
+#define SCHED_SPIN 1024 /* find_work() polls this many times before a worker commits to a
+                           sleeping wait. Sized to outlast the gap a fan-out producer leaves
+                           between bursts: a spinning worker is counted idle-free, so producers
+                           skip the wake post (and its futex syscall). 64 was too short on Linux
+                           - workers fell through to sem_wait and the per-task futex post/wait
+                           thrash made a 50k fan-out 20-40x slower than Go (measured: 64 -> 244 ms
+                           with wild variance; 1024 -> a stable 16 ms, on par with Go). Above ~1024
+                           the curve is flat, so this is the efficient knee. */
 
 /* Hint the CPU we are in a spin-wait: lets a hyperthread sibling proceed and avoids
    a memory-order-violation pipeline flush when the value finally changes. */
