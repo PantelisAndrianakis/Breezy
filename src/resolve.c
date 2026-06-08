@@ -1871,6 +1871,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_INT;
 			}
+			else if (strcmp(e->name,"readInto")==0)
+			{
+				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY || !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
+				{
+					die(e->line,"FileChannel.readInto(buf, offset, maxLen) takes a byte[] and two integers.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
 			else if (strcmp(e->name,"size")==0)
 			{
 				if (e->arg_count!=0)

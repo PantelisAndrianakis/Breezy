@@ -2967,6 +2967,10 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		fn = "bzy_filechannel_write_at";
 	}
+	else if (strcmp(n,"readInto")==0)
+	{
+		fn = "bzy_filechannel_read_into";
+	}
 	else if (strcmp(n,"truncate")==0)
 	{
 		fn = "bzy_filechannel_truncate";
@@ -2986,7 +2990,7 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 		fallible = 0;
 	}
 
-	TypeRef ps[2];
+	TypeRef ps[3];
 	for (int i=0; i<e->arg_count; i++)
 	{
 		ps[i]=e->args[i]->type;
@@ -2997,9 +3001,9 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (fallible)
 	{
-		if (obj)
+		if (e->type.kind != TY_VOID)
 		{
-			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the byte[] across the check. */
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the return value (byte[] or count) across the check. */
 		}
 
 		int k = cg_label(cg);
@@ -3007,7 +3011,7 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,".L%d:", k);
 		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
 		cg_aligned_call(cg,"bzy_io_check");
-		if (obj)
+		if (e->type.kind != TY_VOID)
 		{
 			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		}
@@ -5694,6 +5698,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_dgram_port");
 	cg_emit(cg,"extern bzy_filechannel_open");
 	cg_emit(cg,"extern bzy_filechannel_read_at");
+	cg_emit(cg,"extern bzy_filechannel_read_into");
 	cg_emit(cg,"extern bzy_filechannel_write_at");
 	cg_emit(cg,"extern bzy_filechannel_size");
 	cg_emit(cg,"extern bzy_filechannel_truncate");

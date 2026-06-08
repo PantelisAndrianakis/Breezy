@@ -1,0 +1,29 @@
+// FileChannel.readInto fills a reused buffer with positioned bytes (no alloc) and
+// returns the count. Write 'A'..'J', then read two 4-byte windows into one buffer.
+void main()
+{
+	FileChannel ch;
+	ch = File.openChannel("ri_test.dat");
+	byte[] src;
+	src = new byte[10];
+	for (int i = 0; i < 10; i = i + 1)
+	{
+		src[i] = (byte)(65 + i);
+	}
+	ch.writeAt(0, src);
+	ch.sync();
+
+	byte[] buf;
+	buf = new byte[4];
+
+	int n1;
+	n1 = ch.readInto(buf, 0, 4);
+	print("" + n1 + " " + (buf[0] & 0xFF) + " " + (buf[3] & 0xFF));
+
+	int n2;
+	n2 = ch.readInto(buf, 6, 4);
+	print("" + n2 + " " + (buf[0] & 0xFF) + " " + (buf[3] & 0xFF));
+
+	ch.close();
+	File.delete("ri_test.dat");
+}
