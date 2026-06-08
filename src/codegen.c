@@ -4221,9 +4221,29 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	int gen_set = (ik==TY_GENERIC && strcmp(s->expr->type.class_name,"Set")==0);   /* Set is a map. */
 	int gen_vec = (ik==TY_GENERIC && !gen_set);                                    /* List/Stack/Queue/Deque. */
 
+	/* The loop cursor may be promoted to a register (see promote.c); `cur` is the
+	   operand to read/write it - either a register name or its stack slot. */
+	const char *curreg = cg_local_reg(cg, s->fe_index_offset);
+	char cur[24];
+	if (curreg)
+	{
+		snprintf(cur, sizeof cur, "%s", curreg);
+	}
+	else
+	{
+		snprintf(cur, sizeof cur, "[rbp - %d]", s->fe_index_offset);
+	}
+
 	cg_expr(cg,tt,s->expr);                     /* Container pointer -> rax. */
 	cg_emit(cg,"    mov [rbp - %d], rax", s->fe_coll_offset);
-	cg_emit(cg,"    mov qword [rbp - %d], 0", s->fe_index_offset);
+	if (curreg)
+	{
+		cg_emit(cg,"    mov %s, 0", curreg);
+	}
+	else
+	{
+		cg_emit(cg,"    mov qword [rbp - %d], 0", s->fe_index_offset);
+	}
 
 	if (ik==TY_STRING)
 	{
@@ -4239,20 +4259,20 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	if (ik==TY_MAP || gen_set)
 	{
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
+		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
 		cg_aligned_call(cg,"bzy_map_iter");      /* Next full slot or -1 in rax. */
-		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_index_offset);
+		cg_emit(cg,"    mov %s, rax", cur);
 		cg_emit(cg,"    cmp rax, 0");
 		cg_emit(cg,"    jl .L%d", end);
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
-		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
+		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
 		cg_aligned_call(cg,"bzy_map_key_at");    /* Key (borrowed) in rax. */
 		cg_store_local_off(cg, s->decl_offset);
 		if (s->fe_val_type.kind != TY_VOID)
 		{
 			TypeKind vt = s->fe_val_type.kind;
 			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
-			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
+			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
 			cg_aligned_call(cg,"bzy_map_val_at");   /* Value bits (borrowed) in rax. */
 			if (ty_is_float(vt))
 			{
@@ -4269,7 +4289,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	}
 	else if (ik==TY_STRING)
 	{
-		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    mov rcx, %s", cur);
 		cg_emit(cg,"    cmp rcx, [rbp - %d]", s->fe_len_offset);
 		cg_emit(cg,"    jge .L%d", end);
 		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_aux_offset);
@@ -4280,14 +4300,14 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	{
 		TypeKind et = s->expr->type.elem->kind;
 		int managed = ty_is_managed(et);
-		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    mov rcx, %s", cur);
 		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_coll_offset);
 		cg_emit(cg,"    cmp rcx, [rdx + 24]");           /* index vs length@24 */
 		cg_emit(cg,"    jge .L%d", end);
 		if (managed)
 		{
 			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
-			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), s->fe_index_offset);
+			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
 			cg_aligned_call(cg,"bzy_vec_get");           /* Element (owned -> retained) in rax. */
 		}
 		else
@@ -4328,7 +4348,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	{
 		TypeKind et = s->expr->type.elem->kind;
 		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_coll_offset);
-		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
+		cg_emit(cg,"    mov rcx, %s", cur);
 		cg_emit(cg,"    cmp rcx, [rax + 24]");           /* index vs length */
 		cg_emit(cg,"    jge .L%d", end);
 		cg_emit(cg,"    lea rbx, [rax + rcx*%d + 32]", cg_elem_stride(et));    /* element address */
@@ -4353,11 +4373,9 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	cg->cur_continue_label = sc;
 
 	cg_emit(cg,".L%d:", cont);            /* continue lands here, then the cursor advances. */
-	if (ik==TY_MAP || gen_set)
+	if (curreg)
 	{
-		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_index_offset);
-		cg_emit(cg,"    inc rax");
-		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_index_offset);
+		cg_emit(cg,"    add %s, 1", curreg);   /* Cursor in a register (map slot scan or 0..len index). */
 	}
 	else
 	{

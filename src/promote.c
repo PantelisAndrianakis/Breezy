@@ -189,6 +189,14 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 		bump(s->decl_offset, depth, c);
 	}
 
+	/* The foreach cursor is an internal 64-bit index loaded, compared and
+	   incremented every iteration; promoting it out of its stack slot removes two
+	   memory touches per element. Weighted at the loop body's depth. */
+	if (s->kind == ST_FOREACH && s->fe_index_offset > 0)
+	{
+		bump(s->fe_index_offset, inner, c);
+	}
+
 	scan_stmt(s->for_init, depth, c);
 	scan_stmt(s->for_post, inner, c);
 	scan_block(s->then_blk, inner, c);
