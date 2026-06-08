@@ -2342,6 +2342,37 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+
+	/* Inline the back-insertion fast path for value (non-managed) elements: when
+	   len < cap, store at phys = (head+len) & (cap-1) and bump len with no call;
+	   only the grow case falls through to bzy_vec_push_back (which re-checks, then
+	   grows + stores). Managed elements (need a retain), front insertion
+	   (addFirst -> push_front), and fp values keep the call. The fast path
+	   clobbers only rax/r8/r9 -- never arg0/arg1 (rcx/rdx on Win64, rdi/rsi on
+	   SysV) -- so the receiver/value stay live for the slow path's call. */
+	if (strcmp(fn,"bzy_vec_push_back")==0 && !fp && !ty_is_managed(tk))
+	{
+		int slow = cg_label(cg), done = cg_label(cg);
+		const char *recv = cg_iarg(cg, 0), *val = cg_iarg(cg, 1);
+		cg_emit(cg,"    mov rax, [%s + 24]", recv);        /* length */
+		cg_emit(cg,"    cmp rax, [%s + 32]", recv);        /* vs cap */
+		cg_emit(cg,"    jge .L%d", slow);                  /* full -> grow via call */
+		cg_emit(cg,"    mov r8, [%s + 40]", recv);         /* head */
+		cg_emit(cg,"    add r8, rax");                     /* head + length */
+		cg_emit(cg,"    mov r9, [%s + 32]", recv);         /* cap */
+		cg_emit(cg,"    dec r9");                          /* cap - 1 */
+		cg_emit(cg,"    and r8, r9");                      /* phys = (head+len) & (cap-1) */
+		cg_emit(cg,"    mov r9, [%s + 48]", recv);         /* data array ptr */
+		cg_emit(cg,"    mov [r9 + r8*8 + 32], %s", val);   /* store value into slot */
+		cg_emit(cg,"    inc qword [%s + 24]", recv);       /* length++ */
+		cg_emit(cg,"    jmp .L%d", done);
+		cg_emit(cg,".L%d:", slow);
+		cg_aligned_call(cg,fn);
+		cg_emit(cg,".L%d:", done);
+		cg_scratch_free(cg, 16);
+		return;
+	}
+
 	cg_aligned_call(cg,fn);
 	if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))
 	{
