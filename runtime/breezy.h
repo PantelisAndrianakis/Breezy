@@ -261,6 +261,7 @@ int64_t bzy_dgram_port(void *d);   /* Sender port. */
 void  bzy_io_fail(const char *msg);   /* Set the thread-local io-error (defined in file.c). */
 void *bzy_filechannel_open(void *path);                       /* Owned (+1); read+write, OPEN_ALWAYS. */
 void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes);  /* Owned byte[] (len 0 = EOF). */
+int64_t bzy_filechannel_read_into(void *ch, void *buf, int64_t offset, int64_t maxLen); /* Fill buf[0..min(maxLen,len)); returns bytes read (0=EOF). */
 int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data);     /* byte[]; writes all; count. */
 int64_t bzy_filechannel_size(void *ch);                       /* Current size in bytes (-1 on error). */
 void  bzy_filechannel_truncate(void *ch, int64_t size);       /* Set file length (grow or shrink). */

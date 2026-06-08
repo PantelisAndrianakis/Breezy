@@ -98,6 +98,36 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 	return arr;
 }
 
+int64_t bzy_filechannel_read_into(void *ch, void *buf, int64_t offset, int64_t maxLen)
+{
+	if (FC_CLOSED(ch))
+	{
+		bzy_io_fail("FileChannel.readInto: channel is closed.");
+		return 0;
+	}
+
+	int64_t cap = bzy_array_len(buf);
+	int64_t n = maxLen < cap ? maxLen : cap;   /* Never write past the caller's buffer. */
+	if (n < 1)
+	{
+		return 0;
+	}
+
+	OVERLAPPED ov = {0};             /* Carries the offset only; the handle is synchronous. */
+	ov.Offset = (DWORD)(offset & 0xffffffff);
+	ov.OffsetHigh = (DWORD)((offset >> 32) & 0xffffffff);
+
+	DWORD got = 0;
+	BOOL ok = ReadFile(FC_HANDLE(ch), (char*)buf + 32, (DWORD)n, &got, &ov);   /* Into the packed array. */
+	if (!ok && GetLastError() != ERROR_HANDLE_EOF)
+	{
+		bzy_io_fail("FileChannel.readInto: read failed.");
+		return 0;
+	}
+
+	return (int64_t)got;
+}
+
 int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data)
 {
 	if (FC_CLOSED(ch))
@@ -315,6 +345,33 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 	}
 
 	return arr;
+}
+
+int64_t bzy_filechannel_read_into(void *ch, void *buf, int64_t offset, int64_t maxLen)
+{
+	if (FC_CLOSED(ch))
+	{
+		bzy_io_fail("FileChannel.readInto: channel is closed.");
+		return 0;
+	}
+
+	int64_t cap = bzy_array_len(buf);
+	int64_t n = maxLen < cap ? maxLen : cap;   /* Never write past the caller's buffer. */
+	if (n < 1)
+	{
+		return 0;
+	}
+
+	/* Inline pread into the packed array (positioned reads are usually cache hits;
+	   a cold one that blocks lets the work-stealing scheduler drain this worker). */
+	ssize_t r = pread((int)FC_FD(ch), (char*)buf + 32, (size_t)n, (off_t)offset);
+	if (r < 0)
+	{
+		bzy_io_fail("FileChannel.readInto: read failed.");
+		return 0;
+	}
+
+	return (int64_t)r;
 }
 
 /* Offloaded positioned write: a pwrite loop until the buffer drains. */

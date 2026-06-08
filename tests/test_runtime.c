@@ -1324,6 +1324,66 @@ static void test_filechannel_positioned_io(void)
 	remove("fc_unit.tmp");
 }
 
+static int g_fc_into_ok;
+static void fc_into_breeze(void)
+{
+	void *path = bzy_str_new("fc_into.tmp", 11);
+	void *ch = bzy_filechannel_open(path);
+	void *src = fc_bytes("ABCDEFGHIJ", 10);   /* 'A'..'J' at offsets 0..9. */
+	bzy_filechannel_write_at(ch, 0, src);
+	bzy_filechannel_sync(ch);
+
+	int ok = 1;
+
+	/* Exact read at a nonzero offset: 4 bytes from offset 2 -> "CDEF". */
+	void *buf = bzy_array_new_sized(4, 1, 0);
+	int64_t n1 = bzy_filechannel_read_into(ch, buf, 2, 4);
+	const unsigned char *b1 = (const unsigned char*)buf + 32;
+	ok = ok && n1 == 4 && b1[0] == 'C' && b1[1] == 'D' && b1[2] == 'E' && b1[3] == 'F';
+
+	/* maxLen > capacity clamps to buf.length (8), reads "ABCDEFGH". */
+	void *big = bzy_array_new_sized(8, 1, 0);
+	int64_t n2 = bzy_filechannel_read_into(ch, big, 0, 100);
+	const unsigned char *b2 = (const unsigned char*)big + 32;
+	ok = ok && n2 == 8 && b2[0] == 'A' && b2[7] == 'H';
+
+	/* maxLen < capacity reads only maxLen bytes; the byte just past stays untouched. */
+	void *part = bzy_array_new_sized(8, 1, 0);
+	unsigned char *bp = (unsigned char*)part + 32;
+	bp[5] = 0x7F;                              /* Guard byte at index 5. */
+	int64_t n3 = bzy_filechannel_read_into(ch, part, 0, 5);
+	ok = ok && n3 == 5 && bp[0] == 'A' && bp[4] == 'E' && bp[5] == 0x7F;   /* Index 5 not overwritten. */
+
+	/* Short read at EOF: 8 requested from offset 6, only 4 remain -> "GHIJ". */
+	void *tail = bzy_array_new_sized(8, 1, 0);
+	int64_t n4 = bzy_filechannel_read_into(ch, tail, 6, 8);
+	const unsigned char *b4 = (const unsigned char*)tail + 32;
+	ok = ok && n4 == 4 && b4[0] == 'G' && b4[3] == 'J';
+
+	g_fc_into_ok = ok;
+
+	bzy_filechannel_close(ch);
+	bzy_release(buf);
+	bzy_release(big);
+	bzy_release(part);
+	bzy_release(tail);
+	bzy_release(src);
+	bzy_release(ch);
+	bzy_release(path);
+}
+
+static void test_filechannel_read_into(void)
+{
+	g_fc_into_ok = 0;
+	bzy_sched_init();
+	bzy_spawn(fc_into_breeze);
+	bzy_sched_run();
+	ASSERT_INT(g_fc_into_ok, 1);   /* Exact, clamp, partial, and EOF reads all correct; no over-write. */
+	bzy_offload_shutdown();
+	bzy_iocp_shutdown();
+	remove("fc_into.tmp");
+}
+
 static int g_fw_ok;
 static void fw_breeze(void)
 {
@@ -1640,6 +1700,7 @@ int main(void)
 	RUN(test_tcp_accept_timeout_and_try);
 	RUN(test_udp_loopback_echo);
 	RUN(test_filechannel_positioned_io);
+	RUN(test_filechannel_read_into);
 	RUN(test_filewriter_buffered_flush);
 	RUN(test_logger_drains_and_closes);
 	RUN(test_string_parse_values);
