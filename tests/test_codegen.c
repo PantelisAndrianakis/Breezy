@@ -200,6 +200,22 @@ static void test_mul_strength_reduction(void)
 	ASSERT_INT(strstr(g_asm, "shl rax, 3") != NULL, 1);
 }
 
+static void test_fp_leaf_fusion(void)
+{
+	/* A same-type FP leaf rhs folds into the op as a memory operand instead of
+	   being spilled/reloaded through a scratch slot: `a * b` -> mulsd with a qword
+	   memory source. */
+	emit("void main() { double a; double b; double c; a = 1.5; b = 2.5; c = a * b; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "mulsd xmm0, qword") != NULL, 1);
+
+	/* `lhs + A*B` for locals becomes a multiply-accumulate into xmm1, combined
+	   into xmm0 with no lhs spill (a separate mul+add, not an FMA). */
+	emit("void main() { double a; double b; double c; double r; a = 1.5; b = 2.5; c = 3.5;"
+		 " r = c + a * b; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "mulsd xmm1, qword") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "addsd xmm0, xmm1") != NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -445,6 +461,7 @@ int main(void)
 	RUN(test_bitwise_emission);
 	RUN(test_logical_emission);
 	RUN(test_mul_strength_reduction);
+	RUN(test_fp_leaf_fusion);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

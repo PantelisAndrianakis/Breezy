@@ -923,36 +923,105 @@ static void cg_fp_promote(Codegen *cg, TypeKind from, TypeKind ct)
 	}
 }
 
-/* Floating-point binary op. Operands evaluate to xmm0; the left operand is
-   spilled on the machine stack so nested FP expressions compose correctly. Both
-   operands promote to the common type: double if either side is double,
-   otherwise float (integers convert in with cvtsi2ss/sd). */
+/* If `e` is a same-type FP leaf - a stack local or an array element - format an
+   x86 memory operand for it into `buf` and return it; the caller folds that
+   straight into the arithmetic op (mulsd xmm0, qword [..]) with no load. Returns
+   NULL if `e` is not such a leaf (the caller then spills to compose a nested
+   rhs). Array-element addressing uses only the integer registers, so the lhs
+   already in xmm0 survives. The leaf's type must equal the op's common type, so
+   no cvtss2sd is needed. */
+static const char *cg_fp_rhs_leaf(Codegen *cg, TypeTable *tt, Expr *e, TypeKind ct, char *buf, int bufsz)
+{
+	if (e->type.kind != ct)
+	{
+		return NULL;
+	}
+
+	const char *sz = (ct==TY_DOUBLE) ? "qword" : "dword";
+	if (e->kind==EX_IDENT && e->anno_int > 0 && !cg_local_reg(cg, e->anno_int))
+	{
+		snprintf(buf, bufsz, "%s [rbp - %d]", sz, e->anno_int);   /* FP local: stack home. */
+		return buf;
+	}
+
+	if (e->kind==EX_INDEX)
+	{
+		cg_index_addr(cg,tt,e);            /* rbx = element address; xmm0 untouched. */
+		snprintf(buf, bufsz, "%s [rbx]", sz);
+		return buf;
+	}
+
+	return NULL;
+}
+
+/* A same-type FP local that lives in its stack slot - the operand a multiply-
+   accumulate fast path can read straight from memory without any setup. */
+static int cg_fp_simple_local(Codegen *cg, Expr *e, TypeKind ct)
+{
+	return e->type.kind==ct && e->kind==EX_IDENT && e->anno_int > 0
+		   && !cg_local_reg(cg, e->anno_int);
+}
+
+/* Floating-point binary op. The left operand evaluates to xmm0 and the right to
+   xmm1. A same-type leaf rhs folds straight into the op as a memory operand (no
+   round-trip); a `lhs +/- A*B` with same-type local A,B becomes a multiply-
+   accumulate into a scratch register (no spill); otherwise the lhs is spilled to
+   the machine stack so a nested rhs expression - which would clobber xmm0/xmm1 -
+   composes correctly. Both operands promote to the common type: double if either
+   side is double, otherwise float (integers convert in with cvtsi2ss/sd). */
 static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	TypeKind ct = (e->lhs->type.kind==TY_DOUBLE || e->rhs->type.kind==TY_DOUBLE) ? TY_DOUBLE : TY_FLOAT;
 	const char *sfx = (ct==TY_DOUBLE) ? "sd" : "ss";
+
+	/* Multiply-accumulate: `lhs +/- (A * B)` for same-type locals A, B. Compute
+	   A*B in xmm1 and combine into xmm0 (the evaluated lhs), with no lhs spill.
+	   This is a separate mul then add/sub (no FMA contraction), so the result is
+	   bit-identical to the generic path. It collapses the dot-product chains a 3D
+	   transform or physics step is built from. */
+	if ((e->op==TOKEN_PLUS || e->op==TOKEN_MINUS) && e->rhs->kind==EX_BINARY
+		&& e->rhs->op==TOKEN_STAR
+		&& cg_fp_simple_local(cg, e->rhs->lhs, ct)
+		&& cg_fp_simple_local(cg, e->rhs->rhs, ct))
+	{
+		const char *mov = (ct==TY_DOUBLE) ? "movsd" : "movss";
+		const char *sz  = (ct==TY_DOUBLE) ? "qword" : "dword";
+		cg_expr(cg,tt,e->lhs);
+		cg_fp_promote(cg, e->lhs->type.kind, ct);
+		cg_emit(cg,"    %s xmm1, %s [rbp - %d]", mov, sz, e->rhs->lhs->anno_int);
+		cg_emit(cg,"    mul%s xmm1, %s [rbp - %d]", sfx, sz, e->rhs->rhs->anno_int);
+		cg_emit(cg,"    %s%s xmm0, xmm1", e->op==TOKEN_PLUS ? "add" : "sub", sfx);
+		return;
+	}
+
 	cg_expr(cg,tt,e->lhs);
 	cg_fp_promote(cg, e->lhs->type.kind, ct);
-	int b = cg_scratch_alloc(cg, 8);
-	cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);   /* Spill lhs (float lives in the low 4 bytes). */
-	cg_expr(cg,tt,e->rhs);
-	cg_fp_promote(cg, e->rhs->type.kind, ct);
-	cg_emit(cg,"    movsd xmm1, xmm0");          /* rhs -> xmm1. */
-	cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);   /* lhs -> xmm0. */
-	cg_scratch_free(cg, 8);
+	char rbuf[48];
+	const char *rhs = cg_fp_rhs_leaf(cg, tt, e->rhs, ct, rbuf, sizeof rbuf);
+	if (!rhs)
+	{
+		int b = cg_scratch_alloc(cg, 8);
+		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);   /* Spill lhs (float lives in the low 4 bytes). */
+		cg_expr(cg,tt,e->rhs);
+		cg_fp_promote(cg, e->rhs->type.kind, ct);
+		cg_emit(cg,"    movsd xmm1, xmm0");          /* rhs -> xmm1. */
+		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);   /* lhs -> xmm0. */
+		cg_scratch_free(cg, 8);
+		rhs = "xmm1";
+	}
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
-		cg_emit(cg,"    add%s xmm0, xmm1", sfx);
+		cg_emit(cg,"    add%s xmm0, %s", sfx, rhs);
 		break;
 	case TOKEN_MINUS:
-		cg_emit(cg,"    sub%s xmm0, xmm1", sfx);
+		cg_emit(cg,"    sub%s xmm0, %s", sfx, rhs);
 		break;
 	case TOKEN_STAR:
-		cg_emit(cg,"    mul%s xmm0, xmm1", sfx);
+		cg_emit(cg,"    mul%s xmm0, %s", sfx, rhs);
 		break;
 	case TOKEN_SLASH:
-		cg_emit(cg,"    div%s xmm0, xmm1", sfx);
+		cg_emit(cg,"    div%s xmm0, %s", sfx, rhs);
 		break;
 	default:   /* comparison -> bool in rax (unordered/NaN compares false except !=). */
 	{
@@ -979,7 +1048,7 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
-		cg_emit(cg,"    ucomi%s xmm0, xmm1", sfx);
+		cg_emit(cg,"    ucomi%s xmm0, %s", sfx, rhs);
 		cg_emit(cg,"    %s al", set);
 		cg_emit(cg,"    movzx rax, al");
 		break;
