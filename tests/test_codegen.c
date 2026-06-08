@@ -267,12 +267,14 @@ static void test_branch_fusion(void)
 	   specific to the fused output ('n > 1' -> jump-unless = jle; 'n < 3' -> jge);
 	   plain instruction names like setg/jle also appear in the prelude, so the test
 	   asserts the exact fused pair instead. `n` is an int local, now promoted to a
-	   register (see promote.c), so the fused compare reads it straight from r12. */
+	   register (see promote.c), so the fused compare reads it straight from r12. An
+	   int comparison uses the 32-bit subregister (r12d): the low 32 bits carry the
+	   int value whether or not the upper half is a valid sign-extension. */
 	emit("void main() { int n; n = 5; if (n > 1) { print(1); } }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "cmp r12, 1\n    jle") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "cmp r12d, 1\n    jle") != NULL, 1);
 
 	emit("void main() { int n; n = 5; if (n < 3) { print(1); } }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "cmp r12, 3\n    jge") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "cmp r12d, 3\n    jge") != NULL, 1);
 }
 
 static void test_divisibility_test(void)

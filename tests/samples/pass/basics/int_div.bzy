@@ -1,0 +1,15 @@
+// Signed non-power-of-two integer division and remainder (the generic 32-bit
+// idiv path): truncation toward zero and sign of the remainder must match.
+void main()
+{
+	int a;
+	a = -100;
+	int b;
+	b = 3;
+	print(a / b);
+	print(a % b);
+	print(a / -b);
+	print(-a / b);
+	print(a % -b);
+	print(2147483647 / 7);
+}

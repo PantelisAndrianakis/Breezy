@@ -19,6 +19,9 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->sr_n=0;
 	cg->sr_ivreg=NULL;
 	cg->cur_counter_off=0;
+	cg->defer_n=0;
+	cg->unrolling=0;
+	cg->unroll_iv_off=0;
 	cg->exception_fn_count=0;
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
@@ -220,10 +223,26 @@ static void cg_inplace_step(Codegen *cg, const char *R, int op, Expr *leaf)
 	}
 }
 
+/* True if slot `off` is a deferred-extension accumulator for the current loop. */
+static int cg_off_deferred(Codegen *cg, int off)
+{
+	for (int i = 0; i < cg->defer_n; i++)
+	{
+		if (cg->defer_off[i] == off)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 /* Emit `R <op>= rax` in place, width-correct: a 64-bit op for a long target, or a
    32-bit op plus a movsxd re-extension for an int target (so the register stays a
-   valid sign-extended 64-bit value for the bare-register read path). */
-static void cg_inplace_reg_rax(Codegen *cg, const char *R, int op, TypeKind k)
+   valid sign-extended 64-bit value for the bare-register read path). When
+   defer_extend, the re-extension is skipped (a loop accumulator re-extended once
+   at the loop exit). */
+static void cg_inplace_reg_rax(Codegen *cg, const char *R, int op, TypeKind k, int defer_extend)
 {
 	if (k == TY_INT)
 	{
@@ -239,7 +258,10 @@ static void cg_inplace_reg_rax(Codegen *cg, const char *R, int op, TypeKind k)
 		case TOKEN_CARET: cg_emit(cg, "    xor %s, eax", r32);  break;
 		}
 
-		cg_emit(cg, "    movsxd %s, %s", R, r32);
+		if (!defer_extend)
+		{
+			cg_emit(cg, "    movsxd %s, %s", R, r32);   /* Keep R sign-valid; deferred accumulators re-extend once at loop exit. */
+		}
 	}
 	else
 	{
@@ -305,7 +327,7 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 				int is_counter = (cg->cur_counter_off != 0
 								  && target->anno_int == cg->cur_counter_off
 								  && value->op == TOKEN_PLUS && k->int_val >= 0);
-				if (!is_counter)
+				if (!is_counter && !cg_off_deferred(cg, target->anno_int))
 				{
 					cg_emit(cg,"    movsxd %s, %s", R, r32);
 				}
@@ -348,7 +370,7 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 				cg_extend_reg(cg, target->type.kind);  /* Re-width only when the operand differs; cg_expr already normalised it to its own width. */
 			}
 
-			cg_inplace_reg_rax(cg, R, value->op, target->type.kind);
+			cg_inplace_reg_rax(cg, R, value->op, target->type.kind, cg_off_deferred(cg, target->anno_int));
 			return 1;
 		}
 	}
@@ -565,6 +587,29 @@ static int cg_map_key_kind(TypeTable *tt, TypeRef *t)
 
 /* Re-extend the value already in rax to 64 bits at the given integer width, the
    way a fresh load would. Used after width-truncating arithmetic and for casts. */
+/* The 32-bit name of a 64-bit GPR (rax->eax, r12->r12d, ...). Anything else (an
+   immediate, a memory operand) is returned unchanged, so it is safe to wrap any
+   cg_binop_rhs operand. Used to emit 32-bit int comparisons. */
+static const char *cg_reg32(const char *r)
+{
+	if (!strcmp(r, "rax")) return "eax";
+	if (!strcmp(r, "rbx")) return "ebx";
+	if (!strcmp(r, "rcx")) return "ecx";
+	if (!strcmp(r, "rdx")) return "edx";
+	if (!strcmp(r, "rsi")) return "esi";
+	if (!strcmp(r, "rdi")) return "edi";
+	if (!strcmp(r, "rbp")) return "ebp";
+	if (!strcmp(r, "r8"))  return "r8d";
+	if (!strcmp(r, "r9"))  return "r9d";
+	if (!strcmp(r, "r10")) return "r10d";
+	if (!strcmp(r, "r11")) return "r11d";
+	if (!strcmp(r, "r12")) return "r12d";
+	if (!strcmp(r, "r13")) return "r13d";
+	if (!strcmp(r, "r14")) return "r14d";
+	if (!strcmp(r, "r15")) return "r15d";
+	return r;
+}
+
 static void cg_extend_reg(Codegen *cg, TypeKind k)
 {
 	switch (ty_bits(k))
@@ -667,7 +712,15 @@ static int cg_sr_mode(Codegen *cg, Expr *e, char *buf)
 	{
 		if (cg->sr_node[i] == e)
 		{
-			sprintf(buf, "[%s + %s*%d]", CG_HOIST_REGS[cg->sr_reg[i]], cg->sr_ivreg, cg->sr_stride[i]);
+			if (cg->unrolling)
+			{
+				sprintf(buf, "[%s + %lld]", CG_HOIST_REGS[cg->sr_reg[i]], cg->unroll_iv_val * cg->sr_stride[i]);
+			}
+			else
+			{
+				sprintf(buf, "[%s + %s*%d]", CG_HOIST_REGS[cg->sr_reg[i]], cg->sr_ivreg, cg->sr_stride[i]);
+			}
+
 			return 1;
 		}
 	}
@@ -685,7 +738,15 @@ static int cg_sr_addr(Codegen *cg, Expr *e)
 	{
 		if (cg->sr_node[i] == e)
 		{
-			cg_emit(cg,"    lea rbx, [%s + %s*%d]", CG_HOIST_REGS[cg->sr_reg[i]], cg->sr_ivreg, cg->sr_stride[i]);
+			if (cg->unrolling)
+			{
+				cg_emit(cg,"    lea rbx, [%s + %lld]", CG_HOIST_REGS[cg->sr_reg[i]], cg->unroll_iv_val * cg->sr_stride[i]);
+			}
+			else
+			{
+				cg_emit(cg,"    lea rbx, [%s + %s*%d]", CG_HOIST_REGS[cg->sr_reg[i]], cg->sr_ivreg, cg->sr_stride[i]);
+			}
+
 			return 1;
 		}
 	}
@@ -713,7 +774,12 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	   remains. Sound because anno_index_safe is set conservatively. */
 	int safe = e->anno_index_safe;
 
-	const char *ireg = (e->rhs->kind==EX_IDENT && e->rhs->anno_int > 0)
+	/* The register-resident-index fast path reads the index register directly; it
+	   must not fire for an unrolled loop's induction variable, whose live value is
+	   a compile-time constant this copy (the register is not maintained). Falling
+	   through materializes that constant via cg_expr. */
+	const char *ireg = (e->rhs->kind==EX_IDENT && e->rhs->anno_int > 0
+						&& !(cg->unrolling && e->rhs->anno_int == cg->unroll_iv_off))
 					   ? cg_local_reg(cg, e->rhs->anno_int) : NULL;
 	if (ireg)
 	{
@@ -1558,7 +1624,23 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_SLASH:
-		if (uns)
+		/* A 32-bit-result divide uses the 32-bit form (cdq/idiv ebx): roughly half
+		   the latency of a 64-bit idiv, and the operands' low 32 bits are the int
+		   values. A long result keeps the 64-bit divide. */
+		if (ty_bits(e->type.kind) <= 32)
+		{
+			if (uns)
+			{
+				cg_emit(cg,"    xor edx, edx");
+				cg_emit(cg,"    div ebx");
+			}
+			else
+			{
+				cg_emit(cg,"    cdq");
+				cg_emit(cg,"    idiv ebx");
+			}
+		}
+		else if (uns)
 		{
 			cg_emit(cg,"    xor edx, edx");
 			cg_emit(cg,"    div rbx");
@@ -1572,20 +1654,39 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_PERCENT:
-		/* Same divide as '/', but the result is the remainder (rdx), not the
-		   quotient (rax). div/idiv leave the remainder in rdx; move it back. */
-		if (uns)
+		/* Same divide as '/', but the result is the remainder (rdx/edx), not the
+		   quotient. */
+		if (ty_bits(e->type.kind) <= 32)
 		{
-			cg_emit(cg,"    xor edx, edx");
-			cg_emit(cg,"    div rbx");
+			if (uns)
+			{
+				cg_emit(cg,"    xor edx, edx");
+				cg_emit(cg,"    div ebx");
+			}
+			else
+			{
+				cg_emit(cg,"    cdq");
+				cg_emit(cg,"    idiv ebx");
+			}
+
+			cg_emit(cg,"    mov eax, edx");
 		}
 		else
 		{
-			cg_emit(cg,"    cqo");
-			cg_emit(cg,"    idiv rbx");
+			if (uns)
+			{
+				cg_emit(cg,"    xor edx, edx");
+				cg_emit(cg,"    div rbx");
+			}
+			else
+			{
+				cg_emit(cg,"    cqo");
+				cg_emit(cg,"    idiv rbx");
+			}
+
+			cg_emit(cg,"    mov rax, rdx");
 		}
 
-		cg_emit(cg,"    mov rax, rdx");
 		cg_extend_reg(cg,e->type.kind);
 		break;
 	case TOKEN_SHL:
@@ -1656,7 +1757,11 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
-		cg_emit(cg,"    cmp rax, %s", rhsop);
+		/* int-vs-int comparisons use the 32-bit cmp: correct for the low 32 bits
+		   whether or not the upper half is a valid sign-extension. */
+		int c32 = !ty_is_float(e->lhs->type.kind) && !ty_is_float(e->rhs->type.kind)
+				  && ty_bits(e->lhs->type.kind) <= 32 && ty_bits(e->rhs->type.kind) <= 32;
+		cg_emit(cg,"    cmp %s, %s", c32 ? "eax" : "rax", c32 ? cg_reg32(rhsop) : rhsop);
 		cg_emit(cg,"    %s al", set);
 		cg_emit(cg,"    movzx rax, al");
 		break;
@@ -1741,7 +1846,9 @@ static void cg_branch_cond(Codegen *cg, TypeTable *tt, Expr *cond, int label, in
 		char immbuf[24];
 		int uns;
 		cg_binop_rhs(cg, tt, cond, &rhsop, immbuf, &uns);
-		cg_emit(cg,"    cmp %s, %s", lhsop, rhsop);
+		int c32 = !ty_is_float(cond->lhs->type.kind) && !ty_is_float(cond->rhs->type.kind)
+				  && ty_bits(cond->lhs->type.kind) <= 32 && ty_bits(cond->rhs->type.kind) <= 32;
+		cg_emit(cg,"    cmp %s, %s", c32 ? cg_reg32(lhsop) : lhsop, c32 ? cg_reg32(rhsop) : rhsop);
 
 		const char *jcc;                     /* want=0: jump when FALSE; want=1: jump when TRUE. */
 		switch (cond->op)
@@ -4195,7 +4302,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			const char *r = cg_local_reg(cg, e->anno_int);
 			const char *h = r ? NULL : cg_hoist_reg(cg, e->anno_int);
-			if (r)
+			if (cg->unrolling && e->anno_int == cg->unroll_iv_off && cg->unroll_iv_off != 0)
+			{
+				cg_emit(cg,"    mov rax, %lld", cg->unroll_iv_val);   /* Unrolled loop: induction variable is a constant for this copy. */
+			}
+			else if (r)
 			{
 				cg_emit(cg,"    mov rax, %s", r);   /* Promoted local: read from its register. */
 			}
@@ -5133,11 +5244,102 @@ static void cg_sr_collect_block(Block *b, int iv_off, int *w, int wn, Expr **nod
    cache plain invariant locals. Emits the one-time setup; the caller must place
    this after the entry guard, before the loop top, and call cg_loop_hoist_end
    after the loop. */
+/* True if `e` reads slot `off` anywhere within it. */
+static int cg_expr_refs_off(Expr *e, int off)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	if (e->kind == EX_IDENT && e->anno_int == off)
+	{
+		return 1;
+	}
+
+	if (cg_expr_refs_off(e->lhs, off) || cg_expr_refs_off(e->rhs, off))
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		if (cg_expr_refs_off(e->args[i], off))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int cg_acc_deferrable_block(Block *b, int off);
+
+/* True if every appearance of int slot `off` in this statement is as the target
+   and left operand of a self-accumulation `off = off +/- EXPR` (EXPR free of off),
+   which always lowers to a 32-bit in-place add/sub. Any other read (a comparison,
+   an index, a different assignment form) would observe the full 64-bit register
+   and thus disqualifies deferral. */
+static int cg_acc_deferrable_stmt(Stmt *s, int off)
+{
+	if (!s)
+	{
+		return 1;
+	}
+
+	if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT
+		&& s->target->anno_int == off)
+	{
+		Expr *v = s->value;
+		if (v && v->kind == EX_BINARY && (v->op == TOKEN_PLUS || v->op == TOKEN_MINUS)
+			&& v->lhs->kind == EX_IDENT && v->lhs->anno_int == off
+			&& s->target->type.kind == TY_INT && !cg_expr_refs_off(v->rhs, off))
+		{
+			return 1;   /* off appears only as target + value's left operand. */
+		}
+
+		return 0;       /* Assignment to off in a form that is not a 32-bit self-accumulate. */
+	}
+
+	if (cg_expr_refs_off(s->cond, off) || cg_expr_refs_off(s->decl_init, off)
+		|| cg_expr_refs_off(s->value, off) || cg_expr_refs_off(s->target, off)
+		|| cg_expr_refs_off(s->expr, off) || cg_expr_refs_off(s->ret_val, off))
+	{
+		return 0;
+	}
+
+	if (!cg_acc_deferrable_block(s->then_blk, off) || !cg_acc_deferrable_block(s->else_blk, off))
+	{
+		return 0;
+	}
+
+	return 1;
+}
+
+static int cg_acc_deferrable_block(Block *b, int off)
+{
+	if (!b)
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (!cg_acc_deferrable_stmt(b->stmts[i], off))
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 {
 	cg->hoist_n = 0;
 	cg->sr_n = 0;
 	cg->sr_ivreg = NULL;
+	cg->defer_n = 0;
 	Block *body = loop->then_blk;
 	if (!body || !cg_hoist_block_ok(body))
 	{
@@ -5148,6 +5350,21 @@ static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 	int wn = 0;
 	cg_hoist_writes_block(body, w, &wn);
 	cg_hoist_writes_stmt(loop->for_post, w, &wn);
+
+	/* Deferred-extension accumulators: a promoted int local written in the loop
+	   solely by `acc = acc +/- EXPR` keeps a valid low 32 bits every iteration (the
+	   in-place add is 32-bit); its sign-extension is needed only for reads after
+	   the loop, so defer it to the exit (cg_loop_hoist_end) and drop the per-
+	   iteration movsxd from the carried dependency. */
+	for (int i = 0; i < wn && cg->defer_n < 8; i++)
+	{
+		int off = w[i];
+		if (off != 0 && off != cg->cur_counter_off && cg_local_reg(cg, off)
+			&& cg_acc_deferrable_block(body, off))
+		{
+			cg->defer_off[cg->defer_n++] = off;
+		}
+	}
 
 	int next_reg = 0;
 
@@ -5210,13 +5427,169 @@ static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 
 static void cg_loop_hoist_end(Codegen *cg)
 {
+	/* Re-extend each deferred accumulator once, now that the loop has exited, so
+	   later 64-bit reads of it see a valid sign-extended register. Emitted after
+	   the loop's end label, so it covers both the fall-through and break exits. */
+	for (int i = 0; i < cg->defer_n; i++)
+	{
+		const char *R = cg_local_reg(cg, cg->defer_off[i]);
+		if (R)
+		{
+			cg_emit(cg, "    movsxd %s, %sd", R, R);
+		}
+	}
+
 	cg->hoist_n = 0;
 	cg->sr_n = 0;
 	cg->sr_ivreg = NULL;
+	cg->defer_n = 0;
+}
+
+/* True if a block contains a break/continue (which an unrolled body cannot host -
+   there is no enclosing loop label to target). */
+static int cg_block_has_breakcont(Block *b);
+
+static int cg_stmt_has_breakcont(Stmt *s)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	if (s->kind == ST_BREAK || s->kind == ST_CONTINUE)
+	{
+		return 1;
+	}
+
+	return cg_block_has_breakcont(s->then_blk) || cg_block_has_breakcont(s->else_blk);
+}
+
+static int cg_block_has_breakcont(Block *b)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (cg_stmt_has_breakcont(b->stmts[i]))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* Fully unroll a fixed, small-trip `for (int i = LO; i </<= HI; i = i + STEP)` loop
+   whose body is the clean arithmetic the hoist predicate accepts: emit the body
+   once per iteration with the induction variable bound to a compile-time constant,
+   so there is no counter, no branch, and strength-reduced accesses become constant
+   offsets [base + k*stride]. Returns 1 if it unrolled, 0 to fall back to a loop. */
+#define CG_UNROLL_MAX 8
+static int cg_try_unroll(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	Stmt *fi = s->for_init;
+	if (!fi || fi->kind != ST_VARDECL || !fi->decl_init || fi->decl_init->kind != EX_INT)
+	{
+		return 0;   /* Loop-scoped counter only, so nothing reads it after the loop. */
+	}
+
+	int io = fi->decl_offset;
+	long long lo = fi->decl_init->int_val;
+	if (io == 0)
+	{
+		return 0;
+	}
+
+	Expr *c = s->cond;
+	if (!(c && c->kind == EX_BINARY && (c->op == TOKEN_LT || c->op == TOKEN_LTE)
+		  && c->lhs->kind == EX_IDENT && c->lhs->anno_int == io && c->rhs->kind == EX_INT))
+	{
+		return 0;
+	}
+
+	long long hi = c->rhs->int_val;
+
+	long long step = 0;
+	Stmt *p = s->for_post;
+	if (p && p->kind == ST_ASSIGN && p->target && p->target->kind == EX_IDENT
+		&& p->target->anno_int == io && p->value && p->value->kind == EX_BINARY
+		&& p->value->op == TOKEN_PLUS && p->value->lhs->kind == EX_IDENT
+		&& p->value->lhs->anno_int == io && p->value->rhs->kind == EX_INT)
+	{
+		step = p->value->rhs->int_val;
+	}
+	else if (p && p->kind == ST_EXPR && p->expr && p->expr->kind == EX_INCDEC
+			 && p->expr->op == TOKEN_PLUSPLUS && p->expr->lhs
+			 && p->expr->lhs->kind == EX_IDENT && p->expr->lhs->anno_int == io)
+	{
+		step = 1;
+	}
+
+	if (step <= 0)
+	{
+		return 0;
+	}
+
+	long long trip = (c->op == TOKEN_LT)
+					 ? ((hi > lo) ? (hi - lo + step - 1) / step : 0)
+					 : ((hi >= lo) ? (hi - lo) / step + 1 : 0);
+	if (trip <= 0 || trip > CG_UNROLL_MAX)
+	{
+		return 0;
+	}
+
+	Block *body = s->then_blk;
+	if (!body || !cg_hoist_block_ok(body) || cg_block_has_breakcont(body))
+	{
+		return 0;
+	}
+
+	int w[128];
+	int wn = 0;
+	cg_hoist_writes_block(body, w, &wn);
+	if (cg_off_in(w, wn, io))
+	{
+		return 0;   /* Body reassigns the induction variable: not a clean count. */
+	}
+
+	cg_loop_hoist_begin(cg, tt, s);   /* Pin SR bases / invariants / deferred accumulators. */
+	cg->unrolling = 1;
+	cg->unroll_iv_off = io;
+	const char *ivreg = cg_local_reg(cg, io);
+	for (long long k = lo; (c->op == TOKEN_LT) ? (k < hi) : (k <= hi); k += step)
+	{
+		cg->unroll_iv_val = k;
+		/* Materialize the induction value in its home so any read that bypasses the
+		   unroll-constant fast paths (a register operand, a slot load) still sees it.
+		   Strength-reduced accesses use the constant offset directly and ignore this. */
+		if (ivreg)
+		{
+			cg_emit(cg, "    mov %s, %lld", ivreg, k);
+		}
+		else
+		{
+			cg_emit(cg, "    mov dword [rbp - %d], %lld", io, k);
+		}
+
+		cg_block(cg, tt, f, body, in_main);
+	}
+
+	cg->unrolling = 0;
+	cg->unroll_iv_off = 0;
+	cg_loop_hoist_end(cg);            /* Re-extend deferred accumulators once. */
+	return 1;
 }
 
 static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
+	if (cg_try_unroll(cg, tt, f, s, in_main))
+	{
+		return;
+	}
+
 	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
 	int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 	cg_stmt(cg,tt,f,s->for_init,in_main);

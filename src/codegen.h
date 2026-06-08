@@ -39,6 +39,11 @@ typedef struct
 	int   sr_stride[4];      /* Element stride in bytes, so the access is [reg + iv*stride]. */
 	const char *sr_ivreg;    /* The induction variable's register for the current loop (coefficient-1 index term). */
 	int   cur_counter_off;   /* Slot offset of the current loop's promoted, non-negative, unit-step int counter (0 if none): its `i=i+1` skips the re-extension, since a 32-bit add zero-extends and the value never goes negative. */
+	int   defer_n;           /* Promoted int accumulators in the current loop whose per-iteration sign-extension is deferred to the loop exit (every use is `acc = acc +/- EXPR`, lowered to a 32-bit add). */
+	int   defer_off[8];      /* Their slot offsets; re-extended once at the loop end label. */
+	int   unrolling;         /* 1 while emitting a fully-unrolled fixed-trip loop body: the induction variable is a compile-time constant for this copy. */
+	int   unroll_iv_off;     /* The unrolled loop's induction variable slot. */
+	long long unroll_iv_val; /* Its constant value for the copy currently being emitted. */
 	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
