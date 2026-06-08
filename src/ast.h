@@ -239,6 +239,9 @@ typedef struct
 	int     promo_count;            /* Register promotion: number of promoted locals (<= PROMO_MAX; share 4 phys regs). */
 	int     promo_off[PROMO_MAX];   /* Register promotion: rbp slot offset of each promoted local. */
 	int     promo_reg[PROMO_MAX];   /* Register promotion: physical register index 0..3 -> r12..r15 (repeats under reuse). */
+	int     fpromo_count;           /* Float promotion: number of promoted double locals (<= PROMO_MAX; share 4 xmm regs). */
+	int     fpromo_off[PROMO_MAX];  /* Float promotion: rbp slot offset of each promoted double local. */
+	int     fpromo_reg[PROMO_MAX];  /* Float promotion: physical register index 0..3 -> xmm2..xmm5 (repeats under reuse). */
 } Func;
 
 typedef struct

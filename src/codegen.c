@@ -70,6 +70,33 @@ static const char *cg_local_reg(Codegen *cg, int off)
 	return NULL;
 }
 
+/* Float promotion: the four caller-saved XMM registers a promoting frame may use to
+   hold hot double locals. Caller-saved on both Win64 and SysV and never used as
+   codegen scratch (xmm0/xmm1), so a promoted double - which promote.c guarantees is
+   never live across a call - needs no prologue save/restore. Index i == fpromo_reg. */
+static const char *const CG_FPROMO_REGS[4] = { "xmm2", "xmm3", "xmm4", "xmm5" };
+
+/* If double local slot `off` is float-promoted in the current function, return its
+   XMM register name ("xmm2".."xmm5"); otherwise NULL. NULL for synthesized frames. */
+static const char *cg_local_xmm(Codegen *cg, int off)
+{
+	Func *f = cg->cur_func;
+	if (!f)
+	{
+		return NULL;
+	}
+
+	for (int i = 0; i < f->fpromo_count; i++)
+	{
+		if (f->fpromo_off[i] == off)
+		{
+			return CG_FPROMO_REGS[f->fpromo_reg[i]];
+		}
+	}
+
+	return NULL;
+}
+
 /* Caller-saved registers used to cache loop-invariant locals across an innermost,
    call-free loop (see cg_loop_hoist_begin). Codegen uses rax/rbx/rcx/rdx as
    scratch and r12..r15 for promotion, so r8..r11 are free in a loop that emits no
@@ -116,6 +143,21 @@ static void cg_store_local_off(Codegen *cg, int off, TypeKind k)
 	else
 	{
 		cg_emit(cg, "    mov [rbp - %d], rax", off);
+	}
+}
+
+/* Store xmm0 into double local `off`: its XMM home if float-promoted, else its
+   stack slot. Slot-safe for any non-promoted offset, so temporaries are unaffected. */
+static void cg_store_local_fp(Codegen *cg, int off, TypeKind k)
+{
+	const char *xr = k==TY_DOUBLE ? cg_local_xmm(cg, off) : NULL;
+	if (xr)
+	{
+		cg_emit(cg, "    movsd %s, xmm0", xr);
+	}
+	else
+	{
+		cg_emit(cg, k==TY_FLOAT ? "    movss dword [rbp - %d], xmm0" : "    movsd qword [rbp - %d], xmm0", off);
 	}
 }
 
@@ -1364,6 +1406,23 @@ static void cg_fp_promote(Codegen *cg, TypeKind from, TypeKind ct)
    rhs). Array-element addressing uses only the integer registers, so the lhs
    already in xmm0 survives. The leaf's type must equal the op's common type, so
    no cvtss2sd is needed. */
+/* Operand string for a same-type FP local leaf: its XMM register if float-promoted,
+   else its stack slot ("qword [rbp - off]"). A promoted double is read straight from
+   xmm2..5 (caller-saved, not clobbered between its store and this fold). */
+static const char *cg_fp_local_opnd(Codegen *cg, Expr *e, TypeKind ct, char *buf, int bufsz)
+{
+	const char *xr = ct==TY_DOUBLE ? cg_local_xmm(cg, e->anno_int) : NULL;
+	if (xr)
+	{
+		snprintf(buf, bufsz, "%s", xr);
+		return buf;
+	}
+
+	const char *sz = (ct==TY_DOUBLE) ? "qword" : "dword";
+	snprintf(buf, bufsz, "%s [rbp - %d]", sz, e->anno_int);
+	return buf;
+}
+
 static const char *cg_fp_rhs_leaf(Codegen *cg, TypeTable *tt, Expr *e, TypeKind ct, char *buf, int bufsz)
 {
 	if (e->type.kind != ct)
@@ -1374,8 +1433,7 @@ static const char *cg_fp_rhs_leaf(Codegen *cg, TypeTable *tt, Expr *e, TypeKind 
 	const char *sz = (ct==TY_DOUBLE) ? "qword" : "dword";
 	if (e->kind==EX_IDENT && e->anno_int > 0 && !cg_local_reg(cg, e->anno_int))
 	{
-		snprintf(buf, bufsz, "%s [rbp - %d]", sz, e->anno_int);   /* FP local: stack home. */
-		return buf;
+		return cg_fp_local_opnd(cg, e, ct, buf, bufsz);   /* FP local: XMM home if promoted, else slot. */
 	}
 
 	if (e->kind==EX_INDEX)
@@ -1419,11 +1477,11 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 		&& cg_fp_simple_local(cg, e->rhs->rhs, ct))
 	{
 		const char *mov = (ct==TY_DOUBLE) ? "movsd" : "movss";
-		const char *sz  = (ct==TY_DOUBLE) ? "qword" : "dword";
+		char abuf[48], bbuf[48];
 		cg_expr(cg,tt,e->lhs);
 		cg_fp_promote(cg, e->lhs->type.kind, ct);
-		cg_emit(cg,"    %s xmm1, %s [rbp - %d]", mov, sz, e->rhs->lhs->anno_int);
-		cg_emit(cg,"    mul%s xmm1, %s [rbp - %d]", sfx, sz, e->rhs->rhs->anno_int);
+		cg_emit(cg,"    %s xmm1, %s", mov, cg_fp_local_opnd(cg, e->rhs->lhs, ct, abuf, sizeof abuf));
+		cg_emit(cg,"    mul%s xmm1, %s", sfx, cg_fp_local_opnd(cg, e->rhs->rhs, ct, bbuf, sizeof bbuf));
 		cg_emit(cg,"    %s%s xmm0, xmm1", e->op==TOKEN_PLUS ? "add" : "sub", sfx);
 		return;
 	}
@@ -4460,7 +4518,15 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		sprintf(mem,"[rbp - %d]", e->anno_int);
 		if (ty_is_float(e->type.kind))
 		{
-			cg_load_fp(cg,e->type.kind,mem);
+			const char *xr = e->type.kind==TY_DOUBLE ? cg_local_xmm(cg, e->anno_int) : NULL;
+			if (xr)
+			{
+				cg_emit(cg,"    movsd xmm0, %s", xr);   /* Promoted double: read from its XMM home. */
+			}
+			else
+			{
+				cg_load_fp(cg,e->type.kind,mem);
+			}
 		}
 		else
 		{
@@ -4802,11 +4868,9 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	}
 	if (target->kind==EX_IDENT)
 	{
-		char mem[32];
-		sprintf(mem,"[rbp - %d]", target->anno_int);
 		if (fp)
 		{
-			cg_store_fp(cg,target->type.kind,mem);
+			cg_store_local_fp(cg, target->anno_int, target->type.kind);   /* XMM home if promoted, else slot. */
 		}
 		else
 		{
@@ -6390,11 +6454,9 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			{
 				cg_expr(cg,tt,s->decl_init);
 				cg_coerce(cg,s->decl_type.kind,s->decl_init->type.kind);
-				char mem[32];
-				sprintf(mem,"[rbp - %d]", s->decl_offset);
 				if (ty_is_float(s->decl_type.kind))
 				{
-					cg_store_fp(cg,s->decl_type.kind,mem);
+					cg_store_local_fp(cg, s->decl_offset, s->decl_type.kind);   /* XMM home if promoted, else slot. */
 				}
 				else
 				{

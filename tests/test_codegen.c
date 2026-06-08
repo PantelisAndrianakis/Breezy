@@ -314,6 +314,27 @@ static void test_promotion_register_resident(void)
 	ASSERT_INT(strstr(g_asm, "mov rax, r12") != NULL, 1);   /* n is read from the register. */
 }
 
+static void test_float_promotion_xmm(void)
+{
+	/* A call-free loop accumulating double temps promotes them to xmm2..xmm5
+	   (caller-saved on both ABIs, so no prologue save is needed). The multiply then
+	   reads its operand straight from a register instead of the local's [rbp] slot. */
+	emit(
+		"double dot(double[] a, int n)\n"
+		"{\n"
+		"	double acc; acc = 0.0;\n"
+		"	for (int i = 0; i < n; i = i + 1)\n"
+		"	{\n"
+		"		double x; x = a[i];\n"
+		"		acc = acc + x * x;\n"
+		"	}\n"
+		"	return acc;\n"
+		"}\n"
+		"void main() { double[] a; a = new double[4]; print((long)dot(a, 4)); }\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "xmm2") != NULL, 1);            /* a hot double promoted to xmm2. */
+	ASSERT_INT(strstr(g_asm, "mulsd xmm1, xmm") != NULL, 1); /* MAC operand read from a register, not a slot. */
+}
+
 static void test_inplace_register_arithmetic(void)
 {
 	/* state = state * C1 + C2 updates r13 in place (no `mov r13, rax`), and
@@ -476,6 +497,7 @@ int main(void)
 	RUN(test_register_operand_compare);
 	RUN(test_inplace_register_arithmetic);
 	RUN(test_promotion_register_resident);
+	RUN(test_float_promotion_xmm);
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);
 	RUN(test_linux_receiver_and_release);

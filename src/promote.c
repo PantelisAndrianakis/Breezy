@@ -2,7 +2,9 @@
 
 #define MAX_CAND 256
 #define MAX_LOOP 256
+#define MAX_CTICK 512   /* Float promotion: cap on recorded call-bearing statement ticks. */
 #define NREGS    4      /* r12..r15: the ABI-symmetric callee-saved integer registers. */
+#define NFREGS   4      /* xmm2..xmm5: caller-saved on BOTH Win64 and SysV, never used as codegen scratch. */
 
 /* A promotion candidate: a 64-bit integer local, its loop-weighted use count, and
    its live interval [lo,hi] in statement ticks. The interval is a conservative
@@ -15,6 +17,8 @@ typedef struct
 	long weight;
 	int  lo;
 	int  hi;
+	int  olo;   /* True live interval before loop-widening (used for the float call-free test). */
+	int  ohi;
 } Cand;
 
 typedef struct
@@ -26,10 +30,63 @@ typedef struct
 {
 	Cand cand[MAX_CAND];
 	int  ncand;
+	Cand fcand[MAX_CAND];   /* Double-local candidates for XMM promotion (parallel machinery). */
+	int  nfcand;
+	int  ctick[MAX_CTICK];  /* Statement ticks whose direct expressions emit a call (xmm2..5 clobber). */
+	int  nctick;
+	int  ctick_of;          /* Set if call ticks overflowed MAX_CTICK: disables float promotion. */
 	Span loop[MAX_LOOP];
 	int  nloop;
 	int  tick;
 } Ctx;
+
+/* Conservative "does evaluating this expression emit a call?" predicate. Any call,
+   constructor/allocation, or string-typed sub-expression (string ops lower to
+   runtime calls) taints the enclosing statement's tick: a promoted double lives in
+   a caller-saved XMM register, so it must never be live across such a call. The
+   array-index fast path emits no call (its out-of-bounds slow path aborts, so a
+   clobber there is moot), so pure numeric kernels stay eligible. */
+static int expr_has_call(Expr *e)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	switch (e->kind)
+	{
+		case EX_CALL:
+		case EX_METHOD_CALL:
+		case EX_NEW:
+		case EX_NEWARRAY:
+		case EX_NEWMAP:
+		case EX_NEWGEN:
+		case EX_NEWCHANNEL:
+			return 1;
+		default:
+			break;
+	}
+
+	if (e->type.kind == TY_STRING)
+	{
+		return 1;   /* Concatenation / formatting / coercion to string all call the runtime. */
+	}
+
+	if (expr_has_call(e->lhs) || expr_has_call(e->rhs))
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		if (expr_has_call(e->args[i]))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
 
 /* Eligible kinds: 64-bit integers and 32-bit signed int. A promoted local lives
    only in its register, so the register must always hold a value the read path
@@ -102,7 +159,7 @@ static void scan_block(Block *b, int depth, Ctx *c);
 /* Record one loop-weighted use of the local at slot offset `off` at the current
    tick. Each loop level multiplies the weight by ten, so loop-carried locals
    dominate selection; the tick widens the candidate's live interval. */
-static void bump(int off, int depth, Ctx *c)
+static void bump_into(Cand *arr, int *n, int off, int depth, int tick)
 {
 	long w = 1;
 	for (int i = 0; i < depth; i++)
@@ -110,33 +167,45 @@ static void bump(int off, int depth, Ctx *c)
 		w *= 10;
 	}
 
-	for (int i = 0; i < c->ncand; i++)
+	for (int i = 0; i < *n; i++)
 	{
-		if (c->cand[i].off == off)
+		if (arr[i].off == off)
 		{
-			c->cand[i].weight += w;
-			if (c->tick < c->cand[i].lo)
+			arr[i].weight += w;
+			if (tick < arr[i].lo)
 			{
-				c->cand[i].lo = c->tick;
+				arr[i].lo = tick;
 			}
 
-			if (c->tick > c->cand[i].hi)
+			if (tick > arr[i].hi)
 			{
-				c->cand[i].hi = c->tick;
+				arr[i].hi = tick;
 			}
 
 			return;
 		}
 	}
 
-	if (c->ncand < MAX_CAND)
+	if (*n < MAX_CAND)
 	{
-		c->cand[c->ncand].off = off;
-		c->cand[c->ncand].weight = w;
-		c->cand[c->ncand].lo = c->tick;
-		c->cand[c->ncand].hi = c->tick;
-		c->ncand++;
+		arr[*n].off = off;
+		arr[*n].weight = w;
+		arr[*n].lo = tick;
+		arr[*n].hi = tick;
+		(*n)++;
 	}
+}
+
+static void bump(int off, int depth, Ctx *c)
+{
+	bump_into(c->cand, &c->ncand, off, depth, c->tick);
+}
+
+/* Float (double) promotion candidate: same loop-weighted interval machinery as the
+   integer path, kept in a parallel array. */
+static void fbump(int off, int depth, Ctx *c)
+{
+	bump_into(c->fcand, &c->nfcand, off, depth, c->tick);
 }
 
 static void scan_expr(Expr *e, int depth, Ctx *c)
@@ -150,6 +219,12 @@ static void scan_expr(Expr *e, int depth, Ctx *c)
 	if (e->kind == EX_IDENT && is_promotable_kind(e->type.kind) && e->anno_int > 0)
 	{
 		bump(e->anno_int, depth, c);
+	}
+
+	/* A double local read is a candidate for XMM (xmm2..5) promotion. */
+	if (e->kind == EX_IDENT && e->type.kind == TY_DOUBLE && e->anno_int > 0)
+	{
+		fbump(e->anno_int, depth, c);
 	}
 
 	scan_expr(e->lhs, depth, c);
@@ -186,11 +261,31 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 	scan_expr(s->ret_val, depth, c);       /* ST_RETURN reads. */
 	scan_expr(s->expr, depth, c);          /* ST_EXPR / ST_THROW reads. */
 
+	/* Record this tick if any of its direct expressions emits a call: a double held
+	   in a caller-saved XMM register must not be live across it. */
+	if (expr_has_call(s->cond) || expr_has_call(s->decl_init) || expr_has_call(s->value)
+		|| expr_has_call(s->target) || expr_has_call(s->ret_val) || expr_has_call(s->expr))
+	{
+		if (c->nctick < MAX_CTICK)
+		{
+			c->ctick[c->nctick++] = my;
+		}
+		else
+		{
+			c->ctick_of = 1;
+		}
+	}
+
 	/* A scalar var-decl is itself a candidate even if only its register-home
 	   writes/reads appear elsewhere; count the declaration as one use. */
 	if (s->kind == ST_VARDECL && is_promotable_kind(s->decl_type.kind) && s->decl_offset > 0)
 	{
 		bump(s->decl_offset, depth, c);
+	}
+
+	if (s->kind == ST_VARDECL && s->decl_type.kind == TY_DOUBLE && s->decl_offset > 0)
+	{
+		fbump(s->decl_offset, depth, c);
 	}
 
 	/* The foreach cursor is an internal 64-bit index loaded, compared and
@@ -237,6 +332,7 @@ static int overlaps(int alo, int ahi, int blo, int bhi)
 void promote_annotate(Func *f)
 {
 	f->promo_count = 0;
+	f->fpromo_count = 0;
 	if (f->is_extern || !f->body)
 	{
 		return;
@@ -250,6 +346,9 @@ void promote_annotate(Func *f)
 
 	static Ctx c;   /* Large; one function at a time, so a single static instance is fine. */
 	c.ncand = 0;
+	c.nfcand = 0;
+	c.nctick = 0;
+	c.ctick_of = 0;
 	c.nloop = 0;
 	c.tick = 0;
 	scan_block(f->body, 0, &c);
@@ -362,5 +461,132 @@ void promote_annotate(Func *f)
 		asg_lo[f->promo_count] = cd->lo;
 		asg_hi[f->promo_count] = cd->hi;
 		f->promo_count++;
+	}
+
+	/* --- Float (double) promotion into xmm2..xmm5. --------------------------------
+	   xmm2..5 are caller-saved on both ABIs and never used as codegen scratch, so a
+	   promoted double needs no prologue save/restore - PROVIDED it is never live
+	   across a call (a callee may clobber the register). We therefore promote only
+	   double locals whose widened live interval contains no call tick, and never a
+	   parameter (no prologue seeds the incoming xmm arg into our register). */
+	if (c.ctick_of)
+	{
+		return;   /* Too many call sites to track precisely; skip float promotion. */
+	}
+
+	/* Snapshot each double's TRUE live interval before widening: the call-free test
+	   below uses it, not the widened span. A value dead before a call is safe in a
+	   caller-saved register even when loop-widening later stretches its interval
+	   across that call (the register just holds a dead value there). */
+	for (int i = 0; i < c.nfcand; i++)
+	{
+		c.fcand[i].olo = c.fcand[i].lo;
+		c.fcand[i].ohi = c.fcand[i].hi;
+	}
+
+	/* Widen each double interval over the loops it touches, same fixpoint as ints. */
+	int fchanged = 1;
+	while (fchanged)
+	{
+		fchanged = 0;
+		for (int i = 0; i < c.nfcand; i++)
+		{
+			for (int j = 0; j < c.nloop; j++)
+			{
+				if (!overlaps(c.fcand[i].lo, c.fcand[i].hi, c.loop[j].lo, c.loop[j].hi))
+				{
+					continue;
+				}
+
+				if (c.loop[j].lo < c.fcand[i].lo)
+				{
+					c.fcand[i].lo = c.loop[j].lo;
+					fchanged = 1;
+				}
+
+				if (c.loop[j].hi > c.fcand[i].hi)
+				{
+					c.fcand[i].hi = c.loop[j].hi;
+					fchanged = 1;
+				}
+			}
+		}
+	}
+
+	/* Eligibility: a non-parameter double whose interval crosses no call tick. */
+	int forder[MAX_CAND], nford = 0;
+	for (int i = 0; i < c.nfcand; i++)
+	{
+		if (c.fcand[i].off <= param_region_end)
+		{
+			continue;   /* Parameter slot: not seeded into an xmm2..5 home. */
+		}
+
+		int crosses_call = 0;
+		for (int t = 0; t < c.nctick; t++)
+		{
+			if (c.fcand[i].olo <= c.ctick[t] && c.ctick[t] <= c.fcand[i].ohi)
+			{
+				crosses_call = 1;
+				break;
+			}
+		}
+
+		if (!crosses_call)
+		{
+			forder[nford++] = i;
+		}
+	}
+
+	/* Highest weight first (selection sort; nford is small). */
+	for (int a = 0; a < nford; a++)
+	{
+		int best = a;
+		for (int b = a + 1; b < nford; b++)
+		{
+			if (c.fcand[forder[b]].weight > c.fcand[forder[best]].weight)
+			{
+				best = b;
+			}
+		}
+
+		int tmp = forder[a];
+		forder[a] = forder[best];
+		forder[best] = tmp;
+	}
+
+	int fasg_lo[PROMO_MAX], fasg_hi[PROMO_MAX];
+	for (int oi = 0; oi < nford; oi++)
+	{
+		Cand *cd = &c.fcand[forder[oi]];
+		int chosen = -1;
+		for (int r = 0; r < NFREGS && chosen < 0; r++)
+		{
+			int free = 1;
+			for (int k = 0; k < f->fpromo_count; k++)
+			{
+				if (f->fpromo_reg[k] == r && overlaps(cd->lo, cd->hi, fasg_lo[k], fasg_hi[k]))
+				{
+					free = 0;
+					break;
+				}
+			}
+
+			if (free)
+			{
+				chosen = r;
+			}
+		}
+
+		if (chosen < 0 || f->fpromo_count >= PROMO_MAX)
+		{
+			continue;
+		}
+
+		f->fpromo_off[f->fpromo_count] = cd->off;
+		f->fpromo_reg[f->fpromo_count] = chosen;
+		fasg_lo[f->fpromo_count] = cd->lo;
+		fasg_hi[f->fpromo_count] = cd->hi;
+		f->fpromo_count++;
 	}
 }
