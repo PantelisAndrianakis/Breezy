@@ -1,6 +1,4 @@
 #include "breezy.h"
-#include <stdlib.h>
-#include <string.h>
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
   #include <windows.h>
@@ -14,19 +12,6 @@
    0 vtable | 8 rc | 16 gcinfo | 24 handle | 32 closed(int64).
    The handle slot is a Win32 HANDLE on Windows and an int fd on POSIX. */
 #define FC_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
-
-/* Build a value byte[] from buf[0..n) (one byte per 8-byte slot). */
-static void *fc_to_array(const char *buf, int n)
-{
-	void *arr = bzy_array_new(n < 0 ? 0 : n, 0);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int i = 0; i < n; i++)
-	{
-		slots[i] = (unsigned char)buf[i];
-	}
-
-	return arr;
-}
 
 static int64_t g_fc_typeinfo[2] = { 0 /* Finalizer (set on first use). */, 0 };
 static int64_t g_fc_vtable[2];
@@ -81,7 +66,7 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 	if (FC_CLOSED(ch))
 	{
 		bzy_io_fail("FileChannel.readAt: channel is closed.");
-		return fc_to_array(NULL, 0);
+		return bzy_array_new_sized(0, 1, 0);   /* Empty packed byte[]. */
 	}
 
 	if (maxbytes < 1)
@@ -89,32 +74,27 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 		maxbytes = 1;
 	}
 
-	char *buf = (char*)malloc((size_t)maxbytes);
+	/* Packed byte[]: ReadFile fills the element region in place, so there is no
+	   intermediate buffer and no copy (the slotted layout used to require both). */
+	void *arr = bzy_array_new_sized(maxbytes, 1, 0);
 
 	OVERLAPPED ov = {0};             /* Carries the offset only; the handle is synchronous. */
 	ov.Offset = (DWORD)(offset & 0xffffffff);
 	ov.OffsetHigh = (DWORD)((offset >> 32) & 0xffffffff);
 
-	int n;
 	DWORD got = 0;
-	BOOL ok = ReadFile(FC_HANDLE(ch), buf, (DWORD)maxbytes, &got, &ov);   /* Blocks, returns inline. */
-	if (ok)
+	BOOL ok = ReadFile(FC_HANDLE(ch), (char*)arr + 32, (DWORD)maxbytes, &got, &ov);   /* Blocks, returns inline. */
+	if (!ok && GetLastError() != ERROR_HANDLE_EOF)
 	{
-		n = (int)got;
-	}
-	else if (GetLastError() == ERROR_HANDLE_EOF)
-	{
-		n = 0;                       /* At/past EOF. */
-	}
-	else
-	{
-		free(buf);
 		bzy_io_fail("FileChannel.readAt: read failed.");
-		return fc_to_array(NULL, 0);
+		got = 0;
 	}
 
-	void *arr = fc_to_array(buf, n);
-	free(buf);
+	if ((int64_t)got != maxbytes)
+	{
+		*(int64_t*)((char*)arr + 24) = (int64_t)got;   /* Logical length = bytes actually read. */
+	}
+
 	return arr;
 }
 
@@ -127,12 +107,7 @@ int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data)
 	}
 
 	int64_t total = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	char *buf = (char*)malloc((size_t)(total > 0 ? total : 1));
-	for (int64_t i = 0; i < total; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
+	const char *buf = (const char*)data + 32;   /* Packed bytes, no copy. */
 
 	int64_t off = 0;
 	while (off < total)
@@ -158,7 +133,6 @@ int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data)
 		off += (int64_t)got;
 	}
 
-	free(buf);
 	return off;
 }
 
@@ -310,7 +284,7 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 	if (FC_CLOSED(ch))
 	{
 		bzy_io_fail("FileChannel.readAt: channel is closed.");
-		return fc_to_array(NULL, 0);
+		return bzy_array_new_sized(0, 1, 0);   /* Empty packed byte[]. */
 	}
 
 	if (maxbytes < 1)
@@ -318,8 +292,10 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 		maxbytes = 1;
 	}
 
-	char *buf = (char*)malloc((size_t)maxbytes);
-	RdCtx c = { (int)FC_FD(ch), buf, offset, maxbytes, 0, 0 };
+	/* Packed byte[]: pread fills the element region in place, so there is no
+	   intermediate buffer and no copy (the slotted layout used to require both). */
+	void *arr = bzy_array_new_sized(maxbytes, 1, 0);
+	RdCtx c = { (int)FC_FD(ch), (char*)arr + 32, offset, maxbytes, 0, 0 };
 	/* Run the pread inline on the calling worker instead of handing off to the
 	   offload pool. A positioned read is usually a cache hit that returns in well
 	   under a microsecond, so the two thread hops the pool costs dominate it; if a
@@ -329,13 +305,15 @@ void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes)
 
 	if (c.err)
 	{
-		free(buf);
 		bzy_io_fail("FileChannel.readAt: read failed.");
-		return fc_to_array(NULL, 0);
+		c.n = 0;
 	}
 
-	void *arr = fc_to_array(buf, c.n);
-	free(buf);
+	if ((int64_t)c.n != maxbytes)
+	{
+		*(int64_t*)((char*)arr + 24) = (int64_t)c.n;   /* Logical length = bytes actually read. */
+	}
+
 	return arr;
 }
 
@@ -377,19 +355,13 @@ int64_t bzy_filechannel_write_at(void *ch, int64_t offset, void *data)
 	}
 
 	int64_t total = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	char *buf = (char*)malloc((size_t)(total > 0 ? total : 1));
-	for (int64_t i = 0; i < total; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
+	const char *buf = (const char*)data + 32;   /* Packed bytes, no copy. */
 
 	WrCtx c = { (int)FC_FD(ch), buf, offset, total, 0, 0 };
 	/* Inline pwrite on the calling worker (see readAt): the offload pool's two
 	   thread hops dwarf a cached positioned write. sync stays offloaded. */
 	wr_run(&c);
 
-	free(buf);
 	if (c.err)
 	{
 		bzy_io_fail("FileChannel.writeAt: write failed.");

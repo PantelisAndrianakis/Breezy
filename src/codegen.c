@@ -329,6 +329,57 @@ static void cg_load_scalar(Codegen *cg, TypeKind k, const char *mem)
 	cg_load_scalar_into(cg,k,mem,"rax","eax");
 }
 
+/* Bytes per element of a value array; object/string arrays hold an 8-byte
+   pointer. Always a valid x86 index-scale (1/2/4/8). 8-bit widths pack to one
+   byte per element, so byte[]/ubyte[]/bool[] store n bytes contiguously. */
+static int cg_elem_stride(TypeKind k)
+{
+	if (ty_is_managed(k))
+	{
+		return 8;
+	}
+
+	int bits = (k == TY_BOOL) ? 8 : ty_bits(k);
+	if (bits <= 8)
+	{
+		return 1;
+	}
+
+	if (bits <= 16)
+	{
+		return 2;
+	}
+
+	if (bits <= 32)
+	{
+		return 4;
+	}
+
+	return 8;
+}
+
+/* Store the low bits of rax into 'mem' at the element's natural width. The width
+   is taken from cg_elem_stride so a store can never disagree with the stride the
+   address was computed at. */
+static void cg_store_scalar(Codegen *cg, TypeKind k, const char *mem)
+{
+	switch (cg_elem_stride(k))
+	{
+	case 1:
+		cg_emit(cg,"    mov byte %s, al", mem);
+		break;
+	case 2:
+		cg_emit(cg,"    mov word %s, ax", mem);
+		break;
+	case 4:
+		cg_emit(cg,"    mov dword %s, eax", mem);
+		break;
+	default:
+		cg_emit(cg,"    mov %s, rax", mem);
+		break;
+	}
+}
+
 /* Runtime map key_kind from a key type: 0=int family (raw value), 1=string
    (content), 2=object/enum (identity), 3=record (value: synthesized
    hashCode/equals at vtable slots 0/1). */
@@ -450,7 +501,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
 	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
 	cg_emit(cg,".L%d:", ok);
-	cg_emit(cg,"    lea rbx, [rax + %s*8 + 32]", cg_iarg(cg, 0));   /* Index reg matches the OOB-check load above. */
+	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));   /* e->type is the element type. */
 }
 
 
@@ -1617,10 +1668,19 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		cg_expr(cg,tt,e->lhs);                  /* Map. */
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-		const char *fn = strcmp(e->name,"getKeys")==0 ? "bzy_map_keys"
-						 : strcmp(e->name,"getValues")==0 ? "bzy_map_values"
-						 : "bzy_map_entries";
-		cg_aligned_call(cg,fn);
+		if (strcmp(e->name,"getEntries")==0)
+		{
+			cg_aligned_call(cg,"bzy_map_entries");
+		}
+		else
+		{
+			/* Pass the element stride so the runtime packs the output array correctly. */
+			int stride = cg_elem_stride(e->type.elem->kind);
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), stride);
+			const char *fn = strcmp(e->name,"getKeys")==0 ? "bzy_map_keys" : "bzy_map_values";
+			cg_aligned_call(cg,fn);
+		}
+
 		return;                                 /* Owned array (+1) in rax. */
 	}
 
@@ -1825,7 +1885,7 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_expr(cg,tt,e->args[0]);         /* Value -> rax. */
 			cg_emit(cg,"    mov rbx, [rbp - %d]", b);
-			cg_emit(cg,"    mov [rbx + 32], rax");    /* Width-extended 8-byte slot. */
+			cg_store_scalar(cg,tk,"[rbx + 32]");      /* Width-correct store. */
 		}
 
 		cg_scratch_free(cg, 16);
@@ -1867,7 +1927,7 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
 		cg_emit(cg,"    mov rbx, rax");
 		cg_emit(cg,"    mov rax, [rbp - %d]", b);
-		cg_emit(cg,"    mov rax, [rax + 32]"); /* Slot value. */
+		cg_load_scalar(cg,tk,"[rax + 32]");    /* Width-correct load; sign/zero-extends into rax. */
 		cg_emit(cg,"    cmp rax, rbx");
 		cg_emit(cg,"    sete al");
 		cg_emit(cg,"    movzx rax, al");
@@ -3368,8 +3428,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_NEWARRAY:
 		cg_expr(cg,tt,e->lhs);             /* Count -> rax. */
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), ty_is_managed(e->type.elem->kind) ? 1 : 0);
-		cg_aligned_call(cg,"bzy_array_new");   /* Owned (+1) array in rax. */
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), cg_elem_stride(e->type.elem->kind));
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 2), ty_is_managed(e->type.elem->kind) ? 1 : 0);
+		cg_aligned_call(cg,"bzy_array_new_sized");   /* Owned (+1) array in rax. */
 		break;
 	case EX_NEWMAP:
 		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_map_key_kind(tt, e->type.elem));
@@ -3386,8 +3447,9 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		if (strcmp(e->type.class_name,"Box")==0)
 		{
 			cg_emit(cg,"    mov %s, 1", cg_iarg(cg, 0));
-			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), ty_is_managed(e->type.elem->kind) ? 1 : 0);
-			cg_aligned_call(cg,"bzy_array_new");   /* Box = length-1 array. */
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), cg_elem_stride(e->type.elem->kind));
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 2), ty_is_managed(e->type.elem->kind) ? 1 : 0);
+			cg_aligned_call(cg,"bzy_array_new_sized");   /* Box = length-1 array. */
 		}
 		else if (strcmp(e->type.class_name,"Set")==0)
 		{
@@ -3410,7 +3472,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else
 		{
-			cg_emit(cg,"    mov rax, [rbx]");
+			cg_load_scalar(cg,e->type.kind,"[rbx]");   /* Reads the element's natural width, sign/zero-extended. */
 		}
 
 		break;
@@ -3794,7 +3856,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 			cg_temp_push(cg);      /* The integer value. */
 			cg_index_addr(cg,tt,target);
 			cg_temp_pop(cg);
-			cg_emit(cg,"    mov [rbx], rax");
+			cg_store_scalar(cg,target->type.kind,"[rbx]");   /* target->type is the element type. */
 		}
 
 		return;
@@ -4042,7 +4104,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov rcx, [rbp - %d]", s->fe_index_offset);
 		cg_emit(cg,"    cmp rcx, [rax + 24]");           /* index vs length */
 		cg_emit(cg,"    jge .L%d", end);
-		cg_emit(cg,"    lea rbx, [rax + rcx*8 + 32]");    /* element address */
+		cg_emit(cg,"    lea rbx, [rax + rcx*%d + 32]", cg_elem_stride(et));    /* element address */
 		if (ty_is_float(et))
 		{
 			char mem[32];
@@ -5575,6 +5637,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_sb_append");
 	cg_emit(cg,"extern bzy_sb_to_string");
 	cg_emit(cg,"extern bzy_array_new");
+	cg_emit(cg,"extern bzy_array_new_sized");
 	cg_emit(cg,"extern bzy_array_len");
 	cg_emit(cg,"extern bzy_oob");
 	cg_emit(cg,"extern bzy_oob_abort");

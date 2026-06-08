@@ -99,8 +99,8 @@ int64_t bzy_map_iter(void *m, int64_t from);   /* Next full slot index >= from, 
 int64_t bzy_map_key_at(void *m, int64_t slot); /* Key at slot (borrowed; no retain). */
 int64_t bzy_map_val_at(void *m, int64_t slot); /* Value at slot (borrowed; no retain). */
 int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind); /* 1 if any value equals needle. */
-void   *bzy_map_keys(void *m);     /* Owned K[] snapshot (managed keys retained). */
-void   *bzy_map_values(void *m);   /* Owned V[] snapshot (managed values retained). */
+void   *bzy_map_keys(void *m, int64_t elem_size);     /* Owned K[] snapshot packed at elem_size bytes per slot. */
+void   *bzy_map_values(void *m, int64_t elem_size);   /* Owned V[] snapshot packed at elem_size bytes per slot. */
 void   *bzy_map_entries(void *m);  /* Owned Entry[] snapshot. */
 
 void   *bzy_entry_new(int64_t key, int64_t val, int64_t key_managed, int64_t val_managed); /* Owned (+1). */
@@ -140,7 +140,7 @@ float   bzy_rnd_get_f(float bound);                     /* [0, bound). */
 float   bzy_rnd_get_ff(float origin, float bound);      /* [origin, bound). */
 double  bzy_rnd_get_d(double bound);
 double  bzy_rnd_get_dd(double origin, double bound);
-void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] slot with [0,255]. */
+void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] element with [0,255]. */
 
 void    bzy_throw(void *exc, int64_t pc, int64_t frame); /* Unwind the rbp chain; never returns. */
 void    bzy_io_check(int64_t pc, int64_t frame);         /* Throw IOException if the last File op failed. */
@@ -164,7 +164,7 @@ void   *bzy_file_read_text(void *path);         /* Owned string of the whole fil
 void   *bzy_file_read_lines(void *path);        /* Owned string[]; split on \n, \r stripped. */
 void    bzy_file_write_text(void *path, void *content);   /* Create/overwrite. */
 void    bzy_file_append_text(void *path, void *content);  /* Create/append. */
-void   *bzy_file_read_bytes(void *path);        /* Owned byte[] (one byte per slot). */
+void   *bzy_file_read_bytes(void *path);        /* Owned byte[] (one byte per element). */
 void    bzy_file_write_bytes(void *path, void *data);     /* data : byte[]. */
 void   *bzy_file_list(void *folder);            /* Owned string[] of full paths in folder. */
 void   *bzy_file_search(void *folder, void *pattern);          /* Glob match, non-recursive. */

@@ -158,9 +158,9 @@ double bzy_rnd_get_dd(double origin, double bound)
 void bzy_rnd_bytes(void *arr)
 {
 	int64_t n = bzy_array_len(arr);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
+	unsigned char *b = (unsigned char*)arr + 32;
 	for (int64_t i = 0; i < n; i++)
 	{
-		slots[i] = (int64_t)(next_u64() & 0xFF);
+		b[i] = (unsigned char)(next_u64() & 0xFF);
 	}
 }

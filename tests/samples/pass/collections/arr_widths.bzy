@@ -1,0 +1,31 @@
+// Round-trips for narrow value arrays: write every slot, read it back, prove
+// neighbors are untouched and signed widths sign-extend. Packed storage must
+// preserve all of this.
+void main()
+{
+	int[] a;
+	a = new int[4];
+	a[0] = 1000000;
+	a[1] = -7;
+	a[2] = 2000000000;
+	a[3] = 42;
+	print("" + a[0] + " " + a[1] + " " + a[2] + " " + a[3]);
+
+	short[] s;
+	s = new short[3];
+	s[0] = (short)30000;
+	s[1] = (short)-30000;
+	s[2] = (short)5;
+	print("" + s[0] + " " + s[1] + " " + s[2]);
+
+	int sum;
+	sum = 0;
+	foreach (int v in a)
+	{
+		sum = sum + v;
+	}
+	print("" + sum);
+
+	a[1] = a[1] + 8;
+	print("" + a[1]);
+}

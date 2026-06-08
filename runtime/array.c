@@ -3,9 +3,12 @@
 #include <stdlib.h>
 
 /* Array layout (one allocation): [vtable|refcount|gcinfo|length|elem0..].
-   Value arrays have no managed children. Object/string arrays use a span
-   descriptor: desc[1] == -1 marks "iterate length elements from desc[2], stride
-   desc[3]" (length read from the array's own field at offset 24). */
+   Value arrays store each element at its natural width (byte=1, short=2,
+   int/float=4, long/double=8) and have no managed children. Object/string arrays
+   hold 8-byte pointers and use a span descriptor: desc[1] == -1 marks "iterate
+   length elements from desc[2], stride desc[3]" (length read from the array's own
+   field at offset 24). The element width is chosen by the compiler at each
+   allocation site (bzy_array_new_sized); it is not stored in the header. */
 
 static int64_t g_array_val_typeinfo[2] = { 0 /* Finalizer. */, 0 /* Child count. */ };
 static int64_t g_array_obj_typeinfo[4] = { 0 /* Finalizer. */, -1 /* SPAN. */, 32 /* Off. */, 8 /* Stride. */ };
@@ -26,7 +29,10 @@ static void *array_obj_vtable(void)
 
 void *bzy_array_new_sized(int64_t n, int64_t elem_size, int64_t elem_is_managed)
 {
-	if (n < 0) n = 0;
+	if (n < 0)
+	{
+		n = 0;
+	}
 	void *a = bzy_alloc(32 + n * elem_size);   /* Elements zeroed by bzy_alloc. */
 	*(void**)a = elem_is_managed ? array_obj_vtable() : array_val_vtable();
 	*(int64_t*)((char*)a + 24) = n;

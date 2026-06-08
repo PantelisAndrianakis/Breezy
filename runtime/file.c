@@ -393,11 +393,10 @@ static void *real_read_bytes(void *path)
 		return NULL;
 	}
 
-	void *arr = bzy_array_new(n, 0);   /* Value array: one byte per 8-byte slot. */
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int64_t i = 0; i < n; i++)
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	if (n > 0)
 	{
-		slots[i] = (unsigned char)buf[i];
+		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
 	free(buf);
@@ -414,11 +413,9 @@ static void real_write_bytes(void *path, void *data)
 	}
 
 	int64_t n = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	for (int64_t i = 0; i < n; i++)
+	if (n > 0)
 	{
-		unsigned char b = (unsigned char)slots[i];
-		fwrite(&b, 1, 1, f);
+		fwrite((const char*)data + 32, 1, (size_t)n, f);   /* Packed bytes, no copy. */
 	}
 
 	fclose(f);
@@ -967,16 +964,7 @@ void bzy_filewriter_write_bytes(void *w, void *data)
 	}
 
 	int64_t n = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	for (int64_t i = 0; i < n; i++)
-	{
-		char b = (char)(unsigned char)slots[i];
-		fw_append(w, &b, 1);
-		if (g_io_error)
-		{
-			return;
-		}
-	}
+	fw_append(w, (const char*)data + 32, n);   /* Packed bytes, no copy. */
 }
 
 void bzy_filewriter_flush(void *w)

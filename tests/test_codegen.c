@@ -343,8 +343,37 @@ static void test_loop_rotation_bottom_test(void)
 	ASSERT_INT(strstr(g_asm, "jg .L") != NULL, 1);    /* conditional back-edge. */
 }
 
+static void test_array_elem_stride(void)
+{
+	/* int[] indexing must use a *4 stride (32-bit elements), not *8. */
+	emit(
+		"void main()\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[2];\n"
+		"	a[0] = 99;\n"
+		"	int x;\n"
+		"	x = a[0];\n"
+		"}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "*4 + 32]") != NULL, 1);   /* int[] uses 4-byte stride. */
+	ASSERT_INT(strstr(g_asm, "*8 + 32]") == NULL, 1);   /* No 8-byte stride for int[]. */
+
+	/* long[] indexing must use a *8 stride (64-bit elements). */
+	emit(
+		"void main()\n"
+		"{\n"
+		"	long[] b;\n"
+		"	b = new long[2];\n"
+		"	b[0] = 99L;\n"
+		"	long y;\n"
+		"	y = b[0];\n"
+		"}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "*8 + 32]") != NULL, 1);   /* long[] uses 8-byte stride. */
+}
+
 int main(void)
 {
+	RUN(test_array_elem_stride);
 	RUN(test_loop_rotation_bottom_test);
 	RUN(test_nonneg_division_drops_sign_bias);
 	RUN(test_register_operand_compare);

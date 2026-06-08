@@ -1,6 +1,5 @@
 #include "breezy.h"
 #include "network_internal.h"
-#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -122,16 +121,8 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 int64_t bzy_udp_send_to(void *u, void *host, int64_t port, void *data)
 {
 	int64_t n = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	char *buf = malloc((size_t)(n > 0 ? n : 1));
-	for (int64_t i = 0; i < n; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
-
-	int64_t sent = udp_send_bytes(u, host, port, buf, n);
-	free(buf);
-	return sent;
+	const char *buf = (const char*)data + 32;   /* Packed bytes, no copy. */
+	return udp_send_bytes(u, host, port, buf, n);
 }
 
 int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str)
@@ -190,11 +181,10 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms,
 
 static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
 {
-	void *arr = bzy_array_new(n < 0 ? 0 : n, 0);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int i = 0; i < n; i++)
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	if (n > 0)
 	{
-		slots[i] = (unsigned char)buf[i];
+		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
 	char ip[INET_ADDRSTRLEN] = {0};
@@ -260,16 +250,8 @@ void *bzy_dgram_text(void *d)
 {
 	void *arr = DG_DATA(d);
 	int64_t n = bzy_array_len(arr);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	char *buf = malloc((size_t)(n > 0 ? n : 1));
-	for (int64_t i = 0; i < n; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
-
-	void *s = bzy_str_new(buf, n);
-	free(buf);
-	return s;
+	const char *buf = (const char*)arr + 32;   /* Packed bytes, no copy. */
+	return bzy_str_new(buf, n);
 }
 
 void *bzy_dgram_host(void *d)
@@ -379,16 +361,8 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 int64_t bzy_udp_send_to(void *u, void *host, int64_t port, void *data)
 {
 	int64_t n = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	char *buf = malloc((size_t)(n > 0 ? n : 1));
-	for (int64_t i = 0; i < n; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
-
-	int64_t sent = udp_send_bytes(u, host, port, buf, n);
-	free(buf);
-	return sent;
+	const char *buf = (const char*)data + 32;   /* Packed bytes, no copy. */
+	return udp_send_bytes(u, host, port, buf, n);
 }
 
 int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str)
@@ -429,11 +403,10 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sock
 
 static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
 {
-	void *arr = bzy_array_new(n < 0 ? 0 : n, 0);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int i = 0; i < n; i++)
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	if (n > 0)
 	{
-		slots[i] = (unsigned char)buf[i];
+		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
 	char ip[INET_ADDRSTRLEN] = {0};
@@ -497,16 +470,8 @@ void *bzy_dgram_text(void *d)
 {
 	void *arr = DG_DATA(d);
 	int64_t n = bzy_array_len(arr);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	char *buf = malloc((size_t)(n > 0 ? n : 1));
-	for (int64_t i = 0; i < n; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
-
-	void *s = bzy_str_new(buf, n);
-	free(buf);
-	return s;
+	const char *buf = (const char*)arr + 32;   /* Packed bytes, no copy. */
+	return bzy_str_new(buf, n);
 }
 
 void *bzy_dgram_host(void *d)

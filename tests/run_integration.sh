@@ -75,6 +75,9 @@ check concat_chain    tests/samples/pass/strings/concat_chain.bzy  $'abcdeab\nn=
 check str_accum    tests/samples/pass/strings/str_accum.bzy  $'ab0ab1ab2ab3ab4\nx---\nz'
 check str_accum_guard tests/samples/pass/strings/str_accum_guard.bzy  $'xxx\n1\n2\n3\nyyy\nzz'
 check array       tests/samples/pass/collections/array.bzy     $'30'
+check arr_widths   tests/samples/pass/collections/arr_widths.bzy   $'1000000 -7 2000000000 42\n30000 -30000 5\n2001000035\n1'
+check box_short    tests/samples/pass/collections/box_short.bzy    $'-12345\n777\ntrue\nfalse'
+check arr_bytes    tests/samples/pass/collections/arr_bytes.bzy    $'127 -128 1 -1 0\n-1'
 check array_obj   tests/samples/pass/collections/proj_array_obj $'4\n5'
 check array_cycle tests/samples/pass/collections/proj_array_cycle $'0'
 check_abort array_oob tests/samples/fail/collections/array_oob.bzy

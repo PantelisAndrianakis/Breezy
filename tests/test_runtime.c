@@ -220,8 +220,8 @@ static void test_map_keys_values(void)
 	void *m = bzy_map_new(0, 0);
 	bzy_map_put(m, 10, 1);
 	bzy_map_put(m, 20, 2);
-	void *ks = bzy_map_keys(m);                 /* int[] (value array). */
-	void *vs = bzy_map_values(m);
+	void *ks = bzy_map_keys(m, 8);              /* int[] (value array). */
+	void *vs = bzy_map_values(m, 8);
 	ASSERT_INT(bzy_array_len(ks), 2);
 	ASSERT_INT(bzy_array_len(vs), 2);
 	int64_t ksum = *(int64_t*)((char*)ks + 32) + *(int64_t*)((char*)ks + 40);
@@ -509,13 +509,19 @@ static void test_rnd(void)
 	double g = bzy_rnd_gaussian();
 	ASSERT(g == g);                          /* not NaN */
 
-	void *arr = bzy_array_new(8, 0);
+	void *arr = bzy_array_new_sized(8, 1, 0);   /* Packed byte[]: one byte per element. */
 	bzy_rnd_bytes(arr);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
+	unsigned char *bytes = (unsigned char*)arr + 32;
+	int all_zero = 1;
 	for (int i=0; i<8; i++)
 	{
-		ASSERT(slots[i] >= 0 && slots[i] <= 255);
+		if (bytes[i] != 0)
+		{
+			all_zero = 0;
+		}
 	}
+
+	ASSERT(!all_zero);                       /* Filled with random bytes, not left zeroed. */
 
 	bzy_release(arr);
 }
@@ -981,15 +987,15 @@ static void test_file_read_write(void)
 	ASSERT(strcmp(bzy_str_data(l0), "alpha") == 0);
 
 	void *bp = bzy_str_new("bzy_rw_bin.bin", 14);
-	void *data = bzy_array_new(3, 0);
-	int64_t *s = (int64_t*)((char*)data + 32);
+	void *data = bzy_array_new_sized(3, 1, 0);   /* Packed byte[]. */
+	unsigned char *s = (unsigned char*)data + 32;
 	s[0] = 1;
 	s[1] = 254;
 	s[2] = 0;
 	bzy_file_write_bytes(bp, data);
 	void *rb = bzy_file_read_bytes(bp);
 	ASSERT_INT(bzy_array_len(rb), 3);
-	ASSERT_INT(*(int64_t*)((char*)rb + 32 + 8), 254);
+	ASSERT_INT(*((unsigned char*)rb + 32 + 1), 254);
 
 	remove("bzy_rw_tmp.txt");
 	remove("bzy_rw_bin.bin");
@@ -1268,16 +1274,11 @@ static void test_udp_loopback_echo(void)
 
 static int g_fc_ok;
 
-/* Build a value byte[] from a C string's bytes (one byte per 8-byte slot). */
+/* Build a packed value byte[] from a C string's bytes (one byte per element). */
 static void *fc_bytes(const char *s, int n)
 {
-	void *arr = bzy_array_new(n, 0);
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int i = 0; i < n; i++)
-	{
-		slots[i] = (unsigned char)s[i];
-	}
-
+	void *arr = bzy_array_new_sized(n, 1, 0);
+	memcpy((char*)arr + 32, s, (size_t)n);
 	return arr;
 }
 
@@ -1293,12 +1294,12 @@ static void fc_breeze(void)
 	bzy_filechannel_sync(ch);               /* Durability barrier (offloaded). */
 
 	void *back = bzy_filechannel_read_at(ch, 0, 10);   /* Parks on the IOCP read. */
-	int64_t *slots = (int64_t*)((char*)back + 32);
+	const unsigned char *bytes = (const unsigned char*)back + 32;
 	const char *want = "helloworld";
 	int ok = (bzy_array_len(back) == 10);
 	for (int i = 0; ok && i < 10; i++)
 	{
-		ok = (slots[i] == (unsigned char)want[i]);
+		ok = (bytes[i] == (unsigned char)want[i]);
 	}
 
 	g_fc_ok = ok && (bzy_filechannel_size(ch) == 10);

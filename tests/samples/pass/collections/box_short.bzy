@@ -1,0 +1,13 @@
+// Box<short> round-trip with a negative value: get/set/contains must agree at
+// the narrow element width.
+void main()
+{
+	Box<short> b;
+	b = new Box<short>();
+	b.set((short)-12345);
+	print(b.get());
+	b.set((short)777);
+	print(b.get());
+	print(b.contains((short)777));
+	print(b.contains((short)1));
+}

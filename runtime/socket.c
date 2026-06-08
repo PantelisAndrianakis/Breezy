@@ -374,11 +374,10 @@ static int sock_try_recv(void *s, char *buf, int max)
 
 static void *bytes_to_array(const char *buf, int n)
 {
-	void *arr = bzy_array_new(n, 0);     /* Value byte[]: one byte per 8-byte slot. */
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int i = 0; i < n; i++)
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	if (n > 0)
 	{
-		slots[i] = (unsigned char)buf[i];
+		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
 	return arr;
@@ -514,16 +513,8 @@ static int64_t sock_send_all(void *s, const char *buf, int64_t len)
 int64_t bzy_socket_write(void *s, void *data)
 {
 	int64_t n = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	char *buf = malloc((size_t)(n > 0 ? n : 1));
-	for (int64_t i = 0; i < n; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
-
-	int64_t sent = sock_send_all(s, buf, n);
-	free(buf);
-	return sent;
+	const char *buf = (const char*)data + 32;   /* Packed bytes, no copy. */
+	return sock_send_all(s, buf, n);
 }
 
 int64_t bzy_socket_write_text(void *s, void *str)
@@ -808,11 +799,10 @@ static int sock_try_recv(void *s, char *buf, int max)
 
 static void *bytes_to_array(const char *buf, int n)
 {
-	void *arr = bzy_array_new(n, 0);     /* Value byte[]: one byte per 8-byte slot. */
-	int64_t *slots = (int64_t*)((char*)arr + 32);
-	for (int i = 0; i < n; i++)
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	if (n > 0)
 	{
-		slots[i] = (unsigned char)buf[i];
+		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
 	return arr;
@@ -947,16 +937,8 @@ static int64_t sock_send_all(void *s, const char *buf, int64_t len)
 int64_t bzy_socket_write(void *s, void *data)
 {
 	int64_t n = bzy_array_len(data);
-	int64_t *slots = (int64_t*)((char*)data + 32);
-	char *buf = malloc((size_t)(n > 0 ? n : 1));
-	for (int64_t i = 0; i < n; i++)
-	{
-		buf[i] = (char)(unsigned char)slots[i];
-	}
-
-	int64_t sent = sock_send_all(s, buf, n);
-	free(buf);
-	return sent;
+	const char *buf = (const char*)data + 32;   /* Packed bytes, no copy. */
+	return sock_send_all(s, buf, n);
 }
 
 int64_t bzy_socket_write_text(void *s, void *str)

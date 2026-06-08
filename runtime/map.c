@@ -417,11 +417,33 @@ int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
 	return 0;
 }
 
-void *bzy_map_keys(void *m)
+/* Write a 64-bit value v into a packed output buffer at byte offset (n * esize),
+   truncating to esize bytes. Managed elements are always 8-byte pointers. */
+static void pack_write(char *base, int64_t n, int64_t esize, int64_t v)
+{
+	char *p = base + n * esize;
+	switch (esize)
+	{
+	case 1:
+		*(int8_t*)p = (int8_t)v;
+		break;
+	case 2:
+		*(int16_t*)p = (int16_t)v;
+		break;
+	case 4:
+		*(int32_t*)p = (int32_t)v;
+		break;
+	default:
+		*(int64_t*)p = v;
+		break;
+	}
+}
+
+void *bzy_map_keys(void *m, int64_t elem_size)
 {
 	int64_t managed = key_managed(m) ? 1 : 0;
-	void *a = bzy_array_new(*M_SIZE(m), managed);   /* Owned (+1). */
-	int64_t *out = (int64_t*)((char*)a + 32);
+	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed);   /* Owned (+1). */
+	char *out = (char*)a + 32;
 	int64_t cap = *M_CAP(m), *keys = keys_data(m);
 	uint8_t *ctrl = *M_CTRL(m);
 	int64_t n = 0;
@@ -434,18 +456,18 @@ void *bzy_map_keys(void *m)
 				bzy_retain((void*)keys[i]);
 			}
 
-			out[n++] = keys[i];
+			pack_write(out, n++, elem_size, keys[i]);
 		}
 	}
 
 	return a;
 }
 
-void *bzy_map_values(void *m)
+void *bzy_map_values(void *m, int64_t elem_size)
 {
 	int64_t managed = *M_VMAN(m);
-	void *a = bzy_array_new(*M_SIZE(m), managed);
-	int64_t *out = (int64_t*)((char*)a + 32);
+	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed);   /* Owned (+1). */
+	char *out = (char*)a + 32;
 	int64_t cap = *M_CAP(m), *vals = vals_data(m);
 	uint8_t *ctrl = *M_CTRL(m);
 	int64_t n = 0;
@@ -458,7 +480,7 @@ void *bzy_map_values(void *m)
 				bzy_retain((void*)vals[i]);
 			}
 
-			out[n++] = vals[i];
+			pack_write(out, n++, elem_size, vals[i]);
 		}
 	}
 

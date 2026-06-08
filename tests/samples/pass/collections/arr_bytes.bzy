@@ -1,0 +1,23 @@
+// Packed byte[] round-trip: each element stores at stride 1. Writing the signed
+// extremes and reading them back proves sign-extension on load and that adjacent
+// bytes stay isolated (no 8-byte-slot bleed). The sum 127 + -128 + 1 + -1 + 0
+// is -1, which only holds if every element sign-extends correctly.
+void main()
+{
+	byte[] b;
+	b = new byte[5];
+	b[0] = (byte)127;
+	b[1] = (byte)-128;
+	b[2] = (byte)1;
+	b[3] = (byte)-1;
+	b[4] = (byte)0;
+	print("" + b[0] + " " + b[1] + " " + b[2] + " " + b[3] + " " + b[4]);
+
+	int sum;
+	sum = 0;
+	foreach (byte v in b)
+	{
+		sum = sum + v;
+	}
+	print("" + sum);
+}
