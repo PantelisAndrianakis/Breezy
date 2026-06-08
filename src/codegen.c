@@ -570,6 +570,30 @@ static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
    value being stored survives address computation. */
 static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	/* Fast path: a register-resident index (a promoted local, typically a loop
+	   induction variable) needs neither a base spill nor a rematerialization into
+	   rax - bounds-check and address it straight from its register. The register
+	   is callee-saved (r12..r15), so it survives the slow-path bzy_oob call. */
+	const char *ireg = (e->rhs->kind==EX_IDENT && e->rhs->anno_int > 0)
+					   ? cg_local_reg(cg, e->rhs->anno_int) : NULL;
+	if (ireg)
+	{
+		cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
+		int okf = cg_label(cg);
+		int pcf = cg_label(cg);
+		cg_emit(cg,"    cmp %s, [rax + 24]", ireg);   /* Unsigned: catches negative and >= length. */
+		cg_emit(cg,"    jb .L%d", okf);
+		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);     /* index. */
+		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1));   /* length. */
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pcf);
+		cg_emit(cg,".L%d:", pcf);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+		cg_emit(cg,"    call bzy_oob");
+		cg_emit(cg,".L%d:", okf);
+		cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", ireg, cg_elem_stride(e->type.kind));
+		return;
+	}
+
 	cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
 	cg_temp_push(cg);
 	cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */

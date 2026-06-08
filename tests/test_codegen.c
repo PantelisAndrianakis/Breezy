@@ -227,6 +227,17 @@ static void test_inplace_mac(void)
 	ASSERT_INT(strstr(g_asm, "imul rax, rbx\n    add r1") != NULL, 1);
 }
 
+static void test_register_index_addr(void)
+{
+	/* A register-resident index (a promoted loop variable) is bounds-checked and
+	   addressed straight from its register - cmp reg,[len] and lea with the reg as
+	   the scale index - with no base spill or rematerialization into rax. */
+	emit("int f(int[] a, int n) { int s; s = 0; int i; i = 0;"
+		 " while (i < n) { s = s + a[i]; i = i + 1; } return s; } void main() { }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "cmp r12, [rax + 24]") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "lea rbx, [rax + r12*4 + 32]") != NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -474,6 +485,7 @@ int main(void)
 	RUN(test_mul_strength_reduction);
 	RUN(test_fp_leaf_fusion);
 	RUN(test_inplace_mac);
+	RUN(test_register_index_addr);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);
