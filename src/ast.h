@@ -234,9 +234,10 @@ typedef struct
 	int     max_temp_depth;         /* Frame pass: deepest simultaneously-live preserve-across-call temporaries. */
 	int     max_outgoing_args;      /* Frame pass: most argument slots any call in this body needs (0..4). */
 	int     max_scratch_bytes;      /* Frame pass: peak sum of nested scratch-block bytes (sizes the static-rsp arena). */
-	int     promo_count;            /* Register promotion: number of locals promoted (0..4). */
-	int     promo_off[4];           /* Register promotion: rbp slot offset of each promoted local. */
-	int     promo_reg[4];           /* Register promotion: physical register index 0..3 -> r12..r15. */
+#define PROMO_MAX 64                /* Promotion: max logical locals (registers reused across disjoint live ranges). */
+	int     promo_count;            /* Register promotion: number of promoted locals (<= PROMO_MAX; share 4 phys regs). */
+	int     promo_off[PROMO_MAX];   /* Register promotion: rbp slot offset of each promoted local. */
+	int     promo_reg[PROMO_MAX];   /* Register promotion: physical register index 0..3 -> r12..r15 (repeats under reuse). */
 } Func;
 
 typedef struct

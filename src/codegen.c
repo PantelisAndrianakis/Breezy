@@ -4862,9 +4862,16 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			cg_emit(cg,"    xor eax, eax");
 		}
 
+		int promo_restored[4] = { 0, 0, 0, 0 };   /* Each physical register is restored once. */
 		for (int i = 0; i < f->promo_count; i++)   /* Restore the caller's r12..r15. */
 		{
 			int ri = f->promo_reg[i];
+			if (promo_restored[ri])
+			{
+				continue;   /* Register shared by several locals across disjoint live ranges. */
+			}
+
+			promo_restored[ri] = 1;
 			cg_emit(cg,"    mov %s, [rbp - %d]", CG_PROMO_REGS[ri], cg->callee_save[ri]);
 		}
 		cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
@@ -5251,9 +5258,16 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    mov rbp, rsp");
 	cg_emit(cg,"    sub rsp, %d", frame);
 	cg_emit(cg,"    mov [rbp - %d], rbx", cg->rbx_save);   /* Preserve the caller's callee-saved rbx. */
+	int promo_saved[4] = { 0, 0, 0, 0 };                   /* Each physical register is preserved once. */
 	for (int i = 0; i < f->promo_count; i++)               /* Preserve the caller's r12..r15 we will use. */
 	{
 		int ri = f->promo_reg[i];
+		if (promo_saved[ri])
+		{
+			continue;   /* Register shared by several locals across disjoint live ranges. */
+		}
+
+		promo_saved[ri] = 1;
 		cg_emit(cg,"    mov [rbp - %d], %s", cg->callee_save[ri], CG_PROMO_REGS[ri]);
 	}
 
@@ -5323,9 +5337,16 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		cg_emit(cg,"    xor eax, eax");
 	}
 
+	int promo_restored[4] = { 0, 0, 0, 0 };   /* Each physical register is restored once. */
 	for (int i = 0; i < f->promo_count; i++)   /* Restore the caller's r12..r15. */
 	{
 		int ri = f->promo_reg[i];
+		if (promo_restored[ri])
+		{
+			continue;   /* Register shared by several locals across disjoint live ranges. */
+		}
+
+		promo_restored[ri] = 1;
 		cg_emit(cg,"    mov %s, [rbp - %d]", CG_PROMO_REGS[ri], cg->callee_save[ri]);
 	}
 	cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */

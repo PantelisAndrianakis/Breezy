@@ -1,12 +1,35 @@
 #include "promote.h"
 
 #define MAX_CAND 256
+#define MAX_LOOP 256
+#define NREGS    4      /* r12..r15: the ABI-symmetric callee-saved integer registers. */
 
+/* A promotion candidate: a 64-bit integer local, its loop-weighted use count, and
+   its live interval [lo,hi] in statement ticks. The interval is a conservative
+   superset of the local's true live range (first textual occurrence .. last),
+   widened to span any enclosing loop so a loop-carried value never shares a
+   register with another local live in the same loop. */
 typedef struct
 {
 	int  off;
 	long weight;
+	int  lo;
+	int  hi;
 } Cand;
+
+typedef struct
+{
+	int lo, hi;   /* A loop's tick span (entry statement .. last body tick), inclusive. */
+} Span;
+
+typedef struct
+{
+	Cand cand[MAX_CAND];
+	int  ncand;
+	Span loop[MAX_LOOP];
+	int  nloop;
+	int  tick;
+} Ctx;
 
 /* Eligible kinds: 64-bit integers only. Narrower ints (int/short/byte/bool) are
    excluded because the slot load path sign/zero-extends them on every read
@@ -69,12 +92,13 @@ static int has_catch_block(Block *b)
 	return 0;
 }
 
-static void scan_expr(Expr *e, int depth, Cand *cs, int *n);
-static void scan_block(Block *b, int depth, Cand *cs, int *n);
+static void scan_expr(Expr *e, int depth, Ctx *c);
+static void scan_block(Block *b, int depth, Ctx *c);
 
-/* Record one loop-weighted use of the local at slot offset `off`. Each loop
-   level multiplies the weight by ten, so loop-carried locals dominate selection. */
-static void bump(int off, int depth, Cand *cs, int *n)
+/* Record one loop-weighted use of the local at slot offset `off` at the current
+   tick. Each loop level multiplies the weight by ten, so loop-carried locals
+   dominate selection; the tick widens the candidate's live interval. */
+static void bump(int off, int depth, Ctx *c)
 {
 	long w = 1;
 	for (int i = 0; i < depth; i++)
@@ -82,24 +106,36 @@ static void bump(int off, int depth, Cand *cs, int *n)
 		w *= 10;
 	}
 
-	for (int i = 0; i < *n; i++)
+	for (int i = 0; i < c->ncand; i++)
 	{
-		if (cs[i].off == off)
+		if (c->cand[i].off == off)
 		{
-			cs[i].weight += w;
+			c->cand[i].weight += w;
+			if (c->tick < c->cand[i].lo)
+			{
+				c->cand[i].lo = c->tick;
+			}
+
+			if (c->tick > c->cand[i].hi)
+			{
+				c->cand[i].hi = c->tick;
+			}
+
 			return;
 		}
 	}
 
-	if (*n < MAX_CAND)
+	if (c->ncand < MAX_CAND)
 	{
-		cs[*n].off = off;
-		cs[*n].weight = w;
-		(*n)++;
+		c->cand[c->ncand].off = off;
+		c->cand[c->ncand].weight = w;
+		c->cand[c->ncand].lo = c->tick;
+		c->cand[c->ncand].hi = c->tick;
+		c->ncand++;
 	}
 }
 
-static void scan_expr(Expr *e, int depth, Cand *cs, int *n)
+static void scan_expr(Expr *e, int depth, Ctx *c)
 {
 	if (!e)
 	{
@@ -109,51 +145,64 @@ static void scan_expr(Expr *e, int depth, Cand *cs, int *n)
 	/* A local read: anno_int is its rbp slot offset (>0); static fields use -1. */
 	if (e->kind == EX_IDENT && is_promotable_kind(e->type.kind) && e->anno_int > 0)
 	{
-		bump(e->anno_int, depth, cs, n);
+		bump(e->anno_int, depth, c);
 	}
 
-	scan_expr(e->lhs, depth, cs, n);
-	scan_expr(e->rhs, depth, cs, n);
+	scan_expr(e->lhs, depth, c);
+	scan_expr(e->rhs, depth, c);
 	for (int i = 0; i < e->arg_count; i++)
 	{
-		scan_expr(e->args[i], depth, cs, n);
+		scan_expr(e->args[i], depth, c);
 	}
 }
 
-static void scan_stmt(Stmt *s, int depth, Cand *cs, int *n)
+static void scan_stmt(Stmt *s, int depth, Ctx *c)
 {
 	if (!s)
 	{
 		return;
 	}
 
-	/* A loop's condition, post-clause and body run once per iteration. */
+	/* Every statement gets a monotonically increasing tick; this statement's
+	   direct expressions are attributed to it, while nested blocks advance the
+	   tick further so a loop's span covers all of its body. */
+	c->tick++;
+	int my = c->tick;
 	int inner = depth;
-	if (s->kind == ST_WHILE || s->kind == ST_FOR || s->kind == ST_FOREACH)
+	int is_loop = (s->kind == ST_WHILE || s->kind == ST_FOR || s->kind == ST_FOREACH);
+	if (is_loop)
 	{
 		inner = depth + 1;
 	}
 
-	scan_expr(s->cond, inner, cs, n);          /* while/for run every iteration; if runs once. */
-	scan_expr(s->decl_init, depth, cs, n);     /* ST_VARDECL initializer reads. */
-	scan_expr(s->value, depth, cs, n);         /* ST_ASSIGN rhs reads. */
-	scan_expr(s->target, depth, cs, n);        /* ST_ASSIGN lvalue (a write counts as a use). */
-	scan_expr(s->ret_val, depth, cs, n);       /* ST_RETURN reads. */
-	scan_expr(s->expr, depth, cs, n);          /* ST_EXPR / ST_THROW reads. */
-	scan_stmt(s->for_init, depth, cs, n);
-	scan_stmt(s->for_post, inner, cs, n);
-	scan_block(s->then_blk, inner, cs, n);
-	scan_block(s->else_blk, depth, cs, n);
+	scan_expr(s->cond, inner, c);          /* while/for run every iteration; if runs once. */
+	scan_expr(s->decl_init, depth, c);     /* ST_VARDECL initializer reads. */
+	scan_expr(s->value, depth, c);         /* ST_ASSIGN rhs reads. */
+	scan_expr(s->target, depth, c);        /* ST_ASSIGN lvalue (a write counts as a use). */
+	scan_expr(s->ret_val, depth, c);       /* ST_RETURN reads. */
+	scan_expr(s->expr, depth, c);          /* ST_EXPR / ST_THROW reads. */
 
 	/* A scalar var-decl is itself a candidate even if only its register-home
 	   writes/reads appear elsewhere; count the declaration as one use. */
 	if (s->kind == ST_VARDECL && is_promotable_kind(s->decl_type.kind) && s->decl_offset > 0)
 	{
-		bump(s->decl_offset, depth, cs, n);
+		bump(s->decl_offset, depth, c);
+	}
+
+	scan_stmt(s->for_init, depth, c);
+	scan_stmt(s->for_post, inner, c);
+	scan_block(s->then_blk, inner, c);
+	scan_block(s->else_blk, depth, c);
+
+	if (is_loop && c->nloop < MAX_LOOP)
+	{
+		c->loop[c->nloop].lo = my;
+		c->loop[c->nloop].hi = c->tick;   /* Last tick emitted while scanning the body. */
+		c->nloop++;
 	}
 }
 
-static void scan_block(Block *b, int depth, Cand *cs, int *n)
+static void scan_block(Block *b, int depth, Ctx *c)
 {
 	if (!b)
 	{
@@ -162,8 +211,15 @@ static void scan_block(Block *b, int depth, Cand *cs, int *n)
 
 	for (int i = 0; i < b->count; i++)
 	{
-		scan_stmt(b->stmts[i], depth, cs, n);
+		scan_stmt(b->stmts[i], depth, c);
 	}
+}
+
+/* Two live intervals overlap (cannot share a register) when neither ends before
+   the other begins. */
+static int overlaps(int alo, int ahi, int blo, int bhi)
+{
+	return alo <= bhi && blo <= ahi;
 }
 
 void promote_annotate(Func *f)
@@ -180,28 +236,119 @@ void promote_annotate(Func *f)
 		             normal ret-based register restore, so never promote here. */
 	}
 
-	Cand cs[MAX_CAND];
-	int n = 0;
-	scan_block(f->body, 0, cs, &n);
+	static Ctx c;   /* Large; one function at a time, so a single static instance is fine. */
+	c.ncand = 0;
+	c.nloop = 0;
+	c.tick = 0;
+	scan_block(f->body, 0, &c);
 
-	/* Selection-sort the top four by weight (n is small; clarity over speed). */
-	for (int slot = 0; slot < 4 && slot < n; slot++)
+	/* Parameters (and `this`) are seeded into their register by the prologue, so
+	   they are live from function entry. Mark every candidate in the parameter
+	   slot region live-from-entry (lo = 0); over-marking a non-parameter local is
+	   safe (it only forgoes some sharing), whereas missing a real parameter would
+	   let an early local clobber the seeded value. The region covers `this` at
+	   slot 8 plus param_count slots, with margin for either ABI's `this` layout. */
+	int param_region_end = 16 + f->param_count * 8;
+	for (int i = 0; i < c.ncand; i++)
 	{
-		int best = slot;
-		for (int i = slot + 1; i < n; i++)
+		if (c.cand[i].off <= param_region_end)
 		{
-			if (cs[i].weight > cs[best].weight)
+			c.cand[i].lo = 0;
+		}
+	}
+
+	/* Widen each interval to span any loop it touches, to a fixpoint (nested loops
+	   chain outward). After this, any two locals simultaneously live - including a
+	   loop-carried value and another local in the same loop - have overlapping
+	   intervals and so will never share a register. */
+	int changed = 1;
+	while (changed)
+	{
+		changed = 0;
+		for (int i = 0; i < c.ncand; i++)
+		{
+			for (int j = 0; j < c.nloop; j++)
 			{
-				best = i;
+				if (!overlaps(c.cand[i].lo, c.cand[i].hi, c.loop[j].lo, c.loop[j].hi))
+				{
+					continue;
+				}
+
+				if (c.loop[j].lo < c.cand[i].lo)
+				{
+					c.cand[i].lo = c.loop[j].lo;
+					changed = 1;
+				}
+
+				if (c.loop[j].hi > c.cand[i].hi)
+				{
+					c.cand[i].hi = c.loop[j].hi;
+					changed = 1;
+				}
+			}
+		}
+	}
+
+	/* Greedy interval colouring, highest weight first: each local takes the lowest
+	   register held by no overlapping already-assigned local. When all four are
+	   taken by overlapping locals, this one stays on the stack. Selection-sort the
+	   processing order by weight (ncand is small; clarity over speed). */
+	int order[MAX_CAND];
+	for (int i = 0; i < c.ncand; i++)
+	{
+		order[i] = i;
+	}
+
+	for (int a = 0; a < c.ncand; a++)
+	{
+		int best = a;
+		for (int b = a + 1; b < c.ncand; b++)
+		{
+			if (c.cand[order[b]].weight > c.cand[order[best]].weight)
+			{
+				best = b;
 			}
 		}
 
-		Cand tmp = cs[slot];
-		cs[slot] = cs[best];
-		cs[best] = tmp;
+		int tmp = order[a];
+		order[a] = order[best];
+		order[best] = tmp;
+	}
 
-		f->promo_off[slot] = cs[slot].off;
-		f->promo_reg[slot] = slot;   /* slot 0 -> r12, 1 -> r13, 2 -> r14, 3 -> r15. */
-		f->promo_count = slot + 1;
+	/* Live interval of each already-assigned local, parallel to f->promo_*. */
+	int asg_lo[PROMO_MAX], asg_hi[PROMO_MAX];
+
+	for (int oi = 0; oi < c.ncand; oi++)
+	{
+		Cand *cd = &c.cand[order[oi]];
+		int chosen = -1;
+		for (int r = 0; r < NREGS && chosen < 0; r++)
+		{
+			int free = 1;
+			for (int k = 0; k < f->promo_count; k++)
+			{
+				if (f->promo_reg[k] == r && overlaps(cd->lo, cd->hi, asg_lo[k], asg_hi[k]))
+				{
+					free = 0;
+					break;
+				}
+			}
+
+			if (free)
+			{
+				chosen = r;
+			}
+		}
+
+		if (chosen < 0 || f->promo_count >= PROMO_MAX)
+		{
+			continue;   /* Out of registers for this interval: keep it on the stack. */
+		}
+
+		f->promo_off[f->promo_count] = cd->off;
+		f->promo_reg[f->promo_count] = chosen;
+		asg_lo[f->promo_count] = cd->lo;
+		asg_hi[f->promo_count] = cd->hi;
+		f->promo_count++;
 	}
 }
