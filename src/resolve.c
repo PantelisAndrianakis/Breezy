@@ -2,6 +2,7 @@
 #include "symtable.h"
 #include "ownership.h"
 #include "escape.h"
+#include "constprop.h"
 #include "promote.h"
 #include "nonneg.h"
 #include "enums.h"
@@ -3324,6 +3325,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	escape_annotate(g_types,f);
 	p5_scan_block(f->body,f);   /* P5: recognize string self-accumulation loops (annotation only). */
 	frame_annotate(f);
+	constprop_annotate(f);   /* Rewrite single-assignment literal-scalar reads to the literal (frees their registers). */
 	promote_annotate(f);   /* Choose scalar locals to keep in r12..r15 (codegen consults the map). */
 	nonneg_annotate(f);   /* Flag divides with a provably non-negative dividend. */
 }
