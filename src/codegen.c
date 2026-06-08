@@ -18,6 +18,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->hoist_n=0;
 	cg->sr_n=0;
 	cg->sr_ivreg=NULL;
+	cg->cur_counter_off=0;
 	cg->exception_fn_count=0;
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
@@ -297,7 +298,17 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 				char r32[8];
 				snprintf(r32, sizeof r32, "%sd", R);
 				cg_emit(cg,"    %s %s, %lld", opc, r32, k->int_val);
-				cg_emit(cg,"    movsxd %s, %s", R, r32);
+				/* A non-negative unit-positive step on the loop counter keeps the
+				   value in [0, 2^31): the 32-bit add already zero-extended the
+				   register, so the sign-extension is redundant. Any other int target
+				   (or a negative / decrementing step) still re-extends. */
+				int is_counter = (cg->cur_counter_off != 0
+								  && target->anno_int == cg->cur_counter_off
+								  && value->op == TOKEN_PLUS && k->int_val >= 0);
+				if (!is_counter)
+				{
+					cg_emit(cg,"    movsxd %s, %s", R, r32);
+				}
 			}
 			else
 			{
@@ -5209,6 +5220,25 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
 	int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 	cg_stmt(cg,tt,f,s->for_init,in_main);
+
+	/* A promoted, unit-step counter starting at a non-negative constant stays in
+	   [0, 2^31) for the loop's life, so its `i=i+1` need not re-extend (a 32-bit
+	   add zero-extends, which equals the sign-extension for a non-negative value).
+	   cg_try_inplace consults cur_counter_off to skip the movsxd. */
+	int saved_counter = cg->cur_counter_off;
+	cg->cur_counter_off = 0;
+	int civ = 0;
+	if (cg_loop_induction(cg, s, &civ))
+	{
+		Stmt *fi = s->for_init;
+		Expr *lo = (fi && fi->kind==ST_VARDECL) ? fi->decl_init
+				   : (fi && fi->kind==ST_ASSIGN) ? fi->value : NULL;
+		if (lo && lo->kind==EX_INT && lo->int_val >= 0)
+		{
+			cg->cur_counter_off = civ;
+		}
+	}
+
 	cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
 	cg_loop_hoist_begin(cg, tt, s);       /* Pin loop-invariant locals into r8..r11 if the body allows. */
 	cg_emit(cg,".L%d:", top);
@@ -5222,6 +5252,7 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_branch_if(cg,tt,s->cond,top);      /* Bottom test = back-edge; no unconditional jmp. */
 	cg_emit(cg,".L%d:", end);
 	cg_loop_hoist_end(cg);
+	cg->cur_counter_off = saved_counter;
 }
 
 /* foreach over an array (index loop), string (byte loop), or map (control-byte

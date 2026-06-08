@@ -52,6 +52,7 @@ check_throws() {
 echo "Integration tests"
 check minimal     tests/samples/pass/basics/minimal.bzy    "0"
 check arith       tests/samples/pass/basics/arith.bzy      "14"
+check int_semantics tests/samples/pass/basics/int_semantics.bzy $'-294967296\n1410065408\n-4\n-3\n-1\n-123\n2\n4000000000\n48\n255\n240\n-2147483648\n1\n16'
 check if_else     tests/samples/pass/control-flow/if_else.bzy    "1"
 check while       tests/samples/pass/control-flow/while.bzy      "10"
 check multi_fn    tests/samples/pass/basics/multi_fn.bzy   "42"

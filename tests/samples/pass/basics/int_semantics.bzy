@@ -1,0 +1,84 @@
+// Pins the observable semantics of 32-bit `int` and 64-bit `long` arithmetic:
+// wraparound, signed shift/divide/remainder, widening/narrowing casts, mixed-
+// width promotion, bit ops, and int arithmetic feeding an array index. These are
+// the exact behaviours a change to the integer-width codegen model must preserve,
+// so this is a regression anchor for that work.
+void main()
+{
+	// 32-bit signed wraparound on add.
+	int a;
+	a = 2000000000;
+	int b;
+	b = 2000000000;
+	print(a + b);
+
+	// 32-bit signed wraparound on multiply.
+	int m;
+	m = 100000;
+	print(m * m);
+
+	// Arithmetic right shift of a negative int.
+	int neg;
+	neg = -8;
+	print(neg >> 1);
+
+	// Truncating signed division and remainder.
+	print(-7 / 2);
+	print(-7 % 2);
+
+	// int -> long widening preserves sign.
+	int ni;
+	ni = -123;
+	long wl;
+	wl = (long)ni;
+	print(wl);
+
+	// long -> int narrowing keeps the low 32 bits.
+	long big;
+	big = 4294967298L;
+	print((int)big);
+
+	// Mixed int + long promotes to long (no 32-bit wrap).
+	int x;
+	x = 2000000000;
+	long y;
+	y = (long)x + (long)x;
+	print(y);
+
+	// Bitwise ops on ints.
+	print(240 & 60);
+	print(240 | 15);
+	print(255 ^ 15);
+
+	// Left shift overflow wraps at 32 bits.
+	int one;
+	one = 1;
+	print(one << 31);
+
+	// Comparison of a negative int.
+	int p;
+	p = -5;
+	if (p < 0)
+	{
+		print(1);
+	}
+	else
+	{
+		print(0);
+	}
+
+	// int arithmetic feeding an array index (exercises the indexing codegen).
+	int[] arr;
+	arr = new int[8];
+	int i;
+	i = 0;
+	while (i < 8)
+	{
+		arr[i] = i * i;
+		i = i + 1;
+	}
+
+	int j;
+	j = 3;
+	print(arr[j + 1]);
+}

@@ -38,6 +38,7 @@ typedef struct
 	int   sr_reg[4];         /* Their register index 0..3 -> r8..r11 (shared pool with the value cache above). */
 	int   sr_stride[4];      /* Element stride in bytes, so the access is [reg + iv*stride]. */
 	const char *sr_ivreg;    /* The induction variable's register for the current loop (coefficient-1 index term). */
+	int   cur_counter_off;   /* Slot offset of the current loop's promoted, non-negative, unit-step int counter (0 if none): its `i=i+1` skips the re-extension, since a 32-bit add zero-extends and the value never goes negative. */
 	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
