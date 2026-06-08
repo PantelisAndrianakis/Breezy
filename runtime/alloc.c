@@ -1,6 +1,7 @@
 #include "breezy.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>   /* offsetof, for the inline-allocator layout asserts. */
 #ifdef _WIN32
 #include <windows.h>   /* TlsAlloc / Interlocked* for the TEB-slot allocator TLS. */
 #include <intrin.h>    /* __readgsqword / __writegsqword. */
@@ -182,7 +183,15 @@ typedef struct
 } PoolTLS;
 
 #ifndef _WIN32
-static __thread PoolTLS t_pool;   /* Linux/ELF: native fs:-relative TLS - one mov per resolution. */
+/* Exported (no `static`) so the compiler can inline the allocation fast path. The
+   per-thread struct lives directly in initial-exec TLS, so its address is the
+   thread pointer plus a fixed offset that is identical on every thread; the
+   runtime records that offset once in bzy_tpool_off, and an inlined Linux `new`
+   reads the free list at fs:[bzy_tpool_off + ...] with no TLS relocation in the
+   emitted asm. bzy_tpool_off_ready guards the window before the offset is known. */
+__thread PoolTLS t_pool;          /* Linux/ELF: native fs:-relative TLS - one mov per resolution. */
+int64_t      bzy_tpool_off;       /* (char*)&t_pool - thread pointer; constant across threads. */
+volatile int bzy_tpool_off_ready; /* 1 once bzy_tpool_off has been computed. */
 #endif
 
 /* Registry of every thread's shard, so bzy_live_count can sum them. A thread
@@ -204,6 +213,14 @@ static void register_shard(PoolTLS *p)
 	}
 }
 
+/* The compiler's inline allocator (src/codegen.c) bakes in this PoolTLS layout on
+   both targets; pin it so any change here fails the build loudly instead of
+   silently miscompiling every `new`. */
+_Static_assert(offsetof(PoolTLS, head) == 0,   "inline alloc: PoolTLS.head offset moved");
+_Static_assert(offsetof(PoolTLS, n)    == 88,  "inline alloc: PoolTLS.n offset moved");
+_Static_assert(offsetof(PoolTLS, live) == 136, "inline alloc: PoolTLS.live offset moved");
+_Static_assert(POOL_NCLASS == 11,              "inline alloc: POOL_NCLASS changed");
+
 #ifdef _WIN32
 /* The MinGW target emulates `__thread` as a call to __emutls_get_address on every
    resolution - and pool_tls() is on the hottest path in the runtime. Instead, hold
@@ -215,28 +232,38 @@ static void register_shard(PoolTLS *p)
 #define TEB_TLS_SLOTS 0x1480   /* Offset of TlsSlots[64] in the x64 TEB. */
 
 static volatile LONG g_slot_claim;   /* CAS gate: elects one thread to run TlsAlloc. */
-static volatile LONG g_slot_ready;   /* 1 once g_pool_slot is valid. */
-static DWORD         g_pool_slot;
+
+/* Exported (no `static`) so the compiler can inline the allocation fast path: a
+   Windows `new` reads bzy_pool_slot_ready, then the per-thread pool pointer from
+   gs:[TEB_TLS_SLOTS + bzy_pool_slot*8], then pops the size-class free list - the
+   same sequence pool_tls()/bzy_alloc run, emitted at the call site. The inline
+   path falls back to bzy_alloc whenever the slot is not yet ready, the slot index
+   is >= 64 (out of the inline TEB array), the thread has no pool yet, or the free
+   list is empty. The offsets it bakes in are pinned by the _Static_asserts below. */
+volatile LONG bzy_pool_slot_ready;   /* 1 once bzy_pool_slot is valid. */
+DWORD         bzy_pool_slot;
+
+_Static_assert(TEB_TLS_SLOTS == 0x1480, "inline alloc: TEB TLS slot base changed");
 
 static PoolTLS *pool_tls(void)
 {
-	if (!g_slot_ready)
+	if (!bzy_pool_slot_ready)
 	{
 		if (InterlockedCompareExchange(&g_slot_claim, 1, 0) == 0)
 		{
-			g_pool_slot = TlsAlloc();
-			InterlockedExchange(&g_slot_ready, 1);
+			bzy_pool_slot = TlsAlloc();
+			InterlockedExchange(&bzy_pool_slot_ready, 1);
 		}
 		else
 		{
-			while (!g_slot_ready)   /* Another thread is mid-TlsAlloc; brief startup-only spin. */
+			while (!bzy_pool_slot_ready)   /* Another thread is mid-TlsAlloc; brief startup-only spin. */
 			{
 				YieldProcessor();
 			}
 		}
 	}
 
-	DWORD slot = g_pool_slot;
+	DWORD slot = bzy_pool_slot;
 	PoolTLS *p;
 	if (slot < 64)
 	{
@@ -269,6 +296,16 @@ static PoolTLS *pool_tls(void)
 	if (!p->registered)
 	{
 		register_shard(p);
+
+		/* Record the constant thread-pointer -> t_pool offset once, so the inlined
+		   allocator can reach the free list as fs:[bzy_tpool_off + ...]. The offset
+		   is identical on every thread (initial-exec TLS), so computing it from any
+		   thread and publishing it for all is correct; the ready flag is set last. */
+		if (!bzy_tpool_off_ready)
+		{
+			bzy_tpool_off = (int64_t)((char*)&t_pool - (char*)__builtin_thread_pointer());
+			__atomic_store_n(&bzy_tpool_off_ready, 1, __ATOMIC_RELEASE);
+		}
 	}
 
 	return p;

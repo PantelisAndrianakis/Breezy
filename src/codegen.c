@@ -2368,6 +2368,95 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 	cg_scratch_free(cg, block);
 }
 
+/* Smallest pool class (1..10) whose block holds object_size, or 0 if unpooled
+   (> 256). Mirrors runtime/alloc.c g_class_size; the inline allocator uses it to
+   pick the free-list index and block size at compile time. */
+static int cg_pool_class(int object_size, int *block_size)
+{
+	static const int sz[11] = { 0, 32, 48, 64, 80, 96, 128, 160, 192, 224, 256 };
+	if (object_size > 256)
+	{
+		return 0;
+	}
+
+	for (int pc = 1; pc <= 10; pc++)
+	{
+		if (object_size <= sz[pc])
+		{
+			*block_size = sz[pc];
+			return pc;
+		}
+	}
+
+	return 0;
+}
+
+/* Emit an allocation leaving an owned (+1) object of object_size bytes in rax with
+   refcount 1 and zeroed fields - the contract of bzy_alloc, which the caller then
+   finishes by storing the vtable. For a poolable size, inline bzy_alloc's hot path:
+   reach the current thread's PoolTLS and pop the size-class free list, with the size
+   class resolved at compile time. The two targets differ only in how the pool is
+   reached - Windows reads a pointer from its TEB slot (gs:[0x1480 + slot*8]); Linux
+   addresses the struct directly in TLS at fs:[bzy_tpool_off + ...] - so the pop and
+   header init are shared via `base`. The path falls back to a bzy_alloc call when
+   its readiness gate fails or the free list is empty. The baked-in PoolTLS offsets
+   (head @0, n @88, live @136) and the TEB slot base (0x1480) are pinned by
+   _Static_asserts in runtime/alloc.c. rax, rcx and rdx are clobbered. */
+static void cg_emit_alloc(Codegen *cg, int object_size)
+{
+	int block_size = 0;
+	int pc = cg_pool_class(object_size, &block_size);
+	if (!pc)
+	{
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), object_size);
+		cg_emit(cg,"    call bzy_alloc");
+		return;
+	}
+
+	int slow = cg_label(cg);
+	int done = cg_label(cg);
+	const char *base;
+	if (cg->target == TARGET_WINDOWS)
+	{
+		cg_emit(cg,"    cmp dword [rel bzy_pool_slot_ready], 0");
+		cg_emit(cg,"    je .L%d", slow);                  /* TLS slot not allocated yet. */
+		cg_emit(cg,"    mov eax, [rel bzy_pool_slot]");
+		cg_emit(cg,"    cmp eax, 64");
+		cg_emit(cg,"    jae .L%d", slow);                 /* Slot beyond the inline TEB array. */
+		cg_emit(cg,"    mov rcx, [gs:0x1480 + rax*8]");   /* PoolTLS* for the current thread. */
+		cg_emit(cg,"    test rcx, rcx");
+		cg_emit(cg,"    jz .L%d", slow);                  /* This thread has no pool yet. */
+		base = "rcx";
+	}
+	else
+	{
+		cg_emit(cg,"    cmp dword [rel bzy_tpool_off_ready], 0");
+		cg_emit(cg,"    je .L%d", slow);                  /* Thread-pointer offset not known yet. */
+		cg_emit(cg,"    mov rcx, [rel bzy_tpool_off]");   /* &t_pool - thread pointer (constant). */
+		base = "fs:rcx";                                  /* fs:[rcx + N] reaches t_pool field N. */
+	}
+
+	cg_emit(cg,"    mov rax, [%s + %d]", base, pc * 8);   /* head[pc]  (head @ offset 0). */
+	cg_emit(cg,"    test rax, rax");
+	cg_emit(cg,"    jz .L%d", slow);                      /* Free list empty (also a fresh thread). */
+	cg_emit(cg,"    mov rdx, [rax]");                     /* next block. */
+	cg_emit(cg,"    mov [%s + %d], rdx", base, pc * 8);   /* head[pc] = next. */
+	cg_emit(cg,"    dec dword [%s + %d]", base, 88 + pc * 4);  /* n[pc]--. */
+	cg_emit(cg,"    inc qword [%s + 136]", base);         /* live++. */
+	cg_emit(cg,"    mov qword [rax + 8], 1");             /* refcount = 1. */
+	cg_emit(cg,"    mov qword [rax + 16], %d", pc << 4);  /* gcinfo: class nibble, BLACK, unshared. */
+	for (int off = 24; off < object_size; off += 8)
+	{
+		cg_emit(cg,"    mov qword [rax + %d], 0", off);  /* Zero the fields (calloc semantics). */
+	}
+
+	cg_emit(cg,"    jmp .L%d", done);
+	cg_emit(cg,".L%d:", slow);
+	cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), object_size);
+	cg_emit(cg,"    call bzy_alloc");
+	cg_emit(cg,".L%d:", done);
+}
+
 static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (strcmp(e->name,"StringBuilder")==0)
@@ -2392,11 +2481,10 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	else
 	{
-		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), c->object_size);
-		cg_emit(cg,"    call bzy_alloc");
+		cg_emit_alloc(cg, c->object_size);
 		cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
 		cg_emit(cg,"    mov [rax], rbx");
-		/* The refcount and fields are zeroed by bzy_alloc, so rax holds an owned reference. */
+		/* The refcount and fields are zeroed by the allocation, so rax holds an owned reference. */
 		if (c->is_shared)
 		{
 			/* Channel-reachable class: mark gcinfo so retain/release go atomic.
@@ -5680,6 +5768,16 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern malloc");
 	cg_emit(cg,"extern free");
 	cg_emit(cg,"extern bzy_alloc");
+	if (cg->target == TARGET_WINDOWS)
+	{
+		cg_emit(cg,"extern bzy_pool_slot");          /* Inline allocator: TEB TLS slot index. */
+		cg_emit(cg,"extern bzy_pool_slot_ready");    /* Inline allocator: slot-initialized flag. */
+	}
+	else
+	{
+		cg_emit(cg,"extern bzy_tpool_off");          /* Inline allocator: thread-pointer -> t_pool offset. */
+		cg_emit(cg,"extern bzy_tpool_off_ready");    /* Inline allocator: offset-computed flag. */
+	}
 	cg_emit(cg,"extern bzy_retain");
 	cg_emit(cg,"extern bzy_share_crosscore");
 	cg_emit(cg,"extern bzy_release");

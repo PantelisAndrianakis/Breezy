@@ -389,8 +389,29 @@ static void test_inline_arc_fast_paths(void)
 	ASSERT_INT(strstr(g_asm, "call bzy_release") != NULL, 1);          /* slow path retained. */
 }
 
+static void test_inline_alloc_windows_pool_pop(void)
+{
+	/* On Windows a `new` of a poolable class inlines bzy_alloc's hot path: gate on
+	   the TEB-slot-ready flag, read the per-thread pool pointer from the TEB slot,
+	   and pop the size-class free list - with a bzy_alloc fallback kept for the cold
+	   cases. Linux keeps the plain call (no gs:-relative pool pop). */
+	/* The object must escape (stored into the array) so it heap-allocates rather
+	   than landing on the stack via escape analysis. */
+	emit("class A { int v; } void main() { A[] arr; arr = new A[1]; arr[0] = new A(); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "[rel bzy_pool_slot_ready]") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "[gs:0x1480 + rax*8]") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_alloc") != NULL, 1);   /* Cold-path fallback retained. */
+
+	emit("class A { int v; } void main() { A[] arr; arr = new A[1]; arr[0] = new A(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "gs:0x1480") == NULL, 1);        /* Linux uses fs:, not the TEB slot. */
+	ASSERT_INT(strstr(g_asm, "[rel bzy_tpool_off]") != NULL, 1);   /* Linux inline: TLS-offset base. */
+	ASSERT_INT(strstr(g_asm, "[fs:rcx + 8]") != NULL, 1);          /* Linux inline: pop head[1] of t_pool. */
+	ASSERT_INT(strstr(g_asm, "call bzy_alloc") != NULL, 1);
+}
+
 int main(void)
 {
+	RUN(test_inline_alloc_windows_pool_pop);
 	RUN(test_inline_arc_fast_paths);
 	RUN(test_array_elem_stride);
 	RUN(test_loop_rotation_bottom_test);
