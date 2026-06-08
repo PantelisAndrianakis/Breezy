@@ -30,6 +30,14 @@ typedef struct
 	int cur_scratch_cap; /* This function's arena size (max_scratch_bytes, 16-aligned); cg_scratch_alloc traps on overflow. */
 	int cur_break_label;     /* Enclosing loop's end label (-1 if not in a loop). */
 	int cur_continue_label;  /* Enclosing loop's continue target (-1 if not in a loop). */
+	int hoist_n;             /* Loop-invariant register cache: number of locals cached in r8..r11 for the current innermost loop. */
+	int hoist_off[4];        /* Their slot offsets; an EX_IDENT read of one of these uses its register instead of a memory reload. */
+	int hoist_reg[4];        /* Their register index 0..3 -> r8..r11. */
+	int   sr_n;              /* Strength-reduced array accesses: arr[INV + iv] whose element-0 address (arr + INV*stride + 32) is pinned in a register. */
+	Expr *sr_node[4];        /* The EX_INDEX node each entry covers (matched by identity at its codegen site). */
+	int   sr_reg[4];         /* Their register index 0..3 -> r8..r11 (shared pool with the value cache above). */
+	int   sr_stride[4];      /* Element stride in bytes, so the access is [reg + iv*stride]. */
+	const char *sr_ivreg;    /* The induction variable's register for the current loop (coefficient-1 index term). */
 	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */

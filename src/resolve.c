@@ -5,6 +5,7 @@
 #include "constprop.h"
 #include "promote.h"
 #include "nonneg.h"
+#include "bce.h"
 #include "enums.h"
 #include "lexer.h"
 #include <string.h>
@@ -3328,6 +3329,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	constprop_annotate(f);   /* Rewrite single-assignment literal-scalar reads to the literal (frees their registers). */
 	promote_annotate(f);   /* Choose scalar locals to keep in r12..r15 (codegen consults the map). */
 	nonneg_annotate(f);   /* Flag divides with a provably non-negative dividend. */
+	bce_annotate(f);   /* Flag array indexes provably in [0, length) so codegen drops the check. */
 }
 
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)

@@ -15,6 +15,9 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->strk_count=0;
 	cg->cur_break_label=-1;
 	cg->cur_continue_label=-1;
+	cg->hoist_n=0;
+	cg->sr_n=0;
+	cg->sr_ivreg=NULL;
 	cg->exception_fn_count=0;
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
@@ -57,6 +60,31 @@ static const char *cg_local_reg(Codegen *cg, int off)
 		if (f->promo_off[i] == off)
 		{
 			return CG_PROMO_REGS[f->promo_reg[i]];
+		}
+	}
+
+	return NULL;
+}
+
+/* Caller-saved registers used to cache loop-invariant locals across an innermost,
+   call-free loop (see cg_loop_hoist_begin). Codegen uses rax/rbx/rcx/rdx as
+   scratch and r12..r15 for promotion, so r8..r11 are free in a loop that emits no
+   call (a call would clobber them, and the bzy_oob slow path uses r8/r9 - hence
+   the hoist predicate requires every index to be bounds-check-eliminated). */
+static const char *const CG_HOIST_REGS[4]   = { "r8", "r9", "r10", "r11" };
+static const char *const CG_HOIST_REGS32[4] = { "r8d", "r9d", "r10d", "r11d" };
+
+/* If slot `off` is cached in a hoist register for the current loop, return its
+   64-bit register name; else NULL. The slot itself still holds the value, so any
+   path that ignores this and reads the slot is still correct - the cache is a
+   pure speed-up over re-reading loop-invariant memory each iteration. */
+static const char *cg_hoist_reg(Codegen *cg, int off)
+{
+	for (int i = 0; i < cg->hoist_n; i++)
+	{
+		if (cg->hoist_off[i] == off)
+		{
+			return CG_HOIST_REGS[cg->hoist_reg[i]];
 		}
 	}
 
@@ -243,6 +271,43 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 		return 0;
 	}
 
+	/* target = target +/- CONST: one immediate add/sub on the register (an int
+	   re-extends to stay a valid 64-bit value). This is the loop-counter step,
+	   which the generic path otherwise round-trips through rax with a reload and
+	   two sign-extensions. */
+	if (value->kind==EX_BINARY && (value->op==TOKEN_PLUS || value->op==TOKEN_MINUS)
+		&& (target->type.kind==TY_INT || target->type.kind==TY_LONG || target->type.kind==TY_ULONG))
+	{
+		Expr *k = NULL;
+		if (value->lhs->kind==EX_IDENT && value->lhs->anno_int==target->anno_int && value->rhs->kind==EX_INT)
+		{
+			k = value->rhs;
+		}
+		else if (value->op==TOKEN_PLUS && value->rhs->kind==EX_IDENT
+				 && value->rhs->anno_int==target->anno_int && value->lhs->kind==EX_INT)
+		{
+			k = value->lhs;
+		}
+
+		if (k && k->int_val >= -2147483648LL && k->int_val <= 2147483647LL)
+		{
+			const char *opc = (value->op==TOKEN_PLUS) ? "add" : "sub";
+			if (target->type.kind==TY_INT)
+			{
+				char r32[8];
+				snprintf(r32, sizeof r32, "%sd", R);
+				cg_emit(cg,"    %s %s, %lld", opc, r32, k->int_val);
+				cg_emit(cg,"    movsxd %s, %s", R, r32);
+			}
+			else
+			{
+				cg_emit(cg,"    %s %s, %lld", opc, R, k->int_val);
+			}
+
+			return 1;
+		}
+	}
+
 	/* General single-op in-place: `target = target <op> EXPR` (or, for a
 	   commutative op, `EXPR <op> target`) where EXPR is a non-leaf expression -
 	   most importantly an A*B product, i.e. a multiply-accumulate. EXPR evaluates
@@ -267,7 +332,11 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 		if (other && !cg_is_inplace_leaf(other, target))
 		{
 			cg_expr(cg, tt, other);                  /* EXPR -> rax; R is untouched. */
-			cg_extend_reg(cg, target->type.kind);    /* Width-correct in eax/rax. */
+			if (other->type.kind != target->type.kind)
+			{
+				cg_extend_reg(cg, target->type.kind);  /* Re-width only when the operand differs; cg_expr already normalised it to its own width. */
+			}
+
 			cg_inplace_reg_rax(cg, R, value->op, target->type.kind);
 			return 1;
 		}
@@ -564,33 +633,125 @@ static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
 	}
 }
 
+/* True if `e` is one of the strength-reduced accesses for the current loop. */
+static int cg_sr_contains(Codegen *cg, Expr *e)
+{
+	for (int i = 0; i < cg->sr_n; i++)
+	{
+		if (cg->sr_node[i] == e)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* If `e` is a strength-reduced access, write its direct addressing mode
+   "[base + iv*stride]" into buf and return 1, so the element can be loaded or
+   stored in a single instruction without first materialising the address. */
+static int cg_sr_mode(Codegen *cg, Expr *e, char *buf)
+{
+	for (int i = 0; i < cg->sr_n; i++)
+	{
+		if (cg->sr_node[i] == e)
+		{
+			sprintf(buf, "[%s + %s*%d]", CG_HOIST_REGS[cg->sr_reg[i]], cg->sr_ivreg, cg->sr_stride[i]);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* If `e` is a strength-reduced access arr[INV + iv], its element-0 address is
+   already pinned in a register, so the element address is just base + iv*stride -
+   a single lea, no base reload, no index reconstruction, no bounds check. Leaves
+   the address in rbx like cg_index_addr and returns 1; returns 0 if not matched. */
+static int cg_sr_addr(Codegen *cg, Expr *e)
+{
+	for (int i = 0; i < cg->sr_n; i++)
+	{
+		if (cg->sr_node[i] == e)
+		{
+			cg_emit(cg,"    lea rbx, [%s + %s*%d]", CG_HOIST_REGS[cg->sr_reg[i]], cg->sr_ivreg, cg->sr_stride[i]);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 /* Leave the address of element a[i] in rbx, bounds-checked. Evaluates the array
    (lhs) then the index (rhs); clobbers rax/rcx/rdx. An out-of-range index calls
    bzy_oob (no return). xmm0 is untouched on the in-range path, so a float/double
    value being stored survives address computation. */
 static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	if (cg_sr_addr(cg, e))
+	{
+		return;
+	}
+
 	/* Fast path: a register-resident index (a promoted local, typically a loop
 	   induction variable) needs neither a base spill nor a rematerialization into
 	   rax - bounds-check and address it straight from its register. The register
 	   is callee-saved (r12..r15), so it survives the slow-path bzy_oob call. */
+	/* BCE: the analysis proved 0 <= index < length, so the runtime length
+	   compare and the bzy_oob slow path are dead. Only the address arithmetic
+	   remains. Sound because anno_index_safe is set conservatively. */
+	int safe = e->anno_index_safe;
+
 	const char *ireg = (e->rhs->kind==EX_IDENT && e->rhs->anno_int > 0)
 					   ? cg_local_reg(cg, e->rhs->anno_int) : NULL;
 	if (ireg)
 	{
 		cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
-		int okf = cg_label(cg);
-		int pcf = cg_label(cg);
-		cg_emit(cg,"    cmp %s, [rax + 24]", ireg);   /* Unsigned: catches negative and >= length. */
-		cg_emit(cg,"    jb .L%d", okf);
-		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);     /* index. */
-		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1));   /* length. */
-		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pcf);
-		cg_emit(cg,".L%d:", pcf);
-		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
-		cg_emit(cg,"    call bzy_oob");
-		cg_emit(cg,".L%d:", okf);
+		if (!safe)
+		{
+			int okf = cg_label(cg);
+			int pcf = cg_label(cg);
+			cg_emit(cg,"    cmp %s, [rax + 24]", ireg);   /* Unsigned: catches negative and >= length. */
+			cg_emit(cg,"    jb .L%d", okf);
+			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);     /* index. */
+			cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1));   /* length. */
+			cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pcf);
+			cg_emit(cg,".L%d:", pcf);
+			cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+			cg_emit(cg,"    call bzy_oob");
+			cg_emit(cg,".L%d:", okf);
+		}
+
 		cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", ireg, cg_elem_stride(e->type.kind));
+		return;
+	}
+
+	/* Rematerialized-base path: when the array is a plain local (a single pure
+	   load), evaluate the index first, park it, then reload the base. This drops
+	   the spill/reload pair the generic path needs to carry the base across the
+	   index evaluation - the dominant per-access cost in tight indexing loops. An
+	   array-typed local cannot be reassigned by the index expression, and the
+	   base load cannot throw, so loading it after the index is order-equivalent. */
+	if (e->lhs->kind == EX_IDENT)
+	{
+		cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));   /* Index parked (rcx). */
+		cg_expr(cg,tt,e->lhs);                 /* Base -> rax (rematerialized). */
+		if (!safe)
+		{
+			cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
+			int ok = cg_label(cg);
+			int pc = cg_label(cg);
+			cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
+			cg_emit(cg,"    jb .L%d", ok);     /* Unsigned: catches negative and >= length. */
+			cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
+			cg_emit(cg,".L%d:", pc);
+			cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+			cg_emit(cg,"    call bzy_oob");
+			cg_emit(cg,".L%d:", ok);
+		}
+
+		cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));
 		return;
 	}
 
@@ -599,16 +760,20 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */
 	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
 	cg_temp_pop(cg);             /* base */
-	cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
-	int ok = cg_label(cg);
-	int pc = cg_label(cg);
-	cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
-	cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
-	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
-	cg_emit(cg,".L%d:", pc);               /* The throw-site PC (within this function/try). */
-	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
-	cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
-	cg_emit(cg,".L%d:", ok);
+	if (!safe)
+	{
+		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
+		int ok = cg_label(cg);
+		int pc = cg_label(cg);
+		cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
+		cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
+		cg_emit(cg,".L%d:", pc);               /* The throw-site PC (within this function/try). */
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+		cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
+		cg_emit(cg,".L%d:", ok);
+	}
+
 	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));   /* e->type is the element type. */
 }
 
@@ -1240,6 +1405,47 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg, e->op==TOKEN_AND ? "    mov rax, 0" : "    mov rax, 1");
 		cg_emit(cg,".L%d:", done);
 		return;
+	}
+
+	/* Fuse a strength-reduced array element as a memory operand for a 32-bit integer
+	   op: `<op> eax, dword [base + iv*stride]`. This is the dense-kernel multiply-
+	   accumulate - it keeps both elements out of registers and removes the lhs spill
+	   the generic path carries across the rhs load. The other operand is evaluated
+	   into eax; for a commutative op either side may be the memory one. */
+	{
+		int fuse_op = (e->op==TOKEN_PLUS || e->op==TOKEN_MINUS || e->op==TOKEN_STAR
+					   || e->op==TOKEN_AMP || e->op==TOKEN_PIPE || e->op==TOKEN_CARET);
+		int commutative = (e->op != TOKEN_MINUS);
+		const char *opc = NULL;
+		switch (e->op)
+		{
+		case TOKEN_PLUS:  opc = "add";  break;
+		case TOKEN_MINUS: opc = "sub";  break;
+		case TOKEN_STAR:  opc = "imul"; break;
+		case TOKEN_AMP:   opc = "and";  break;
+		case TOKEN_PIPE:  opc = "or";   break;
+		case TOKEN_CARET: opc = "xor";  break;
+		default: break;
+		}
+
+		char srm[40];
+		if (fuse_op && e->type.kind==TY_INT && e->rhs->type.kind==TY_INT
+			&& cg_sr_mode(cg, e->rhs, srm))
+		{
+			cg_expr(cg,tt,e->lhs);                       /* Other operand -> eax. */
+			cg_emit(cg,"    %s eax, dword %s", opc, srm);
+			cg_extend_reg(cg, TY_INT);
+			return;
+		}
+
+		if (fuse_op && commutative && e->type.kind==TY_INT && e->lhs->type.kind==TY_INT
+			&& cg_sr_mode(cg, e->lhs, srm))
+		{
+			cg_expr(cg,tt,e->rhs);                       /* Other operand -> eax. */
+			cg_emit(cg,"    %s eax, dword %s", opc, srm);
+			cg_extend_reg(cg, TY_INT);
+			return;
+		}
 	}
 
 	cg_expr(cg,tt,e->lhs);                  /* lhs -> rax. */
@@ -3890,6 +4096,22 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 
 		break;
 	case EX_INDEX:
+	{
+		char mode[40];
+		if (cg_sr_mode(cg, e, mode))   /* Strength-reduced: load straight from [base + iv*stride], no lea. */
+		{
+			if (ty_is_float(e->type.kind))
+			{
+				cg_load_fp(cg,e->type.kind,mode);
+			}
+			else
+			{
+				cg_load_scalar(cg,e->type.kind,mode);
+			}
+
+			break;
+		}
+
 		cg_index_addr(cg,tt,e);
 		if (ty_is_float(e->type.kind))
 		{
@@ -3901,6 +4123,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 
 		break;
+	}
 	case EX_STR:
 	{
 		int id=cg_str_const(cg,e);
@@ -3960,9 +4183,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			const char *r = cg_local_reg(cg, e->anno_int);
+			const char *h = r ? NULL : cg_hoist_reg(cg, e->anno_int);
 			if (r)
 			{
 				cg_emit(cg,"    mov rax, %s", r);   /* Promoted local: read from its register. */
+			}
+			else if (h)
+			{
+				cg_emit(cg,"    mov rax, %s", h);   /* Loop-invariant local: read from its hoist register. */
 			}
 			else
 			{
@@ -4388,12 +4616,601 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 /* C-style for: init once, then test/body/post, with continue landing on the
    post step so the increment still runs. break -> end. Reuses the shared
    loop-label fields on Codegen. */
+/* ---- Loop-invariant register caching (LICM-lite) for innermost loops ----
+
+   A tight indexing loop reloads its array base pointers and invariant index
+   offsets from the stack every iteration; that memory traffic, not the bounds
+   check, is what makes such loops trail a tracing-GC native compiler. When a
+   loop body is provably call-free and indexes only bounds-check-eliminated
+   arrays, the caller-saved registers r8..r11 are free for its whole duration, so
+   we pin up to four of its hottest loop-invariant locals there and read them
+   from the register instead of memory. The slot is never written, so this is a
+   pure caching transform - correctness does not depend on every read using it. */
+
+static int cg_hoist_expr_ok(Expr *e)
+{
+	if (!e)
+	{
+		return 1;
+	}
+
+	switch (e->kind)
+	{
+	case EX_INT:
+	case EX_BOOL:
+	case EX_FLOAT:
+	case EX_IDENT:
+	case EX_THIS:
+		return 1;
+	case EX_UNARY:
+	case EX_INCDEC:
+	case EX_CAST:
+		return cg_hoist_expr_ok(e->lhs) && cg_hoist_expr_ok(e->rhs);
+	case EX_BINARY:
+		if (e->type.kind == TY_STRING)
+		{
+			return 0;   /* String concatenation calls into the runtime. */
+		}
+
+		return cg_hoist_expr_ok(e->lhs) && cg_hoist_expr_ok(e->rhs);
+	case EX_INDEX:
+		/* Only a bounds-check-eliminated index into a plain array local is
+		   call-free; a map/string index, an unproven index (emits bzy_oob, which
+		   uses r8/r9), or a managed element (ARC retain/release) is not. */
+		if (e->lhs->kind != EX_IDENT || e->lhs->type.kind != TY_ARRAY
+			|| !e->anno_index_safe || ty_is_managed(e->type.kind))
+		{
+			return 0;
+		}
+
+		return cg_hoist_expr_ok(e->rhs);
+	default:
+		return 0;   /* EX_CALL / EX_METHOD_CALL / EX_NEW* / ... may emit a call. */
+	}
+}
+
+static int cg_hoist_block_ok(Block *b);
+
+static int cg_hoist_stmt_ok(Stmt *s)
+{
+	if (!s)
+	{
+		return 1;
+	}
+
+	switch (s->kind)
+	{
+	case ST_VARDECL:
+		if (ty_is_managed(s->decl_type.kind))
+		{
+			return 0;
+		}
+
+		return cg_hoist_expr_ok(s->decl_init);
+	case ST_ASSIGN:
+		if (s->target && s->target->kind == EX_IDENT)
+		{
+			if (ty_is_managed(s->target->type.kind))
+			{
+				return 0;
+			}
+		}
+		else if (!s->target || !cg_hoist_expr_ok(s->target))   /* Array element store: must be a safe, non-managed index. */
+		{
+			return 0;
+		}
+
+		return cg_hoist_expr_ok(s->value);
+	case ST_EXPR:
+		return cg_hoist_expr_ok(s->expr);
+	case ST_IF:
+		return cg_hoist_expr_ok(s->cond) && cg_hoist_block_ok(s->then_blk)
+			   && cg_hoist_block_ok(s->else_blk);
+	case ST_BREAK:
+	case ST_CONTINUE:
+		return 1;
+	default:
+		return 0;   /* Nested loop, return, throw, try, switch, spawn, foreach. */
+	}
+}
+
+static int cg_hoist_block_ok(Block *b)
+{
+	if (!b)
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (!cg_hoist_stmt_ok(b->stmts[i]))
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+/* Collect, into w[0..*wn), the slot offsets a region writes (the values that are
+   therefore NOT loop-invariant). */
+static void cg_hoist_writes_expr(Expr *e, int *w, int *wn)
+{
+	if (!e)
+	{
+		return;
+	}
+
+	if (e->kind == EX_INCDEC && e->lhs && e->lhs->kind == EX_IDENT && e->lhs->anno_int > 0)
+	{
+		if (*wn < 128)
+		{
+			w[(*wn)++] = e->lhs->anno_int;
+		}
+	}
+
+	cg_hoist_writes_expr(e->lhs, w, wn);
+	cg_hoist_writes_expr(e->rhs, w, wn);
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		cg_hoist_writes_expr(e->args[i], w, wn);
+	}
+}
+
+static void cg_hoist_writes_block(Block *b, int *w, int *wn);
+
+static void cg_hoist_writes_stmt(Stmt *s, int *w, int *wn)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	if (s->kind == ST_VARDECL && s->decl_offset > 0 && *wn < 128)
+	{
+		w[(*wn)++] = s->decl_offset;
+	}
+
+	if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT
+		&& s->target->anno_int > 0 && *wn < 128)
+	{
+		w[(*wn)++] = s->target->anno_int;
+	}
+
+	cg_hoist_writes_expr(s->cond, w, wn);
+	cg_hoist_writes_expr(s->decl_init, w, wn);
+	cg_hoist_writes_expr(s->value, w, wn);
+	cg_hoist_writes_expr(s->target, w, wn);
+	cg_hoist_writes_expr(s->expr, w, wn);
+	cg_hoist_writes_stmt(s->for_post, w, wn);
+	cg_hoist_writes_block(s->then_blk, w, wn);
+	cg_hoist_writes_block(s->else_blk, w, wn);
+}
+
+static void cg_hoist_writes_block(Block *b, int *w, int *wn)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		cg_hoist_writes_stmt(b->stmts[i], w, wn);
+	}
+}
+
+static int cg_off_in(int *w, int wn, int off)
+{
+	for (int i = 0; i < wn; i++)
+	{
+		if (w[i] == off)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+typedef struct
+{
+	int off;
+	int count;
+	TypeKind k;
+} HoistCand;
+
+/* Tally reads of loop-invariant integer/array locals (the candidates to cache).
+   Floats use xmm and a different load path; managed values other than array bases
+   are excluded by the block predicate already. */
+static void cg_hoist_reads_expr(Codegen *cg, Expr *e, int *w, int wn, HoistCand *c, int *nc)
+{
+	if (!e)
+	{
+		return;
+	}
+
+	if (cg_sr_contains(cg, e))
+	{
+		return;   /* Folded into a strength-reduced base pointer; not loaded via its idents. */
+	}
+
+	if (e->kind == EX_IDENT && e->anno_int > 0
+		&& (ty_is_int(e->type.kind) || e->type.kind == TY_ARRAY)
+		&& !cg_local_reg(cg, e->anno_int) && !cg_off_in(w, wn, e->anno_int))
+	{
+		int found = 0;
+		for (int i = 0; i < *nc; i++)
+		{
+			if (c[i].off == e->anno_int)
+			{
+				c[i].count++;
+				found = 1;
+				break;
+			}
+		}
+
+		if (!found && *nc < 64)
+		{
+			c[*nc].off = e->anno_int;
+			c[*nc].count = 1;
+			c[*nc].k = e->type.kind;
+			(*nc)++;
+		}
+	}
+
+	cg_hoist_reads_expr(cg, e->lhs, w, wn, c, nc);
+	cg_hoist_reads_expr(cg, e->rhs, w, wn, c, nc);
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		cg_hoist_reads_expr(cg, e->args[i], w, wn, c, nc);
+	}
+}
+
+static void cg_hoist_reads_block(Codegen *cg, Block *b, int *w, int wn, HoistCand *c, int *nc);
+
+static void cg_hoist_reads_stmt(Codegen *cg, Stmt *s, int *w, int wn, HoistCand *c, int *nc)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	cg_hoist_reads_expr(cg, s->cond, w, wn, c, nc);
+	cg_hoist_reads_expr(cg, s->decl_init, w, wn, c, nc);
+	cg_hoist_reads_expr(cg, s->value, w, wn, c, nc);
+	cg_hoist_reads_expr(cg, s->expr, w, wn, c, nc);
+	if (s->target && s->target->kind == EX_INDEX)   /* An index store reads its base/index idents. */
+	{
+		cg_hoist_reads_expr(cg, s->target, w, wn, c, nc);
+	}
+
+	cg_hoist_reads_block(cg, s->then_blk, w, wn, c, nc);
+	cg_hoist_reads_block(cg, s->else_blk, w, wn, c, nc);
+}
+
+static void cg_hoist_reads_block(Codegen *cg, Block *b, int *w, int wn, HoistCand *c, int *nc)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		cg_hoist_reads_stmt(cg, b->stmts[i], w, wn, c, nc);
+	}
+}
+
+/* The induction variable's register for a `for (iv = LO; iv </<= HI; iv = iv+1)`
+   (or iv++) loop whose counter is promoted, or NULL. Only the unit-step form is
+   recognised, because strength reduction folds a coefficient-1 index term into a
+   scaled address [base + iv*stride]. */
+static const char *cg_loop_induction(Codegen *cg, Stmt *loop, int *iv_off)
+{
+	if (loop->kind != ST_FOR || !loop->for_init || !loop->cond || !loop->for_post)
+	{
+		return NULL;
+	}
+
+	int io = 0;
+	if (loop->for_init->kind == ST_VARDECL)
+	{
+		io = loop->for_init->decl_offset;
+	}
+	else if (loop->for_init->kind == ST_ASSIGN && loop->for_init->target
+			 && loop->for_init->target->kind == EX_IDENT)
+	{
+		io = loop->for_init->target->anno_int;
+	}
+	else
+	{
+		return NULL;
+	}
+
+	Expr *c = loop->cond;
+	if (!(c->kind == EX_BINARY && (c->op == TOKEN_LT || c->op == TOKEN_LTE)
+		  && c->lhs->kind == EX_IDENT && c->lhs->anno_int == io && io != 0))
+	{
+		return NULL;
+	}
+
+	Stmt *p = loop->for_post;
+	int step_ok = 0;
+	if (p->kind == ST_ASSIGN && p->target && p->target->kind == EX_IDENT
+		&& p->target->anno_int == io && p->value && p->value->kind == EX_BINARY
+		&& p->value->op == TOKEN_PLUS && p->value->lhs->kind == EX_IDENT
+		&& p->value->lhs->anno_int == io && p->value->rhs->kind == EX_INT
+		&& p->value->rhs->int_val == 1)
+	{
+		step_ok = 1;
+	}
+	else if (p->kind == ST_EXPR && p->expr && p->expr->kind == EX_INCDEC
+			 && p->expr->op == TOKEN_PLUSPLUS && p->expr->lhs
+			 && p->expr->lhs->kind == EX_IDENT && p->expr->lhs->anno_int == io)
+	{
+		step_ok = 1;
+	}
+
+	if (!step_ok)
+	{
+		return NULL;
+	}
+
+	const char *r = cg_local_reg(cg, io);   /* Must be register-resident to serve as a scaled index. */
+	if (!r)
+	{
+		return NULL;
+	}
+
+	*iv_off = io;
+	return r;
+}
+
+/* True if `e` reads any local in the written set w (so it is not loop-invariant). */
+static int cg_expr_reads_written(Expr *e, int *w, int wn)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	if (e->kind == EX_IDENT && cg_off_in(w, wn, e->anno_int))
+	{
+		return 1;
+	}
+
+	if (cg_expr_reads_written(e->lhs, w, wn) || cg_expr_reads_written(e->rhs, w, wn))
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		if (cg_expr_reads_written(e->args[i], w, wn))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* If `e` is a strength-reducible access arr[INV + iv] (arr and INV loop-invariant,
+   iv the unit-step induction variable, legal element scale), return its invariant
+   offset expression INV via E_out; else NULL. */
+static Expr *cg_sr_eligible(Expr *e, int iv_off, int *w, int wn)
+{
+	if (e->kind != EX_INDEX || !e->anno_index_safe)
+	{
+		return NULL;
+	}
+
+	if (e->lhs->kind != EX_IDENT || e->lhs->type.kind != TY_ARRAY
+		|| cg_off_in(w, wn, e->lhs->anno_int))
+	{
+		return NULL;   /* Base must be an invariant array local. */
+	}
+
+	int stride = cg_elem_stride(e->type.kind);
+	if (stride != 1 && stride != 2 && stride != 4 && stride != 8)
+	{
+		return NULL;
+	}
+
+	Expr *idx = e->rhs;
+	if (idx->kind != EX_BINARY || idx->op != TOKEN_PLUS)
+	{
+		return NULL;
+	}
+
+	Expr *E = NULL;
+	if (idx->rhs->kind == EX_IDENT && idx->rhs->anno_int == iv_off)
+	{
+		E = idx->lhs;
+	}
+	else if (idx->lhs->kind == EX_IDENT && idx->lhs->anno_int == iv_off)
+	{
+		E = idx->rhs;
+	}
+	else
+	{
+		return NULL;
+	}
+
+	if (cg_expr_reads_written(E, w, wn))
+	{
+		return NULL;   /* The offset must be loop-invariant. */
+	}
+
+	return E;
+}
+
+static void cg_sr_collect_expr(Expr *e, int iv_off, int *w, int wn, Expr **nodes, Expr **offs, int *n)
+{
+	if (!e)
+	{
+		return;
+	}
+
+	Expr *E = cg_sr_eligible(e, iv_off, w, wn);
+	if (E)
+	{
+		int dup = 0;
+		for (int i = 0; i < *n; i++)
+		{
+			if (nodes[i] == e)
+			{
+				dup = 1;
+				break;
+			}
+		}
+
+		if (!dup && *n < 4)
+		{
+			nodes[*n] = e;
+			offs[*n] = E;
+			(*n)++;
+		}
+
+		return;   /* Do not descend into a matched access (its iv term is handled). */
+	}
+
+	cg_sr_collect_expr(e->lhs, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_expr(e->rhs, iv_off, w, wn, nodes, offs, n);
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		cg_sr_collect_expr(e->args[i], iv_off, w, wn, nodes, offs, n);
+	}
+}
+
+static void cg_sr_collect_block(Block *b, int iv_off, int *w, int wn, Expr **nodes, Expr **offs, int *n);
+
+static void cg_sr_collect_stmt(Stmt *s, int iv_off, int *w, int wn, Expr **nodes, Expr **offs, int *n)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	cg_sr_collect_expr(s->cond, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_expr(s->decl_init, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_expr(s->value, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_expr(s->target, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_expr(s->expr, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_block(s->then_blk, iv_off, w, wn, nodes, offs, n);
+	cg_sr_collect_block(s->else_blk, iv_off, w, wn, nodes, offs, n);
+}
+
+static void cg_sr_collect_block(Block *b, int iv_off, int *w, int wn, Expr **nodes, Expr **offs, int *n)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		cg_sr_collect_stmt(b->stmts[i], iv_off, w, wn, nodes, offs, n);
+	}
+}
+
+/* If `loop` (a for/while) qualifies, pin its hottest loop-invariant locals into
+   r8..r11 and record them in the cg hoist/sr caches so reads use the register.
+   Strength-reduced array bases take registers first (each removes a base reload,
+   an index reconstruction, and a bounds check), then the remaining registers
+   cache plain invariant locals. Emits the one-time setup; the caller must place
+   this after the entry guard, before the loop top, and call cg_loop_hoist_end
+   after the loop. */
+static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
+{
+	cg->hoist_n = 0;
+	cg->sr_n = 0;
+	cg->sr_ivreg = NULL;
+	Block *body = loop->then_blk;
+	if (!body || !cg_hoist_block_ok(body))
+	{
+		return;
+	}
+
+	int w[128];
+	int wn = 0;
+	cg_hoist_writes_block(body, w, &wn);
+	cg_hoist_writes_stmt(loop->for_post, w, &wn);
+
+	int next_reg = 0;
+
+	/* Strength reduction: fold arr[INV + iv] into a base register = arr + INV*stride + 32. */
+	int iv_off = 0;
+	const char *ivreg = cg_loop_induction(cg, loop, &iv_off);
+	if (ivreg)
+	{
+		Expr *nodes[4];
+		Expr *offs[4];
+		int sn = 0;
+		cg_sr_collect_block(body, iv_off, w, wn, nodes, offs, &sn);
+		cg->sr_ivreg = ivreg;
+		for (int i = 0; i < sn && next_reg < 4; i++)
+		{
+			int stride = cg_elem_stride(nodes[i]->type.kind);
+			char mem[32];
+			sprintf(mem, "[rbp - %d]", nodes[i]->lhs->anno_int);
+			cg_expr(cg, tt, offs[i]);                 /* INV -> rax (invariant, call-free). */
+			cg_emit(cg, "    mov rdx, %s", mem);      /* Array base pointer. */
+			cg_emit(cg, "    lea %s, [rdx + rax*%d + 32]", CG_HOIST_REGS[next_reg], stride);
+			cg->sr_node[cg->sr_n] = nodes[i];
+			cg->sr_reg[cg->sr_n] = next_reg;
+			cg->sr_stride[cg->sr_n] = stride;
+			cg->sr_n++;
+			next_reg++;
+		}
+	}
+
+	/* Cache remaining hot loop-invariant locals (those not folded into an SR base). */
+	HoistCand cand[64];
+	int nc = 0;
+	cg_hoist_reads_block(cg, body, w, wn, cand, &nc);
+	while (next_reg < 4)
+	{
+		int best = -1;
+		for (int i = 0; i < nc; i++)
+		{
+			if (cand[i].count > 0 && (best < 0 || cand[i].count > cand[best].count))
+			{
+				best = i;
+			}
+		}
+
+		if (best < 0)
+		{
+			break;
+		}
+
+		char mem[32];
+		sprintf(mem, "[rbp - %d]", cand[best].off);
+		cg_load_scalar_into(cg, cand[best].k, mem, CG_HOIST_REGS[next_reg], CG_HOIST_REGS32[next_reg]);
+		cg->hoist_off[cg->hoist_n] = cand[best].off;
+		cg->hoist_reg[cg->hoist_n] = next_reg;
+		cg->hoist_n++;
+		cand[best].count = 0;
+		next_reg++;
+	}
+}
+
+static void cg_loop_hoist_end(Codegen *cg)
+{
+	cg->hoist_n = 0;
+	cg->sr_n = 0;
+	cg->sr_ivreg = NULL;
+}
+
 static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
 	int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 	cg_stmt(cg,tt,f,s->for_init,in_main);
 	cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
+	cg_loop_hoist_begin(cg, tt, s);       /* Pin loop-invariant locals into r8..r11 if the body allows. */
 	cg_emit(cg,".L%d:", top);
 	cg->cur_break_label=end;
 	cg->cur_continue_label=cont;
@@ -4404,6 +5221,7 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg_stmt(cg,tt,f,s->for_post,in_main);
 	cg_branch_if(cg,tt,s->cond,top);      /* Bottom test = back-edge; no unconditional jmp. */
 	cg_emit(cg,".L%d:", end);
+	cg_loop_hoist_end(cg);
 }
 
 /* foreach over an array (index loop), string (byte loop), or map (control-byte
@@ -5133,11 +5951,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg->cur_break_label=end;
 		cg->cur_continue_label=cont;          /* continue re-tests the condition at the bottom. */
 		cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
+		cg_loop_hoist_begin(cg, tt, s);       /* Pin loop-invariant locals into r8..r11 if the body allows. */
 		cg_emit(cg,".L%d:",top);
 		cg_block(cg,tt,f,s->then_blk,in_main);
 		cg_emit(cg,".L%d:",cont);
 		cg_branch_if(cg,tt,s->cond,top);      /* Bottom test = back-edge; no unconditional jmp. */
 		cg_emit(cg,".L%d:",end);
+		cg_loop_hoist_end(cg);
 		cg->cur_break_label=sb;
 		cg->cur_continue_label=sc;
 		break;
