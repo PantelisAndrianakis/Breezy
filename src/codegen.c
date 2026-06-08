@@ -4317,13 +4317,23 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 			   retain. rcx=index, rdx=coll survive from the bounds check above.
 			   Vector layout: cap@32, head@40, data array@48; the data array
 			   holds its 8-byte slots at +32. phys = (head+i) & (cap-1) (cap is
-			   a power of two). No call here, so r8/rax/rcx scratch is safe. */
+			   a power of two). No call here, so r8/rax/rcx scratch is safe.
+
+			   Every list that has never had a front insertion/removal keeps
+			   head == 0 (the common case - plain List), and then phys == i, so
+			   skip the ring arithmetic (a cap load plus add/dec/and) entirely.
+			   head is re-tested each iteration, so a body that mutates the front
+			   mid-loop stays correct. */
+			int phys_done = cg_label(cg);
 			cg_emit(cg,"    mov rax, [rdx + 48]");        /* data array ptr */
 			cg_emit(cg,"    mov r8, [rdx + 40]");         /* head */
+			cg_emit(cg,"    test r8, r8");
+			cg_emit(cg,"    jz .L%d", phys_done);         /* head == 0 -> phys = index (rcx unchanged) */
 			cg_emit(cg,"    add rcx, r8");                /* head + index */
 			cg_emit(cg,"    mov r8, [rdx + 32]");         /* cap */
 			cg_emit(cg,"    dec r8");                     /* cap - 1 */
 			cg_emit(cg,"    and rcx, r8");                /* phys = (head+i) & (cap-1) */
+			cg_emit(cg,".L%d:", phys_done);
 			cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
 		}
 		if (ty_is_float(et))
