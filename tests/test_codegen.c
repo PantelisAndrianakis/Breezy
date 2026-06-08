@@ -188,6 +188,18 @@ static void test_logical_emission(void)
 	ASSERT_INT(strstr(g_asm, "sete al") != NULL, 1);
 }
 
+static void test_mul_strength_reduction(void)
+{
+	/* '*' by a power-of-two literal becomes a left shift by log2 of the constant
+	   rather than `mov rbx, C; imul`. (A bare `imul` also appears in the runtime
+	   prelude, so the test asserts the specific shift the reduction emits.) */
+	emit("void main() { int n; n = 100; int a; a = n * 4; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "shl rax, 2") != NULL, 1);
+
+	emit("void main() { int n; n = 100; int a; a = n * 8; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "shl rax, 3") != NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -216,12 +228,13 @@ static void test_branch_fusion(void)
 	   than materializing a 0/1 boolean and testing it. The two-line forms below are
 	   specific to the fused output ('n > 1' -> jump-unless = jle; 'n < 3' -> jge);
 	   plain instruction names like setg/jle also appear in the prelude, so the test
-	   asserts the exact fused pair instead. */
+	   asserts the exact fused pair instead. `n` is an int local, now promoted to a
+	   register (see promote.c), so the fused compare reads it straight from r12. */
 	emit("void main() { int n; n = 5; if (n > 1) { print(1); } }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "cmp rax, 1\n    jle") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "cmp r12, 1\n    jle") != NULL, 1);
 
 	emit("void main() { int n; n = 5; if (n < 3) { print(1); } }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "cmp rax, 3\n    jge") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "cmp r12, 3\n    jge") != NULL, 1);
 }
 
 static void test_divisibility_test(void)
@@ -431,6 +444,7 @@ int main(void)
 	RUN(test_devirt_unoverridden_base_method);
 	RUN(test_bitwise_emission);
 	RUN(test_logical_emission);
+	RUN(test_mul_strength_reduction);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

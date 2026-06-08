@@ -31,15 +31,19 @@ typedef struct
 	int  tick;
 } Ctx;
 
-/* Eligible kinds: 64-bit integers only. Narrower ints (int/short/byte/bool) are
-   excluded because the slot load path sign/zero-extends them on every read
-   (cg_load_scalar); a bare register read would skip that and leak dirty high
-   bits into 64-bit arithmetic. Floats are excluded too (callee-saved XMM is
-   Win64-only; integer promotion stays ABI-symmetric). Objects/strings/etc. are
+/* Eligible kinds: 64-bit integers and 32-bit signed int. A promoted local lives
+   only in its register, so the register must always hold a value the read path
+   (a bare `mov rax, reg`) can use directly. For TY_INT that means a sign-extended
+   64-bit value, which codegen guarantees by sign-extending (`movsxd reg, eax`)
+   into the register on every store (cg_store_local_off) and by NOT running the
+   in-place register-arithmetic path on a 32-bit target (its 64-bit ops would not
+   wrap at 32 bits). Narrower ints (short/byte/bool) and unsigned int stay on the
+   stack for now (their extension width differs). Floats are excluded (callee-saved
+   XMM is Win64-only; promotion stays ABI-symmetric). Objects/strings/etc. are
    excluded so the GC release walk's [rbp-off] slots stay populated. */
 static int is_promotable_kind(TypeKind k)
 {
-	return k == TY_LONG || k == TY_ULONG;
+	return k == TY_LONG || k == TY_ULONG || k == TY_INT;
 }
 
 static int has_catch_block(Block *b);

@@ -64,13 +64,22 @@ static const char *cg_local_reg(Codegen *cg, int off)
 }
 
 /* Store rax into local `off`: its register home if promoted, else its stack slot.
-   Slot-safe for any offset not in the map, so internal temporaries are unaffected. */
-static void cg_store_local_off(Codegen *cg, int off)
+   Slot-safe for any offset not in the map, so internal temporaries are unaffected.
+   A promoted 32-bit int is sign-extended (movsxd reg, eax) so the bare register
+   read path always sees a correct 64-bit value; 64-bit locals take the full rax. */
+static void cg_store_local_off(Codegen *cg, int off, TypeKind k)
 {
 	const char *r = cg_local_reg(cg, off);
 	if (r)
 	{
-		cg_emit(cg, "    mov %s, rax", r);
+		if (k == TY_INT)
+		{
+			cg_emit(cg, "    movsxd %s, eax", r);
+		}
+		else
+		{
+			cg_emit(cg, "    mov %s, rax", r);
+		}
 	}
 	else
 	{
@@ -194,6 +203,15 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 
 	const char *R = cg_local_reg(cg, target->anno_int);
 	if (!R)
+	{
+		return 0;
+	}
+
+	/* In-place register arithmetic mutates R with 64-bit ops, which is exact only
+	   for a 64-bit target. A promoted 32-bit int needs its result wrapped to 32
+	   bits and sign-extended after each step, so defer it to the generic store
+	   path (cg_store_local_off re-applies movsxd). */
+	if (target->type.kind != TY_LONG && target->type.kind != TY_ULONG)
 	{
 		return 0;
 	}
@@ -1119,6 +1137,27 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    sub rax, rdx");
 		}
 
+		cg_extend_reg(cg,e->type.kind);
+		return;
+	}
+
+	/* Strength-reduce multiply by a positive power-of-two constant to a left shift
+	   (lhs is in rax). Sound for both signednesses: the low bits of `x << k` match
+	   `x * 2^k`, and cg_extend_reg then narrows to the declared width exactly as the
+	   imul path would. This collapses the ubiquitous index arithmetic (i*4, r*8,
+	   (v+u)*2, ...) from `mov rbx,C; imul` to a single `shl`. */
+	if (e->op==TOKEN_STAR && !ty_is_float(e->type.kind) && e->rhs->kind==EX_INT
+		&& e->rhs->int_val > 1 && (e->rhs->int_val & (e->rhs->int_val - 1)) == 0)
+	{
+		int k = 0;
+		long long v = e->rhs->int_val;
+		while (v > 1)
+		{
+			v >>= 1;
+			k++;
+		}
+
+		cg_emit(cg,"    shl rax, %d", k);
 		cg_extend_reg(cg,e->type.kind);
 		return;
 	}
@@ -3861,7 +3900,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_expr(cg,tt,e->lhs);                 /* Current value -> rax. */
 		cg_emit(cg, e->op==TOKEN_PLUSPLUS ? "    add rax, 1" : "    sub rax, 1");
 		cg_extend_reg(cg,e->type.kind);        /* Re-extend to the declared width. */
-		cg_store_local_off(cg, e->lhs->anno_int);   /* Register home if promoted, else slot. */
+		cg_store_local_off(cg, e->lhs->anno_int, e->lhs->type.kind);   /* Register home if promoted, else slot. */
 		break;
 	case EX_NEW:
 		cg_new(cg,tt,e);
@@ -4098,7 +4137,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		}
 		else
 		{
-			cg_store_local_off(cg, target->anno_int);   /* Register home if promoted, else slot. */
+			cg_store_local_off(cg, target->anno_int, target->type.kind);   /* Register home if promoted, else slot. */
 		}
 	}
 	else if (target->anno_int==-1)   /* Static field: a global slot (no receiver). */
@@ -4267,7 +4306,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
 		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
 		cg_aligned_call(cg,"bzy_map_key_at");    /* Key (borrowed) in rax. */
-		cg_store_local_off(cg, s->decl_offset);
+		cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 		if (s->fe_val_type.kind != TY_VOID)
 		{
 			TypeKind vt = s->fe_val_type.kind;
@@ -4283,7 +4322,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 			}
 			else
 			{
-				cg_emit(cg,"    mov [rbp - %d], rax", s->fe_val_offset);
+				cg_store_local_off(cg, s->fe_val_offset, vt);   /* Register home if promoted, else slot. */
 			}
 		}
 	}
@@ -4294,7 +4333,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    jge .L%d", end);
 		cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_aux_offset);
 		cg_emit(cg,"    movzx eax, byte [rax + rcx]");   /* byte -> int (zero-extended). */
-		cg_store_local_off(cg, s->decl_offset);
+		cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 	}
 	else if (gen_vec)
 	{
@@ -4345,7 +4384,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		}
 		else
 		{
-			cg_store_local_off(cg, s->decl_offset);
+			cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 		}
 
 		if (managed)   /* bzy_vec_get returned owned; the loop var is borrowed. */
@@ -4372,7 +4411,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		else
 		{
 			cg_load_scalar(cg,et,"[rbx]");
-			cg_store_local_off(cg, s->decl_offset);
+			cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 		}
 	}
 
@@ -4785,7 +4824,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			if (ty_is_managed(s->decl_type.kind))
 			{
 				cg_expr_owned(cg,tt,s->decl_init);
-				cg_store_local_off(cg, s->decl_offset);
+				cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 			}
 			else
 			{
@@ -4799,7 +4838,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				}
 				else
 				{
-					cg_store_local_off(cg, s->decl_offset);
+					cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 				}
 			}
 		}
@@ -5331,6 +5370,10 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 			if (pr)
 			{
 				cg_emit(cg,"    mov %s, %s", pr, cg_iarg(cg, ii));   /* Seed a promoted param straight into its register. */
+				if (pk == TY_INT)
+				{
+					cg_emit(cg,"    movsxd %s, %sd", pr, pr);   /* Sign-extend a 32-bit int param (r12 -> r12d). */
+				}
 			}
 			else
 			{
