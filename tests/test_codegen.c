@@ -157,14 +157,16 @@ static void test_devirt_unoverridden_base_method(void)
 
 static void test_bitwise_emission(void)
 {
+	/* Bitwise by a fits-imm32 constant lowers to the immediate form (no rbx
+	   staging): `and/or/xor rax, IMM`. */
 	emit("void main() { int a; a = 6 & 3; }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "and rax, rbx") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "and rax, 3") != NULL, 1);
 
 	emit("void main() { int a; a = 6 | 1; }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "or rax, rbx") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "or rax, 1") != NULL, 1);
 
 	emit("void main() { int a; a = 5 ^ 1; }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "xor rax, rbx") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "xor rax, 1") != NULL, 1);
 
 	emit("void main() { int a; a = ~0; }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "not rax") != NULL, 1);

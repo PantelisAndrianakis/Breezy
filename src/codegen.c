@@ -5392,10 +5392,13 @@ static int cg_expr_refs_off(Expr *e, int off)
 static int cg_acc_deferrable_block(Block *b, int off);
 
 /* True if every appearance of int slot `off` in this statement is as the target
-   and left operand of a self-accumulation `off = off +/- EXPR` (EXPR free of off),
-   which always lowers to a 32-bit in-place add/sub. Any other read (a comparison,
-   an index, a different assignment form) would observe the full 64-bit register
-   and thus disqualifies deferral. */
+   and one operand of a self-accumulation `off = off <op> EXPR` (EXPR free of off)
+   for an op whose low 32 bits depend only on the operands' low 32 bits: +, -, *,
+   &, |, ^. Each lowers to a 32-bit in-place op, so the register's low half stays
+   correct every iteration and only a single sign-extension after the loop is
+   needed. Shifts and divide/remainder are excluded - they read the full 64-bit
+   value. Any other read (a comparison, an index, a different assignment form) would
+   observe the full register and thus disqualifies deferral. */
 static int cg_acc_deferrable_stmt(Stmt *s, int off)
 {
 	if (!s)
@@ -5407,11 +5410,23 @@ static int cg_acc_deferrable_stmt(Stmt *s, int off)
 		&& s->target->anno_int == off)
 	{
 		Expr *v = s->value;
-		if (v && v->kind == EX_BINARY && (v->op == TOKEN_PLUS || v->op == TOKEN_MINUS)
-			&& v->lhs->kind == EX_IDENT && v->lhs->anno_int == off
-			&& s->target->type.kind == TY_INT && !cg_expr_refs_off(v->rhs, off))
+		if (v && v->kind == EX_BINARY && s->target->type.kind == TY_INT)
 		{
-			return 1;   /* off appears only as target + value's left operand. */
+			int op = v->op;
+			int safe_op = (op==TOKEN_PLUS || op==TOKEN_MINUS || op==TOKEN_STAR
+						   || op==TOKEN_AMP || op==TOKEN_PIPE || op==TOKEN_CARET);
+			int commutative = (op != TOKEN_MINUS);   /* all but subtraction. */
+			if (safe_op && v->lhs->kind==EX_IDENT && v->lhs->anno_int==off
+				&& !cg_expr_refs_off(v->rhs, off))
+			{
+				return 1;   /* off = off <op> EXPR. */
+			}
+
+			if (safe_op && commutative && v->rhs->kind==EX_IDENT && v->rhs->anno_int==off
+				&& !cg_expr_refs_off(v->lhs, off))
+			{
+				return 1;   /* off = EXPR <op> off (commutative). */
+			}
 		}
 
 		return 0;       /* Assignment to off in a form that is not a 32-bit self-accumulate. */
