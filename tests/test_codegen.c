@@ -240,6 +240,28 @@ static void test_register_index_addr(void)
 	ASSERT_INT(strstr(g_asm, "lea rbx, [rax + r12*4 + 32]") != NULL, 1);
 }
 
+static void test_foreach_base_hoist(void)
+{
+	/* foreach over a value List with a call-free, nested-loop-free body: the
+	   collection's data base, length, head and cap are loop-invariant, so they are
+	   hoisted into r8..r11 once before the loop instead of being reloaded through
+	   the collection pointer (rdx) every iteration. The element load addresses the
+	   hoisted data base directly, and the length test compares against the hoisted
+	   length register - no per-iteration [rdx + 24] / [rdx + 48] reload. */
+	emit(
+		"void main() {"
+		"  List<long> xs; xs = new List<long>();"
+		"  int i; for (i = 0; i < 8; i = i + 1) { xs.add((long)i); }"
+		"  long s; s = 0;"
+		"  foreach (long x in xs) { s = s + x; }"
+		"}",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "mov r9, [rdx + 48]") != NULL, 1);    /* data base hoisted */
+	ASSERT_INT(strstr(g_asm, "mov r10, [rdx + 24]") != NULL, 1);   /* length hoisted */
+	ASSERT_INT(strstr(g_asm, "cmp rcx, r10") != NULL, 1);          /* length test from register */
+	ASSERT_INT(strstr(g_asm, "[r9 + rcx*8 + 32]") != NULL, 1);     /* element via hoisted base */
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -512,6 +534,7 @@ int main(void)
 	RUN(test_fp_leaf_fusion);
 	RUN(test_inplace_mac);
 	RUN(test_register_index_addr);
+	RUN(test_foreach_base_hoist);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

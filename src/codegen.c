@@ -5884,6 +5884,16 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	int gen_set = (ik==TY_GENERIC && strcmp(s->expr->type.class_name,"Set")==0);   /* Set is a map. */
 	int gen_vec = (ik==TY_GENERIC && !gen_set);                                    /* List/Stack/Queue/Deque. */
 
+	/* A value-element foreach with a call-free, nested-loop-free, mutation-free body
+	   (cg_hoist_block_ok) has a loop-invariant collection: its data base, length,
+	   head and cap are hoisted into r8..r11 once before the loop instead of being
+	   reloaded through the collection pointer every iteration. cg_hoist_block_ok
+	   guarantees no nested loop (which would reclaim r8..r11 via the loop-hoist pool),
+	   no call (which would clobber them or free the list), and no managed store (so
+	   the collection reference and its front cannot change mid-loop). */
+	int hoist_vec = gen_vec && s->expr->type.elem && !ty_is_managed(s->expr->type.elem->kind)
+					&& cg_hoist_block_ok(s->then_blk);
+
 	/* The loop cursor may be promoted to a register (see promote.c); `cur` is the
 	   operand to read/write it - either a register name or its stack slot. */
 	const char *curreg = cg_local_reg(cg, s->fe_index_offset);
@@ -5916,6 +5926,16 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
 		cg_aligned_call(cg,"bzy_str_data");
 		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_aux_offset);
+	}
+
+	if (hoist_vec)
+	{
+		/* Loop-invariant collection fields -> r8..r11 once (see hoist_vec note). */
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_coll_offset);
+		cg_emit(cg,"    mov r9, [rdx + 48]");    /* data array ptr */
+		cg_emit(cg,"    mov r10, [rdx + 24]");   /* length */
+		cg_emit(cg,"    mov r11, [rdx + 40]");   /* head */
+		cg_emit(cg,"    mov r8, [rdx + 32]");    /* cap */
 	}
 
 	cg_emit(cg,".L%d:", top);
@@ -5963,41 +5983,63 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	{
 		TypeKind et = s->expr->type.elem->kind;
 		int managed = ty_is_managed(et);
-		cg_emit(cg,"    mov rcx, %s", cur);
-		cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_coll_offset);
-		cg_emit(cg,"    cmp rcx, [rdx + 24]");           /* index vs length@24 */
-		cg_emit(cg,"    jge .L%d", end);
-		if (managed)
+		if (hoist_vec)
 		{
-			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
-			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
-			cg_aligned_call(cg,"bzy_vec_get");           /* Element (owned -> retained) in rax. */
+			/* Fully hoisted value path: data/length/head/cap live in r9/r10/r11/r8
+			   across the whole loop (see hoist_vec note), so the body reloads
+			   nothing through the collection pointer. phys = (head+i) & (cap-1),
+			   with the head==0 common case skipping the ring arithmetic. */
+			int phys_done = cg_label(cg);
+			cg_emit(cg,"    mov rcx, %s", cur);
+			cg_emit(cg,"    cmp rcx, r10");               /* index vs hoisted length */
+			cg_emit(cg,"    jge .L%d", end);
+			cg_emit(cg,"    test r11, r11");              /* hoisted head */
+			cg_emit(cg,"    jz .L%d", phys_done);         /* head == 0 -> phys = index */
+			cg_emit(cg,"    add rcx, r11");               /* head + index */
+			cg_emit(cg,"    mov rax, r8");                /* cap (hoisted) */
+			cg_emit(cg,"    dec rax");                    /* cap - 1 */
+			cg_emit(cg,"    and rcx, rax");               /* phys = (head+i) & (cap-1) */
+			cg_emit(cg,".L%d:", phys_done);
+			cg_emit(cg,"    mov rax, [r9 + rcx*8 + 32]"); /* slot value via hoisted data base */
 		}
 		else
 		{
-			/* Value element: inline the ring load, skipping the bzy_vec_get
-			   call, its redundant bounds check, and the value-case no-op
-			   retain. rcx=index, rdx=coll survive from the bounds check above.
-			   Vector layout: cap@32, head@40, data array@48; the data array
-			   holds its 8-byte slots at +32. phys = (head+i) & (cap-1) (cap is
-			   a power of two). No call here, so r8/rax/rcx scratch is safe.
+			cg_emit(cg,"    mov rcx, %s", cur);
+			cg_emit(cg,"    mov rdx, [rbp - %d]", s->fe_coll_offset);
+			cg_emit(cg,"    cmp rcx, [rdx + 24]");           /* index vs length@24 */
+			cg_emit(cg,"    jge .L%d", end);
+			if (managed)
+			{
+				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
+				cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), cur);
+				cg_aligned_call(cg,"bzy_vec_get");           /* Element (owned -> retained) in rax. */
+			}
+			else
+			{
+				/* Value element: inline the ring load, skipping the bzy_vec_get
+				   call, its redundant bounds check, and the value-case no-op
+				   retain. rcx=index, rdx=coll survive from the bounds check above.
+				   Vector layout: cap@32, head@40, data array@48; the data array
+				   holds its 8-byte slots at +32. phys = (head+i) & (cap-1) (cap is
+				   a power of two). No call here, so r8/rax/rcx scratch is safe.
 
-			   Every list that has never had a front insertion/removal keeps
-			   head == 0 (the common case - plain List), and then phys == i, so
-			   skip the ring arithmetic (a cap load plus add/dec/and) entirely.
-			   head is re-tested each iteration, so a body that mutates the front
-			   mid-loop stays correct. */
-			int phys_done = cg_label(cg);
-			cg_emit(cg,"    mov rax, [rdx + 48]");        /* data array ptr */
-			cg_emit(cg,"    mov r8, [rdx + 40]");         /* head */
-			cg_emit(cg,"    test r8, r8");
-			cg_emit(cg,"    jz .L%d", phys_done);         /* head == 0 -> phys = index (rcx unchanged) */
-			cg_emit(cg,"    add rcx, r8");                /* head + index */
-			cg_emit(cg,"    mov r8, [rdx + 32]");         /* cap */
-			cg_emit(cg,"    dec r8");                     /* cap - 1 */
-			cg_emit(cg,"    and rcx, r8");                /* phys = (head+i) & (cap-1) */
-			cg_emit(cg,".L%d:", phys_done);
-			cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
+				   Every list that has never had a front insertion/removal keeps
+				   head == 0 (the common case - plain List), and then phys == i, so
+				   skip the ring arithmetic (a cap load plus add/dec/and) entirely.
+				   head is re-tested each iteration, so a body that mutates the front
+				   mid-loop stays correct. */
+				int phys_done = cg_label(cg);
+				cg_emit(cg,"    mov rax, [rdx + 48]");        /* data array ptr */
+				cg_emit(cg,"    mov r8, [rdx + 40]");         /* head */
+				cg_emit(cg,"    test r8, r8");
+				cg_emit(cg,"    jz .L%d", phys_done);         /* head == 0 -> phys = index (rcx unchanged) */
+				cg_emit(cg,"    add rcx, r8");                /* head + index */
+				cg_emit(cg,"    mov r8, [rdx + 32]");         /* cap */
+				cg_emit(cg,"    dec r8");                     /* cap - 1 */
+				cg_emit(cg,"    and rcx, r8");                /* phys = (head+i) & (cap-1) */
+				cg_emit(cg,".L%d:", phys_done);
+				cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
+			}
 		}
 		if (ty_is_float(et))
 		{
