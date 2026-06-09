@@ -177,6 +177,7 @@ check_fail generic_unknown tests/samples/fail/generics/generic_unknown.bzy
 check generic_box   tests/samples/pass/generics/proj_generic_box   $'7\nhi'
 check generic_pair  tests/samples/pass/generics/proj_generic_pair  $'42\nanswer'
 check generic_announce tests/samples/pass/generics/proj_generic_bound $'woof\nmeow'
+check multi_class_generic tests/samples/pass/generics/multi_class_generic.bzy $'21\n20'
 check static_field tests/samples/pass/oop/proj_static_field $'1\n2\n3\n3'
 check static_class tests/samples/pass/oop/proj_static_class $'100\nBreezy\n50\n42'
 check static_singleton tests/samples/pass/oop/proj_static_singleton $'hello'

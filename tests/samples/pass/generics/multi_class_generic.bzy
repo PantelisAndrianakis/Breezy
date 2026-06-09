@@ -1,0 +1,30 @@
+// A generic template class and an ordinary class in the same file.
+class Wrap<T>
+{
+	T value;
+	void set(T v) { this.value = v; }
+	T get() { return this.value; }
+}
+
+class Holder
+{
+	int n;
+
+	int twice()
+	{
+		return n + n;
+	}
+}
+
+void main()
+{
+	Wrap<int> w;
+	w = new Wrap<int>();
+	w.set(21);
+	print(w.get());        // 21
+
+	Holder h;
+	h = new Holder();
+	h.n = 10;
+	print(h.twice());      // 20
+}
