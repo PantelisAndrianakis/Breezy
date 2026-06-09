@@ -20,7 +20,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [Built-in vector types](language/vector-types.md) | The eight `Vector2/3 x i/l/f/d` types: `equals`, `calculateDistance`. |
 | [No primitive wrapper classes](language/no-wrapper-classes.md) | Raw machine integers, no boxing, `int` vs `long`. |
 | [Console I/O](language/console-io.md) | Built-in `print`, `input`, `inputInt` - no imports needed. |
-| [One class per file](language/one-class-per-file.md) | Project structure, no headers, no imports, order-independent compilation. |
+| [One class per file](language/one-class-per-file.md) | Recommended project structure, no headers, no imports, order-independent compilation. |
 | [Allman braces & style](language/allman-braces.md) | The official brace and formatting style. |
 | [Control flow](language/control-flow.md) | `if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, `return`. |
 | [Exceptions](language/exceptions.md) | `throw`/`try`/`catch`, the exception hierarchy, is-a matching, zero-cost-when-not-thrown. |

@@ -1,0 +1,14 @@
+class Widget
+{
+	int a;
+}
+
+class Widget
+{
+	int b;
+}
+
+void main()
+{
+	print(0);
+}

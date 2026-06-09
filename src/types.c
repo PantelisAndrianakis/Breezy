@@ -215,6 +215,12 @@ void types_register_unit_names(TypeTable *tt, Unit *u)
 {
 	for (int ci=0; ci<u->class_count; ci++)
 	{
+		if (types_find_class(tt,u->klasses[ci]->name))
+		{
+			fprintf(stderr,"Class '%s' is already defined.\n",u->klasses[ci]->name);
+			exit(1);
+		}
+
 		if (tt->class_count>=MAX_CLASSES)
 		{
 			fprintf(stderr,"Too many classes.\n");

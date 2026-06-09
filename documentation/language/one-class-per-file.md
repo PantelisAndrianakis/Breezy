@@ -1,12 +1,12 @@
 # One Class Per File - No Headers, Ever
 
-Breezy takes the Java/C# approach to project structure and pushes it further: **one class per `.bzy` file**, with the file name matching the class. There are **no header files, no forward declarations, no `#include`, and no hand-written imports**. You write logic, not boilerplate.
+Breezy takes the Java/C# approach to project structure and pushes it further: **one class per `.bzy` file is the recommended layout** (file name matching the class), though the compiler lets you put several classes in one file when that reads better. There are **no header files, no forward declarations, no `#include`, and no hand-written imports**. You write logic, not boilerplate.
 
 ← [Back to the guide](../guide.md)
 
 ---
 
-## The rule
+## The recommended layout
 
 Each class lives in its own file, named after the class:
 
@@ -17,7 +17,9 @@ src/
 └── Main.bzy       // The entry point: void main().
 ```
 
-`Client.bzy` contains `class Client`, `Zone.bzy` contains `class Zone`, and so on. The program's **entry point** is a top-level `void main()` living in its own file (here, `Main.bzy`). Every other file is exactly one class.
+`Client.bzy` contains `class Client`, `Zone.bzy` contains `class Zone`, and so on. The program's **entry point** is a top-level `void main()` living in its own file (here, `Main.bzy`).
+
+This one-class-per-file layout is a **convention, not a requirement**. You may declare several classes in a single `.bzy` file; each behaves exactly as if it lived alone in its own file - globally visible, with a globally unique name, and not nested inside any other. The convention is recommended because it keeps a class exactly where its name says it is.
 
 ---
 
@@ -71,8 +73,8 @@ void main()
 
 ## Rules & gotchas
 
-- **File name must match the class name** (`Client.bzy` -> `class Client`).
-- **One class per file** - do not put two classes in the same `.bzy`.
+- **File name matching the class name is recommended** (`Client.bzy` -> `class Client`) but not enforced.
+- **Class names are globally unique** - two classes may not share a name, whether in the same file or different files.
 - **`void main()` is top-level**, in its own file, and is the single entry point.
 - **No imports or headers anywhere** - cross-file references resolve automatically.
 

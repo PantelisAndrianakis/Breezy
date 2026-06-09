@@ -117,7 +117,7 @@ This is **polymorphism**. The variable's declared type is `Animal`, but the call
 
 ## Runtime class name
 
-Every object carries its real (dynamic) type, and you can read it with the built-in `getClassName()`, which returns a `string`. This is a lightweight form of reflection. Because Breezy uses [one class per file](one-class-per-file.md) with no packages, the simple name *is* the full name.
+Every object carries its real (dynamic) type, and you can read it with the built-in `getClassName()`, which returns a `string`. This is a lightweight form of reflection. Because Breezy has no packages, the simple name *is* the full name (class names are globally unique; see [one class per file](one-class-per-file.md)).
 
 ```breezy
 Animal a;
@@ -252,7 +252,7 @@ void main()
 
 ## Rules & gotchas
 
-- **One class per file.** Each class lives in its own `.bzy` file whose name matches the class. The program's entry point is a top-level `void main()` in its own file. See [One class per file](one-class-per-file.md).
+- **One class per file (recommended).** Each class usually lives in its own `.bzy` file whose name matches the class, though the compiler allows several per file. The program's entry point is a top-level `void main()`. See [One class per file](one-class-per-file.md).
 - **Declare, then assign.** Locals are two steps (`Type x;` then `x = ...;`). Never combine them outside a `for` header.
 - **No instance-field initializers.** Initialize fields in a constructor, not at the field declaration.
 - **Single inheritance only.** A class `extends` at most one parent. For multiple contracts, use [interfaces](interfaces.md).
