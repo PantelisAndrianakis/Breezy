@@ -37,6 +37,7 @@ typedef struct Breeze
 	void (*thunk)(void*);       /* Arg'd spawn: codegen-emitted per-target thunk. */
 	void *arg;                  /* Arg block for the thunk (points at argbuf below). */
 	int done;
+	int home;                   /* Worker id this breeze last ran on (cache-affine wake target). */
 	struct Breeze *next;
 	int64_t argbuf[4];          /* Inline storage for the (<=4, per resolve.c) spawn args. The
 	                               Breeze is pooled with its coroutine, so this replaces the
@@ -73,7 +74,9 @@ typedef struct
 
 typedef struct Worker
 {
-	Deque dq;
+	Deque     dq;
+	Breeze   *inj_head, *inj_tail;   /* Foreign-producer injection (MPSC under inj_lock). */
+	bzy_mutex inj_lock;
 } Worker;
 
 static CLArray *cl_array_new(int64_t cap)
@@ -239,50 +242,52 @@ static void enqueue_on(int wid, Breeze *b)
 	wake_one();
 }
 
-/* Foreign-producer injection queue: a non-worker thread (offload / IOCP completion)
-   cannot push a Chase-Lev deque (owner-only), so external wakes land here under a
-   short lock and workers drain it in find_work. Untouched on the pure-breeze hot
-   path, so it adds no cost to spawn/channel workloads. */
-static Breeze   *g_inject_head, *g_inject_tail;
-static bzy_mutex g_inject_lock = BZY_MUTEX_INIT;
-
-static void inject(Breeze *b)
+/* Per-worker foreign-producer injection: a non-worker thread (offload / reactor /
+   IOCP completion) cannot push a Chase-Lev deque (owner-only), so external wakes
+   land on a target worker's own short-locked MPSC queue. Sharding the queue per
+   worker (was a single global lock) removes the serialization of every cross-thread
+   wake - the network reactor's bottleneck at high connection counts. The reactor
+   targets a breeze's home worker (cache affinity); find_work drains the local queue
+   first, then steals from siblings so nothing strands behind a busy home worker. */
+static void inject_to(int wid, Breeze *b)
 {
-	bzy_mutex_lock(&g_inject_lock);
+	Worker *wk = &g_workers[wid];
+	bzy_mutex_lock(&wk->inj_lock);
 	b->next = NULL;
-	if (g_inject_tail)
+	if (wk->inj_tail)
 	{
-		g_inject_tail->next = b;
+		wk->inj_tail->next = b;
 	}
 	else
 	{
-		g_inject_head = b;
+		wk->inj_head = b;
 	}
 
-	g_inject_tail = b;
-	bzy_mutex_unlock(&g_inject_lock);
+	wk->inj_tail = b;
+	bzy_mutex_unlock(&wk->inj_lock);
 	wake_one();
 }
 
-static Breeze *inject_pop(void)
+static Breeze *inject_drain(int wid)
 {
-	if (!__atomic_load_n(&g_inject_head, __ATOMIC_RELAXED))
+	Worker *wk = &g_workers[wid];
+	if (!__atomic_load_n(&wk->inj_head, __ATOMIC_RELAXED))
 	{
 		return NULL;   /* Common case: nothing injected, no lock taken. */
 	}
 
-	bzy_mutex_lock(&g_inject_lock);
-	Breeze *b = g_inject_head;
+	bzy_mutex_lock(&wk->inj_lock);
+	Breeze *b = wk->inj_head;
 	if (b)
 	{
-		g_inject_head = b->next;
-		if (!g_inject_head)
+		wk->inj_head = b->next;
+		if (!wk->inj_head)
 		{
-			g_inject_tail = NULL;
+			wk->inj_tail = NULL;
 		}
 	}
 
-	bzy_mutex_unlock(&g_inject_lock);
+	bzy_mutex_unlock(&wk->inj_lock);
 	return b;
 }
 
@@ -345,6 +350,9 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 	for (int i = old; i < n; i++)
 	{
 		cl_init(&g_workers[i].dq);
+		g_workers[i].inj_head = NULL;
+		g_workers[i].inj_tail = NULL;
+		bzy_mutex_init(&g_workers[i].inj_lock);
 	}
 
 	g_nworkers = n;
@@ -449,7 +457,14 @@ void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again, on this 
 
 void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread (e.g. an offload worker). */
 {
-	inject((Breeze*)breeze);   /* Not a worker thread: cannot push a deque, so go via the injection queue. */
+	Breeze *b = (Breeze*)breeze;
+	int wid = b->home;
+	if (wid < 0 || wid >= g_nworkers)
+	{
+		wid = 0;   /* Unscheduled fallback (a breeze that has not run yet). */
+	}
+
+	inject_to(wid, b);   /* Not a worker thread: target the home worker's injection queue. */
 }
 
 void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re-checks timers. */
@@ -503,7 +518,22 @@ static Breeze *find_work(void)
 		}
 	}
 
-	return inject_pop();
+	Breeze *ij = inject_drain(t_wid);   /* Our own injection queue (reactor wakes land here). */
+	if (ij)
+	{
+		return ij;
+	}
+
+	for (int i = 1; i < g_nworkers; i++)   /* Steal a stranded wake off a busy sibling's queue. */
+	{
+		Breeze *b = inject_drain((t_wid + i) % g_nworkers);
+		if (b)
+		{
+			return b;
+		}
+	}
+
+	return NULL;
 }
 
 /* The scheduler loop, run by every worker thread. */
@@ -617,6 +647,7 @@ static void worker_loop(void)
 
 run:
 		t_running = b;
+		b->home = t_wid;                       /* Cache-affine wake target for the reactor. */
 		bzy_coroutine_switch(b->coroutine);
 		t_running = NULL;
 
