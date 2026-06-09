@@ -23,4 +23,9 @@ void config_parse_links(const char *text, LinkConfig *cfg);
    A missing file is a silent no-op. */
 void config_load(const char *src_arg, LinkConfig *cfg);
 
+/* 1 if the experimental IR + register-allocator backend is enabled (env BZY_IR
+   set to a non-empty, non-"0" value). Read once from the environment and cached.
+   Default 0, so the existing emitter remains the default path. */
+int bzy_ir_enabled(void);
+
 #endif

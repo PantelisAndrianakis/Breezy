@@ -46,12 +46,19 @@ static void test_empty_is_noop(void)
 	ASSERT_INT(cfg.nlib_paths, 0);
 }
 
+static void test_ir_flag_defaults_off(void)
+{
+	/* With BZY_IR unset, the experimental IR backend is disabled. */
+	ASSERT_INT(bzy_ir_enabled(), 0);
+}
+
 int main(void)
 {
 	RUN(test_parse_libs);
 	RUN(test_parse_lib_paths);
 	RUN(test_ignores_other_sections_and_comments);
 	RUN(test_empty_is_noop);
+	RUN(test_ir_flag_defaults_off);
 	SUMMARY();
 	return 0;
 }

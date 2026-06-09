@@ -1,7 +1,20 @@
 #include "config.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+
+int bzy_ir_enabled(void)
+{
+	static int cached = -1;
+	if (cached < 0)
+	{
+		const char *v = getenv("BZY_IR");
+		cached = (v && v[0] && !(v[0] == '0' && v[1] == '\0')) ? 1 : 0;
+	}
+
+	return cached;
+}
 
 /* Append each double-quoted token in `val` to the string table at `base`
    (each slot `width` bytes, `cap` slots), bumping *count. Tokens longer than

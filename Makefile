@@ -112,6 +112,9 @@ $(OBJDIR)/test_ownership: tests/test_ownership.c $(OBJS) | $(OBJDIR)
 $(OBJDIR)/test_escape: tests/test_escape.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_escape.c $(OBJS)
 
+$(OBJDIR)/test_ir: tests/test_ir.c $(OBJS) src/ir.c src/irlower.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_ir.c $(OBJS) src/ir.c src/irlower.c
+
 # Each runtime object compiles into the per-host build dir (host-selected set in
 # RT_OBJ), so Windows and Linux objects never collide in one tree.
 $(OBJDIR)/%.o: runtime/%.c $(RT_HDR) | $(OBJDIR)
@@ -128,7 +131,7 @@ $(OBJDIR)/test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR) | $(OBJDIR)
 	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
 TEST_BINS = $(addprefix $(OBJDIR)/,test_lexer test_ast test_config test_parser test_types \
-            test_resolve test_ownership test_escape test_promote test_codegen test_coroutine test_reactor test_runtime)
+            test_resolve test_ownership test_escape test_promote test_codegen test_ir test_coroutine test_reactor test_runtime)
 
 test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_lexer
@@ -141,6 +144,7 @@ test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_escape
 	$(OBJDIR)/test_promote
 	$(OBJDIR)/test_codegen
+	$(OBJDIR)/test_ir
 	$(OBJDIR)/test_coroutine
 	$(OBJDIR)/test_reactor
 	$(OBJDIR)/test_runtime
