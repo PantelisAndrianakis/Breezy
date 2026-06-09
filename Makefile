@@ -49,7 +49,7 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/type
 # CreateProcess, Linux uses an epoll reactor + libcurl + fork/exec. The process
 # shell (system.c) now builds on both.
 RT_COMMON = alloc print string strconv array map vector clock random exception regex \
-            map_entry channel timer reflect args scheduler
+            map_entry channel timer reflect args scheduler pollstate
 ifeq ($(findstring Linux,$(UNAME)),Linux)
   RT_NAMES = $(RT_COMMON) coroutine offload system file filechannel logger reactor_epoll socket udp http
 else
@@ -91,6 +91,9 @@ $(OBJDIR)/test_codegen: tests/test_codegen.c $(OBJS) | $(OBJDIR)
 $(OBJDIR)/test_coroutine: tests/test_coroutine.c $(CORO_SRC) runtime/coroutine.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -Iruntime -Itests -o $@ tests/test_coroutine.c $(CORO_SRC) $(PLATFORM_LIBS)
 
+$(OBJDIR)/test_reactor: tests/test_reactor.c runtime/pollstate.c runtime/pollstate.h | $(OBJDIR)
+	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_reactor.c runtime/pollstate.c $(PLATFORM_LIBS)
+
 $(OBJDIR)/test_parser: tests/test_parser.c src/lexer.c src/ast.c src/parser.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_parser.c src/lexer.c src/ast.c src/parser.c
 
@@ -125,7 +128,7 @@ $(OBJDIR)/test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR) | $(OBJDIR)
 	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
 TEST_BINS = $(addprefix $(OBJDIR)/,test_lexer test_ast test_config test_parser test_types \
-            test_resolve test_ownership test_escape test_promote test_codegen test_coroutine test_runtime)
+            test_resolve test_ownership test_escape test_promote test_codegen test_coroutine test_reactor test_runtime)
 
 test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_lexer
@@ -139,6 +142,7 @@ test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_promote
 	$(OBJDIR)/test_codegen
 	$(OBJDIR)/test_coroutine
+	$(OBJDIR)/test_reactor
 	$(OBJDIR)/test_runtime
 	bash tests/run_integration.sh
 

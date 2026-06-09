@@ -56,30 +56,122 @@ int64_t bzy_clock_nanos(void)
 }
 #endif
 
+/* Emit v (non-negative) zero-padded to at least `width` digits. Replaces an
+   snprintf("%0*d") that dominated the format hot path (format-string parse +
+   locale on every numeric field, 12M calls in the time benchmark). */
 static void put_pad(char *o, int *n, int v, int width)
 {
 	char t[16];
-	int len = snprintf(t, sizeof(t), "%0*d", width, v);
-	for (int i = 0; i < len && *n < 250; i++)
+	int len = 0;
+	if (v == 0)
+	{
+		t[len++] = '0';
+	}
+	else
+	{
+		int x = v;
+		while (x > 0)
+		{
+			t[len++] = (char)('0' + x % 10);
+			x /= 10;
+		}
+	}
+	while (len < width)
+	{
+		t[len++] = '0';
+	}
+
+	for (int i = len - 1; i >= 0 && *n < 250; i--)   /* Digits were produced least-significant first. */
 	{
 		o[(*n)++] = t[i];
 	}
+}
+
+/* Floor division by a positive divisor (C's / truncates toward zero, which is
+   wrong for negative seconds, i.e. pre-1970 timestamps). */
+static int64_t floordiv(int64_t a, int64_t b)
+{
+	int64_t q = a / b;
+	if ((a % b != 0) && ((a < 0) != (b < 0)))
+	{
+		q--;
+	}
+	return q;
+}
+
+/* Civil date (year, 1-based month, day) from a count of days since 1970-01-01.
+   Howard Hinnant's branch-free algorithm: avoids a localtime() call per format. */
+static void civil_from_days(int64_t z, int *year, int *month, int *day)
+{
+	z += 719468;                                          /* Shift epoch to 0000-03-01. */
+	int64_t era = floordiv(z, 146097);
+	unsigned doe = (unsigned)(z - era * 146097);          /* Day of era [0, 146096]. */
+	unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;   /* Year of era [0, 399]. */
+	int64_t y = (int64_t)yoe + era * 400;
+	unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100); /* Day of year [0, 365], Mar-1 = 0. */
+	unsigned mp = (5 * doy + 2) / 153;                     /* Month [0, 11], Mar = 0. */
+	unsigned d = doy - (153 * mp + 2) / 5 + 1;             /* Day [1, 31]. */
+	unsigned m = mp < 10 ? mp + 3 : mp - 9;                /* Month [1, 12], Jan = 1. */
+	*year = (int)(y + (m <= 2));
+	*month = (int)m;
+	*day = (int)d;
+}
+
+/* Local UTC offset (seconds) for the given epoch second, cached in 15-minute
+   (900 s) buckets. glibc's localtime() takes a global tzset lock and re-derives
+   the zone on every call (~890 ns each); calling it once per bucket instead cuts
+   that ~24x for the typical sub-minute timestamp stride. The bucket is safe
+   against DST: every real-world transition instant falls on a 15-minute UTC
+   boundary (the finest zone-offset granularity is 15 min and transitions occur
+   on whole local minutes), so a single bucket never straddles a transition.
+   Thread-local so concurrent breezes never race on the cache. */
+static int64_t local_offset(time_t secs)
+{
+	static __thread int64_t cache_lo = 0;
+	static __thread int64_t cache_hi = 0;
+	static __thread int64_t cache_off = 0;
+	static __thread int cache_valid = 0;
+
+	int64_t s = (int64_t)secs;
+	if (cache_valid && s >= cache_lo && s < cache_hi)
+	{
+		return cache_off;
+	}
+
+	struct tm tmv;
+#ifdef _WIN32
+	struct tm *lt = localtime(&secs);
+	tmv = *lt;
+	int64_t off = (int64_t)_mkgmtime(&tmv) - s;   /* Re-interpret the local fields as UTC -> offset. */
+#else
+	localtime_r(&secs, &tmv);
+	int64_t off = (int64_t)timegm(&tmv) - s;
+#endif
+
+	int64_t lo = floordiv(s, 900) * 900;
+	cache_lo = lo;
+	cache_hi = lo + 900;
+	cache_off = off;
+	cache_valid = 1;
+	return off;
 }
 
 /* Format millis (epoch ms) in local time using a Java-style pattern. Tokens:
    yyyy yy MM dd HH hh mm ss SSS a; any other character is copied literally. */
 static void *format_date(int64_t millis, const char *f, int fl)
 {
-	time_t secs = (time_t)(millis / 1000);
-	int ms = (int)(millis % 1000);
-	if (ms < 0)
-	{
-		ms += 1000;
-	}
+	int64_t secs = floordiv(millis, 1000);
+	int ms = (int)(millis - secs * 1000);        /* Always in [0, 999], even for negative millis. */
 
-	struct tm tmv;
-	struct tm *lt = localtime(&secs);
-	tmv = *lt;                                   /* Copy out of the static buffer immediately. */
+	int64_t local = secs + local_offset((time_t)secs);
+	int64_t days = floordiv(local, 86400);
+	int sod = (int)(local - days * 86400);        /* Second of day [0, 86399]. */
+
+	int year, mon, mday;
+	civil_from_days(days, &year, &mon, &mday);
+	int hour = sod / 3600;
+	int minute = (sod % 3600) / 60;
+	int sec = sod % 60;
 
 	char out[256];
 	int n = 0, i = 0;
@@ -87,7 +179,7 @@ static void *format_date(int64_t millis, const char *f, int fl)
 	{
 		if (i + 4 <= fl && memcmp(f + i, "yyyy", 4) == 0)
 		{
-			put_pad(out, &n, tmv.tm_year + 1900, 4);
+			put_pad(out, &n, year, 4);
 			i += 4;
 		}
 		else if (i + 3 <= fl && memcmp(f + i, "SSS", 3) == 0)
@@ -97,27 +189,27 @@ static void *format_date(int64_t millis, const char *f, int fl)
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "yy", 2) == 0)
 		{
-			put_pad(out, &n, (tmv.tm_year + 1900) % 100, 2);
+			put_pad(out, &n, year % 100, 2);
 			i += 2;
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "MM", 2) == 0)
 		{
-			put_pad(out, &n, tmv.tm_mon + 1, 2);
+			put_pad(out, &n, mon, 2);
 			i += 2;
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "dd", 2) == 0)
 		{
-			put_pad(out, &n, tmv.tm_mday, 2);
+			put_pad(out, &n, mday, 2);
 			i += 2;
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "HH", 2) == 0)
 		{
-			put_pad(out, &n, tmv.tm_hour, 2);
+			put_pad(out, &n, hour, 2);
 			i += 2;
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "hh", 2) == 0)
 		{
-			int h = tmv.tm_hour % 12;
+			int h = hour % 12;
 			if (h == 0)
 			{
 				h = 12;
@@ -128,17 +220,17 @@ static void *format_date(int64_t millis, const char *f, int fl)
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "mm", 2) == 0)
 		{
-			put_pad(out, &n, tmv.tm_min, 2);
+			put_pad(out, &n, minute, 2);
 			i += 2;
 		}
 		else if (i + 2 <= fl && memcmp(f + i, "ss", 2) == 0)
 		{
-			put_pad(out, &n, tmv.tm_sec, 2);
+			put_pad(out, &n, sec, 2);
 			i += 2;
 		}
 		else if (f[i] == 'a')
 		{
-			const char *ap = tmv.tm_hour < 12 ? "AM" : "PM";
+			const char *ap = hour < 12 ? "AM" : "PM";
 			out[n++] = ap[0];
 			if (n < 250)
 			{
