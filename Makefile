@@ -42,7 +42,8 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
                  -s $(STACKFLAG)
 
 OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/types.c \
-          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/constprop.c src/promote.c src/nonneg.c src/bce.c src/prelude.c src/config.c
+          src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/constprop.c src/promote.c src/nonneg.c src/bce.c src/prelude.c src/config.c \
+          src/ir.c src/irlower.c src/iremit.c
 
 # Runtime modules, per host. Common = portable (compute + concurrency core);
 # each host then adds its own I/O backends — Windows uses IOCP + WinHTTP +
@@ -112,8 +113,8 @@ $(OBJDIR)/test_ownership: tests/test_ownership.c $(OBJS) | $(OBJDIR)
 $(OBJDIR)/test_escape: tests/test_escape.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_escape.c $(OBJS)
 
-$(OBJDIR)/test_ir: tests/test_ir.c $(OBJS) src/ir.c src/irlower.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -o $@ tests/test_ir.c $(OBJS) src/ir.c src/irlower.c
+$(OBJDIR)/test_ir: tests/test_ir.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_ir.c $(OBJS)
 
 # Each runtime object compiles into the per-host build dir (host-selected set in
 # RT_OBJ), so Windows and Linux objects never collide in one tree.
