@@ -42,6 +42,7 @@ typedef struct
 	int   cur_counter_off;   /* Slot offset of the current loop's promoted, non-negative, unit-step int counter (0 if none): its `i=i+1` skips the re-extension, since a 32-bit add zero-extends and the value never goes negative. */
 	int   defer_n;           /* Promoted int accumulators in the current loop whose per-iteration sign-extension is deferred to the loop exit (every use is `acc = acc +/- EXPR`, lowered to a 32-bit add). */
 	int   defer_off[8];      /* Their slot offsets; re-extended once at the loop end label. */
+	int   low32_ok;          /* One-hop hint set by a parent before evaluating an int operand whose result it consumes only at 32 bits (the low-32-pure ops + - * & | ^ <<, and stores into an int slot, which reload sign-extended). When set, an int binary skips its trailing movsxd: the 32-bit op already left the low 32 bits correct, and the high bits are unobserved. cg_expr captures and clears it on entry, so it never reaches a grandchild. */
 	int   unrolling;         /* 1 while emitting a fully-unrolled fixed-trip loop body: the induction variable is a compile-time constant for this copy. */
 	int   unroll_iv_off;     /* The unrolled loop's induction variable slot. */
 	long long unroll_iv_val; /* Its constant value for the copy currently being emitted. */

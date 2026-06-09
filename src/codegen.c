@@ -21,6 +21,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->sr_ivreg=NULL;
 	cg->cur_counter_off=0;
 	cg->defer_n=0;
+	cg->low32_ok=0;
 	cg->unrolling=0;
 	cg->unroll_iv_off=0;
 	cg->exception_fn_count=0;
@@ -461,6 +462,15 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 
 		if (other && !cg_is_inplace_leaf(other, target))
 		{
+			/* An int target's in-place step is `<op> R32, eax` (cg_inplace_reg_rax),
+			   which reads only eax - so EXPR's trailing sign-extension is dead. Signal
+			   low-32-only before evaluating it. A long target's step is `<op> R, rax`
+			   (full width), so it still needs the normalised 64-bit value. */
+			if (target->type.kind==TY_INT && other->type.kind==TY_INT)
+			{
+				cg->low32_ok = 1;
+			}
+
 			cg_expr(cg, tt, other);                  /* EXPR -> rax; R is untouched. */
 			if (other->type.kind != target->type.kind)
 			{
@@ -1651,7 +1661,57 @@ static Expr *cg_peel_widening_cast(Expr *e)
 	return e;
 }
 
-static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
+/* An op whose result's low 32 bits depend only on the low 32 bits of its operands:
+   the operand may be left zero-extended (the natural state after a 32-bit op) rather
+   than sign-extended. True for + - * & | ^ and a left shift's shifted value. False
+   for >> (sign bits shift in), / and % (the divide reads the full register), and the
+   comparisons (which read the full width). */
+static int cg_op_low32_pure(int op)
+{
+	switch (op)
+	{
+	case TOKEN_PLUS:
+	case TOKEN_MINUS:
+	case TOKEN_STAR:
+	case TOKEN_AMP:
+	case TOKEN_PIPE:
+	case TOKEN_CARET:
+	case TOKEN_SHL:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* Emit the trailing re-extension for an integer binary result, unless the consumer
+   asked for low-32-only (want_low32) and the result is a 32-bit int: then the 32-bit
+   op already left the low 32 bits correct and the high bits are never observed, so
+   the movsxd is dead. Non-int widths and full-width consumers re-extend as before. */
+static void cg_extend_int_result(Codegen *cg, Expr *e, int want_low32)
+{
+	if (want_low32 && e->type.kind==TY_INT)
+	{
+		return;
+	}
+
+	cg_extend_reg(cg, e->type.kind);
+}
+
+/* Evaluate an operand that lands in rax/eax whose enclosing op (given by `op`) only
+   consumes its low 32 bits: set the one-hop low-32 hint first so a nested int binary
+   there skips its own trailing extension. A no-op hint for impure ops (the operand
+   then re-extends as usual, which / % >> and the comparisons require). */
+static void cg_eval_low32_operand(Codegen *cg, TypeTable *tt, Expr *operand, int op)
+{
+	if (cg_op_low32_pure(op))
+	{
+		cg->low32_ok = 1;
+	}
+
+	cg_expr(cg, tt, operand);
+}
+
+static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 {
 	if (e->type.kind==TY_STRING)
 	{
@@ -1704,7 +1764,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			return;
 		}
 
-		cg_expr(cg,tt,e->lhs);                       /* lhs -> rax. */
+		cg_eval_low32_operand(cg,tt,e->lhs,e->op);   /* lhs -> rax (low byte/word only). */
 		cg_emit(cg, w==8 ? "    movzx eax, al" : "    movzx eax, ax");
 		return;
 	}
@@ -1734,23 +1794,23 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		if (fuse_op && e->type.kind==TY_INT && e->rhs->type.kind==TY_INT
 			&& cg_sr_mode(cg, e->rhs, srm))
 		{
-			cg_expr(cg,tt,e->lhs);                       /* Other operand -> eax. */
+			cg_eval_low32_operand(cg,tt,e->lhs,e->op);   /* Other operand -> eax. */
 			cg_emit(cg,"    %s eax, dword %s", opc, srm);
-			cg_extend_reg(cg, TY_INT);
+			cg_extend_int_result(cg, e, want_low32);
 			return;
 		}
 
 		if (fuse_op && commutative && e->type.kind==TY_INT && e->lhs->type.kind==TY_INT
 			&& cg_sr_mode(cg, e->lhs, srm))
 		{
-			cg_expr(cg,tt,e->rhs);                       /* Other operand -> eax. */
+			cg_eval_low32_operand(cg,tt,e->rhs,e->op);   /* Other operand -> eax. */
 			cg_emit(cg,"    %s eax, dword %s", opc, srm);
-			cg_extend_reg(cg, TY_INT);
+			cg_extend_int_result(cg, e, want_low32);
 			return;
 		}
 	}
 
-	cg_expr(cg,tt,e->lhs);                  /* lhs -> rax. */
+	cg_eval_low32_operand(cg,tt,e->lhs,e->op);   /* lhs -> rax. */
 
 	/* Strength-reduce '/' or '%' by a positive power-of-two literal: a 64-bit idiv
 	   (tens of cycles) collapses to a shift (and a mask/bias). The divisor is bounded
@@ -1804,7 +1864,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    sub rax, rdx");
 		}
 
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		return;
 	}
 
@@ -1825,7 +1885,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 
 		cg_emit(cg,"    shl rax, %d", k);
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		return;
 	}
 
@@ -1845,7 +1905,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 		case TOKEN_CARET: cg_emit(cg,"    xor rax, %lld", e->rhs->int_val);  break;
 		}
 
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		return;
 	}
 
@@ -1858,15 +1918,15 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 	case TOKEN_PLUS:
 		cg_emit(cg,"    add rax, %s", rhsop);
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_MINUS:
 		cg_emit(cg,"    sub rax, %s", rhsop);
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_STAR:
 		cg_emit(cg,"    imul rax, rbx");   /* Low bits agree with mul at any width. */
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_SLASH:
 		/* A 32-bit-result divide uses the 32-bit form (cdq/idiv ebx): roughly half
@@ -1896,7 +1956,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    idiv rbx");
 		}
 
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_PERCENT:
 		/* Same divide as '/', but the result is the remainder (rdx/edx), not the
@@ -1932,13 +1992,13 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov rax, rdx");
 		}
 
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_SHL:
 		/* Shift count must be in cl. lhs in rax, rhs (count) in rbx. */
 		cg_emit(cg,"    mov rcx, rbx");
 		cg_emit(cg,"    shl rax, cl");
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_SHR:
 		/* Right shift kind follows the LEFT operand: arithmetic (sar) for a
@@ -1954,19 +2014,19 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    sar rax, cl");
 		}
 
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_AMP:
 		cg_emit(cg,"    and rax, rbx");
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_PIPE:
 		cg_emit(cg,"    or rax, rbx");
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_CARET:
 		cg_emit(cg,"    xor rax, rbx");
-		cg_extend_reg(cg,e->type.kind);
+		cg_extend_int_result(cg, e, want_low32);
 		break;
 	case TOKEN_XOR:
 		/* Logical xor of two 0/1 bool values; the result is already 0/1. */
@@ -4408,6 +4468,12 @@ static void cg_random(Codegen *cg, TypeTable *tt, Expr *e)
 
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 {
+	/* Capture and clear the one-hop low-32 hint a parent may have set for this
+	   operand, so it reaches this node only - never a grandchild (which would
+	   re-consume rax at full width). Only the binary case acts on it. */
+	int want_low32 = cg->low32_ok;
+	cg->low32_ok = 0;
+
 	switch (e->kind)
 	{
 	case EX_INT:
@@ -4656,7 +4722,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 
 		break;
 	case EX_BINARY:
-		cg_binary(cg,tt,e);
+		cg_binary(cg,tt,e,want_low32);
 		break;
 	case EX_INCDEC:
 		cg_expr(cg,tt,e->lhs);                 /* Current value -> rax. */
