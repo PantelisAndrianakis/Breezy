@@ -11,8 +11,7 @@ Breezes coordinate by **passing values over channels** rather than sharing mutab
 `new channel<T>(N)` reserves a ring of `N` slots. `N` is the capacity - the number of values the channel can hold before a sender has to wait.
 
 ```breezy
-channel<int> c;
-c = new channel<int>(2);     // Capacity 2.
+channel<int> c = new channel<int>(2);     // Capacity 2.
 ```
 
 ---
@@ -31,14 +30,11 @@ void producer(channel<int> out)
 
 void main()
 {
-	channel<int> c;
-	c = new channel<int>(2);
+	channel<int> c = new channel<int>(2);
 	spawn producer(c);
 
-	int total;
-	total = 0;
-	int i;
-	for (i = 0; i < 3; i++)
+	int total = 0;
+	for (int i = 0; i < 3; i++)
 	{
 		total += c.recv();   // Parks while the channel is empty.
 	}

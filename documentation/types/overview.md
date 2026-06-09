@@ -49,16 +49,12 @@ When an arithmetic expression mixes numeric types, the result **promotes** to th
 - **Unsigned wins on a sign mix.** If one operand is signed and the other unsigned, the result is the **unsigned** type at the wider rank: `int + uint` is a `uint`, `long + uint` is a `ulong`. As in C, a negative value treated as unsigned wraps around - so mix signs deliberately.
 
 ```breezy
-int i;
-i = 3;
-float f;
-f = 2.0f;
+int i = 3;
+float f = 2.0f;
 print(i + f);        // 5   -- int + float promotes to float.
 
-byte b;
-b = 100;
-int n;
-n = 50;
+byte b = 100;
+int n = 50;
 print(b + n);        // 150 -- byte + int promotes to int.
 ```
 
@@ -76,8 +72,7 @@ The arithmetic operators are `+`, `-`, `*`, `/`, and `%` (modulo / remainder), e
 print(17 % 5);       // 2
 print(-7 % 3);       // -1  -- sign follows the dividend.
 
-int i;
-i = 100;
+int i = 100;
 i %= 7;
 print(i);            // 2
 ```
@@ -95,12 +90,10 @@ print(1 << 4);       // 16
 print(256 >> 2);     // 64
 print(-16 >> 2);     // -4   -- signed: arithmetic shift preserves the sign.
 
-uint u;
-u = 4000000000u;
+uint u = 4000000000u;
 print(u >> 1);       // 2000000000  -- unsigned: logical shift fills with zeros.
 
-int a;
-a = 1;
+int a = 1;
 a <<= 5;
 print(a);            // 32
 ```
@@ -119,8 +112,7 @@ print(0xFF & 0x0F);  // 15
 print(5 ^ 1);        // 4
 print(~0);           // -1
 
-int flags;
-flags = 0;
+int flags = 0;
 flags |= 0x04;       // Set a bit.
 flags &= ~0x04;      // Clear it.
 print(flags);        // 0
@@ -148,8 +140,7 @@ print(true xor true);    // false
 print(not false);        // true
 print(2 > 1 and 3 > 1);  // true
 
-bool ready;
-ready = true;
+bool ready = true;
 if (ready and not done())   // `done()` only runs when `ready` is true.
 {
 	start();

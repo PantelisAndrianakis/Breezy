@@ -9,17 +9,13 @@
 ## Quick start
 
 ```breezy
-int roll;
-roll = Random.get(1, 6);          // [1, 6] - inclusive, a die roll.
+int roll = Random.get(1, 6);          // [1, 6] - inclusive, a die roll.
 
-int idx;
-idx = Random.get(n);              // [0, n) - a valid index into a length-n array.
+int idx = Random.get(n);              // [0, n) - a valid index into a length-n array.
 
-double d;
-d = Random.nextDouble();          // [0, 1).
+double d = Random.nextDouble();          // [0, 1).
 
-bool flip;
-flip = Random.nextBool();
+bool flip = Random.nextBool();
 ```
 
 ---
@@ -40,8 +36,7 @@ Each takes no arguments and returns one fresh value.
 `nextInt` and `nextLong` span the **full signed range**, so they are often negative. For a non-negative bounded draw, use `get` instead.
 
 ```breezy
-double noise;
-noise = Random.nextGaussian();    // Most results land within [-3, 3].
+double noise = Random.nextGaussian();    // Most results land within [-3, 3].
 ```
 
 ---
@@ -59,14 +54,11 @@ noise = Random.nextGaussian();    // Most results land within [-3, 3].
 The two-argument form is **inclusive of `bound` for integers but exclusive for floats** - this mirrors how integer ranges (`1..6` dice) and continuous ranges (`[0, 1)` fractions) are normally expressed.
 
 ```breezy
-int die;
-die = Random.get(1, 6);           // int: 1, 2, 3, 4, 5, or 6.
+int die = Random.get(1, 6);           // int: 1, 2, 3, 4, 5, or 6.
 
-long big;
-big = Random.get(0, 1000000000);  // long: [0, 1000000000].
+long big = Random.get(0, 1000000000);  // long: [0, 1000000000].
 
-float pct;
-pct = Random.get(0.0, 1.0);       // float/double: [0.0, 1.0) - 1.0 never occurs.
+float pct = Random.get(0.0, 1.0);       // float/double: [0.0, 1.0) - 1.0 never occurs.
 ```
 
 Out-of-order or empty ranges are clamped rather than throwing: `get(bound)` with `bound <= 0` returns `0`, and `get(origin, bound)` with `origin >= bound` returns `origin`.
@@ -78,8 +70,7 @@ Out-of-order or empty ranges are clamped rather than throwing: `get(bound)` with
 `nextBytes(byte[] buffer)` fills every element of an existing `byte[]` with random bytes in place and returns nothing. The array must already be allocated.
 
 ```breezy
-byte[] buf;
-buf = new byte[16];
+byte[] buf = new byte[16];
 Random.nextBytes(buf);            // buf now holds 16 random bytes.
 ```
 

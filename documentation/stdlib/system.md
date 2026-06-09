@@ -11,15 +11,13 @@
 `System.shell(command)` runs the command through the system shell (`cmd /c` on Windows, `/bin/sh -c` on Linux) **asynchronously** and returns the OS process id (`0` if the launch failed). It does not wait and does not capture output - the child inherits the console.
 
 ```breezy
-int pid;
-pid = System.shell("notepad");          // Launches and returns immediately.
+int pid = System.shell("notepad");          // Launches and returns immediately.
 ```
 
 With a second `true` argument, `shell` **waits** for the process to exit and returns its **exit code**. The wait is routed through the [offload pool](../io/native-io.md), so it parks the calling breeze instead of stalling its core.
 
 ```breezy
-int code;
-code = System.shell("robocopy src dst /MIR", true);   // Blocks (parked) until it exits.
+int code = System.shell("robocopy src dst /MIR", true);   // Blocks (parked) until it exits.
 ```
 
 - `System.shell(command) -> int` - run asynchronously, return the process id (`0` on failure). Output is not captured.
@@ -32,8 +30,7 @@ code = System.shell("robocopy src dst /MIR", true);   // Blocks (parked) until i
 `System.args()` returns the arguments the program was launched with, as a `string[]`. It excludes the program path, and returns an empty array when none were passed.
 
 ```breezy
-string[] args;
-args = System.args();          // out.exe alpha beta -> ["alpha", "beta"].
+string[] args = System.args();          // out.exe alpha beta -> ["alpha", "beta"].
 print(args.length);            // 2.
 foreach (string a in args)
 {

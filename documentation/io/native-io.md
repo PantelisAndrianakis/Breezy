@@ -23,20 +23,17 @@ Written as if each call blocked - but every `accept`, `read`, and `write` parks 
 ```breezy
 void main()
 {
-	Listener l;
-	l = Network.listen(8080);
+	Listener l = Network.listen(8080);
 	while (true)
 	{
-		Socket c;
-		c = l.accept();           // Parks until a client connects.
+		Socket c = l.accept();           // Parks until a client connects.
 		spawn handle(c);          // Serve each client on its own breeze.
 	}
 }
 
 void handle(Socket c)
 {
-	string line;
-	line = c.readText(1024);      // Parks until bytes arrive.
+	string line = c.readText(1024);      // Parks until bytes arrive.
 	c.writeText(line);            // Echo it back (a full write).
 	c.close();
 }
@@ -51,8 +48,7 @@ void handle(Socket c)
 `Network.readUrl(url)` is the high-level HTTP client. It fetches an `http://` **or** `https://` URL and returns the response **body** as a string. TLS, redirects, and chunked transfer-encoding are handled natively (WinHTTP on Windows, libcurl on Linux), and the request runs on the offload pool - so the breeze parks while a worker thread does the work and your scheduler core keeps flowing. A transport or URL error (bad URL, DNS failure, TLS error) throws a catchable [`IOException`](../stdlib/file.md).
 
 ```breezy
-string page;
-page = Network.readUrl("https://example.com");   // Parks the breeze; a worker does TLS + GET.
+string page = Network.readUrl("https://example.com");   // Parks the breeze; a worker does TLS + GET.
 print(page.contains("Example Domain"));           // true.
 ```
 

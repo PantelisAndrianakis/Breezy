@@ -9,11 +9,9 @@
 ## Measuring time
 
 ```breezy
-long start;
-start = Clock.currentTimeNanos();    // Monotonic nanoseconds, for durations.
+long start = Clock.currentTimeNanos();    // Monotonic nanoseconds, for durations.
 
-long now;
-now = Clock.currentTimeMillis();     // Wall-clock milliseconds since the epoch.
+long now = Clock.currentTimeMillis();     // Wall-clock milliseconds since the epoch.
 ```
 
 - `Clock.currentTimeNanos()` - a monotonic nanosecond counter; subtract two readings to measure an elapsed duration.
@@ -26,14 +24,11 @@ now = Clock.currentTimeMillis();     // Wall-clock milliseconds since the epoch.
 `Clock.getDateString` turns epoch milliseconds into a **local-time** date string - either a fixed ISO default or a Java-style pattern.
 
 ```breezy
-long now;
-now = Clock.currentTimeMillis();
+long now = Clock.currentTimeMillis();
 
-string iso;
-iso = Clock.getDateString(now);                          // 2026-06-02 14:30:09.
+string iso = Clock.getDateString(now);                          // 2026-06-02 14:30:09.
 
-string custom;
-custom = Clock.getDateString(now, "yyyy/MM/dd HH:mm");   // 2026/06/02 14:30.
+string custom = Clock.getDateString(now, "yyyy/MM/dd HH:mm");   // 2026/06/02 14:30.
 ```
 
 **Pattern tokens:** `yyyy` `yy` `MM` `dd` `HH` (24-hour) `hh` (12-hour) `mm` `ss` `SSS` (milliseconds) `a` (AM/PM). Any other character is copied through literally.

@@ -15,8 +15,7 @@ print(Math.sqrt(16.0));               // 4.
 print(Math.max(3, 7));                // 7  -- integer, no floating point.
 print(Math.clamp(value, 0, 100));     // value, pinned into [0, 100].
 
-double r;
-r = Math.cos(Math.toRadians(60.0));   // ~0.5.
+double r = Math.cos(Math.toRadians(60.0));   // ~0.5.
 print(Math.pow(2.0, 10.0));           // 1024.
 ```
 

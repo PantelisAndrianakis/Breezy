@@ -32,30 +32,27 @@ class Animal
 
 ## Creating and using an object
 
-Working with an object is always **two steps**: first **declare** a variable of the class type, then **assign** a new object to it with `new`.
+Declare a variable of the class type and build an object for it with `new`. The idiomatic form does both in one line:
 
 ```breezy
 void main()
 {
-	Animal a;            // Step 1: declare a variable that can hold an Animal.
-	a = new Animal();    // Step 2: build a fresh Animal and store it.
+	Animal a = new Animal();   // Declare and construct in one line.
 
-	a.birthday();        // Call a method with the dot operator.
-	print(a.age);        // Read a field the same way.  Prints: 1
+	a.birthday();              // Call a method with the dot operator.
+	print(a.age);              // Read a field the same way.  Prints: 1
 }
 ```
 
-> **Rule: declaration and assignment are separate statements.** Breezy locals are written as `Type name;` on one line and `name = value;` on the next. Do **not** combine them as `Animal a = new Animal();` - that combined form is not how Breezy locals are written. This applies to every type, not just classes:
+> **Tip: initialize where you declare.** When a local has a value right away, the combined form `Type name = value;` is idiomatic and reads best. This works for every type:
 >
 > ```breezy
-> int x;
-> x = 42;              // Correct.
->
-> string greeting;
-> greeting = "hello";  // Correct.
+> int x = 42;
+> string greeting = "hello";
+> Animal a = new Animal();
 > ```
 >
-> (The one exception is the `for` loop header, where `for (int i = 0; ...)` is allowed - see [Control flow](control-flow.md).)
+> The two-step form (`Type name;` then `name = value;` on a later line) is still valid - reach for it when you declare a variable now and assign it later, or assign it differently in separate branches.
 
 The dot operator `.` reaches into an object: `a.age` reads a field, `a.birthday()` calls a method.
 
@@ -99,8 +96,7 @@ A `Dog` now has everything an `Animal` has (`age`, `speak`) plus its own `fetch`
 Because a `Dog` *is an* `Animal`, an `Animal` variable may hold a `Dog`:
 
 ```breezy
-Animal a;
-a = new Dog();   // Allowed: a Dog is an Animal.
+Animal a = new Dog();   // Allowed: a Dog is an Animal.
 a.speak();       // Prints "Woof." - not "...".
 ```
 
@@ -120,8 +116,7 @@ This is **polymorphism**. The variable's declared type is `Animal`, but the call
 Every object carries its real (dynamic) type, and you can read it with the built-in `getClassName()`, which returns a `string`. This is a lightweight form of reflection. Because Breezy has no packages, the simple name *is* the full name (class names are globally unique; see [one class per file](one-class-per-file.md)).
 
 ```breezy
-Animal a;
-a = new Dog();
+Animal a = new Dog();
 print(a.getClassName());   // Dog  -- the most-derived type, read from the live object.
 ```
 
@@ -146,8 +141,7 @@ class Point
 
 void main()
 {
-	Point p;
-	p = new Point(3, 4);     // Runs the constructor with x = 3, y = 4.
+	Point p = new Point(3, 4);     // Runs the constructor with x = 3, y = 4.
 	print(p.x);              // 3
 	print(p.y);              // 4
 }
@@ -176,14 +170,11 @@ class Box
 
 void main()
 {
-	Box a;
-	a = new Box();        // Uses both defaults: w = 1, h = 2.
+	Box a = new Box();        // Uses both defaults: w = 1, h = 2.
 
-	Box b;
-	b = new Box(7);       // First given, second defaults: w = 7, h = 2.
+	Box b = new Box(7);       // First given, second defaults: w = 7, h = 2.
 
-	Box c;
-	c = new Box(7, 9);    // Both given: w = 7, h = 9.
+	Box c = new Box(7, 9);    // Both given: w = 7, h = 9.
 }
 ```
 
@@ -241,8 +232,7 @@ class Dog extends Animal
 
 void main()
 {
-	Animal a;
-	a = new Dog("Rex");
+	Animal a = new Dog("Rex");
 	a.speak();                    // Rex barks.
 	print(a.getClassName());      // Dog
 }
@@ -253,7 +243,7 @@ void main()
 ## Rules & gotchas
 
 - **One class per file (recommended).** Each class usually lives in its own `.bzy` file whose name matches the class, though the compiler allows several per file. The program's entry point is a top-level `void main()`. See [One class per file](one-class-per-file.md).
-- **Declare, then assign.** Locals are two steps (`Type x;` then `x = ...;`). Never combine them outside a `for` header.
+- **Initialize where you declare.** `Type x = value;` is the idiomatic form. The two-step `Type x;` then `x = ...;` is still valid for declare-now-assign-later.
 - **No instance-field initializers.** Initialize fields in a constructor, not at the field declaration.
 - **Single inheritance only.** A class `extends` at most one parent. For multiple contracts, use [interfaces](interfaces.md).
 - **All methods are virtual.** An override always wins, chosen by the object's real type at run time. There is no way to make a method non-virtual.

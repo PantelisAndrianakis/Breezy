@@ -34,8 +34,7 @@ foreach (string p in File.search("data", "*.txt"))   // In-folder.
 	print(p);
 }
 
-string[] all;
-all = File.searchRecursive("data", "*");             // Whole tree.
+string[] all = File.searchRecursive("data", "*");             // Whole tree.
 ```
 
 `list(folder)` returns the entries of a folder.
@@ -45,8 +44,7 @@ all = File.searchRecursive("data", "*");             // Whole tree.
 ## Binary I/O
 
 ```breezy
-byte[] bytes;
-bytes = File.readBytes("data/note.txt");
+byte[] bytes = File.readBytes("data/note.txt");
 File.writeBytes("data/copy.bin", bytes);
 ```
 

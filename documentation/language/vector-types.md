@@ -32,11 +32,9 @@ Pass one value per component to the constructor, then read the fields directly. 
 ```breezy
 void main()
 {
-	Vector3f a;
-	a = new Vector3f();              // Zero vector: (0, 0, 0).
+	Vector3f a = new Vector3f();              // Zero vector: (0, 0, 0).
 
-	Vector3f b;
-	b = new Vector3f(2.0f, 3.0f, 6.0f);
+	Vector3f b = new Vector3f(2.0f, 3.0f, 6.0f);
 
 	print(b.x);   // 2
 	print(b.y);   // 3
@@ -53,11 +51,9 @@ void main()
 `equals` returns a `bool` and compares every component exactly:
 
 ```breezy
-Vector2i p;
-p = new Vector2i(3, 4);
+Vector2i p = new Vector2i(3, 4);
 
-Vector2i q;
-q = new Vector2i(3, 4);
+Vector2i q = new Vector2i(3, 4);
 
 print(p.equals(q));   // true  -- same components.
 ```
@@ -72,16 +68,12 @@ print(p.equals(q));   // true  -- same components.
 - For the integer (`*i`, `*l`) and `*d` (double) variants it returns a **`double`** - integer distances are usually irrational, so they promote to `double`.
 
 ```breezy
-Vector3f a;
-a = new Vector3f(0.0f, 0.0f, 0.0f);
-Vector3f b;
-b = new Vector3f(2.0f, 3.0f, 6.0f);
+Vector3f a = new Vector3f(0.0f, 0.0f, 0.0f);
+Vector3f b = new Vector3f(2.0f, 3.0f, 6.0f);
 print(a.calculateDistance(b));   // 7   (float result for *f).
 
-Vector2i origin;
-origin = new Vector2i(0, 0);
-Vector2i point;
-point = new Vector2i(3, 4);
+Vector2i origin = new Vector2i(0, 0);
+Vector2i point = new Vector2i(3, 4);
 print(origin.calculateDistance(point));   // 5   (double result for integer vectors).
 ```
 

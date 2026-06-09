@@ -13,8 +13,7 @@ The compiler analyses whether an object can outlive the scope that created it. I
 ```breezy
 void tick()
 {
-	Vector2f delta;          // Does not escape -> stack-allocated, free.
-	delta = new Vector2f(1.0f, 2.0f);
+	Vector2f delta = new Vector2f(1.0f, 2.0f);   // Does not escape -> stack-allocated, free.
 	// No malloc, no refcount; gone at scope exit.
 }
 ```

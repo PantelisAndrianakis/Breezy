@@ -135,6 +135,7 @@ check switch_dense  tests/samples/pass/control-flow/switch_dense.bzy  $'100\n101
 check switch_braces tests/samples/pass/control-flow/switch_braces.bzy $'2'
 check block_comment tests/samples/pass/basics/block_comment.bzy $'7'
 check compound    tests/samples/pass/basics/compound.bzy      $'6\n10\nabc'
+check decl_init   tests/samples/pass/basics/decl_init.bzy     $'7\nhi\nRex\nWoof'
 check bitwise     tests/samples/pass/operators/bitwise.bzy        $'255\n15\n4\n-1\n10\n16'
 check_fail bitwise_float tests/samples/fail/operators/bitwise_float.bzy
 check equals_words tests/samples/pass/operators/equals_words.bzy $'true\nfalse\nfalse\ntrue'

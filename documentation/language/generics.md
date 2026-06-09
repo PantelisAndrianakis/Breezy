@@ -38,12 +38,10 @@ Name the concrete type in the angle brackets both when you declare the variable 
 ```breezy
 void main()
 {
-	Box<int> a;
-	a = new Box<int>(42);
+	Box<int> a = new Box<int>(42);
 	print(a.get());        // 42
 
-	Box<string> b;
-	b = new Box<string>("hello");
+	Box<string> b = new Box<string>("hello");
 	print(b.get());        // hello
 }
 ```
@@ -79,8 +77,7 @@ class Pair<K, V>
 
 void main()
 {
-	Pair<int, string> p;
-	p = new Pair<int, string>(42, "answer");
+	Pair<int, string> p = new Pair<int, string>(42, "answer");
 	print(p.first());    // 42
 	print(p.second());   // answer
 }
@@ -132,7 +129,7 @@ You get the flexibility of generics with the performance of hand-specialized cod
 
 ## Rules & gotchas
 
-- **Name the type arguments on both sides:** `Box<int> a;` and `a = new Box<int>(...);`.
+- **Name the type arguments on both sides:** `Box<int> a = new Box<int>(...);`.
 - **Bounds are interfaces, not classes** - `<T: Speaker>` requires `T` to *implement* the interface `Speaker`.
 - **Without a bound, you cannot call methods on a `T`** - you can only store, pass, and return it.
 - The standard-library [collections](../types/collections.md) (`List`, `Set`, and friends) use this same monomorphizing mechanism, which is why they also have no boxing.

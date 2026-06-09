@@ -11,14 +11,9 @@ A `string` is **immutable UTF-8 text**. It is a heap-allocated, length-prefixed 
 Write a string literal in double quotes, and join values with `+` (or `+=`). When either side of `+` is a string, the other operand may be a string or any scalar (a number or bool), which is converted to its text form - so `"n = " + n` works.
 
 ```breezy
-string greeting;
-greeting = "Hello";
-
-string who;
-who = "Breezy";
-
-string message;
-message = greeting + ", " + who + ".";   // Hello, Breezy.
+string greeting = "Hello";
+string who = "Breezy";
+string message = greeting + ", " + who + ".";   // Hello, Breezy.
 print(message);
 ```
 
@@ -31,8 +26,7 @@ The parts of a `+` chain are joined in a single pass into one new string sized t
 Building a string by repeated `+` in a loop is O(n²) because each step copies everything so far. The compiler **automatically lowers the common `s = s + …` (and `s += …`) accumulation loop to a StringBuilder** (O(n) total), so the straightforward code is already fast. An explicit **`StringBuilder`** is still the right choice when the accumulator is read mid-loop, the loop can exit early, or the accumulation isn't a simple append-on-the-end — the cases the automatic lowering deliberately leaves untouched. It appends into a doubling buffer (O(n) total) and snapshots to an immutable `string` with `toString()`.
 
 ```breezy
-StringBuilder sb;
-sb = new StringBuilder();
+StringBuilder sb = new StringBuilder();
 sb.append("Hello, ");
 sb.append("Breezy");
 print(sb.toString());          // Hello, Breezy
@@ -45,17 +39,13 @@ print(sb.toString());          // Hello, Breezy
 Because strings are immutable, every **transforming** method returns a **new** string - the receiver is never changed.
 
 ```breezy
-string path;
-path = "/api/users";
+string path = "/api/users";
 
-bool ok;
-ok = path.startsWith("/api");   // true.
+bool ok = path.startsWith("/api");   // true.
 
-int at;
-at = path.indexOf("users");     // 5.
+int at = path.indexOf("users");     // 5.
 
-string up;
-up = path.toUpper();            // /API/USERS  (path itself is unchanged).
+string up = path.toUpper();            // /API/USERS  (path itself is unchanged).
 ```
 
 **Query methods** (return a `bool`, `int`, or character):
@@ -76,8 +66,7 @@ up = path.toUpper();            // /API/USERS  (path itself is unchanged).
 **Split into an array:**
 
 ```breezy
-string[] parts;
-parts = "red,green,blue".split(",");
+string[] parts = "red,green,blue".split(",");
 print(parts.length);            // 3.
 foreach (string p in parts)
 {

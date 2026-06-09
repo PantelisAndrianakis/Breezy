@@ -53,8 +53,7 @@ Exactly one file holds the top-level entry point:
 // Main.bzy
 void main()
 {
-	Client c;
-	c = new Client();
+	Client c = new Client();
 	print("Started.");
 }
 ```

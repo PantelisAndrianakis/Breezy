@@ -18,8 +18,7 @@ enum Direction
 
 void main()
 {
-	Direction d;
-	d = Direction.NORTH;
+	Direction d = Direction.NORTH;
 	print(d.name());      // NORTH
 	print(d.ordinal());   // 0
 }
@@ -39,8 +38,7 @@ Every enum constant comes with these built-ins for free:
 - `Enum.valueOf(string)` - the constant whose name matches the string.
 
 ```breezy
-Direction d;
-d = Direction.valueOf("SOUTH");
+Direction d = Direction.valueOf("SOUTH");
 print(d.ordinal());      // 2
 
 foreach (Direction each in Direction.values())
@@ -126,8 +124,7 @@ An enum may also `implements` an [interface](interfaces.md), with each constant 
 [`switch`](control-flow.md) accepts an enum value, and the `case` labels are the **unqualified** constant names (write `RED`, not `Color.RED`):
 
 ```breezy
-Color c;
-c = Color.valueOf("BLUE");
+Color c = Color.valueOf("BLUE");
 switch (c)
 {
 	case RED:

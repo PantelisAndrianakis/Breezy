@@ -59,8 +59,7 @@ void main()
 {
 	try
 	{
-		int[] table;
-		table = new int[3];
+		int[] table = new int[3];
 		print(table[5]);                 // Out of range -> throws IndexOutOfBounds.
 	}
 	catch (IndexOutOfBounds e)           // First matching clause wins.

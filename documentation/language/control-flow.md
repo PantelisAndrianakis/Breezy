@@ -70,8 +70,7 @@ Logical operators work on `bool` only; to manipulate the bits of an integer use 
 Repeat a block as long as a condition stays true. The condition is checked **before** each iteration.
 
 ```breezy
-int i;
-i = 0;
+int i = 0;
 while (i < 100)
 {
 	i = i + 1;
@@ -82,11 +81,10 @@ while (i < 100)
 
 ## for
 
-A C-style `for` loop bundles three parts: an initializer, a condition, and a step. This is the **one place** you may declare and assign a variable on the same line. The `++` and `--` operators increment and decrement.
+A C-style `for` loop bundles three parts: an initializer, a condition, and a step. The initializer commonly declares the loop variable inline (`int j = 0`). The `++` and `--` operators increment and decrement.
 
 ```breezy
-int sum;
-sum = 0;
+int sum = 0;
 for (int j = 0; j <= 10; j++)
 {
 	sum = sum + j;
@@ -174,8 +172,7 @@ switch (code)
 ```breezy
 int twice(int x)
 {
-	int result;
-	result = x * 2;
+	int result = x * 2;
 	return result;
 }
 ```
@@ -187,7 +184,7 @@ A `void` function may use a bare `return;` to exit early.
 ## Rules & gotchas
 
 - **Conditions are `bool` expressions** in parentheses - combine them with `and`, `or`, and `not`.
-- **`for` headers are the only place to combine declaration and assignment** (`for (int i = 0; ...)`); elsewhere, declare then assign on separate lines.
+- **Combine declaration and assignment freely** (`int i = 0;`, `for (int i = 0; ...)`); this is the idiomatic form wherever a variable has a value right away.
 - **`switch` falls through** - add `break` unless you intend a case to run into the next.
 - **`switch` rejects `float`/`double`** - use `if`/`else` for floating-point comparisons.
 - **`break`/`continue` act on the nearest enclosing loop.**

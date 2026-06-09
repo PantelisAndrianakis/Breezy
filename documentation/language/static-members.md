@@ -25,10 +25,8 @@ class Counter
 
 void main()
 {
-	Counter a;
-	a = new Counter();
-	Counter b;
-	b = new Counter();
+	Counter a = new Counter();
+	Counter b = new Counter();
 	print(a.id);              // 1
 	print(b.id);              // 2
 	print(Counter.total);     // 2  -- shared across all Counters.
@@ -112,8 +110,7 @@ void main()
 {
 	Server.INSTANCE = new Server();
 
-	Greeter g;
-	g = Server.INSTANCE;         // The one instance, used through its interface.
+	Greeter g = Server.INSTANCE;         // The one instance, used through its interface.
 	print(g.greet());            // Hello.
 }
 ```

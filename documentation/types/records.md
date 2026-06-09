@@ -36,10 +36,8 @@ The compiler generates two methods over the declared fields:
 Both are callable directly, like any method:
 
 ```breezy
-Point a;
-a = new Point(3, 4);
-Point b;
-b = new Point(3, 4);
+Point a = new Point(3, 4);
+Point b = new Point(3, 4);
 print(a.equals(b));                  // true  -- equal by value, not identity.
 print(a.hashCode() == b.hashCode()); // true
 ```
@@ -52,14 +50,12 @@ The point of a record is that maps and sets key it **by value**. A rebuilt,
 structurally-equal record finds the existing entry:
 
 ```breezy
-map<Point,int> grid;
-grid = new map<Point,int>();
+map<Point,int> grid = new map<Point,int>();
 grid.put(new Point(3, 4), 42);
 print(grid.get(new Point(3, 4)));        // 42  -- a different object, same value.
 print(grid.containsKey(new Point(3, 4))); // true
 
-Set<Point> seen;
-seen = new Set<Point>();
+Set<Point> seen = new Set<Point>();
 seen.add(new Point(1, 2));
 seen.add(new Point(1, 2));   // Deduplicated -- equal by value.
 print(seen.size);            // 1
@@ -92,10 +88,8 @@ record Holder
 	Holder(Tag tag) { this.tag = tag; }
 }
 
-Tag t;
-t = new Tag(1);
-map<Holder,int> m;
-m = new map<Holder,int>();
+Tag t = new Tag(1);
+map<Holder,int> m = new map<Holder,int>();
 m.put(new Holder(t), 5);
 print(m.containsKey(new Holder(t)));          // true  -- same Tag reference.
 print(m.containsKey(new Holder(new Tag(1)))); // false -- different Tag identity.

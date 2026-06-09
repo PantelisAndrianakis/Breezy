@@ -13,8 +13,7 @@ Breezy has one official code style, and every page in this guide follows it. Wri
 ```breezy
 void main()
 {
-	int x;
-	x = 1;
+	int x = 1;
 
 	if (x == 1)
 	{
@@ -40,8 +39,7 @@ Breezy source is indented with **tab characters**, not spaces. One tab per nesti
 
 ```breezy
 // Calculate the running total.
-int total;
-total = 0;
+int total = 0;
 
 /*
  * A block comment can span

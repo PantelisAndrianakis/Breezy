@@ -13,11 +13,9 @@ In some managed languages a value can quietly become a heap-allocated "boxed" ob
 ```breezy
 void main()
 {
-	int x;
-	x = 42;          // A raw 32-bit machine integer - nothing more.
+	int x = 42;          // A raw 32-bit machine integer - nothing more.
 
-	long big;
-	big = 10000000000L;   // 64-bit when you need it (note the L suffix).
+	long big = 10000000000L;   // 64-bit when you need it (note the L suffix).
 }
 ```
 
@@ -33,8 +31,7 @@ Because there is no wrapper type, there is no hidden allocation, no garbage to c
 Write a `long` literal with an `L` suffix when it would not fit in an `int`:
 
 ```breezy
-long nanos;
-nanos = 10000000000L;   // Too big for int; the L makes it a long literal.
+long nanos = 10000000000L;   // Too big for int; the L makes it a long literal.
 ```
 
 The full set of integer and floating-point types - signed, unsigned, and their widths - is covered in the [type system overview](../types/overview.md).

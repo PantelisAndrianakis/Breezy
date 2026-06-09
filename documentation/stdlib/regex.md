@@ -9,17 +9,13 @@
 ## The four operations
 
 ```breezy
-bool ok;
-ok = Regex.matches("a+b", "aaab");          // Full match -> true.
+bool ok = Regex.matches("a+b", "aaab");          // Full match -> true.
 
-bool found;
-found = Regex.test("[0-9]+", "abc123");     // Search anywhere -> true.
+bool found = Regex.test("[0-9]+", "abc123");     // Search anywhere -> true.
 
-string hit;
-hit = Regex.find("[0-9]+", "abc123def");    // Leftmost match -> "123".
+string hit = Regex.find("[0-9]+", "abc123def");    // Leftmost match -> "123".
 
-string masked;
-masked = Regex.replace("[0-9]+", "a1b22c333", "#");   // -> "a#b#c#".
+string masked = Regex.replace("[0-9]+", "a1b22c333", "#");   // -> "a#b#c#".
 ```
 
 - `matches(pattern, text)` - returns `bool`; the pattern must match the **whole** text.

@@ -19,8 +19,7 @@ Open a writer with `File.openWrite` (truncate) or `File.openAppend` (append). Fo
 Logging should never make a request wait on disk. A `Logger` owns a dedicated **logger breeze** that drains a `channel<string>` and writes off the hot path. Calling `log(...)` just hands a string over the channel and returns **immediately** - the actual disk write happens on the logger breeze, so a tick never waits on disk.
 
 ```breezy
-Logger log;
-log = Log.open("game.log");          // Owns a channel + a FileWriter + a logger breeze.
+Logger log = Log.open("game.log");          // Owns a channel + a FileWriter + a logger breeze.
 log.log("Tick " + n + " done.");     // Hands off over the channel - returns at once.
 // ... many ticks later ...
 log.close();                          // Drain, flush, and join the logger breeze.

@@ -11,8 +11,7 @@ An array (`T[]`) is a **fixed-length, heap-allocated, bounds-checked** sequence 
 Declare the element type with `[]`, then create the array with `new T[length]`. A fresh array starts zero-filled.
 
 ```breezy
-int[] squares;
-squares = new int[5];     // Five ints, all 0.
+int[] squares = new int[5];     // Five ints, all 0.
 ```
 
 Arrays work for any type - `string[]`, `Dog[]`, `Vector2f[]`, and so on.
@@ -24,11 +23,9 @@ Arrays work for any type - `string[]`, `Dog[]`, `Vector2f[]`, and so on.
 Index with `[i]` (zero-based). The `.length` field gives the element count.
 
 ```breezy
-int[] squares;
-squares = new int[5];
+int[] squares = new int[5];
 
-int i;
-i = 0;
+int i = 0;
 while (i < squares.length)
 {
 	squares[i] = i * i;   // Write.
@@ -46,8 +43,7 @@ print(squares.length);    // 5.
 When you do not need the index, `foreach` reads each element in turn:
 
 ```breezy
-int[] squares;
-squares = new int[5];
+int[] squares = new int[5];
 // ... fill it ...
 
 foreach (int n in squares)
@@ -63,8 +59,7 @@ foreach (int n in squares)
 Indexing outside `0 .. length - 1` throws a built-in `IndexOutOfBounds` exception (see [Exceptions](../language/exceptions.md)):
 
 ```breezy
-int[] table;
-table = new int[3];
+int[] table = new int[3];
 print(table[5]);   // Throws: "array index 5 out of bounds for length 3".
 ```
 

@@ -1,0 +1,24 @@
+// Combined declaration + initialization for scalar, string, and object.
+class Dog
+{
+	string name;
+	Dog(string n)
+	{
+		this.name = n;
+	}
+	string speak()
+	{
+		return "Woof";
+	}
+}
+
+void main()
+{
+	int x = 5 + 2;
+	print(x);                 // 7
+	string s = "hi";
+	print(s);                 // hi
+	Dog d = new Dog("Rex");
+	print(d.name);            // Rex
+	print(d.speak());         // Woof
+}

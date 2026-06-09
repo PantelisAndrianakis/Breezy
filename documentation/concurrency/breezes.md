@@ -36,20 +36,17 @@ void handleClient(Socket sock)
 {
 	while (true)
 	{
-		string line;
-		line = sock.readText(1024);   // Looks blocking - actually parks the breeze.
+		string line = sock.readText(1024);   // Looks blocking - actually parks the breeze.
 		sock.writeText(line);
 	}
 }
 
 void main()
 {
-	Listener l;
-	l = Network.listen(7777);
+	Listener l = Network.listen(7777);
 	while (true)
 	{
-		Socket sock;
-		sock = l.accept();
+		Socket sock = l.accept();
 		spawn handleClient(sock);     // One cheap breeze per connection.
 	}
 }

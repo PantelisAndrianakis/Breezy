@@ -15,8 +15,7 @@ void main()
 {
 	print("Hello, Breezy.");   // A string.
 
-	int n;
-	n = 7;
+	int n = 7;
 	print(n);                  // 7  -- prints an int.
 
 	print(n + n);              // 14 -- the expression is evaluated first.
@@ -26,12 +25,10 @@ void main()
 To combine text and values, build a `string` with `+`. When either side of `+` is a string, the other operand may be a number or bool, which is converted to its text form automatically:
 
 ```breezy
-int score;
-score = 42;
+int score = 42;
 print("Your score is " + score + ".");   // Your score is 42.
 
-bool ok;
-ok = true;
+bool ok = true;
 print("Passed: " + ok);                   // Passed: true
 ```
 
@@ -46,8 +43,7 @@ void main()
 {
 	print("What is your name?");
 
-	string name;
-	name = input();                  // Reads one line from stdin.
+	string name = input();                  // Reads one line from stdin.
 
 	print("Hello, " + name + ".");
 }
@@ -64,8 +60,7 @@ void main()
 {
 	print("Enter a number:");
 
-	int n;
-	n = inputInt();                  // Reads an integer.
+	int n = inputInt();                  // Reads an integer.
 
 	print(n + n);                    // Prints double the number.
 }

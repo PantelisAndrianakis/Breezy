@@ -11,8 +11,7 @@ A `map<K,V>` associates **keys** with **values** - a phone book, a cache, a set 
 Declare `map<K,V>` with the key and value types, create it with `new`, and add entries with `put`.
 
 ```breezy
-map<string,int> counts;
-counts = new map<string,int>();
+map<string,int> counts = new map<string,int>();
 counts.put("apples", 3);
 counts.put("apples", counts.get("apples") + 1);   // Overwrite with 4.
 ```

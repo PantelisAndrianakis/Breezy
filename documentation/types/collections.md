@@ -25,16 +25,14 @@ Every collection has a `.size` field, a `.contains(T)` method, and works with `f
 A growable, ordered sequence:
 
 ```breezy
-List<int> nums;
-nums = new List<int>();
+List<int> nums = new List<int>();
 nums.add(10);
 nums.add(20);
 nums.add(30);
 print(nums.size);          // 3.
 print(nums.contains(20));  // true.
 
-int sum;
-sum = 0;
+int sum = 0;
 foreach (int n in nums)
 {
 	sum = sum + n;
@@ -49,8 +47,7 @@ print(sum);                // 60.
 A `Set` holds unique elements - adding a value already present is a no-op:
 
 ```breezy
-Set<string> seen;
-seen = new Set<string>();
+Set<string> seen = new Set<string>();
 seen.add("a");
 seen.add("a");             // Deduplicated.
 print(seen.size);          // 1.

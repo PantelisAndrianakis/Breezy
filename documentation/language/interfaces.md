@@ -60,8 +60,7 @@ A variable whose type is an interface can hold any implementing object, and call
 ```breezy
 void main()
 {
-	Speaker s;
-	s = new Dog();
+	Speaker s = new Dog();
 	print(s.speak());   // Woof.  -- dispatched through the interface.
 
 	s = new Cat();
