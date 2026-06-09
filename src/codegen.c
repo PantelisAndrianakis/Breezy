@@ -2,6 +2,9 @@
 #include "symtable.h"
 #include "lexer.h"
 #include "enums.h"
+#include "config.h"
+#include "irlower.h"
+#include "iremit.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -7051,6 +7054,20 @@ static void cg_emit_exception_record(Codegen *cg, const char *label, int frame, 
 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
+	/* Experimental IR backend: a free (non-method) function that lowers cleanly
+	   is emitted from IR instead of the syntax-directed path. Gated by BZY_IR and
+	   guarded by ir_eligible; a NULL lowering falls through to the emitter. */
+	if (bzy_ir_enabled() && this_class == NULL && ir_eligible(f))
+	{
+		IRFunc *irf = ir_lower_func(f, tt);
+		if (irf)
+		{
+			ir_emit_func(cg, irf, label);
+			ir_func_free(irf);
+			return;
+		}
+	}
+
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
 	cg->cur_func = f;            /* Promotion helpers consult this; hand-rolled frames clear it. */
 	cg->cur_try_count = 0;

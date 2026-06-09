@@ -102,6 +102,54 @@ static void test_eligible_rejects_array(void)
 	ASSERT_INT(ir_eligible(f), 0);
 }
 
+static void test_lower_produces_blocks_and_ret(void)
+{
+	const Func *f = parse_one_func(
+		"int idret(int x)\n"
+		"{\n"
+		"	return x + 1;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *ir = ir_lower_func(f, 0);
+	ASSERT(ir != NULL);
+	ASSERT(ir->block_count >= 1);
+	IRBlock *last = &ir->blocks[ir->block_count - 1];
+	ASSERT(last->count >= 1);
+	ASSERT_INT(last->instrs[last->count - 1].op, IR_RET);
+	ir_func_free(ir);
+}
+
+static void test_lower_collatz_succeeds(void)
+{
+	/* The whole collatz kernel lowers (no NULL fallback): for/while/if/else,
+	   casts, %/ and comparisons all translate. */
+	const Func *f = parse_one_func(
+		"long collatzSum(int n)\n"
+		"{\n"
+		"	long checksum;\n"
+		"	checksum = 0;\n"
+		"	for (int start = 1; start <= n; start = start + 1)\n"
+		"	{\n"
+		"		long m;\n"
+		"		m = (long)start;\n"
+		"		int steps;\n"
+		"		steps = 0;\n"
+		"		while (m > 1)\n"
+		"		{\n"
+		"			if (m % 2 == 0) { m = m / 2; }\n"
+		"			else { m = 3 * m + 1; }\n"
+		"			steps = steps + 1;\n"
+		"		}\n"
+		"		checksum = checksum + (long)steps;\n"
+		"	}\n"
+		"	return checksum;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *ir = ir_lower_func(f, 0);
+	ASSERT(ir != NULL);
+	ir_func_free(ir);
+}
+
 int main(void)
 {
 	RUN(test_ir_build_basic);
@@ -109,6 +157,8 @@ int main(void)
 	RUN(test_eligible_rejects_string);
 	RUN(test_eligible_rejects_call);
 	RUN(test_eligible_rejects_array);
+	RUN(test_lower_produces_blocks_and_ret);
+	RUN(test_lower_collatz_succeeds);
 	SUMMARY();
 	return 0;
 }
