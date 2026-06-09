@@ -15,14 +15,42 @@ int64_t bzy_clock_millis(void)
 	return (int64_t)(t / 10000ULL); /* 100-ns ticks -> milliseconds. */
 }
 
+/* Read the x86-64 invariant TSC. No system call; ~2-4 cycles. */
+static inline uint64_t read_tsc(void)
+{
+	uint32_t lo, hi;
+	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+	return ((uint64_t)hi << 32) | lo;
+}
+
+static volatile uint64_t g_tsc0      = 0;
+static volatile uint64_t g_scale_q32 = 0;   /* ns-per-tick in Q32.32 fixed-point. */
+
+static void rdtsc_init(void)
+{
+	/* Calibrate the TSC -> ns scale against QPC over a ~100 us spin. Called at
+	   most once per process (first bzy_clock_nanos call). */
+	LARGE_INTEGER f, c0, c1;
+	QueryPerformanceFrequency(&f);
+	QueryPerformanceCounter(&c0);
+	uint64_t t0 = read_tsc();
+	int64_t  end = c0.QuadPart + f.QuadPart / 10000;   /* ~100 us. */
+	do { QueryPerformanceCounter(&c1); } while (c1.QuadPart < end);
+	uint64_t t1 = read_tsc();
+
+	uint64_t ns    = (uint64_t)((c1.QuadPart - c0.QuadPart) * 1000000000LL / f.QuadPart);
+	uint64_t scale = (uint64_t)(((unsigned __int128)ns << 32) / (t1 - t0));
+	g_tsc0      = t0;     /* Write base before scale. On x86 TSO, stores are not */
+	g_scale_q32 = scale;  /* reordered, so any reader that sees scale != 0 also   */
+	                      /* sees the matching tsc0.                               */
+}
+
 int64_t bzy_clock_nanos(void)
 {
-	/* KUSER_SHARED_DATA._INTERRUPT_TIME (0x7FFE0008): a monotonic 100-ns counter
-	   updated by the kernel and mapped read-only into every user-mode process.
-	   On x86-64 an aligned 8-byte load is atomic -- no ring-0 transition, no API
-	   call overhead. */
-	volatile int64_t *t = (volatile int64_t *)(uintptr_t)0x7FFE0008LL;
-	return *t * 100LL;
+	/* Hot path: rdtsc + 128-bit multiply + shift -- ~3-4 ns, nanosecond resolution. */
+	if (!g_scale_q32)
+		rdtsc_init();
+	return (int64_t)(((unsigned __int128)(read_tsc() - g_tsc0) * g_scale_q32) >> 32);
 }
 
 #else
