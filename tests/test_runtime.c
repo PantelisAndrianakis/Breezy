@@ -66,6 +66,24 @@ static void test_null_is_safe(void)
 	ASSERT(1);
 }
 
+static void test_clock_nanos_monotonic(void)
+{
+	/* Guards the Windows fast-scale rewrite of bzy_clock_nanos against a broken
+	   conversion: the counter must strictly increase across a busy spin, and the
+	   measured delta must stay on a sane nanosecond scale (a wrong divisor/scale
+	   would make this spin appear to take seconds or zero time). */
+	int64_t a = bzy_clock_nanos();
+	volatile int64_t spin = 0;
+	for (int i = 0; i < 1000000; i++)
+	{
+		spin += i;
+	}
+
+	int64_t b = bzy_clock_nanos();
+	ASSERT(b > a);                       /* Strictly increasing. */
+	ASSERT((b - a) < 1000000000LL);      /* Under 1 s for this spin: scale is sane. */
+}
+
 static void test_release_frees_owned_field(void)
 {
 	int64_t before = bzy_live_count();
@@ -1704,6 +1722,7 @@ int main(void)
 	RUN(test_filewriter_buffered_flush);
 	RUN(test_logger_drains_and_closes);
 	RUN(test_string_parse_values);
+	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;
 }
