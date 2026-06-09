@@ -222,6 +222,44 @@ static const char *jcc_op(int cmp_op, int uns)
 	}
 }
 
+/* The opposite comparison, so a branch can fall through to its true side. */
+static int cmp_invert(int cmp_op)
+{
+	switch (cmp_op)
+	{
+	case TOKEN_EQ:  return TOKEN_NEQ;
+	case TOKEN_NEQ: return TOKEN_EQ;
+	case TOKEN_LT:  return TOKEN_GTE;
+	case TOKEN_GTE: return TOKEN_LT;
+	case TOKEN_GT:  return TOKEN_LTE;
+	case TOKEN_LTE: return TOKEN_GT;
+	default:        return cmp_op;
+	}
+}
+
+/* Emit a two-way branch (true -> tblk, else -> fblk), using fallthrough when one
+   target is the next block in layout: drop the unconditional jmp, inverting the
+   condition when it is the true side that falls through. `next` is the next block
+   index, or -1. */
+static void emit_two_way(Emit *e, const char *jcc, int cmp_op_for_inv, int uns,
+                         int tblk, int fblk, int next)
+{
+	Codegen *cg = e->cg;
+	if (fblk == next)
+	{
+		cg_emit(cg, "    %s .L%d", jcc, e->blabel[tblk]);
+	}
+	else if (tblk == next)
+	{
+		cg_emit(cg, "    %s .L%d", jcc_op(cmp_invert(cmp_op_for_inv), uns), e->blabel[fblk]);
+	}
+	else
+	{
+		cg_emit(cg, "    %s .L%d", jcc, e->blabel[tblk]);
+		cg_emit(cg, "    jmp .L%d", e->blabel[fblk]);
+	}
+}
+
 /* The operand string for vreg v: its physical register name, or, if spilled, the
    value loaded into `scratch` (returned). Register-resident values are used in
    place, so no value bounces through rax unless it was spilled. */
@@ -273,7 +311,10 @@ static void store_local_from(Emit *e, long long disp, const char *src)
 	int r = ra_local_reg(e->a, disp);
 	if (r >= 0)
 	{
-		cg_emit(e->cg, "    mov %s, %s", ra_reg_name(r), src);
+		if (strcmp(ra_reg_name(r), src))   /* Coalesced: source already in the local's register. */
+		{
+			cg_emit(e->cg, "    mov %s, %s", ra_reg_name(r), src);
+		}
 	}
 	else
 	{
@@ -439,7 +480,7 @@ static void emit_epilogue(Emit *e)
 
 /* A compare immediately followed by a branch on its result: emit cmp + a single
    conditional jump, skipping the setcc/movzx/test the two would otherwise need. */
-static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br)
+static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br, int next)
 {
 	Codegen *cg = e->cg;
 	const char *Ra = vreg_in(e, cmp->a, "rax");
@@ -454,25 +495,26 @@ static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br)
 		cg_emit(cg, "    cmp %s, %s", Ra, Rb);
 	}
 
-	cg_emit(cg, "    %s .L%d", jcc_op(cmp->cmp_op, ty_is_unsigned(cmp->type)), e->blabel[br->blk_true]);
-	cg_emit(cg, "    jmp .L%d", e->blabel[br->blk_false]);
+	int uns = ty_is_unsigned(cmp->type);
+	emit_two_way(e, jcc_op(cmp->cmp_op, uns), cmp->cmp_op, uns, br->blk_true, br->blk_false, next);
 }
 
 /* (x % 2^k) == 0 (or != 0) feeding a branch: divisibility is just the low k bits,
    so emit `test x, mask` + jz/jnz - no signed remainder, no compare. Sign-correct
    because evenness/divisibility by a power of two is independent of sign. */
-static void emit_divisibility_branch(Emit *e, const IRInstr *mod, const IRInstr *cmp, const IRInstr *br, int k)
+static void emit_divisibility_branch(Emit *e, const IRInstr *mod, const IRInstr *cmp, const IRInstr *br, int k, int next)
 {
 	Codegen *cg = e->cg;
 	const char *Rx = vreg_in(e, mod->a, "rax");
 	long long mask = (1LL << k) - 1;
 	cg_emit(cg, "    test %s, %lld", Rx, mask);
-	const char *j = (cmp->cmp_op == TOKEN_EQ) ? "jz" : "jnz";
-	cg_emit(cg, "    %s .L%d", j, e->blabel[br->blk_true]);
-	cg_emit(cg, "    jmp .L%d", e->blabel[br->blk_false]);
+	/* je/jne are encoding-identical to jz/jnz, so the generic two-way helper (and
+	   its condition inversion for fallthrough) applies to the divisibility test. */
+	const char *j = (cmp->cmp_op == TOKEN_EQ) ? "je" : "jne";
+	emit_two_way(e, j, cmp->cmp_op, 0, br->blk_true, br->blk_false, next);
 }
 
-static void emit_instr(Emit *e, const IRInstr *in)
+static void emit_instr(Emit *e, const IRInstr *in, int next)
 {
 	Codegen *cg = e->cg;
 	char buf[40];
@@ -660,14 +702,18 @@ static void emit_instr(Emit *e, const IRInstr *in)
 		break;
 	}
 	case IR_BR:
-		cg_emit(cg, "    jmp .L%d", e->blabel[in->blk_true]);
+		if (in->blk_true != next)   /* Fall through when the target is the next block. */
+		{
+			cg_emit(cg, "    jmp .L%d", e->blabel[in->blk_true]);
+		}
+
 		break;
 	case IR_BRCOND:
 	{
 		const char *Ra = vreg_in(e, in->a, "rax");
 		cg_emit(cg, "    cmp %s, 0", Ra);
-		cg_emit(cg, "    jne .L%d", e->blabel[in->blk_true]);
-		cg_emit(cg, "    jmp .L%d", e->blabel[in->blk_false]);
+		/* a != 0 -> true; TOKEN_NEQ gives jne, its inverse je. */
+		emit_two_way(e, "jne", TOKEN_NEQ, 0, in->blk_true, in->blk_false, next);
 		break;
 	}
 	case IR_RET:
@@ -833,6 +879,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	{
 		cg_emit(cg, ".L%d:", e.blabel[b]);
 		IRBlock *blk = &f->blocks[b];
+		int next = (b + 1 < f->block_count) ? b + 1 : -1;
 		for (int i = 0; i < blk->count; )
 		{
 			IRInstr *in = &blk->instrs[i];
@@ -855,7 +902,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 				&& const_imm32(&e, blk->instrs[j].b, &zero) && zero == 0
 				&& blk->instrs[j + 1].op == IR_BRCOND && blk->instrs[j + 1].a == blk->instrs[j].dst)
 			{
-				emit_divisibility_branch(&e, in, &blk->instrs[j], &blk->instrs[j + 1], k);
+				emit_divisibility_branch(&e, in, &blk->instrs[j], &blk->instrs[j + 1], k, next);
 				i = j + 2;
 			}
 			/* Fuse a compare feeding the very next branch into cmp + jcc. */
@@ -863,12 +910,12 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 					 && blk->instrs[i + 1].op == IR_BRCOND
 					 && blk->instrs[i + 1].a == in->dst)
 			{
-				emit_fused_branch(&e, in, &blk->instrs[i + 1]);
+				emit_fused_branch(&e, in, &blk->instrs[i + 1], next);
 				i += 2;
 			}
 			else
 			{
-				emit_instr(&e, in);
+				emit_instr(&e, in, next);
 				i++;
 			}
 		}

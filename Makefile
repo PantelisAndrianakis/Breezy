@@ -43,7 +43,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
 
 OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/constprop.c src/promote.c src/nonneg.c src/bce.c src/prelude.c src/config.c \
-          src/ir.c src/irlower.c src/iremit.c
+          src/ir.c src/irlower.c src/iremit.c src/regalloc.c
 
 # Runtime modules, per host. Common = portable (compute + concurrency core);
 # each host then adds its own I/O backends — Windows uses IOCP + WinHTTP +
@@ -116,6 +116,9 @@ $(OBJDIR)/test_escape: tests/test_escape.c $(OBJS) | $(OBJDIR)
 $(OBJDIR)/test_ir: tests/test_ir.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_ir.c $(OBJS)
 
+$(OBJDIR)/test_regalloc: tests/test_regalloc.c $(OBJS) | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_regalloc.c $(OBJS)
+
 # Each runtime object compiles into the per-host build dir (host-selected set in
 # RT_OBJ), so Windows and Linux objects never collide in one tree.
 $(OBJDIR)/%.o: runtime/%.c $(RT_HDR) | $(OBJDIR)
@@ -132,7 +135,7 @@ $(OBJDIR)/test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR) | $(OBJDIR)
 	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
 
 TEST_BINS = $(addprefix $(OBJDIR)/,test_lexer test_ast test_config test_parser test_types \
-            test_resolve test_ownership test_escape test_promote test_codegen test_ir test_coroutine test_reactor test_runtime)
+            test_resolve test_ownership test_escape test_promote test_codegen test_ir test_regalloc test_coroutine test_reactor test_runtime)
 
 test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_lexer
@@ -146,6 +149,7 @@ test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_promote
 	$(OBJDIR)/test_codegen
 	$(OBJDIR)/test_ir
+	$(OBJDIR)/test_regalloc
 	$(OBJDIR)/test_coroutine
 	$(OBJDIR)/test_reactor
 	$(OBJDIR)/test_runtime

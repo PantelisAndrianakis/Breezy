@@ -172,136 +172,292 @@ static void collect_locals(IRFunc *f, IRAlloc *a)
 	}
 }
 
-/* ---- linear scan ---------------------------------------------------------- */
+/* ---- coalescing graph colouring ------------------------------------------- */
 
-typedef struct
+static int uf_find(int *uf, int x)
 {
-	int val;
-	int start;
-	int end;
-} RaIv;
-
-static int raiv_cmp(const void *x, const void *y)
-{
-	const RaIv *p = x;
-	const RaIv *q = y;
-	if (p->start != q->start)
+	while (uf[x] != x)
 	{
-		return p->start - q->start;
+		uf[x] = uf[uf[x]];   /* Path halving. */
+		x = uf[x];
 	}
 
-	return p->end - q->end;
+	return x;
 }
 
-/* Classic linear scan: walk intervals by start; expire those that ended; assign a
-   free register, else spill whichever of the current/active intervals ends later.
-   Spilled values get a fresh 0-based slot index (the emitter turns it into an rbp
-   offset). At most RA_NREGS intervals hold registers at once. */
-static void ra_linscan(IRAlloc *a)
+/* Assign each value a register (or a spill slot) by graph colouring with copy
+   coalescing. Interference is built precisely from per-point liveness (walking
+   each block backward from its live_out set), so a value's live range carries the
+   natural holes that hole-free intervals lose - a frame local read into a temp and
+   then recomputed does not conflict with that temp. Copies (IR_MOVE and the frame
+   IR_LOAD/IR_STORE that shuttle a local through a vreg) are recorded as coalesce
+   candidates: when the two sides do not interfere they are unioned onto one node,
+   so the load/store/move emits nothing. Colouring is greedy in live-range start
+   order over the coalesced graph; a node that finds no free register spills. This
+   is what lets `local = local*c1 + c2` update the local in place instead of
+   shuttling it through a chain of temps. */
+static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 {
 	int nval = a->nval;
-	RaIv *iv = malloc((size_t)(nval > 0 ? nval : 1) * sizeof(RaIv));
-	int niv = 0;
+	if (nval == 0)
+	{
+		a->spill_bytes = 0;
+		return;
+	}
+
+	char *interf = calloc((size_t)nval * nval, 1);
+	int cpcap = 16;
+	int ncp = 0;
+	int *cp_d = malloc((size_t)cpcap * sizeof(int));
+	int *cp_s = malloc((size_t)cpcap * sizeof(int));
+	char *live = malloc((size_t)nval);
+
+	/* Build interference + copy lists from per-point liveness. */
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		memcpy(live, live_out + (size_t)b * bw, (size_t)nval);
+		for (int i = blk->count - 1; i >= 0; i--)
+		{
+			IRInstr *in = &blk->instrs[i];
+			int def;
+			int uses[3];
+			int nuse;
+			instr_def_use(a, in, &def, uses, &nuse);
+
+			int is_copy = (in->op == IR_MOVE)
+						  || ((in->op == IR_LOAD || in->op == IR_STORE) && in->is_frame);
+			int src = (is_copy && nuse == 1) ? uses[0] : -1;
+
+			if (def >= 0)
+			{
+				for (int w = 0; w < nval; w++)
+				{
+					if (live[w] && w != def && !(src >= 0 && w == src))
+					{
+						interf[(size_t)def * nval + w] = 1;
+						interf[(size_t)w * nval + def] = 1;
+					}
+				}
+
+				if (src >= 0 && src != def)
+				{
+					if (ncp == cpcap)
+					{
+						cpcap *= 2;
+						cp_d = realloc(cp_d, (size_t)cpcap * sizeof(int));
+						cp_s = realloc(cp_s, (size_t)cpcap * sizeof(int));
+					}
+
+					cp_d[ncp] = def;
+					cp_s[ncp] = src;
+					ncp++;
+				}
+
+				live[def] = 0;
+			}
+
+			for (int u = 0; u < nuse; u++)
+			{
+				if (uses[u] >= 0)
+				{
+					live[uses[u]] = 1;
+				}
+			}
+		}
+	}
+
+	/* Coalesce: union a copy's two ends when no member of either group conflicts. */
+	int *uf = malloc((size_t)nval * sizeof(int));
+	for (int i = 0; i < nval; i++)
+	{
+		uf[i] = i;
+	}
+
+	for (int c = 0; c < ncp; c++)
+	{
+		int A = uf_find(uf, cp_d[c]);
+		int B = uf_find(uf, cp_s[c]);
+		if (A == B)
+		{
+			continue;
+		}
+
+		int bad = 0;
+		for (int p = 0; p < nval && !bad; p++)
+		{
+			if (uf_find(uf, p) != A)
+			{
+				continue;
+			}
+
+			for (int q = 0; q < nval; q++)
+			{
+				if (uf_find(uf, q) == B && interf[(size_t)p * nval + q])
+				{
+					bad = 1;
+					break;
+				}
+			}
+		}
+
+		if (!bad)
+		{
+			uf[A] = B;
+		}
+	}
+
+	/* Interference between coalesced roots. */
+	char *rintf = calloc((size_t)nval * nval, 1);
+	for (int p = 0; p < nval; p++)
+	{
+		for (int q = p + 1; q < nval; q++)
+		{
+			if (interf[(size_t)p * nval + q])
+			{
+				int A = uf_find(uf, p);
+				int B = uf_find(uf, q);
+				if (A != B)
+				{
+					rintf[(size_t)A * nval + B] = 1;
+					rintf[(size_t)B * nval + A] = 1;
+				}
+			}
+		}
+	}
+
+	/* Live roots, ordered by earliest live-range start. */
+	char *root_live = calloc((size_t)nval, 1);
+	int *rstart = malloc((size_t)nval * sizeof(int));
+	for (int r = 0; r < nval; r++)
+	{
+		rstart[r] = 0x7fffffff;
+	}
+
 	for (int v = 0; v < nval; v++)
 	{
+		int r = uf_find(uf, v);
 		if (a->iend[v] >= 0)
 		{
-			iv[niv].val = v;
-			iv[niv].start = a->istart[v];
-			iv[niv].end = a->iend[v];
-			niv++;
+			root_live[r] = 1;
+		}
+
+		if (a->istart[v] < rstart[r])
+		{
+			rstart[r] = a->istart[v];
 		}
 	}
 
-	qsort(iv, (size_t)niv, sizeof(RaIv), raiv_cmp);
-
-	int act_val[RA_NREGS];
-	int act_end[RA_NREGS];
-	int act_reg[RA_NREGS];
-	int nact = 0;
-	int regfree[RA_NREGS];
-	for (int r = 0; r < RA_NREGS; r++)
+	int *order = malloc((size_t)nval * sizeof(int));
+	int no = 0;
+	for (int r = 0; r < nval; r++)
 	{
-		regfree[r] = 1;
+		if (uf_find(uf, r) == r && root_live[r])
+		{
+			order[no++] = r;
+		}
 	}
 
-	int nspill = 0;
-
-	for (int i = 0; i < niv; i++)
+	for (int i = 1; i < no; i++)
 	{
-		int start = iv[i].start;
-
-		/* Expire intervals that ended before this one begins. */
-		int w = 0;
-		for (int j = 0; j < nact; j++)
+		int x = order[i];
+		int j = i - 1;
+		while (j >= 0 && rstart[order[j]] > rstart[x])
 		{
-			if (act_end[j] < start)
+			order[j + 1] = order[j];
+			j--;
+		}
+
+		order[j + 1] = x;
+	}
+
+	/* Greedy colour: lowest register not taken by an already-coloured neighbour. */
+	int *color = malloc((size_t)nval * sizeof(int));
+	for (int r = 0; r < nval; r++)
+	{
+		color[r] = -1;
+	}
+
+	for (int i = 0; i < no; i++)
+	{
+		int r = order[i];
+		char used[RA_NREGS];
+		memset(used, 0, sizeof used);
+		for (int k = 0; k < i; k++)
+		{
+			int r2 = order[k];
+			if (color[r2] >= 0 && rintf[(size_t)r * nval + r2])
 			{
-				regfree[act_reg[j]] = 1;
-			}
-			else
-			{
-				act_val[w] = act_val[j];
-				act_end[w] = act_end[j];
-				act_reg[w] = act_reg[j];
-				w++;
+				used[color[r2]] = 1;
 			}
 		}
 
-		nact = w;
-
-		int reg = -1;
-		for (int r = 0; r < RA_NREGS; r++)
+		for (int rr = 0; rr < RA_NREGS; rr++)
 		{
-			if (regfree[r])
+			if (!used[rr])
 			{
-				reg = r;
+				color[r] = rr;
 				break;
 			}
 		}
+	}
 
-		if (reg >= 0)
+	/* Project the root colours back onto every value. */
+	for (int v = 0; v < nval; v++)
+	{
+		if (a->iend[v] < 0)
 		{
-			regfree[reg] = 0;
-			a->val_reg[iv[i].val] = reg;
-			a->used_reg[reg] = 1;
-			act_val[nact] = iv[i].val;
-			act_end[nact] = iv[i].end;
-			act_reg[nact] = reg;
-			nact++;
+			a->val_reg[v] = RA_SPILLED;   /* Never live: no register, no slot. */
+			continue;
+		}
+
+		int col = color[uf_find(uf, v)];
+		if (col >= 0)
+		{
+			a->val_reg[v] = col;
+			a->used_reg[col] = 1;
 		}
 		else
 		{
-			/* No register free: spill the interval that ends furthest out. */
-			int sp = 0;
-			for (int j = 1; j < nact; j++)
+			a->val_reg[v] = RA_SPILLED;
+		}
+	}
+
+	/* One spill slot per spilled root, shared by its coalesced members. */
+	int *root_slot = malloc((size_t)nval * sizeof(int));
+	for (int r = 0; r < nval; r++)
+	{
+		root_slot[r] = -1;
+	}
+
+	int nspill = 0;
+	for (int v = 0; v < nval; v++)
+	{
+		if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0)
+		{
+			int r = uf_find(uf, v);
+			if (root_slot[r] < 0)
 			{
-				if (act_end[j] > act_end[sp])
-				{
-					sp = j;
-				}
+				root_slot[r] = nspill++;
 			}
 
-			if (act_end[sp] > iv[i].end)
-			{
-				int r = act_reg[sp];
-				a->val_reg[act_val[sp]] = RA_SPILLED;
-				a->val_slot[act_val[sp]] = nspill++;
-				a->val_reg[iv[i].val] = r;
-				a->used_reg[r] = 1;
-				act_val[sp] = iv[i].val;
-				act_end[sp] = iv[i].end;
-			}
-			else
-			{
-				a->val_reg[iv[i].val] = RA_SPILLED;
-				a->val_slot[iv[i].val] = nspill++;
-			}
+			a->val_slot[v] = root_slot[r];
 		}
 	}
 
 	a->spill_bytes = nspill * 8;
-	free(iv);
+
+	free(interf);
+	free(cp_d);
+	free(cp_s);
+	free(live);
+	free(uf);
+	free(rintf);
+	free(root_live);
+	free(rstart);
+	free(order);
+	free(color);
+	free(root_slot);
 }
 
 IRAlloc *ra_run(IRFunc *f)
@@ -464,7 +620,7 @@ IRAlloc *ra_run(IRFunc *f)
 		}
 	}
 
-	ra_linscan(a);
+	ra_color(f, a, live_out, bw);
 
 	free(first_pos);
 	free(gen);
