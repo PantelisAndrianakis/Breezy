@@ -314,7 +314,7 @@ static void test_local_int_offset(void)
 
 static void test_field_resolves_offset(void)
 {
-	Func *m=build1("class A { int age; void set() { this.age = 3; } }")->klass->methods[0];
+	Func *m=build1("class A { int age; void set() { this.age = 3; } }")->klasses[0]->methods[0];
 	Stmt *assign=m->body->stmts[0];
 	ASSERT_INT(assign->target->kind, EX_FIELD);
 	ASSERT_INT(assign->target->anno_int, 24);
@@ -723,7 +723,7 @@ static void test_method_call_slot_and_class(void)
 		types_register_unit_members(&g_tt,units[i]);
 	}
 	resolve_program(&g_tt,units,2);
-	Func *go=units[1]->klass->methods[1];
+	Func *go=units[1]->klasses[0]->methods[1];
 	Stmt *call=go->body->stmts[0];
 	ASSERT_INT(call->kind, ST_EXPR);
 	ASSERT_INT(call->expr->kind, EX_METHOD_CALL);

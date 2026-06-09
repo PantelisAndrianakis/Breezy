@@ -206,27 +206,27 @@ static void test_parse_interface_and_implements(void)
 	ASSERT_INT(itf->methods[0]->ret_type.kind, TY_STRING);
 	ASSERT_INT(itf->methods[0]->body == NULL, 1);
 	ASSERT_INT(itf->methods[1]->param_count, 1);
-	ASSERT_STR(u->klass->name, "Dog");
-	ASSERT_INT(u->klass->implements_count, 1);
-	ASSERT_STR(u->klass->implements[0], "Speaker");
+	ASSERT_STR(u->klasses[0]->name, "Dog");
+	ASSERT_INT(u->klasses[0]->implements_count, 1);
+	ASSERT_STR(u->klasses[0]->implements[0], "Speaker");
 }
 
 static void test_generic_class_decl(void)
 {
 	Unit *u = parse_unit_str("class Box<T> { T value; T get() { return this.value; } }");
-	ASSERT_INT(u->klass->type_param_count, 1);
-	ASSERT_STR(u->klass->type_params[0], "T");
-	ASSERT_STR(u->klass->type_param_bounds[0], "");   /* unbounded */
-	ASSERT_INT(u->klass->fields[0].type.kind, TY_OBJECT);  /* bare T parses as object "T" */
-	ASSERT_STR(u->klass->fields[0].type.class_name, "T");
+	ASSERT_INT(u->klasses[0]->type_param_count, 1);
+	ASSERT_STR(u->klasses[0]->type_params[0], "T");
+	ASSERT_STR(u->klasses[0]->type_param_bounds[0], "");   /* unbounded */
+	ASSERT_INT(u->klasses[0]->fields[0].type.kind, TY_OBJECT);  /* bare T parses as object "T" */
+	ASSERT_STR(u->klasses[0]->fields[0].type.class_name, "T");
 }
 
 static void test_generic_class_multi_and_bound(void)
 {
 	Unit *u = parse_unit_str("class Pair<K, V: Speaker> { K k; V v; }");
-	ASSERT_INT(u->klass->type_param_count, 2);
-	ASSERT_STR(u->klass->type_params[1], "V");
-	ASSERT_STR(u->klass->type_param_bounds[1], "Speaker");
+	ASSERT_INT(u->klasses[0]->type_param_count, 2);
+	ASSERT_STR(u->klasses[0]->type_params[1], "V");
+	ASSERT_STR(u->klasses[0]->type_param_bounds[1], "Speaker");
 }
 
 static void test_generic_application_type(void)
@@ -253,7 +253,7 @@ static void test_classdecl_clone_independent(void)
 {
 	Unit *u = parse_unit_str(
 				  "class Box<T> { T value; void set(T v) { this.value = v; } T get() { return this.value; } }");
-	ClassDecl *orig = u->klass;
+	ClassDecl *orig = u->klasses[0];
 	ClassDecl *copy = classdecl_clone(orig);
 	/* Distinct nodes. */
 	ASSERT_INT(copy == orig, 0);
@@ -322,18 +322,18 @@ static void test_parse_static_member(void)
 	Unit *u = parse_unit_str(
 				  "class Counter { static int total = 0; int id;"
 				  " static int peek() { return Counter.total; } }");
-	ASSERT_INT(u->klass->is_static, 0);                 /* class itself not static */
-	ASSERT_INT(u->klass->fields[0].is_static, 1);       /* total */
-	ASSERT_INT(u->klass->fields[0].init->kind, EX_INT);
-	ASSERT_INT(u->klass->fields[1].is_static, 0);       /* id */
-	ASSERT_INT(u->klass->methods[0]->is_static, 1);     /* peek */
+	ASSERT_INT(u->klasses[0]->is_static, 0);                 /* class itself not static */
+	ASSERT_INT(u->klasses[0]->fields[0].is_static, 1);       /* total */
+	ASSERT_INT(u->klasses[0]->fields[0].init->kind, EX_INT);
+	ASSERT_INT(u->klasses[0]->fields[1].is_static, 0);       /* id */
+	ASSERT_INT(u->klasses[0]->methods[0]->is_static, 1);     /* peek */
 }
 
 static void test_parse_static_class(void)
 {
 	Unit *u = parse_unit_str("static class Config { int maxPlayers = 100; int tick() { return 0; } }");
-	ASSERT_INT(u->klass->is_static, 1);
-	ASSERT_INT(u->klass->fields[0].init != NULL, 1);
+	ASSERT_INT(u->klasses[0]->is_static, 1);
+	ASSERT_INT(u->klasses[0]->fields[0].init != NULL, 1);
 }
 
 static void test_parse_extern_blocking(void)
@@ -350,7 +350,7 @@ static void test_parse_extern_blocking(void)
 static void test_parse_function_with_vardecl(void)
 {
 	Unit *u = parse_unit_str("void main() { int x; x = 42; }");
-	ASSERT(u->klass == NULL);
+	ASSERT(u->class_count == 0);
 	ASSERT_INT(u->func_count, 1);
 	Func *f = u->funcs[0];
 	ASSERT_STR(f->name, "main");
@@ -594,9 +594,9 @@ static void test_new_channel_parse(void)
 static void test_ctor_parse(void)
 {
 	Unit *u = parse_unit_str("class P { int x; P(int v) { this.x = v; } }");
-	ASSERT(u->klass->ctor != NULL);
-	ASSERT_INT(u->klass->ctor->param_count, 1);
-	ASSERT_INT(u->klass->ctor->params[0].type.kind, TY_INT);
+	ASSERT(u->klasses[0]->ctor != NULL);
+	ASSERT_INT(u->klasses[0]->ctor->param_count, 1);
+	ASSERT_INT(u->klasses[0]->ctor->params[0].type.kind, TY_INT);
 }
 
 static void test_spawn_parse(void)
@@ -632,8 +632,8 @@ static void test_parse_if_else(void)
 static void test_parse_class_with_inheritance(void)
 {
 	Unit *u = parse_unit_str("class Dog extends Animal { int age; void speak() { age = 1; } }");
-	ASSERT(u->klass != NULL);
-	ClassDecl *c = u->klass;
+	ASSERT(u->class_count > 0);
+	ClassDecl *c = u->klasses[0];
 	ASSERT_STR(c->name, "Dog");
 	ASSERT_INT(c->has_parent, 1);
 	ASSERT_STR(c->parent_name, "Animal");
@@ -646,7 +646,7 @@ static void test_parse_class_with_inheritance(void)
 static void test_parse_method_with_param(void)
 {
 	Unit *u = parse_unit_str("class A { void init(int a) { } }");
-	Func *m = u->klass->methods[0];
+	Func *m = u->klasses[0]->methods[0];
 	ASSERT_INT(m->param_count, 1);
 	ASSERT_INT(m->params[0].type.kind, TY_INT);
 	ASSERT_STR(m->params[0].name, "a");
