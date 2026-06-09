@@ -267,8 +267,10 @@ int64_t bzy_dgram_port(void *d)
 
 #else
 /* ===== POSIX: UDP on the epoll reactor (recvfrom/sendto, non-blocking). ===== */
+#include "pollstate.h"
 #define U_FD(o)     (*(int64_t*)((char*)(o) + 24))
 #define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
+#define U_POLL(o)   ((PollDesc*)((char*)(o) + 40))   /* bzy_udp_new wraps via bzy_sock_wrap. */
 
 #define DG_DATA(o) (*(void**)((char*)(o) + 24))
 #define DG_HOST(o) (*(void**)((char*)(o) + 32))
@@ -340,6 +342,7 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 
 	for (;;)
 	{
+		bzy_poll_reset(U_POLL(u), BZY_POLL_WRITE);
 		ssize_t n = sendto((int)U_FD(u), buf, (size_t)len, MSG_NOSIGNAL, (struct sockaddr*)&dst, sizeof(dst));
 		if (n >= 0)
 		{
@@ -351,7 +354,7 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 			return 0;
 		}
 
-		if (bzy_reactor_wait((int)U_FD(u), 1, -1) < 0)
+		if (bzy_poll_wait(U_POLL(u), (int)U_FD(u), BZY_POLL_WRITE, -1) < 0)
 		{
 			return 0;
 		}
@@ -375,6 +378,7 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sock
 {
 	for (;;)
 	{
+		bzy_poll_reset(U_POLL(u), BZY_POLL_READ);
 		socklen_t fromlen = sizeof(*from);
 		memset(from, 0, sizeof(*from));
 		ssize_t n = recvfrom((int)U_FD(u), buf, (size_t)max, 0, (struct sockaddr*)from, &fromlen);
@@ -388,7 +392,7 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sock
 			return -1;
 		}
 
-		int r = bzy_reactor_wait((int)U_FD(u), 0, timeout_ms);
+		int r = bzy_poll_wait(U_POLL(u), (int)U_FD(u), BZY_POLL_READ, timeout_ms);
 		if (r == 0)
 		{
 			return -2;

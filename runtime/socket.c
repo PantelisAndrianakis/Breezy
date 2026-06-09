@@ -538,13 +538,19 @@ void bzy_listener_close(void *l)
 
 #else
 /* ===== POSIX: non-blocking BSD sockets on the epoll reactor. =====
-   Each op loops: try the non-blocking syscall; on EAGAIN park for readiness via
-   bzy_reactor_wait, then retry. The fd is stored as an int64 in the handle slot. */
+   Each op loops: reset readiness, try the non-blocking syscall; on EAGAIN park via
+   bzy_poll_wait (edge-triggered, register-once), then retry. The fd is stored as an
+   int64 in the handle slot; the PollDesc is embedded right after it. */
+#include "pollstate.h"
 #define SK_FD(o)     (*(int64_t*)((char*)(o) + 24))
 #define SK_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
+#define SK_POLL(o)   ((PollDesc*)((char*)(o) + 40))   /* Embedded after fd/closed. */
+#define SK_OBJSIZE   (40 + (int)sizeof(PollDesc))      /* Grown handle (was 40). */
 
 static void bzy_socket_finalize(void *o)
 {
+	/* The embedded PollDesc needs no explicit teardown - it lives in the handle and
+	   its pthread mutexes are process-lifetime. close() drops the fd from epoll. */
 	if (!SK_CLOSED(o) && SK_FD(o) >= 0)
 	{
 		close((int)SK_FD(o));
@@ -564,10 +570,11 @@ static void *sock_vtable(void)
 
 void *bzy_sock_wrap(int fd)
 {
-	void *o = bzy_alloc(40);
+	void *o = bzy_alloc(SK_OBJSIZE);
 	*(void**)o = sock_vtable();
 	SK_FD(o) = fd;
 	SK_CLOSED(o) = 0;
+	bzy_poll_init(SK_POLL(o));
 	/* A socket/listener handle is routinely handed to a per-connection breeze on
 	   another worker (accept -> spawn handle), so its refcount must be atomic. Mark
 	   it SHARED at birth - the object is still thread-confined here, so the OR cannot
@@ -656,6 +663,7 @@ void *bzy_listener_accept(void *l)
 {
 	for (;;)
 	{
+		bzy_poll_reset(SK_POLL(l), BZY_POLL_READ);
 		int fd = accept4((int)SK_FD(l), NULL, NULL, SOCK_NONBLOCK);
 		if (fd >= 0)
 		{
@@ -667,7 +675,7 @@ void *bzy_listener_accept(void *l)
 			return NULL;
 		}
 
-		if (bzy_reactor_wait((int)SK_FD(l), 0, -1) < 0)
+		if (bzy_poll_wait(SK_POLL(l), (int)SK_FD(l), BZY_POLL_READ, -1) < 0)
 		{
 			return NULL;
 		}
@@ -684,6 +692,7 @@ void *bzy_listener_accept_timeout(void *l, int64_t ms)
 {
 	for (;;)
 	{
+		bzy_poll_reset(SK_POLL(l), BZY_POLL_READ);
 		int fd = accept4((int)SK_FD(l), NULL, NULL, SOCK_NONBLOCK);
 		if (fd >= 0)
 		{
@@ -695,7 +704,7 @@ void *bzy_listener_accept_timeout(void *l, int64_t ms)
 			return NULL;
 		}
 
-		if (bzy_reactor_wait((int)SK_FD(l), 0, ms) <= 0)
+		if (bzy_poll_wait(SK_POLL(l), (int)SK_FD(l), BZY_POLL_READ, ms) <= 0)
 		{
 			return NULL;   /* 0 = timed out, -1 = error. */
 		}
@@ -726,7 +735,14 @@ void *bzy_socket_connect(void *host, int64_t port)
 			return NULL;
 		}
 
-		if (bzy_reactor_wait(fd, 1, -1) < 0)   /* Wait until writable = connected/failed. */
+		/* The fd has no handle yet; park on a throwaway stack PollDesc for the one-time
+		   connect, then drop its epoll registration so bzy_sock_wrap can re-register the
+		   fd under the handle's embedded PollDesc. */
+		PollDesc cpd;
+		bzy_poll_init(&cpd);
+		int r = bzy_poll_wait(&cpd, fd, BZY_POLL_WRITE, -1);   /* Writable = connected/failed. */
+		bzy_reactor_deregister(fd);
+		if (r < 0)
 		{
 			close(fd);
 			return NULL;
@@ -748,8 +764,10 @@ void *bzy_socket_connect(void *host, int64_t port)
 /* One recv, parking on read-readiness. timeout_ms<0 = infinite. bytes (0=EOF), -1 err, -2 timeout. */
 static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 {
+	PollDesc *pd = SK_POLL(s);
 	for (;;)
 	{
+		bzy_poll_reset(pd, BZY_POLL_READ);            /* Clear stale readiness first. */
 		ssize_t n = recv((int)SK_FD(s), buf, (size_t)max, 0);
 		if (n > 0)
 		{
@@ -766,7 +784,7 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 			return -1;
 		}
 
-		int r = bzy_reactor_wait((int)SK_FD(s), 0, timeout_ms);
+		int r = bzy_poll_wait(pd, (int)SK_FD(s), BZY_POLL_READ, timeout_ms);
 		if (r == 0)
 		{
 			return -2;   /* Timed out. */
@@ -905,9 +923,11 @@ void *bzy_socket_try_read_text(void *s, int64_t maxbytes)
 /* Write all of buf[0..len), parking on write-readiness as needed. Returns bytes sent. */
 static int64_t sock_send_all(void *s, const char *buf, int64_t len)
 {
+	PollDesc *pd = SK_POLL(s);
 	int64_t sent = 0;
 	while (sent < len)
 	{
+		bzy_poll_reset(pd, BZY_POLL_WRITE);
 		ssize_t n = send((int)SK_FD(s), buf + sent, (size_t)(len - sent), MSG_NOSIGNAL);
 		if (n > 0)
 		{
@@ -925,7 +945,7 @@ static int64_t sock_send_all(void *s, const char *buf, int64_t len)
 			break;
 		}
 
-		if (bzy_reactor_wait((int)SK_FD(s), 1, -1) < 0)
+		if (bzy_poll_wait(pd, (int)SK_FD(s), BZY_POLL_WRITE, -1) < 0)
 		{
 			break;
 		}
