@@ -108,7 +108,7 @@ static void lower_one(const EnumDecl *e, Unit **units, int *total, int max)
 		exit(1);
 	}
 	Unit *bu=unit_new();
-	bu->klass=make_base_class(e);
+	unit_add_class(bu, make_base_class(e));
 	units[(*total)++]=bu;
 
 	for (int i=0; i<e->constant_count; i++)
@@ -148,7 +148,7 @@ static void lower_one(const EnumDecl *e, Unit **units, int *total, int max)
 				exit(1);
 			}
 			Unit *su=unit_new();
-			su->klass=make_constant_subclass(e,k,mangled);
+			unit_add_class(su, make_constant_subclass(e,k,mangled));
 			units[(*total)++]=su;
 		}
 		else

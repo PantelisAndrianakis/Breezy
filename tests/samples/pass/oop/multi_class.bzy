@@ -1,0 +1,52 @@
+// Several peer classes in one file. Each behaves exactly as if it were alone
+// in its own file: globally visible, globally named, not nested.
+class Engine
+{
+	int power;
+
+	int boost()
+	{
+		return power + 5;
+	}
+}
+
+class Car
+{
+	Engine engine;
+
+	int rate()
+	{
+		engine = new Engine();
+		engine.power = 10;
+		return engine.boost();
+	}
+}
+
+record Point
+{
+	int x;
+	int y;
+	Point(int x, int y)
+	{
+		this.x = x;
+		this.y = y;
+	}
+}
+
+static class Garage
+{
+	int slots = 7;
+}
+
+void main()
+{
+	Car c;
+	c = new Car();
+	print(c.rate());          // 15
+
+	Point p;
+	p = new Point(3, 4);
+	print(p.x + p.y);         // 7
+
+	print(Garage.slots);      // 7
+}

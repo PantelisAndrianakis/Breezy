@@ -92,6 +92,18 @@ Unit      *unit_new(void)
 {
 	return track(calloc(1,sizeof(Unit)));
 }
+void unit_add_class(Unit *u, ClassDecl *c)
+{
+	if (u->class_count >= u->class_cap)
+	{
+		int nc = u->class_cap ? u->class_cap*2 : 4;
+		ClassDecl **n = track(calloc(nc, sizeof(ClassDecl*)));
+		memcpy(n, u->klasses, u->class_count*sizeof(ClassDecl*));
+		u->klasses = n;
+		u->class_cap = nc;
+	}
+	u->klasses[u->class_count++] = c;
+}
 
 TypeRef typeref_deepcopy(const TypeRef *t)
 {

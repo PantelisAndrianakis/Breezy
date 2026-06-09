@@ -303,7 +303,9 @@ typedef struct
 
 typedef struct
 {
-	ClassDecl     *klass;         /* Non-NULL if this file declares a class. */
+	ClassDecl    **klasses;       /* Peer top-level classes declared in this file. */
+	int            class_count;
+	int            class_cap;
 	InterfaceDecl *interfaces[8]; /* File-scope interface declarations. */
 	int            interface_count;
 	EnumDecl      *enums[8];      /* File-scope enum declarations. */
@@ -323,6 +325,7 @@ ClassDecl *class_new(void);
 InterfaceDecl *interface_new(void);
 EnumDecl *enum_new(void);
 Unit  *unit_new(void);
+void   unit_add_class(Unit *u, ClassDecl *c);
 
 TypeRef    typeref_deepcopy(const TypeRef *t);   /* Deep copy incl. elem/elem2/targs. */
 Expr      *expr_clone(const Expr *e);

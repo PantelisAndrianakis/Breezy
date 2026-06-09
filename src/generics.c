@@ -56,9 +56,12 @@ static ClassDecl *find_classdecl(const char *name)
 {
 	for (int i=0; i<*g_total; i++)
 	{
-		if (g_units[i]->klass && strcmp(g_units[i]->klass->name,name)==0)
+		for (int ci=0; ci<g_units[i]->class_count; ci++)
 		{
-			return g_units[i]->klass;
+			if (strcmp(g_units[i]->klasses[ci]->name,name)==0)
+			{
+				return g_units[i]->klasses[ci];
+			}
 		}
 	}
 
@@ -347,7 +350,7 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 	}
 
 	Unit *u=unit_new();
-	u->klass=c;
+	unit_add_class(u,c);
 	strcpy(g_instances[g_instance_count++],out);
 	g_units[(*g_total)++]=u;
 	g_changed=1;   /* New unit must be walked for further applications. */
@@ -491,9 +494,13 @@ static void rewrite_func(Func *f)
 
 static void rewrite_unit(Unit *u)
 {
-	if (u->klass && u->klass->type_param_count==0)   /* Skip templates; walk concrete classes. */
+	for (int ci=0; ci<u->class_count; ci++)
 	{
-		ClassDecl *c=u->klass;
+		ClassDecl *c=u->klasses[ci];
+		if (c->type_param_count!=0)   /* Skip templates; walk concrete classes. */
+		{
+			continue;
+		}
 		for (int i=0; i<c->field_count; i++)
 		{
 			rewrite_typeref(&c->fields[i].type);
@@ -530,16 +537,19 @@ void generics_expand(Unit **units, int *total, int max)
 
 	for (int i=0; i<*total; i++)
 	{
-		if (units[i]->klass && units[i]->klass->type_param_count>0)
+		for (int ci=0; ci<units[i]->class_count; ci++)
 		{
-			if (is_builtin_template(units[i]->klass->name))
+			ClassDecl *k=units[i]->klasses[ci];
+			if (k->type_param_count>0)
 			{
-				fprintf(stderr,"A user generic class may not shadow built-in template '%s'.\n",
-						units[i]->klass->name);
-				exit(1);
-			}
+				if (is_builtin_template(k->name))
+				{
+					fprintf(stderr,"A user generic class may not shadow built-in template '%s'.\n",k->name);
+					exit(1);
+				}
 
-			g_templates[g_template_count++]=units[i]->klass;
+				g_templates[g_template_count++]=k;
+			}
 		}
 	}
 
@@ -556,14 +566,23 @@ void generics_expand(Unit **units, int *total, int max)
 	}
 	while (g_changed);
 
-	/* Exclude templates from registration/codegen. */
+	/* Exclude templates from registration/codegen by removing them from their units. */
 	for (int i=0; i<g_template_count; i++)
 	{
 		for (int u=0; u<*total; u++)
 		{
-			if (units[u]->klass==g_templates[i])
+			Unit *un=units[u];
+			for (int ci=0; ci<un->class_count; ci++)
 			{
-				units[u]->klass=NULL;
+				if (un->klasses[ci]==g_templates[i])
+				{
+					for (int j=ci+1; j<un->class_count; j++)
+					{
+						un->klasses[j-1]=un->klasses[j];
+					}
+					un->class_count--;
+					ci--;   /* Re-check the slot now holding the shifted element. */
+				}
 			}
 		}
 	}

@@ -213,7 +213,7 @@ FieldInfo *types_find_field(ClassInfo *c, const char *name)
 
 void types_register_unit_names(TypeTable *tt, Unit *u)
 {
-	if (u->klass)
+	for (int ci=0; ci<u->class_count; ci++)
 	{
 		if (tt->class_count>=MAX_CLASSES)
 		{
@@ -223,7 +223,7 @@ void types_register_unit_names(TypeTable *tt, Unit *u)
 
 		ClassInfo *c=&tt->classes[tt->class_count++];
 		memset(c,0,sizeof(*c));
-		strcpy(c->name,u->klass->name);
+		strcpy(c->name,u->klasses[ci]->name);
 	}
 
 	for (int i=0; i<u->func_count; i++)
@@ -347,6 +347,8 @@ static void link_parent(TypeTable *tt, ClassInfo *c, ClassDecl *d)
 	}
 }
 
+static void link_unit_class(TypeTable *tt, ClassDecl *d);
+
 void types_register_unit_members(TypeTable *tt, Unit *u)
 {
 	for (int i=0; i<u->func_count; i++)
@@ -375,12 +377,14 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 		}
 	}
 
-	if (!u->klass)
+	for (int ci=0; ci<u->class_count; ci++)
 	{
-		return;
+		link_unit_class(tt, u->klasses[ci]);
 	}
+}
 
-	ClassDecl *d=u->klass;
+static void link_unit_class(TypeTable *tt, ClassDecl *d)
+{
 	ClassInfo *c=types_find_class(tt,d->name);
 	c->is_static=d->is_static;
 	c->is_record=d->is_record;

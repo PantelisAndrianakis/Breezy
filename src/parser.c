@@ -1841,32 +1841,19 @@ Unit *parse_unit(Parser *p)
 		else if (check(p,TOKEN_STATIC) && p->peek.type==TOKEN_CLASS)
 		{
 			advance(p);                 /* 'static'; parse_class consumes 'class'. */
-			if (u->klass)
-			{
-				fprintf(stderr,"line %d: Only one class per file.\n",p->cur.line);
-				exit(1);
-			}
-			u->klass=parse_class(p);
-			u->klass->is_static=1;
+			ClassDecl *c=parse_class(p);
+			c->is_static=1;
+			unit_add_class(u,c);
 		}
 		else if (check(p,TOKEN_CLASS))
 		{
-			if (u->klass)
-			{
-				fprintf(stderr,"line %d: Only one class per file.\n",p->cur.line);
-				exit(1);
-			}
-			u->klass=parse_class(p);
+			unit_add_class(u,parse_class(p));
 		}
 		else if (check(p,TOKEN_RECORD))
 		{
-			if (u->klass)
-			{
-				fprintf(stderr,"line %d: Only one class per file.\n",p->cur.line);
-				exit(1);
-			}
-			u->klass=parse_class(p);   /* Same body grammar; advance() consumed `record`. */
-			u->klass->is_record=1;
+			ClassDecl *c=parse_class(p);   /* Same body grammar; parse_class consumes the leading keyword. */
+			c->is_record=1;
+			unit_add_class(u,c);
 		}
 		else if (check(p,TOKEN_ENUM))
 		{

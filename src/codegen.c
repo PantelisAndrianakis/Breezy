@@ -7551,17 +7551,16 @@ static void cg_emit_static_data(Codegen *cg, Unit **units, int n)
 {
 	for (int i=0; i<n; i++)
 	{
-		ClassDecl *d=units[i]->klass;
-		if (!d)
+		for (int ci=0; ci<units[i]->class_count; ci++)
 		{
-			continue;
-		}
+			ClassDecl *d=units[i]->klasses[ci];
 
-		for (int k=0; k<d->field_count; k++)
-		{
-			if (d->fields[k].is_static || d->is_static)
+			for (int k=0; k<d->field_count; k++)
 			{
-				cg_emit(cg,"__static_%s_%s: dq 0", d->name, d->fields[k].name);
+				if (d->fields[k].is_static || d->is_static)
+				{
+					cg_emit(cg,"__static_%s_%s: dq 0", d->name, d->fields[k].name);
+				}
 			}
 		}
 	}
@@ -7611,36 +7610,35 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 	cg_emit(cg,"    mov [rbp - %d], rbx", cg->rbx_save);   /* Preserve the caller's callee-saved rbx. */
 	for (int i=0; i<n; i++)
 	{
-		ClassDecl *d=units[i]->klass;
-		if (!d)
+		for (int ci=0; ci<units[i]->class_count; ci++)
 		{
-			continue;
-		}
+			ClassDecl *d=units[i]->klasses[ci];
 
-		for (int k=0; k<d->field_count; k++)
-		{
-			if (!(d->fields[k].is_static || d->is_static) || !d->fields[k].init)
+			for (int k=0; k<d->field_count; k++)
 			{
-				continue;
-			}
+				if (!(d->fields[k].is_static || d->is_static) || !d->fields[k].init)
+				{
+					continue;
+				}
 
-			TypeKind tk=d->fields[k].type.kind;
-			char mem[192];
-			snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", d->name, d->fields[k].name);
-			if (ty_is_float(tk))
-			{
-				cg_expr(cg,tt,d->fields[k].init);         /* Value -> xmm0. */
-				cg_store_fp(cg,tk,mem);
-			}
-			else if (ty_is_managed(tk))
-			{
-				cg_expr_owned(cg,tt,d->fields[k].init);   /* Owned (+1); slot starts 0, no release. */
-				cg_emit(cg,"    mov %s, rax", mem);
-			}
-			else
-			{
-				cg_expr(cg,tt,d->fields[k].init);         /* Scalar -> rax. */
-				cg_emit(cg,"    mov %s, rax", mem);
+				TypeKind tk=d->fields[k].type.kind;
+				char mem[192];
+				snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", d->name, d->fields[k].name);
+				if (ty_is_float(tk))
+				{
+					cg_expr(cg,tt,d->fields[k].init);         /* Value -> xmm0. */
+					cg_store_fp(cg,tk,mem);
+				}
+				else if (ty_is_managed(tk))
+				{
+					cg_expr_owned(cg,tt,d->fields[k].init);   /* Owned (+1); slot starts 0, no release. */
+					cg_emit(cg,"    mov %s, rax", mem);
+				}
+				else
+				{
+					cg_expr(cg,tt,d->fields[k].init);         /* Scalar -> rax. */
+					cg_emit(cg,"    mov %s, rax", mem);
+				}
 			}
 		}
 	}
@@ -7909,27 +7907,26 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<unit_count; i++)
 	{
 		Unit *u=units[i];
-		if (!u->klass)
+		for (int ci=0; ci<u->class_count; ci++)
 		{
-			continue;
-		}
+			ClassDecl *d=u->klasses[ci];
+			ClassInfo *c=types_find_class(tt,d->name);
+			for (int k=0; k<d->method_count; k++)
+			{
+				Func *m=d->methods[k];
+				MethodInfo *mi=types_find_method(c,m->name);
+				cg_emit_func(cg,tt,mi->asm_label,m, mi->is_static ? NULL : c->name);   /* Static: no `this`. */
+			}
 
-		ClassInfo *c=types_find_class(tt,u->klass->name);
-		for (int k=0; k<u->klass->method_count; k++)
-		{
-			Func *m=u->klass->methods[k];
-			MethodInfo *mi=types_find_method(c,m->name);
-			cg_emit_func(cg,tt,mi->asm_label,m, mi->is_static ? NULL : c->name);   /* Static: no `this`. */
-		}
+			if (d->ctor)
+			{
+				cg_emit_func(cg,tt,c->ctor_asm_label,d->ctor,c->name);
+			}
 
-		if (u->klass->ctor)
-		{
-			cg_emit_func(cg,tt,c->ctor_asm_label,u->klass->ctor,c->name);
-		}
-
-		if (c->is_record)
-		{
-			cg_emit_record_methods(cg,tt,c);   /* Synthesized hashCode/equals at slots 0/1. */
+			if (c->is_record)
+			{
+				cg_emit_record_methods(cg,tt,c);   /* Synthesized hashCode/equals at slots 0/1. */
+			}
 		}
 	}
 

@@ -3344,9 +3344,9 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 			resolve_func(tt,u->funcs[k],NULL);
 		}
 
-		if (u->klass)
+		for (int ci=0; ci<u->class_count; ci++)
 		{
-			ClassDecl *d=u->klass;
+			ClassDecl *d=u->klasses[ci];
 			for (int k=0; k<d->method_count; k++)
 			{
 				/* A static method has no `this`: resolve it like a free function. */
