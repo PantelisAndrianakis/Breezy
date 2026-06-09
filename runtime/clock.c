@@ -17,28 +17,12 @@ int64_t bzy_clock_millis(void)
 
 int64_t bzy_clock_nanos(void)
 {
-	/* QueryPerformanceFrequency is fixed for the life of the process, so the
-	   nanosecond conversion is precomputed once. On the near-universal 10 MHz QPC
-	   the conversion is an exact *100 (one imul, no divide), replacing the three
-	   per-call 64-bit divisions the general split below needs. */
-	static LARGE_INTEGER freq;
-	static long long mul10mhz = 0;   /* Nonzero => exact *100 fast path. */
-	if (freq.QuadPart == 0)
-	{
-		QueryPerformanceFrequency(&freq);
-		mul10mhz = (freq.QuadPart == 10000000LL) ? 100 : 0;
-	}
-
-	LARGE_INTEGER c;
-	QueryPerformanceCounter(&c);
-	if (mul10mhz)
-	{
-		return (int64_t)(c.QuadPart * mul10mhz);          /* 10 MHz QPC: one multiply, no divide. */
-	}
-
-	long long secs = c.QuadPart / freq.QuadPart;          /* Split to avoid *1e9 overflow. */
-	long long rem  = c.QuadPart % freq.QuadPart;
-	return (int64_t)(secs * 1000000000LL + (rem * 1000000000LL) / freq.QuadPart);
+	/* KUSER_SHARED_DATA._INTERRUPT_TIME (0x7FFE0008): a monotonic 100-ns counter
+	   updated by the kernel and mapped read-only into every user-mode process.
+	   On x86-64 an aligned 8-byte load is atomic -- no ring-0 transition, no API
+	   call overhead. */
+	volatile int64_t *t = (volatile int64_t *)(uintptr_t)0x7FFE0008LL;
+	return *t * 100LL;
 }
 
 #else
