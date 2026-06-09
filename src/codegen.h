@@ -33,6 +33,7 @@ typedef struct
 	int hoist_n;             /* Loop-invariant register cache: number of locals cached in r8..r11 for the current innermost loop. */
 	int hoist_off[4];        /* Their slot offsets; an EX_IDENT read of one of these uses its register instead of a memory reload. */
 	int hoist_reg[4];        /* Their register index 0..3 -> r8..r11. */
+	int hoist_depth;         /* Nesting counter: > 0 means an outer loop owns the hoist registers; inner loops skip begin/end to keep outer state. */
 	int   sr_n;              /* Strength-reduced array accesses: arr[INV + iv] whose element-0 address (arr + INV*stride + 32) is pinned in a register. */
 	Expr *sr_node[4];        /* The EX_INDEX node each entry covers (matched by identity at its codegen site). */
 	int   sr_reg[4];         /* Their register index 0..3 -> r8..r11 (shared pool with the value cache above). */

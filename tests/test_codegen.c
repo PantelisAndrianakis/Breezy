@@ -233,11 +233,13 @@ static void test_register_index_addr(void)
 {
 	/* A register-resident index (a promoted loop variable) is bounds-checked and
 	   addressed straight from its register - cmp reg,[len] and lea with the reg as
-	   the scale index - with no base spill or rematerialization into rax. */
+	   the scale index - with no base spill or rematerialization into rax.
+	   The array base pointer is also loop-invariant, so it is hoisted into a
+	   caller-saved register (r8) and used directly without a mov rax,r8 round-trip. */
 	emit("int f(int[] a, int n) { int s; s = 0; int i; i = 0;"
 		 " while (i < n) { s = s + a[i]; i = i + 1; } return s; } void main() { }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "cmp r12, [rax + 24]") != NULL, 1);
-	ASSERT_INT(strstr(g_asm, "lea rbx, [rax + r12*4 + 32]") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "cmp r12, [r8 + 24]") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "lea rbx, [r8 + r12*4 + 32]") != NULL, 1);
 }
 
 static void test_foreach_base_hoist(void)

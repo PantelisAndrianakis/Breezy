@@ -16,6 +16,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->cur_break_label=-1;
 	cg->cur_continue_label=-1;
 	cg->hoist_n=0;
+	cg->hoist_depth=0;
 	cg->sr_n=0;
 	cg->sr_ivreg=NULL;
 	cg->cur_counter_off=0;
@@ -927,15 +928,36 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 					   ? cg_local_reg(cg, e->rhs->anno_int) : NULL;
 	if (ireg)
 	{
-		cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
+		/* If the base pointer is already in a register (promoted r12-r15 or this
+		   loop's hoist cache r8-r11), skip the cg_expr round-trip through rax and
+		   use the register directly in the bounds check and address computation.
+		   On the OOB never-return path, cg_iarg(2/3) may clobber hoist registers
+		   (r8/r9 on Win64); that is safe because the in-bounds jb jumps past the
+		   OOB code entirely, leaving the hoist register untouched. */
+		const char *br = NULL;
+		if (e->lhs->kind == EX_IDENT && e->lhs->anno_int > 0)
+		{
+			br = cg_local_reg(cg, e->lhs->anno_int);
+			if (!br)
+			{
+				br = cg_hoist_reg(cg, e->lhs->anno_int);
+			}
+		}
+
+		if (!br)
+		{
+			cg_expr(cg, tt, e->lhs);   /* Base -> rax (fallback when not register-resident). */
+		}
+
+		const char *base = br ? br : "rax";
 		if (!safe)
 		{
 			int okf = cg_label(cg);
 			int pcf = cg_label(cg);
-			cg_emit(cg,"    cmp %s, [rax + 24]", ireg);   /* Unsigned: catches negative and >= length. */
+			cg_emit(cg,"    cmp %s, [%s + 24]", ireg, base);   /* Unsigned: catches negative and >= length. */
 			cg_emit(cg,"    jb .L%d", okf);
-			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);     /* index. */
-			cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1));   /* length. */
+			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);       /* index. */
+			cg_emit(cg,"    mov %s, [%s + 24]", cg_iarg(cg, 1), base); /* length. */
 			cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pcf);
 			cg_emit(cg,".L%d:", pcf);
 			cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
@@ -943,7 +965,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,".L%d:", okf);
 		}
 
-		cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", ireg, cg_elem_stride(e->type.kind));
+		cg_emit(cg,"    lea rbx, [%s + %s*%d + 32]", base, ireg, cg_elem_stride(e->type.kind));
 		return;
 	}
 
@@ -1587,6 +1609,7 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 	else if (e->rhs->kind==EX_IDENT)
 	{
 		const char *r = cg_local_reg(cg, e->rhs->anno_int);
+		if (!r) r = cg_hoist_reg(cg, e->rhs->anno_int);
 		if (r && cg_op_uses_rhsop(e->op))
 		{
 			*rhsop = r;   /* compare/+/- read the operand straight from its register. */
@@ -5004,11 +5027,11 @@ static int cg_hoist_expr_ok(Expr *e)
 
 		return cg_hoist_expr_ok(e->lhs) && cg_hoist_expr_ok(e->rhs);
 	case EX_INDEX:
-		/* Only a bounds-check-eliminated index into a plain array local is
-		   call-free; a map/string index, an unproven index (emits bzy_oob, which
-		   uses r8/r9), or a managed element (ARC retain/release) is not. */
+		/* A map/string index or managed element (ARC retain/release) is not call-free.
+		   bzy_oob is reachable on out-of-bounds but NEVER RETURNS, so the hoist registers
+		   are only clobbered on a path that terminates; the in-bounds path is safe. */
 		if (e->lhs->kind != EX_IDENT || e->lhs->type.kind != TY_ARRAY
-			|| !e->anno_index_safe || ty_is_managed(e->type.kind))
+			|| ty_is_managed(e->type.kind))
 		{
 			return 0;
 		}
@@ -5056,11 +5079,15 @@ static int cg_hoist_stmt_ok(Stmt *s)
 	case ST_IF:
 		return cg_hoist_expr_ok(s->cond) && cg_hoist_block_ok(s->then_blk)
 			   && cg_hoist_block_ok(s->else_blk);
+	case ST_WHILE:
+		return cg_hoist_expr_ok(s->cond) && cg_hoist_block_ok(s->then_blk);
+	case ST_FOR:
+		return cg_hoist_block_ok(s->then_blk);
 	case ST_BREAK:
 	case ST_CONTINUE:
 		return 1;
 	default:
-		return 0;   /* Nested loop, return, throw, try, switch, spawn, foreach. */
+		return 0;   /* Return, throw, try, switch, spawn, foreach. */
 	}
 }
 
@@ -5223,6 +5250,18 @@ static void cg_hoist_reads_stmt(Codegen *cg, Stmt *s, int *w, int wn, HoistCand 
 {
 	if (!s)
 	{
+		return;
+	}
+
+	/* Nested while/for: count the body 4× so inner-loop-resident arrays
+	   outrank outer-body-only arrays of equal static frequency. */
+	if (s->kind == ST_WHILE || s->kind == ST_FOR)
+	{
+		cg_hoist_reads_expr(cg, s->cond, w, wn, c, nc);
+		for (int j = 0; j < 4; j++)
+		{
+			cg_hoist_reads_block(cg, s->then_blk, w, wn, c, nc);
+		}
 		return;
 	}
 
@@ -5579,6 +5618,14 @@ static int cg_acc_deferrable_block(Block *b, int off)
 
 static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 {
+	if (cg->hoist_depth > 0)
+	{
+		/* An outer loop already owns the hoist registers; skip a nested begin so
+		   the outer hoist state is preserved for the entire outer loop body. */
+		cg->hoist_depth++;
+		return;
+	}
+
 	cg->hoist_n = 0;
 	cg->sr_n = 0;
 	cg->sr_ivreg = NULL;
@@ -5588,6 +5635,8 @@ static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 	{
 		return;
 	}
+
+	cg->hoist_depth = 1;
 
 	int w[128];
 	int wn = 0;
@@ -5670,6 +5719,15 @@ static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 
 static void cg_loop_hoist_end(Codegen *cg)
 {
+	if (cg->hoist_depth > 1)
+	{
+		/* This is a nested end; the outer loop still needs the hoist state. */
+		cg->hoist_depth--;
+		return;
+	}
+
+	cg->hoist_depth = 0;
+
 	/* Re-extend each deferred accumulator once, now that the loop has exited, so
 	   later 64-bit reads of it see a valid sign-extended register. Emitted after
 	   the loop's end label, so it covers both the fall-through and break exits. */
