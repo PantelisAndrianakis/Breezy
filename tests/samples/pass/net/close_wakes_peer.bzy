@@ -1,0 +1,48 @@
+// The server echoes one message then closes; the client's SECOND read parks with no
+// data and must be woken by the close (an EPOLLHUP edge) and observe EOF (length 0),
+// not hang. This covers the edge-triggered reactor's HUP/peer-close wake path, which
+// tcp_echo does not exercise (there the client reads exactly the echo, never parks
+// waiting on a peer that then closes). Output is "ok".
+void serve(Listener l, channel<int> ready)
+{
+	ready.send(l.port());
+	Socket c;
+	c = l.accept();
+	byte[] m;
+	m = c.read(16);
+	c.write(m);                  // Echo once.
+	c.close();                   // Peer close: the client's next read must see EOF.
+	l.close();
+}
+
+void main()
+{
+	Listener l;
+	l = Network.listen(0);
+	channel<int> ready;
+	ready = new channel<int>(1);
+	spawn serve(l, ready);
+	int port;
+	port = ready.recv();
+	Socket s;
+	s = Network.connect("127.0.0.1", port);
+	byte[] p;
+	p = new byte[3];
+	p[0] = (byte)1;
+	p[1] = (byte)2;
+	p[2] = (byte)3;
+	s.write(p);
+	byte[] a;
+	a = s.read(16);              // The echo.
+	byte[] b;
+	b = s.read(16);              // Parks, then EOF (length 0) after the server closes.
+	if (b.length == 0)
+	{
+		print("ok");
+	}
+	else
+	{
+		print("bad");
+	}
+	s.close();
+}

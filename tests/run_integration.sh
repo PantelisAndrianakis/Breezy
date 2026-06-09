@@ -226,6 +226,7 @@ check classname     tests/samples/pass/oop/proj_classname      $'Dog'
 check tcp_echo      tests/samples/pass/net/tcp_echo.bzy       $'4'
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
+check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
 check filechannel   tests/samples/pass/io/filechannel.bzy    $'10'
 check readinto      tests/samples/pass/io/readinto.bzy       $'4 65 68\n4 71 74'
 check filewriter    tests/samples/pass/io/filewriter.bzy     $'102'
