@@ -545,7 +545,8 @@ static void emit_unit_asm(const char *src, Target target)
 static void test_region_dispatch_in_main_shaped_function(void)
 {
 	/* A main with allocation and a print after the loop: whole-function IR is
-	   impossible, so the loop must be emitted as a region. */
+	   impossible, so the loop must be emitted as a region. The data-dependent
+	   index keeps it off the emitter's hoist path (hoistable loops stay there). */
 	emit_unit_asm(
 		"void main()\n"
 		"{\n"
@@ -555,13 +556,44 @@ static void test_region_dispatch_in_main_shaped_function(void)
 		"	s = 0;\n"
 		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
 		"	{\n"
-		"		tbl[i] = i * 3;\n"
-		"		s = s + (long)tbl[i];\n"
+		"		int j;\n"
+		"		j = tbl[i] & 63;\n"
+		"		tbl[j] = tbl[j] + 1;\n"
+		"		s = s + (long)tbl[j];\n"
 		"	}\n"
 		"	print(\"\" + s);\n"
 		"}\n", TARGET_WINDOWS);
 	ASSERT(strstr(g_full_asm, "; ir-region begin") != NULL);
 	ASSERT(strstr(g_full_asm, "; ir-region end") != NULL);
+}
+
+static void test_region_fires_inside_plain_emitter_loop(void)
+{
+	/* The outer pass loop calls helper() (ineligible, stays on the emitter), but
+	   it holds no register state across statements, so the eligible inner array
+	   loop must still become a region - the browser/game timing-loop shape. */
+	emit_unit_asm(
+		"void main()\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[1024];\n"
+		"	long total;\n"
+		"	total = 0;\n"
+		"	for (int pass = 0; pass < 10; pass = pass + 1)\n"
+		"	{\n"
+		"		helper();\n"
+		"		for (int i = 0; i < a.length; i = i + 1)\n"
+		"		{\n"
+		"			int j;\n"
+		"			j = a[i] & 1023;\n"
+		"			a[j] = a[j] + pass;\n"
+		"			total = total + (long)a[j];\n"
+		"		}\n"
+		"	}\n"
+		"	print(\"\" + total);\n"
+		"}\n"
+		"void helper() { }\n", TARGET_WINDOWS);
+	ASSERT(strstr(g_full_asm, "; ir-region begin") != NULL);
 }
 
 static void test_region_skipped_in_function_with_try(void)
@@ -612,6 +644,7 @@ int main(void)
 	RUN(test_region_accepts_larger_constant_trip);
 	RUN(test_region_emit_no_prologue_no_ret);
 	RUN(test_region_dispatch_in_main_shaped_function);
+	RUN(test_region_fires_inside_plain_emitter_loop);
 	RUN(test_region_skipped_in_function_with_try);
 	SUMMARY();
 	return 0;

@@ -779,11 +779,20 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			cg_emit(cg, "    mov rax, %s", Ra);   /* Dividend must be in rax. */
 		}
 
+		/* A 32-bit-result divide uses the 32-bit form (cdq/idiv r32): roughly half
+		   the latency of a 64-bit idiv, and a clean operand's low 32 bits are the
+		   int value - mirrors the emitter's int divide exactly. */
 		const char *Rb = vreg_in(e, in->b, "rcx");   /* Divisor (never rax/rdx). */
+		int narrow = ty_is_int(in->type) && ty_bits(in->type) <= 32;
 		if (ty_is_unsigned(in->type))
 		{
 			cg_emit(cg, "    xor edx, edx");
-			cg_emit(cg, "    div %s", Rb);
+			cg_emit(cg, "    div %s", narrow ? reg_low(Rb, 4) : Rb);
+		}
+		else if (narrow)
+		{
+			cg_emit(cg, "    cdq");
+			cg_emit(cg, "    idiv %s", reg_low(Rb, 4));
 		}
 		else
 		{
@@ -792,7 +801,12 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		}
 
 		const char *Rd = dst_reg(e, in->dst);
-		if (in->op == IR_MOD)
+		const char *res = (in->op == IR_MOD) ? "rdx" : "rax";
+		if (narrow)
+		{
+			norm_reg(cg, Rd, res, in->type);   /* Re-extend the 32-bit result: clean invariant. */
+		}
+		else if (in->op == IR_MOD)
 		{
 			cg_emit(cg, "    mov %s, rdx", Rd);
 		}

@@ -6762,12 +6762,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	}
 	case ST_WHILE:
 	{
-		/* IR loop region (Plan 4). Fires only outside any emitter loop (break
-		   label unset) and outside unrolled bodies: an enclosing loop keeps
-		   invariants, strength-reduction bases and deferred accumulators in
-		   registers the region would clobber. Matches the pre-scan, which never
-		   records a loop nested inside another loop. */
-		if (cg->cur_break_label == -1 && cg->cur_continue_label == -1 && !cg->unrolling)
+		/* IR loop region. Fires when no enclosing emitter loop holds register
+		   state across this statement: hoisted invariants / strength-reduction
+		   bases live in r8..r11 (hoist_n/sr_n), deferred accumulators hold dirty
+		   high bits in r12..r15 (defer_n), and an unrolled body's induction
+		   variable has a stale slot (unrolling). All idle -> every register the
+		   region touches is dead or handed off via home slots. */
+		if (cg->hoist_n == 0 && cg->sr_n == 0 && cg->defer_n == 0 && !cg->unrolling)
 		{
 			int r = cg_region_find(cg, s);
 			if (r >= 0)
@@ -6809,12 +6810,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,"    jmp .L%d", cg->cur_continue_label);
 		break;
 	case ST_FOR:
-		/* IR loop region (Plan 4). Fires only outside any emitter loop (break
-		   label unset) and outside unrolled bodies: an enclosing loop keeps
-		   invariants, strength-reduction bases and deferred accumulators in
-		   registers the region would clobber. Matches the pre-scan, which never
-		   records a loop nested inside another loop. */
-		if (cg->cur_break_label == -1 && cg->cur_continue_label == -1 && !cg->unrolling)
+		/* IR loop region. Fires when no enclosing emitter loop holds register
+		   state across this statement: hoisted invariants / strength-reduction
+		   bases live in r8..r11 (hoist_n/sr_n), deferred accumulators hold dirty
+		   high bits in r12..r15 (defer_n), and an unrolled body's induction
+		   variable has a stale slot (unrolling). All idle -> every register the
+		   region touches is dead or handed off via home slots. */
+		if (cg->hoist_n == 0 && cg->sr_n == 0 && cg->defer_n == 0 && !cg->unrolling)
 		{
 			int r = cg_region_find(cg, s);
 			if (r >= 0)
@@ -7156,12 +7158,59 @@ static int cg_region_hotspill_override(void)
 	return cached;
 }
 
-/* Collect eligible loops as regions, lowering and allocating each. Only loops
-   reachable without crossing another loop qualify: a region nested inside an
-   emitter loop would clobber that loop's register-resident state (hoisted
-   invariants and strength-reduction bases in r8..r11, deferred accumulators
-   with dirty high bits in r12..r15), so loop bodies are never descended into -
-   an outermost eligible loop is taken whole or not at all. A hot-spill
+/* Debug-only A/B filter: BZY_IR_REGION_LINES="58,96" restricts regions to loops
+   whose source line is in the comma-separated list (any function). Unset or
+   empty = all lines allowed. For per-region benchmark bisection. */
+static int cg_region_line_allowed(int line)
+{
+	static const char *list = NULL;
+	static int init = 0;
+	if (!init)
+	{
+		init = 1;
+		list = getenv("BZY_IR_REGION_LINES");
+		if (list && !list[0])
+		{
+			list = NULL;
+		}
+	}
+
+	if (!list)
+	{
+		return 1;
+	}
+
+	const char *p = list;
+	while (*p)
+	{
+		long v = strtol(p, (char **)&p, 10);
+		if ((int)v == line)
+		{
+			return 1;
+		}
+
+		while (*p && *p != ',')
+		{
+			p++;
+		}
+
+		if (*p == ',')
+		{
+			p++;
+		}
+	}
+
+	return 0;
+}
+
+/* Collect eligible loops as regions, lowering and allocating each. An outermost
+   eligible loop is taken whole; a loop that does NOT become a region (ineligible
+   or hot-spill) has its body scanned so eligible inner loops can fire on their
+   own - the dispatch-time guard in cg_stmt re-checks that the enclosing emitter
+   loop holds no register state before emitting a nested region, so recording
+   here is always safe (a skipped region just falls back to the emitter). Bodies
+   of ST_FOREACH (pins the container base in a register across the body, outside
+   the hoist accounting) and ST_SWITCH are never descended into. A hot-spill
    allocation (a value in the deepest loop would spill, which the emitter's
    tuned heuristics tend to handle better) keeps the loop on the emitter. */
 static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
@@ -7177,7 +7226,8 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
 			const char *verdict = "ineligible";
-			if (cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s))
+			if (cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s)
+				&& cg_region_line_allowed(s->line))
 			{
 				IRFunc *irf = ir_lower_region(f, s);
 				if (irf)
@@ -7210,7 +7260,8 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 				fprintf(stderr, "ir-region: %s line %d: %s\n", f->name, s->line, verdict);
 			}
 
-			continue;   /* Never descend into a loop body (see above). */
+			cg_scan_regions(cg, f, s->then_blk);   /* Inner loops may region on their own. */
+			continue;
 		}
 
 		if (s->kind == ST_IF)
