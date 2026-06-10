@@ -431,6 +431,35 @@ static void test_region_emit_no_prologue_no_ret(void)
 	ASSERT(strstr(g_region_asm, ".L") != NULL);
 }
 
+static void test_region_rejects_small_constant_trip(void)
+{
+	/* A fixed 8-iteration loop is the emitter's unroller's territory; region
+	   entry/exit overhead would dominate (codec's 8x8 stage loops). */
+	const Func *f = parse_one_func(
+		"void k(int[] a)\n"
+		"{\n"
+		"	for (int r = 0; r < 8; r = r + 1)\n"
+		"	{\n"
+		"		a[r] = a[r] * 3;\n"
+		"	}\n"
+		"}\n");
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
+}
+
+static void test_region_accepts_larger_constant_trip(void)
+{
+	/* Nine iterations is past the unroller's limit: stays a region. */
+	const Func *f = parse_one_func(
+		"void k(int[] a)\n"
+		"{\n"
+		"	for (int r = 0; r < 9; r = r + 1)\n"
+		"	{\n"
+		"		a[r] = a[r] * 3;\n"
+		"	}\n"
+		"}\n");
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 1);
+}
+
 static void test_region_lowers_bitwise_not(void)
 {
 	/* ~x lowers as x ^ -1 (one xor, no new IR op); compiler-bench solve-loop shape. */
@@ -579,6 +608,8 @@ int main(void)
 	RUN(test_region_lower_has_no_ret);
 	RUN(test_whole_function_eligibility_unaffected);
 	RUN(test_region_lowers_bitwise_not);
+	RUN(test_region_rejects_small_constant_trip);
+	RUN(test_region_accepts_larger_constant_trip);
 	RUN(test_region_emit_no_prologue_no_ret);
 	RUN(test_region_dispatch_in_main_shaped_function);
 	RUN(test_region_skipped_in_function_with_try);

@@ -667,9 +667,81 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 	return irf;
 }
 
+/* The constant value of e if it is an integer literal, via *out; 0 otherwise. */
+static int const_int(const Expr *e, long long *out)
+{
+	if (e && e->kind == EX_INT)
+	{
+		*out = e->int_val;
+		return 1;
+	}
+
+	return 0;
+}
+
+/* The trip count of a canonical counted for-loop (`int i = C0; i </<= C1;
+   i = i + C2`, all integer literals, C2 > 0), or -1 when not of that shape. */
+static long long const_trip_count(const Stmt *s)
+{
+	if (s->kind != ST_FOR || !s->for_init || !s->cond || !s->for_post)
+	{
+		return -1;
+	}
+
+	long long c0, c1, c2;
+	long long ctr;
+	if (s->for_init->kind == ST_VARDECL && const_int(s->for_init->decl_init, &c0))
+	{
+		ctr = s->for_init->decl_offset;
+	}
+	else if (s->for_init->kind == ST_ASSIGN && s->for_init->target->kind == EX_IDENT
+			 && const_int(s->for_init->value, &c0))
+	{
+		ctr = s->for_init->target->anno_int;
+	}
+	else
+	{
+		return -1;
+	}
+
+	const Expr *c = s->cond;
+	if (c->kind != EX_BINARY || (c->op != TOKEN_LT && c->op != TOKEN_LTE)
+		|| c->lhs->kind != EX_IDENT || c->lhs->anno_int != ctr || !const_int(c->rhs, &c1))
+	{
+		return -1;
+	}
+
+	const Stmt *p = s->for_post;
+	if (p->kind != ST_ASSIGN || p->target->kind != EX_IDENT || p->target->anno_int != ctr
+		|| p->value->kind != EX_BINARY || p->value->op != TOKEN_PLUS
+		|| p->value->lhs->kind != EX_IDENT || p->value->lhs->anno_int != ctr
+		|| !const_int(p->value->rhs, &c2) || c2 <= 0)
+	{
+		return -1;
+	}
+
+	long long span = c1 - c0 + ((c->op == TOKEN_LTE) ? 1 : 0);
+	if (span <= 0)
+	{
+		return 0;
+	}
+
+	return (span + c2 - 1) / c2;
+}
+
 int ir_region_eligible(const Stmt *s)
 {
 	if (!s || (s->kind != ST_FOR && s->kind != ST_WHILE) || s->accum_sb_offset)
+	{
+		return 0;
+	}
+
+	/* Small fixed-trip loops belong to the emitter: its unroller handles them,
+	   and the region's once-per-entry save/load/store-back overhead would
+	   dominate a body that runs only a handful of times (codec's 8x8 stage
+	   loops enter hundreds of thousands of times). */
+	long long trips = const_trip_count(s);
+	if (trips >= 0 && trips <= 8)
 	{
 		return 0;
 	}
