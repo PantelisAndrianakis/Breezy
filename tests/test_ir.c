@@ -559,6 +559,142 @@ static void test_lower_checked_index_addend_not_folded(void)
 	ir_func_free(irf);
 }
 
+static void test_bce_downward_loop_is_safe(void)
+{
+	/* for (i = k-1; i >= 0; i = i - 1) over new int[k]: the exact descending
+	   range proves every a[i] in [0, k), mirroring the upward case. */
+	ASSERT_INT(first_region_elem_load_checked(
+		"long f()\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[200000];\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 200000 - 1; i >= 0; i = i - 1)\n"
+		"	{\n"
+		"		s = s + (long)a[i];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n"), 0);
+}
+
+static void test_bce_downward_underflow_stays_checked(void)
+{
+	/* `>= -1` lets i reach -1: must stay checked. */
+	ASSERT_INT(first_region_elem_load_checked(
+		"long f()\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[64];\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 63; i >= 0 - 1; i = i - 1)\n"
+		"	{\n"
+		"		s = s + (long)a[i];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n"), 1);
+}
+
+static void test_bce_downward_reassigned_stays_checked(void)
+{
+	/* The body rewrites the counter: the range proof is void. */
+	ASSERT_INT(first_region_elem_load_checked(
+		"long f(int n)\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[64];\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 63; i >= 0; i = i - 1)\n"
+		"	{\n"
+		"		i = i + n;\n"
+		"		s = s + (long)a[i];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n"), 1);
+}
+
+static void test_lower_max_pattern_becomes_select(void)
+{
+	/* if (cand > w) { w = cand; } - a single-assignment if with a pure, cheap
+	   body lowers to IR_SEL (branchless cmov), not a BRCOND diamond. */
+	const Func *f = parse_one_func(
+		"int f(int cand, int w)\n"
+		"{\n"
+		"	for (int i = 0; i < 100; i = i + 1)\n"
+		"	{\n"
+		"		cand = cand * 31 + 7;\n"
+		"		if (cand > w)\n"
+		"		{\n"
+		"			w = cand;\n"
+		"		}\n"
+		"	}\n"
+		"	return w;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+
+	int sels = 0;
+	int brconds = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			IROp op = irf->blocks[b].instrs[i].op;
+			if (op == IR_SEL)
+			{
+				sels++;
+			}
+
+			if (op == IR_BRCOND)
+			{
+				brconds++;
+			}
+		}
+	}
+
+	ASSERT_INT(sels, 1);
+	ASSERT_INT(brconds, 1);   /* Only the loop's own conditional branch remains. */
+	ir_func_free(irf);
+}
+
+static void test_lower_div_body_stays_branched(void)
+{
+	/* The body divides: evaluating it unconditionally could fault, so the if
+	   must stay a real branch (no IR_SEL). */
+	const Func *f = parse_one_func(
+		"int f(int cand, int w, int d)\n"
+		"{\n"
+		"	for (int i = 0; i < 100; i = i + 1)\n"
+		"	{\n"
+		"		if (cand > w)\n"
+		"		{\n"
+		"			w = cand / d;\n"
+		"		}\n"
+		"	}\n"
+		"	return w;\n"
+		"}\n");
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+
+	int sels = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			if (irf->blocks[b].instrs[i].op == IR_SEL)
+			{
+				sels++;
+			}
+		}
+	}
+
+	ASSERT_INT(sels, 0);
+	ir_func_free(irf);
+}
+
 static void test_bce_negative_mask_stays_checked(void)
 {
 	/* The mask is an unbounded parameter, possibly negative: a & b with b of
@@ -922,6 +1058,58 @@ static void test_region_skipped_in_function_with_try(void)
 	ASSERT(strstr(g_full_asm, "; ir-region begin") == NULL);
 }
 
+static void test_region_bounds_check_cold_out_of_line(void)
+{
+	/* A checked access's hot path must be cmp + not-taken jae to a cold stub;
+	   the bzy_oob argument setup may no longer sit inline right after it. */
+	const Func *f = parse_one_func(
+		"long k(int[] a, int[] b)\n"
+		"{\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < a.length; i = i + 1)\n"
+		"	{\n"
+		"		s = s + (long)b[a[i]];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n");
+	const Stmt *loop = first_loop(f);
+	ASSERT_INT(ir_region_eligible(loop), 1);
+	emit_region_to_buf(f, loop, TARGET_WINDOWS, 1000);
+
+	const char *jae = strstr(g_region_asm, "jae .L");
+	ASSERT(jae != NULL);
+	/* The 200 chars after the hot check are loop body, not the cold call. */
+	char window[201];
+	strncpy(window, jae, 200);
+	window[200] = 0;
+	ASSERT(strstr(window, "bzy_oob") == NULL);
+	ASSERT(strstr(g_region_asm, "call bzy_oob") != NULL);   /* The stub exists. */
+}
+
+static void test_region_select_emits_cmov(void)
+{
+	/* The browser max pattern inside a region must emit a cmov. */
+	const Func *f = parse_one_func(
+		"int k(int[] a, int w)\n"
+		"{\n"
+		"	for (int i = 0; i < a.length; i = i + 1)\n"
+		"	{\n"
+		"		int cand;\n"
+		"		cand = a[i] + 2;\n"
+		"		if (cand > w)\n"
+		"		{\n"
+		"			w = cand;\n"
+		"		}\n"
+		"	}\n"
+		"	return w;\n"
+		"}\n");
+	const Stmt *loop = first_loop(f);
+	ASSERT_INT(ir_region_eligible(loop), 1);
+	emit_region_to_buf(f, loop, TARGET_WINDOWS, 1000);
+	ASSERT(strstr(g_region_asm, "cmov") != NULL);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
@@ -940,6 +1128,13 @@ int main(void)
 	RUN(test_bce_counter_reassigned_stays_checked);
 	RUN(test_bce_variable_mask_is_safe);
 	RUN(test_bce_negative_mask_stays_checked);
+	RUN(test_bce_downward_loop_is_safe);
+	RUN(test_bce_downward_underflow_stays_checked);
+	RUN(test_bce_downward_reassigned_stays_checked);
+	RUN(test_lower_max_pattern_becomes_select);
+	RUN(test_lower_div_body_stays_branched);
+	RUN(test_region_select_emits_cmov);
+	RUN(test_region_bounds_check_cold_out_of_line);
 	RUN(test_lower_masked_byte_load_is_movzx);
 	RUN(test_lower_rmw_index_lowered_once);
 	RUN(test_lower_unrolls_constant_trip_loop);

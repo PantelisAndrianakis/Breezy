@@ -31,6 +31,16 @@ typedef struct
 	long long *cval;              /* [vreg_count] that constant's value. */
 	char      *cdead;            /* [vreg_count] 1 if the const folds into every use (skip emit). */
 	char      *nn;               /* [vreg_count] 1 if the vreg's value is provably >= 0. */
+	/* Cold bounds-failure stubs, buffered so the hot path is a single not-taken
+	   jae: each records the label and the registers holding base/index at the
+	   check (still live at the stub - the jump leaves them untouched). */
+	struct
+	{
+		int  lbl;
+		char base[8];
+		char idx[8];
+	} oob[256];
+	int noob;
 } Emit;
 
 /* If v is a positive power of two, set *k = log2(v) and return 1. */
@@ -408,6 +418,22 @@ static void norm_reg(Codegen *cg, const char *Rd, const char *Ra, TypeKind to)
 static void emit_bounds_check(Emit *e, const char *Rbase, const char *Ridx)
 {
 	Codegen *cg = e->cg;
+	if (e->noob < (int)(sizeof e->oob / sizeof e->oob[0]))
+	{
+		/* Hot path: one not-taken branch to a cold stub emitted after the
+		   body (emit_oob_stubs). The registers named here still hold base and
+		   index at the stub: the jump leaves them untouched. */
+		int cold = cg_label(cg);
+		cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase);   /* Unsigned: catches negative and >= length. */
+		cg_emit(cg, "    jae .L%d", cold);
+		e->oob[e->noob].lbl = cold;
+		snprintf(e->oob[e->noob].base, sizeof e->oob[e->noob].base, "%s", Rbase);
+		snprintf(e->oob[e->noob].idx, sizeof e->oob[e->noob].idx, "%s", Ridx);
+		e->noob++;
+		return;
+	}
+
+	/* Stub table full: fall back to the inline form. */
 	int ok = cg_label(cg);
 	int pc = cg_label(cg);
 	cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase);   /* Unsigned: catches negative and >= length. */
@@ -420,6 +446,29 @@ static void emit_bounds_check(Emit *e, const char *Rbase, const char *Ridx)
 	cg_emit(cg, "    mov %s, rbp", iremit_iarg(cg, 3));
 	cg_emit(cg, "    call bzy_oob");
 	cg_emit(cg, ".L%d:", ok);
+}
+
+/* Emit the buffered cold bounds-failure stubs. The caller guarantees control
+   cannot fall into them (after a ret, or behind a skip jump for regions).
+   bzy_oob never returns; the pc label keeps the unwinder inside this
+   function's recorded range. */
+static void emit_oob_stubs(Emit *e)
+{
+	Codegen *cg = e->cg;
+	for (int i = 0; i < e->noob; i++)
+	{
+		int pc = cg_label(cg);
+		cg_emit(cg, ".L%d:", e->oob[i].lbl);
+		cg_emit(cg, "    mov rax, [%s + 24]", e->oob[i].base);     /* Length (rax is never an arg register). */
+		cg_emit(cg, "    mov %s, %s", iremit_iarg(cg, 0), e->oob[i].idx);
+		cg_emit(cg, "    mov %s, rax", iremit_iarg(cg, 1));
+		cg_emit(cg, "    lea %s, [rel .L%d]", iremit_iarg(cg, 2), pc);
+		cg_emit(cg, ".L%d:", pc);
+		cg_emit(cg, "    mov %s, rbp", iremit_iarg(cg, 3));
+		cg_emit(cg, "    call bzy_oob");
+	}
+
+	e->noob = 0;
 }
 
 /* Format the element address [base + index*scale + disp] (or [base + disp] with no
@@ -940,6 +989,39 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		finish_dst(e, in->dst);
 		break;
 	}
+	case IR_SEL:
+	{
+		/* dst = (a <cmp_op> b) ? c : d, branchless. The false side moves into
+		   dst first; mov preserves flags, so a spilled true side may reload
+		   between the cmp and the cmov. Scratches dodge dst's register (which
+		   can be the claimable rcx/rdx, or rax when dst spilled). */
+		const char *Rd = dst_reg(e, in->dst);
+		const char *s1 = strcmp(Rd, "rax") ? "rax" : "rcx";
+		const char *s2 = strcmp(Rd, "rdx") ? "rdx" : "rcx";
+		const char *Dd = vreg_in(e, in->d, Rd);
+		if (strcmp(Rd, Dd))
+		{
+			cg_emit(cg, "    mov %s, %s", Rd, Dd);
+		}
+
+		const char *Ra = vreg_in(e, in->a, s1);
+		long long imm;
+		if (const_imm32(e, in->b, &imm))
+		{
+			cg_emit(cg, "    cmp %s, %lld", Ra, imm);
+		}
+		else
+		{
+			const char *Rb = vreg_in(e, in->b, s2);
+			cg_emit(cg, "    cmp %s, %s", Ra, Rb);
+		}
+
+		const char *Rc = vreg_in(e, in->c, s2);   /* After the cmp: mov keeps flags. */
+		cg_emit(cg, "    cmov%s %s, %s",
+				jcc_op(in->cmp_op, ty_is_unsigned(in->type)) + 1, Rd, Rc);
+		finish_dst(e, in->dst);
+		break;
+	}
 	case IR_BR:
 		if (in->blk_true != next)   /* Fall through when the target is the next block. */
 		{
@@ -980,6 +1062,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 	Codegen *cg = e->cg;
 	IRAlloc *a = e->a;
 
+	e->noob = 0;
 	e->blabel = malloc((size_t)(f->block_count > 0 ? f->block_count : 1) * sizeof(int));
 	for (int i = 0; i < f->block_count; i++)
 	{
@@ -1039,7 +1122,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 				int k;
 				int folds = ((comm || op == IR_SUB) && b_imm)
 							|| ((op == IR_DIV || op == IR_MOD) && pow2_log(e->cval[in->b], &k))
-							|| (op == IR_CMP && b_imm);
+							|| ((op == IR_CMP || op == IR_SEL) && b_imm);
 				if (!folds)
 				{
 					e->cdead[in->b] = 0;
@@ -1049,6 +1132,11 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 			if (in->c != IR_NO_REG && in->c < f->vreg_count && e->cis[in->c])
 			{
 				e->cdead[in->c] = 0;   /* A stored value is read, never folded. */
+			}
+
+			if (op == IR_SEL && in->d != IR_NO_REG && in->d < f->vreg_count && e->cis[in->d])
+			{
+				e->cdead[in->d] = 0;   /* The false side is read, never folded. */
 			}
 		}
 	}
@@ -1197,6 +1285,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	}
 
 	emit_blocks(&e, f);
+	emit_oob_stubs(&e);   /* Cold bounds-failure stubs; every block ends in ret/jmp, so nothing falls in. */
 
 	/* Emit this function's exception record so a bounds error thrown from it is
 	   unwindable: the throw site's PC resolves to this record, which has no try
@@ -1268,6 +1357,17 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base)
 	for (int j = e.ncs - 1; j >= 0; j--)
 	{
 		cg_emit(cg, "    mov %s, [rbp - %d]", ra_reg_name(e.cs_regs[j]), e.cs_base + j * 8);
+	}
+
+	/* Cold bounds-failure stubs live behind a skip jump: the fall-through path
+	   above continues into the enclosing function, so they need a fence. The
+	   jump costs one taken branch per region ENTRY, not per iteration. */
+	if (e.noob > 0)
+	{
+		int skip = cg_label(cg);
+		cg_emit(cg, "    jmp .L%d", skip);
+		emit_oob_stubs(&e);
+		cg_emit(cg, ".L%d:", skip);
 	}
 
 	cg_emit(cg, "    ; ir-region end");

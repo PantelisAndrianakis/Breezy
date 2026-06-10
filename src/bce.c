@@ -594,8 +594,16 @@ static void bce_loop(Stmt *st, Env *env)
 					  && cond->lhs->kind == EX_IDENT && cond->lhs->anno_int == io
 					  && io != 0);
 
+		/* Descending twin: `i >= LO` / `i > LO` guarded by a negative step. */
+		int cmp_down_ok = (cond->kind == EX_BINARY
+						   && (cond->op == TOKEN_GT || cond->op == TOKEN_GTE)
+						   && cond->lhs->kind == EX_IDENT && cond->lhs->anno_int == io
+						   && io != 0);
+
 		/* Positive step: `i = i + C` (C>0) or `i++`. */
 		int step_ok = 0;
+		/* Negative step: `i = i - C` (C>0) or `i--`. */
+		int step_down_ok = 0;
 		Stmt *post = st->for_post;
 		if (post->kind == ST_ASSIGN && post->target && post->target->kind == EX_IDENT
 			&& post->target->anno_int == io && post->value
@@ -611,6 +619,21 @@ static void bce_loop(Stmt *st, Env *env)
 				 && post->expr->lhs->anno_int == io)
 		{
 			step_ok = 1;
+		}
+		else if (post->kind == ST_ASSIGN && post->target && post->target->kind == EX_IDENT
+				 && post->target->anno_int == io && post->value
+				 && post->value->kind == EX_BINARY && post->value->op == TOKEN_MINUS
+				 && post->value->lhs->kind == EX_IDENT && post->value->lhs->anno_int == io
+				 && post->value->rhs->kind == EX_INT && post->value->rhs->int_val > 0)
+		{
+			step_down_ok = 1;
+		}
+		else if (post->kind == ST_EXPR && post->expr && post->expr->kind == EX_INCDEC
+				 && post->expr->op == TOKEN_MINUSMINUS
+				 && post->expr->lhs && post->expr->lhs->kind == EX_IDENT
+				 && post->expr->lhs->anno_int == io)
+		{
+			step_down_ok = 1;
 		}
 
 		if (cmp_ok && step_ok && lo)
@@ -645,6 +668,25 @@ static void bce_loop(Stmt *st, Env *env)
 				{
 					sb_ind = io;
 					sb_array = arr_off;
+				}
+			}
+		}
+		else if (cmp_down_ok && step_down_ok && lo)
+		{
+			/* Descending: i runs from the init (the top) down to the guard's
+			   floor; the negative step never skips below it mid-body because
+			   the body itself does not rewrite i (mod-widened otherwise). */
+			Iv top_iv = iv_expr(lo, env);          /* The init is the TOP. */
+			Iv floor_iv = iv_expr(cond->rhs, env);
+			int floor_stable = !expr_reads_any(cond->rhs, &mod);
+			if (top_iv.known && floor_iv.known && floor_stable)
+			{
+				long long bottom = (cond->op == TOKEN_GT) ? floor_iv.lo + 1 : floor_iv.lo;
+				if (top_iv.hi >= bottom)
+				{
+					Iv t = { 1, bottom, top_iv.hi };
+					ind = io;
+					ind_iv = iv_clamp(t, TY_INT);
 				}
 			}
 		}

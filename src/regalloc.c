@@ -48,8 +48,9 @@ static int local_index(const IRAlloc *a, long long disp)
 
 /* The value defined (or -1) and the values used by one instruction. A frame
    load reads its local and defines its dst vreg; a frame store defines its local
-   and reads the stored vreg; everything else uses a/b/c and defines dst. */
-static void instr_def_use(const IRAlloc *a, const IRInstr *in, int *def, int uses[3], int *nuse)
+   and reads the stored vreg; everything else uses a/b/c (and IR_SEL's d) and
+   defines dst. */
+static void instr_def_use(const IRAlloc *a, const IRInstr *in, int *def, int uses[4], int *nuse)
 {
 	*def = -1;
 	*nuse = 0;
@@ -86,6 +87,11 @@ static void instr_def_use(const IRAlloc *a, const IRInstr *in, int *def, int use
 	if (in->c != IR_NO_REG)
 	{
 		uses[(*nuse)++] = in->c;
+	}
+
+	if (in->op == IR_SEL && in->d != IR_NO_REG)
+	{
+		uses[(*nuse)++] = in->d;
 	}
 }
 
@@ -263,7 +269,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		{
 			IRInstr *in = &blk->instrs[i];
 			int def;
-			int uses[3];
+			int uses[4];
 			int nuse;
 			instr_def_use(a, in, &def, uses, &nuse);
 			if (def >= 0)
@@ -770,7 +776,7 @@ IRAlloc *ra_run(IRFunc *f)
 		for (int i = 0; i < blk->count; i++)
 		{
 			int def;
-			int uses[3];
+			int uses[4];
 			int nuse;
 			instr_def_use(a, &blk->instrs[i], &def, uses, &nuse);
 			for (int u = 0; u < nuse; u++)
@@ -872,7 +878,7 @@ IRAlloc *ra_run(IRFunc *f)
 		{
 			int p = first_pos[b] + i;
 			int def;
-			int uses[3];
+			int uses[4];
 			int nuse;
 			instr_def_use(a, &blk->instrs[i], &def, uses, &nuse);
 			if (def >= 0)

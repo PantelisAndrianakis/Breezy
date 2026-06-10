@@ -20,6 +20,7 @@ typedef enum
 	IR_STORE,     /* [base + b*scale + disp] = c; base is rbp when is_frame, else a. */
 	IR_BR,        /* Unconditional jump to blk_true. */
 	IR_BRCOND,    /* if a != 0 jump blk_true else blk_false. */
+	IR_SEL,       /* dst = (a <cmp_op> b) ? c : d - a branchless select (cmov). */
 	IR_RET        /* return a (IR_NO_REG for void). */
 } IROp;
 
@@ -29,6 +30,7 @@ typedef struct
 	TypeKind type;        /* Result/operand width (the value kind this op computes in). */
 	IRReg    dst;         /* Defined vreg, or IR_NO_REG. */
 	IRReg    a, b, c;     /* Operand vregs, or IR_NO_REG. */
+	IRReg    d;           /* IR_SEL only: the value when the compare is false. */
 	long long imm;        /* IR_CONST value. */
 	int      scale;       /* IR_LOAD/IR_STORE index scale (1/2/4/8); 0 if no index. */
 	long long disp;       /* IR_LOAD/IR_STORE displacement; for a frame local, its slot offset. */

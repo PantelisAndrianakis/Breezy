@@ -60,6 +60,7 @@ IRInstr *ir_emit(IRFunc *f, int blk, IROp op, TypeKind type)
 	in->a = IR_NO_REG;
 	in->b = IR_NO_REG;
 	in->c = IR_NO_REG;
+	in->d = IR_NO_REG;
 	in->scale = 0;
 	in->is_frame = 0;
 	in->blk_true = -1;

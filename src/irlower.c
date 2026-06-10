@@ -683,6 +683,48 @@ static int block_stmt_count(const Block *b)
 	return n;
 }
 
+/* An expression that is safe and cheap to evaluate UNCONDITIONALLY: pure
+   arithmetic over locals, literals, and BCE-proved loads. Excludes division
+   and remainder (can fault) and checked loads (can throw); capped in size so
+   a select never computes more speculative work than the branch it removes. */
+static int sel_expr_ok(const Expr *e, int *budget)
+{
+	if (!e || --(*budget) < 0)
+	{
+		return 0;
+	}
+
+	switch (e->kind)
+	{
+	case EX_INT:
+	case EX_BOOL:
+		return 1;
+	case EX_IDENT:
+		return ty_is_int(e->type.kind) && e->anno_int > 0;
+	case EX_CAST:
+		return ty_is_int(e->type.kind) && ty_is_int(e->lhs->type.kind)
+			   && sel_expr_ok(e->lhs, budget);
+	case EX_INDEX:
+		return e->anno_index_safe && ty_is_int(e->type.kind)
+			   && e->lhs->kind == EX_IDENT && sel_expr_ok(e->rhs, budget);
+	case EX_BINARY:
+		if (e->op == TOKEN_SLASH || e->op == TOKEN_PERCENT)
+		{
+			return 0;
+		}
+
+		if (tok_is_cmp(e->op) || e->op == TOKEN_AND || e->op == TOKEN_OR)
+		{
+			return 0;
+		}
+
+		return ty_is_int(e->type.kind)
+			   && sel_expr_ok(e->lhs, budget) && sel_expr_ok(e->rhs, budget);
+	default:
+		return 0;
+	}
+}
+
 static void low_stmt(Low *L, const Stmt *s)
 {
 	if (!L->ok)
@@ -834,6 +876,52 @@ static void low_stmt(Low *L, const Stmt *s)
 		break;
 	case ST_IF:
 	{
+		/* if (A <cmp> B) { x = EXPR; } with a pure, cheap EXPR lowers to a
+		   branchless select: x = cmp ? EXPR : x via cmov. Kills the data-
+		   dependent misprediction the max/min/clamp patterns otherwise pay. */
+		if (!s->else_blk && s->then_blk && s->then_blk->count == 1
+			&& s->cond->kind == EX_BINARY && tok_is_cmp(s->cond->op)
+			&& ty_is_int(s->cond->lhs->type.kind))
+		{
+			const Stmt *as = s->then_blk->stmts[0];
+			if (as->kind == ST_ASSIGN && as->target->kind == EX_IDENT
+				&& as->target->anno_int > 0 && ty_is_int(as->target->type.kind))
+			{
+				int budget = 6;
+				int ok = sel_expr_ok(s->cond->lhs, &budget)
+						 && sel_expr_ok(s->cond->rhs, &budget);
+				budget = 6;
+				ok = ok && sel_expr_ok(as->value, &budget);
+				if (ok)
+				{
+					IRReg av = low_expr(L, s->cond->lhs);
+					IRReg bv = low_expr(L, s->cond->rhs);
+					IRReg tv = low_expr(L, as->value);
+
+					/* The current value of the target (the false side). */
+					IRReg fv = ir_reg(L->f);
+					IRInstr *ld = ir_emit(L->f, L->cur, IR_LOAD, as->target->type.kind);
+					ld->dst = fv;
+					ld->is_frame = 1;
+					ld->disp = as->target->anno_int;
+					ld->line = s->line;
+
+					IRReg r = ir_reg(L->f);
+					IRInstr *sel = ir_emit(L->f, L->cur, IR_SEL, s->cond->lhs->type.kind);
+					sel->dst = r;
+					sel->a = av;
+					sel->b = bv;
+					sel->c = tv;
+					sel->d = fv;
+					sel->cmp_op = s->cond->op;
+					sel->line = s->line;
+
+					low_store_local(L, as->target->anno_int, as->target->type.kind, r);
+					break;
+				}
+			}
+		}
+
 		IRReg c = low_expr(L, s->cond);
 		int then_blk = low_block_at(L, L->depth);
 		int else_blk = s->else_blk ? low_block_at(L, L->depth) : -1;
