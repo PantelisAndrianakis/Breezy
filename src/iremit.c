@@ -492,6 +492,23 @@ static int const_imm32(Emit *e, IRReg v, long long *out)
 	return 0;
 }
 
+/* Narrow ints wrap at their declared width each step (the language semantics
+   the emitter's defer machinery preserves), but the IR computes in 64-bit
+   registers: re-extend the result of any op that can carry into the high bits
+   (add/sub/imul/shl/neg). Clean operands keep div/mod/sar/and/or/xor clean
+   (bitwise ops on sign-extended values leave the high bits copies of bit 31),
+   so those need no fixup. */
+static int op_wraps_narrow(const IRInstr *in)
+{
+	if (!ty_is_int(in->type) || ty_bits(in->type) >= 64)
+	{
+		return 0;
+	}
+
+	return in->op == IR_ADD || in->op == IR_SUB || in->op == IR_MUL
+		   || in->op == IR_SHL || in->op == IR_NEG;
+}
+
 /* dst = a <op> b, register-direct, honoring x86's two-operand form and aliasing. */
 static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutative)
 {
@@ -528,6 +545,11 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 			cg_emit(cg, "    %s %s, %lld", opc, Rd, imm);
 		}
 
+		if (op_wraps_narrow(in))
+		{
+			norm_reg(cg, Rd, Rd, in->type);
+		}
+
 		finish_dst(e, in->dst);
 		return;
 	}
@@ -558,6 +580,11 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 		}
 
 		cg_emit(cg, "    %s %s, %s", opc, Rd, Rb);
+	}
+
+	if (op_wraps_narrow(in))
+	{
+		norm_reg(cg, Rd, Rd, in->type);
 	}
 
 	finish_dst(e, in->dst);
@@ -796,6 +823,10 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		if (in->op == IR_SHL)
 		{
 			cg_emit(cg, "    shl %s, cl", Rd);
+			if (op_wraps_narrow(in))
+			{
+				norm_reg(cg, Rd, Rd, in->type);
+			}
 		}
 		else
 		{
@@ -815,6 +846,11 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		}
 
 		cg_emit(cg, "    neg %s", Rd);
+		if (op_wraps_narrow(in))
+		{
+			norm_reg(cg, Rd, Rd, in->type);
+		}
+
 		finish_dst(e, in->dst);
 		break;
 	}

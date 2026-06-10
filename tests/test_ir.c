@@ -9,6 +9,7 @@
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
+#include "prelude.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -430,6 +431,102 @@ static void test_region_emit_no_prologue_no_ret(void)
 	ASSERT(strstr(g_region_asm, ".L") != NULL);
 }
 
+/* Compile a full unit (prelude + src) through cg_program, exactly as the driver
+   does, and load the emitted asm. The test_ir process never sets BZY_IR, so the
+   IR backend and regions run with their defaults (on). */
+static char g_full_asm[1 << 16];
+static void emit_unit_asm(const char *src, Target target)
+{
+	static Parser parsers[12];
+	static Unit *units[12];
+	static TypeTable tt;
+	int np = BZY_PRELUDE_COUNT;
+	for (int i = 0; i < np; i++)
+	{
+		parser_init(&parsers[i], BZY_PRELUDE[i]);
+		units[i] = parse_unit(&parsers[i]);
+	}
+
+	parser_init(&parsers[np], src);
+	units[np] = parse_unit(&parsers[np]);
+	int total = np + 1;
+	types_init(&tt);
+	types_register_builtins(&tt);
+	for (int i = 0; i < total; i++)
+	{
+		types_register_unit_names(&tt, units[i]);
+	}
+
+	for (int i = 0; i < total; i++)
+	{
+		types_register_interfaces(&tt, units[i]);
+	}
+
+	for (int i = 0; i < total; i++)
+	{
+		types_register_unit_members(&tt, units[i]);
+	}
+
+	resolve_program(&tt, units, total);
+	FILE *f = fopen("out_ir_full_test.asm", "w+");
+	ASSERT(f != NULL);
+	Codegen cg;
+	cg_init(&cg, f);
+	cg.target = target;
+	cg_program(&cg, &tt, units, total);
+	fflush(f);
+	rewind(f);
+	size_t n = fread(g_full_asm, 1, sizeof(g_full_asm) - 1, f);
+	g_full_asm[n] = 0;
+	fclose(f);
+	remove("out_ir_full_test.asm");
+}
+
+static void test_region_dispatch_in_main_shaped_function(void)
+{
+	/* A main with allocation and a print after the loop: whole-function IR is
+	   impossible, so the loop must be emitted as a region. */
+	emit_unit_asm(
+		"void main()\n"
+		"{\n"
+		"	int[] tbl;\n"
+		"	tbl = new int[64];\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+		"	{\n"
+		"		tbl[i] = i * 3;\n"
+		"		s = s + (long)tbl[i];\n"
+		"	}\n"
+		"	print(\"\" + s);\n"
+		"}\n", TARGET_WINDOWS);
+	ASSERT(strstr(g_full_asm, "; ir-region begin") != NULL);
+	ASSERT(strstr(g_full_asm, "; ir-region end") != NULL);
+}
+
+static void test_region_skipped_in_function_with_try(void)
+{
+	/* A catch resuming in this frame would read home slots the region holds in
+	   registers: any try in the function disables regions. */
+	emit_unit_asm(
+		"void main()\n"
+		"{\n"
+		"	int[] tbl;\n"
+		"	tbl = new int[64];\n"
+		"	try\n"
+		"	{\n"
+		"		for (int i = 0; i < tbl.length; i = i + 1)\n"
+		"		{\n"
+		"			tbl[i] = i;\n"
+		"		}\n"
+		"	}\n"
+		"	catch (Exception e)\n"
+		"	{\n"
+		"	}\n"
+		"}\n", TARGET_WINDOWS);
+	ASSERT(strstr(g_full_asm, "; ir-region begin") == NULL);
+}
+
 int main(void)
 {
 	RUN(test_ir_build_basic);
@@ -451,6 +548,8 @@ int main(void)
 	RUN(test_region_lower_has_no_ret);
 	RUN(test_whole_function_eligibility_unaffected);
 	RUN(test_region_emit_no_prologue_no_ret);
+	RUN(test_region_dispatch_in_main_shaped_function);
+	RUN(test_region_skipped_in_function_with_try);
 	SUMMARY();
 	return 0;
 }

@@ -32,6 +32,8 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
 	cg->blocking_thunk_count=0;
+	cg->region_count=0;
+	cg->region_base=0;
 	cg->target=TARGET_WINDOWS;   /* Driver overrides via --target. */
 }
 
@@ -4935,6 +4937,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 
 static void cg_block(Codegen *cg, TypeTable *tt, Func *f, Block *b, int in_main);
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);
+
+/* IR loop regions (Plan 4): lookup/emission for loops the pre-scan recorded
+   (defined with the other region helpers ahead of cg_emit_func). */
+static int  cg_region_find(Codegen *cg, const Stmt *s);
+static void cg_emit_region_stmt(Codegen *cg, Func *f, int r);
 static int cg_tt_has_statics(TypeTable *tt);
 static void cg_accum_loop(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);   /* P5. */
 static void cg_accum_append(Codegen *cg, TypeTable *tt, Stmt *a);                       /* P5. */
@@ -6755,6 +6762,18 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	}
 	case ST_WHILE:
 	{
+		/* IR loop region (Plan 4). Skipped while an enclosing emitter loop holds
+		   invariants in r8..r11 (hoist_n > 0): region code would clobber them. */
+		if (cg->hoist_n == 0)
+		{
+			int r = cg_region_find(cg, s);
+			if (r >= 0)
+			{
+				cg_emit_region_stmt(cg, f, r);
+				break;
+			}
+		}
+
 		if (s->accum_sb_offset)   /* P5: string self-accumulation -> StringBuilder. */
 		{
 			cg_accum_loop(cg,tt,f,s,in_main);
@@ -6787,6 +6806,18 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,"    jmp .L%d", cg->cur_continue_label);
 		break;
 	case ST_FOR:
+		/* IR loop region (Plan 4). Skipped while an enclosing emitter loop holds
+		   invariants in r8..r11 (hoist_n > 0): region code would clobber them. */
+		if (cg->hoist_n == 0)
+		{
+			int r = cg_region_find(cg, s);
+			if (r >= 0)
+			{
+				cg_emit_region_stmt(cg, f, r);
+				break;
+			}
+		}
+
 		if (s->accum_sb_offset)   /* P5: string self-accumulation -> StringBuilder. */
 		{
 			cg_accum_loop(cg,tt,f,s,in_main);
@@ -7053,6 +7084,132 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 	cg_emit(cg,"section .text");
 }
 
+/* IR loop regions (Plan 4): any try statement anywhere in the body disables
+   regions for the whole function - a catch resuming in this frame would read
+   scalar home slots the region holds in registers. */
+static int block_has_try(const Block *b);
+static int stmt_has_try(const Stmt *s)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	if (s->kind == ST_TRY)
+	{
+		return 1;
+	}
+
+	return stmt_has_try(s->for_init) || stmt_has_try(s->for_post)
+		   || block_has_try(s->then_blk) || block_has_try(s->else_blk);
+}
+
+static int block_has_try(const Block *b)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (stmt_has_try(b->stmts[i]))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* Collect outermost eligible loops as regions, lowering and allocating each. On
+   a hot-spill (the allocation would spill a value in the deepest loop, which the
+   emitter's tuned heuristics tend to handle better) the loop stays on the
+   emitter, but its body is still scanned so a cleaner inner loop can become a
+   region of its own. */
+static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		Stmt *s = b->stmts[i];
+		if ((s->kind == ST_FOR || s->kind == ST_WHILE)
+			&& cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s))
+		{
+			IRFunc *irf = ir_lower_region(f, s);
+			if (irf)
+			{
+				IRAlloc *a = ra_run(irf);
+				if (!a->hot_spill)
+				{
+					cg->region_stmt[cg->region_count] = s;
+					cg->region_irf[cg->region_count] = irf;
+					cg->region_alloc[cg->region_count] = a;
+					cg->region_count++;
+					continue;
+				}
+
+				ra_free(a);
+				ir_func_free(irf);
+			}
+		}
+
+		cg_scan_regions(cg, f, s->then_blk);
+		cg_scan_regions(cg, f, s->else_blk);
+	}
+}
+
+/* The recorded region index for statement s, or -1. */
+static int cg_region_find(Codegen *cg, const Stmt *s)
+{
+	for (int i = 0; i < cg->region_count; i++)
+	{
+		if (cg->region_stmt[i] == s)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+/* Emit a recorded region, handing promoted locals across the boundary: their
+   home slots are stale while promoted, and the region reads/writes locals only
+   through home slots, so flush before and reload after. Only promoted locals the
+   region references need this; live ranges sharing a physical register are
+   disjoint, so at most one of them spans any given region. */
+static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
+{
+	IRAlloc *a = cg->region_alloc[r];
+	for (int i = 0; i < f->promo_count; i++)
+	{
+		for (int k = 0; k < a->nlocal; k++)
+		{
+			if (a->local_disp[k] == f->promo_off[i])
+			{
+				cg_emit(cg, "    mov [rbp - %d], %s", f->promo_off[i], CG_PROMO_REGS[f->promo_reg[i]]);
+			}
+		}
+	}
+
+	ir_emit_region(cg, cg->region_irf[r], a, cg->region_base);
+
+	for (int i = 0; i < f->promo_count; i++)
+	{
+		for (int k = 0; k < a->nlocal; k++)
+		{
+			if (a->local_disp[k] == f->promo_off[i])
+			{
+				cg_emit(cg, "    mov %s, [rbp - %d]", CG_PROMO_REGS[f->promo_reg[i]], f->promo_off[i]);
+			}
+		}
+	}
+}
+
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
 	/* Experimental IR backend: a free (non-method) function that lowers cleanly
@@ -7075,6 +7232,38 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 
 			ir_func_free(irf);
 		}
+	}
+
+	/* IR loop regions (Plan 4): pre-scan the body for outermost loops whose whole
+	   subtree lowers; reserve one shared spill/callee-save area sized for the
+	   largest region (regions never execute concurrently). cg_stmt emits each
+	   recorded loop from its IR instead of the syntax-directed path. */
+	cg->region_count = 0;
+	cg->region_base = 0;
+	int region_area = 0;
+	if (bzy_ir_regions_enabled() && this_class == NULL && !block_has_try(f->body))
+	{
+		cg_scan_regions(cg, f, f->body);
+		for (int i = 0; i < cg->region_count; i++)
+		{
+			IRAlloc *a = cg->region_alloc[i];
+			int ncs = 0;
+			for (int j = 0; j < RA_NREGS; j++)
+			{
+				if (a->used_reg[j] && ra_is_callee_saved(j, cg->target == TARGET_LINUX))
+				{
+					ncs++;
+				}
+			}
+
+			int need = a->spill_bytes + ncs * 8;
+			if (need > region_area)
+			{
+				region_area = need;
+			}
+		}
+
+		region_area = (region_area + 15) & ~15;
 	}
 
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
@@ -7127,10 +7316,17 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->cur_scratch     = 0;
 	cg->cur_scratch_cap = arena;
 
-	int frame = locals + scratch + stack_objs + temps + arena + outargs;
+	/* The region spill/callee-save area sits between the scratch arena and the
+	   outgoing-arg region; region spill slot 0 is at [rbp - region_base]. */
+	int frame = locals + scratch + stack_objs + temps + arena + region_area + outargs;
 	if (frame % 16 != 0)
 	{
 		frame = (frame/16 + 1)*16;   /* Keep rsp 16-aligned after the prologue so calls are aligned. */
+	}
+
+	if (cg->region_count > 0)
+	{
+		cg->region_base = locals + scratch + stack_objs + temps + arena + 8;
 	}
 
 	cg->outarg_base = frame;   /* rsp = rbp - frame; shadow [rsp,rsp+32), outgoing args at [rsp+32+i*8]. */
@@ -7241,6 +7437,15 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg_emit(cg,"    pop rbp");
 	cg_emit(cg,"    ret");
 	cg_emit_exception_record(cg, label, frame, f);
+
+	for (int i = 0; i < cg->region_count; i++)
+	{
+		ra_free(cg->region_alloc[i]);
+		ir_func_free(cg->region_irf[i]);
+	}
+
+	cg->region_count = 0;
+	cg->region_base = 0;
 }
 
 static void cg_emit_vtable(Codegen *cg, ClassInfo *c)

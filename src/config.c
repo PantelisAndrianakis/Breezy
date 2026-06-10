@@ -19,6 +19,20 @@ int bzy_ir_enabled(void)
 	return cached;
 }
 
+int bzy_ir_regions_enabled(void)
+{
+	static int cached = -1;
+	if (cached < 0)
+	{
+		/* Default ON. Set BZY_IR_REGIONS=0 to keep eligible loops on the emitter
+		   while leaving whole-function IR active; BZY_IR=0 disables both. */
+		const char *v = getenv("BZY_IR_REGIONS");
+		cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
+	}
+
+	return cached && bzy_ir_enabled();
+}
+
 /* Append each double-quoted token in `val` to the string table at `base`
    (each slot `width` bytes, `cap` slots), bumping *count. Tokens longer than
    the slot are truncated. */

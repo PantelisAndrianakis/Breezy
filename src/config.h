@@ -23,9 +23,15 @@ void config_parse_links(const char *text, LinkConfig *cfg);
    A missing file is a silent no-op. */
 void config_load(const char *src_arg, LinkConfig *cfg);
 
-/* 1 if the experimental IR + register-allocator backend is enabled (env BZY_IR
-   set to a non-empty, non-"0" value). Read once from the environment and cached.
-   Default 0, so the existing emitter remains the default path. */
+/* 1 if the IR + register-allocator backend is enabled. Read once from the
+   environment and cached. Default ON for eligible functions; set BZY_IR=0 to
+   force the emitter everywhere. */
 int bzy_ir_enabled(void);
+
+/* 1 if IR loop regions are enabled (Plan 4): eligible loop nests inside emitter
+   functions are emitted from IR. Default ON; set BZY_IR_REGIONS=0 to keep loops
+   on the emitter while leaving whole-function IR active. Always 0 when the IR
+   backend itself is disabled. */
+int bzy_ir_regions_enabled(void);
 
 #endif

@@ -155,6 +155,7 @@ test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_runtime
 	bash tests/run_integration.sh                 # IR backend (the default for eligible functions).
 	BZY_IR=0 bash tests/run_integration.sh        # Emitter fallback path.
+	BZY_IR_REGIONS=0 bash tests/run_integration.sh   # Whole-function IR on, loop regions off.
 
 integration: breezy $(LIB)
 	bash tests/run_integration.sh
