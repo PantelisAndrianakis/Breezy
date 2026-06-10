@@ -23,10 +23,16 @@ typedef struct
 	int       spill_bytes;
 	int      *istart;        /* [nval] live-interval start position. */
 	int      *iend;          /* [nval] live-interval end position. */
+	int       hot_spill;     /* 1 if a value used in the deepest loop had to spill. */
 } IRAlloc;
 
 IRAlloc *ra_run(IRFunc *f);
 void     ra_free(IRAlloc *a);
+
+/* Safety gate: 1 if allocating f spills a value used in its deepest loop (a hot
+   spill the emitter's tuned heuristics would likely handle better) - the dispatch
+   then keeps f on the emitter. Runs an allocation and frees it. */
+int      ra_hot_spill(IRFunc *f);
 
 const char *ra_reg_name(int i);
 int  ra_is_callee_saved(int i, int linux_target);

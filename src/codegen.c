@@ -5,6 +5,7 @@
 #include "config.h"
 #include "irlower.h"
 #include "iremit.h"
+#include "regalloc.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -7062,9 +7063,17 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		IRFunc *irf = ir_lower_func(f, tt);
 		if (irf)
 		{
-			ir_emit_func(cg, irf, label);
+			/* Safety gate: if the allocation would spill a value used in the deepest
+			   loop, the emitter's tuned promotion/spill handling tends to do better -
+			   keep this function on the emitter. Otherwise emit from the IR. */
+			if (!ra_hot_spill(irf))
+			{
+				ir_emit_func(cg, irf, label);
+				ir_func_free(irf);
+				return;
+			}
+
 			ir_func_free(irf);
-			return;
 		}
 	}
 

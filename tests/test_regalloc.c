@@ -126,9 +126,53 @@ static void test_many_locals_force_spill(void)
 	ir_func_free(ir);
 }
 
+static void test_no_hot_spill_small_loop(void)
+{
+	/* A handful of inner-loop values fit in registers - no hot spill. */
+	const Func *f = parse_one_func(
+		"long sum(int n)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
+		"	return s;\n"
+		"}\n");
+	IRFunc *ir = ir_lower_func(f, 0);
+	ASSERT_INT(ra_hot_spill(ir), 0);
+	ir_func_free(ir);
+}
+
+static void test_hot_spill_detected(void)
+{
+	/* Many values all live at the inner-loop sum exceed the register file, forcing
+	   a spill of a value used at the deepest depth - the safety gate must see it. */
+	const Func *f = parse_one_func(
+		"long hot(int n)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	for (int i = 1; i < n; i = i + 1)\n"
+		"	{\n"
+		"		long c0; c0 = (long)i * 1;  long c1; c1 = (long)i * 2;\n"
+		"		long c2; c2 = (long)i * 3;  long c3; c3 = (long)i * 4;\n"
+		"		long c4; c4 = (long)i * 5;  long c5; c5 = (long)i * 6;\n"
+		"		long c6; c6 = (long)i * 7;  long c7; c7 = (long)i * 8;\n"
+		"		long c8; c8 = (long)i * 9;  long c9; c9 = (long)i * 10;\n"
+		"		long d0; d0 = (long)i * 11; long d1; d1 = (long)i * 12;\n"
+		"		long d2; d2 = (long)i * 13; long d3; d3 = (long)i * 14;\n"
+		"		long d4; d4 = (long)i * 15; long d5; d5 = (long)i * 16;\n"
+		"		s = s + c0+c1+c2+c3+c4+c5+c6+c7+c8+c9+d0+d1+d2+d3+d4+d5;\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n");
+	IRFunc *ir = ir_lower_func(f, 0);
+	ASSERT_INT(ra_hot_spill(ir), 1);
+	ir_func_free(ir);
+}
+
 int main(void)
 {
 	RUN(test_reg_tables);
+	RUN(test_no_hot_spill_small_loop);
+	RUN(test_hot_spill_detected);
 	RUN(test_alloc_trivial_in_register);
 	RUN(test_loop_value_interval_spans_loop);
 	RUN(test_small_function_no_spill);

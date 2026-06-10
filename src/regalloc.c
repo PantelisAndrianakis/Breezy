@@ -234,6 +234,16 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	int *cp_s = malloc((size_t)cpcap * sizeof(int));
 	char *live = malloc((size_t)nval);
 	long long *weight = calloc((size_t)nval, sizeof(long long));   /* Per-value spill weight. */
+	char *used_deep = calloc((size_t)nval, 1);   /* Touched in a maximum-depth block. */
+
+	int maxdepth = 0;
+	for (int b = 0; b < f->block_count; b++)
+	{
+		if (f->blocks[b].depth > maxdepth)
+		{
+			maxdepth = f->blocks[b].depth;
+		}
+	}
 
 	/* Build interference + copy lists from per-point liveness, and accumulate each
 	   value's loop-depth-weighted use/def count. */
@@ -241,6 +251,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	{
 		IRBlock *blk = &f->blocks[b];
 		long long fac = depth_weight(blk->depth);
+		int deepest = (blk->depth == maxdepth);
 		memcpy(live, live_out + (size_t)b * bw, (size_t)nval);
 		for (int i = blk->count - 1; i >= 0; i--)
 		{
@@ -252,6 +263,10 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			if (def >= 0)
 			{
 				weight[def] += fac;
+				if (deepest)
+				{
+					used_deep[def] = 1;
+				}
 			}
 
 			for (int u = 0; u < nuse; u++)
@@ -259,6 +274,10 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				if (uses[u] >= 0)
 				{
 					weight[uses[u]] += fac;
+					if (deepest)
+					{
+						used_deep[uses[u]] = 1;
+					}
 				}
 			}
 
@@ -543,11 +562,28 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 
 	a->spill_bytes = nspill * 8;
 
+	/* Hot spill: a value used in the function's deepest loop had to spill. Only
+	   meaningful when there is a loop (maxdepth >= 1); a spill in straight-line or
+	   shallow code is reloaded at most once and does not threaten the win. */
+	a->hot_spill = 0;
+	if (maxdepth >= 1)
+	{
+		for (int v = 0; v < nval; v++)
+		{
+			if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0 && used_deep[v])
+			{
+				a->hot_spill = 1;
+				break;
+			}
+		}
+	}
+
 	free(interf);
 	free(cp_d);
 	free(cp_s);
 	free(live);
 	free(weight);
+	free(used_deep);
 	free(uf);
 	free(rintf);
 	free(root_live);
@@ -726,4 +762,12 @@ IRAlloc *ra_run(IRFunc *f)
 	free(live_in);
 	free(live_out);
 	return a;
+}
+
+int ra_hot_spill(IRFunc *f)
+{
+	IRAlloc *a = ra_run(f);
+	int hot = a->hot_spill;
+	ra_free(a);
+	return hot;
 }
