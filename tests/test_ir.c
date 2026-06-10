@@ -1,11 +1,16 @@
 #include "test_framework.h"
 #include "ir.h"
 #include "irlower.h"
+#include "iremit.h"
+#include "regalloc.h"
+#include "codegen.h"
 #include "parser.h"
 #include "enums.h"
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
+#include <stdio.h>
+#include <string.h>
 
 /* Lex -> parse -> register -> resolve a snippet and return its first free
    function (u->funcs[0]). Mirrors test_resolve.c's build1. */
@@ -368,6 +373,63 @@ static void test_whole_function_eligibility_unaffected(void)
 	ASSERT_INT(ir_eligible(f), 1);
 }
 
+/* Emit a region directly through ir_emit_region and load the asm text. */
+static char g_region_asm[1 << 15];
+static void emit_region_to_buf(const Func *f, const Stmt *loop, Target target, int spill_base)
+{
+	IRFunc *irf = ir_lower_region(f, loop);
+	ASSERT(irf != NULL);
+	IRAlloc *a = ra_run(irf);
+	FILE *out = fopen("out_ir_region_test.asm", "w+");
+	ASSERT(out != NULL);
+	Codegen cg;
+	cg_init(&cg, out);
+	cg.target = target;
+	ir_emit_region(&cg, irf, a, spill_base);
+	fflush(out);
+	rewind(out);
+	size_t n = fread(g_region_asm, 1, sizeof(g_region_asm) - 1, out);
+	g_region_asm[n] = 0;
+	fclose(out);
+	remove("out_ir_region_test.asm");
+	ra_free(a);
+	ir_func_free(irf);
+}
+
+static void test_region_emit_no_prologue_no_ret(void)
+{
+	const Func *f = parse_one_func(
+		"void k(byte[] buf, int[] tbl)\n"
+		"{\n"
+		"	helper();\n"
+		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+		"	{\n"
+		"		tbl[i] = (int)buf[i] & 255;\n"
+		"	}\n"
+		"}\n"
+		"void helper() { }\n");
+	emit_region_to_buf(f, first_loop(f), TARGET_WINDOWS, 256);
+
+	/* A region is body-only: no frame setup, no epilogue, no return. */
+	ASSERT(strstr(g_region_asm, "push rbp") == NULL);
+	ASSERT(strstr(g_region_asm, "    ret") == NULL);
+	ASSERT(strstr(g_region_asm, "pop rbp") == NULL);
+	ASSERT(strstr(g_region_asm, "section .") == NULL);
+
+	/* Begin/end markers bracket the region (the Task 3 dispatch test greps them). */
+	ASSERT(strstr(g_region_asm, "; ir-region begin") != NULL);
+	ASSERT(strstr(g_region_asm, "; ir-region end") != NULL);
+
+	/* The allocation hands out rbx first (RA_REGS[0], callee-saved): the region
+	   must save it into the region area and restore it at the end. */
+	ASSERT(strstr(g_region_asm, "], rbx") != NULL);
+	ASSERT(strstr(g_region_asm, "mov rbx, [rbp - ") != NULL);
+
+	/* The loop body is register-resident: between the begin marker's local loads
+	   and the end marker's store-backs there is a .L label (the loop head). */
+	ASSERT(strstr(g_region_asm, ".L") != NULL);
+}
+
 int main(void)
 {
 	RUN(test_ir_build_basic);
@@ -388,6 +450,7 @@ int main(void)
 	RUN(test_region_rejects_managed_assign);
 	RUN(test_region_lower_has_no_ret);
 	RUN(test_whole_function_eligibility_unaffected);
+	RUN(test_region_emit_no_prologue_no_ret);
 	SUMMARY();
 	return 0;
 }

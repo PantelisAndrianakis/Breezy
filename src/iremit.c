@@ -894,6 +894,152 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 }
 
+/* Allocate and fill the per-emission tables shared by the whole-function and
+   region paths: block labels, the constant/dead-constant tables, and the
+   non-negativity facts. e->cg and e->a must be set. */
+static void emit_tables_init(Emit *e, IRFunc *f)
+{
+	Codegen *cg = e->cg;
+	IRAlloc *a = e->a;
+
+	e->blabel = malloc((size_t)(f->block_count > 0 ? f->block_count : 1) * sizeof(int));
+	for (int i = 0; i < f->block_count; i++)
+	{
+		e->blabel[i] = cg_label(cg);
+	}
+
+	/* Constant table: each vreg is defined once; a vreg defined by IR_CONST holds
+	   that constant (used to strength-reduce div/mod by a power of two). */
+	int nv = f->vreg_count > 0 ? f->vreg_count : 1;
+	e->cis = calloc((size_t)nv, 1);
+	e->cval = calloc((size_t)nv, sizeof(long long));
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			if (in->op == IR_CONST && in->dst >= 0 && in->dst < f->vreg_count)
+			{
+				e->cis[in->dst] = 1;
+				e->cval[in->dst] = in->imm;
+			}
+		}
+	}
+
+	/* Dead constants: a const vreg whose every use folds into an immediate never
+	   needs a register, so its IR_CONST is not emitted. A use folds when it is the
+	   immediate operand of an arithmetic/compare op, or a power-of-two divisor. */
+	e->cdead = calloc((size_t)nv, 1);
+	for (int v = 0; v < f->vreg_count; v++)
+	{
+		e->cdead[v] = e->cis[v];
+	}
+
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			int op = in->op;
+			int comm = (op == IR_ADD || op == IR_MUL || op == IR_AND || op == IR_OR || op == IR_XOR);
+			long long t;
+			int a_imm = (in->a != IR_NO_REG && in->a < f->vreg_count) && const_imm32(e, in->a, &t);
+			int b_imm = (in->b != IR_NO_REG && in->b < f->vreg_count) && const_imm32(e, in->b, &t);
+
+			if (in->a != IR_NO_REG && in->a < f->vreg_count && e->cis[in->a])
+			{
+				if (!(comm && a_imm && !b_imm))   /* Folds only when swapped to the immediate. */
+				{
+					e->cdead[in->a] = 0;
+				}
+			}
+
+			if (in->b != IR_NO_REG && in->b < f->vreg_count && e->cis[in->b])
+			{
+				int k;
+				int folds = ((comm || op == IR_SUB) && b_imm)
+							|| ((op == IR_DIV || op == IR_MOD) && pow2_log(e->cval[in->b], &k))
+							|| (op == IR_CMP && b_imm);
+				if (!folds)
+				{
+					e->cdead[in->b] = 0;
+				}
+			}
+
+			if (in->c != IR_NO_REG && in->c < f->vreg_count && e->cis[in->c])
+			{
+				e->cdead[in->c] = 0;   /* A stored value is read, never folded. */
+			}
+		}
+	}
+
+	e->nn = calloc((size_t)nv, 1);
+	compute_nonneg(f, a, e->nn);
+}
+
+static void emit_tables_free(Emit *e)
+{
+	free(e->blabel);
+	free(e->cis);
+	free(e->cval);
+	free(e->cdead);
+	free(e->nn);
+}
+
+/* The per-block emission loop with the mod/cmp/branch fusion windows. Shared by
+   the whole-function and region paths. */
+static void emit_blocks(Emit *e, IRFunc *f)
+{
+	Codegen *cg = e->cg;
+	for (int b = 0; b < f->block_count; b++)
+	{
+		cg_emit(cg, ".L%d:", e->blabel[b]);
+		IRBlock *blk = &f->blocks[b];
+		int next = (b + 1 < f->block_count) ? b + 1 : -1;
+		for (int i = 0; i < blk->count; )
+		{
+			IRInstr *in = &blk->instrs[i];
+			int k;
+			long long zero;
+			/* Fuse (x % 2^k) == 0 / != 0 feeding a branch into test + jz/jnz. The
+			   compare's constant rhs is emitted between the mod and the compare, so
+			   skip any constant defs in between (they fold to the immediate 0). */
+			int j = i + 1;
+			while (j < blk->count && blk->instrs[j].op == IR_CONST)
+			{
+				j++;
+			}
+
+			if (in->op == IR_MOD && in->b != IR_NO_REG && in->b < f->vreg_count
+				&& e->cis[in->b] && pow2_log(e->cval[in->b], &k) && k <= 31
+				&& j + 1 < blk->count
+				&& blk->instrs[j].op == IR_CMP && blk->instrs[j].a == in->dst
+				&& (blk->instrs[j].cmp_op == TOKEN_EQ || blk->instrs[j].cmp_op == TOKEN_NEQ)
+				&& const_imm32(e, blk->instrs[j].b, &zero) && zero == 0
+				&& blk->instrs[j + 1].op == IR_BRCOND && blk->instrs[j + 1].a == blk->instrs[j].dst)
+			{
+				emit_divisibility_branch(e, in, &blk->instrs[j], &blk->instrs[j + 1], k, next);
+				i = j + 2;
+			}
+			/* Fuse a compare feeding the very next branch into cmp + jcc. */
+			else if (in->op == IR_CMP && i + 1 < blk->count
+					 && blk->instrs[i + 1].op == IR_BRCOND
+					 && blk->instrs[i + 1].a == in->dst)
+			{
+				emit_fused_branch(e, in, &blk->instrs[i + 1], next);
+				i += 2;
+			}
+			else
+			{
+				emit_instr(e, in, next);
+				i++;
+			}
+		}
+	}
+}
+
 void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 {
 	const Func *src = f->src;
@@ -928,81 +1074,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	int frame = cs_base + e.ncs * 8;
 	frame = (frame + 15) & ~15;
 
-	e.blabel = malloc((size_t)(f->block_count > 0 ? f->block_count : 1) * sizeof(int));
-	for (int i = 0; i < f->block_count; i++)
-	{
-		e.blabel[i] = cg_label(cg);
-	}
-
-	/* Constant table: each vreg is defined once; a vreg defined by IR_CONST holds
-	   that constant (used to strength-reduce div/mod by a power of two). */
-	int nv = f->vreg_count > 0 ? f->vreg_count : 1;
-	e.cis = calloc((size_t)nv, 1);
-	e.cval = calloc((size_t)nv, sizeof(long long));
-	for (int b = 0; b < f->block_count; b++)
-	{
-		IRBlock *blk = &f->blocks[b];
-		for (int i = 0; i < blk->count; i++)
-		{
-			IRInstr *in = &blk->instrs[i];
-			if (in->op == IR_CONST && in->dst >= 0 && in->dst < f->vreg_count)
-			{
-				e.cis[in->dst] = 1;
-				e.cval[in->dst] = in->imm;
-			}
-		}
-	}
-
-	/* Dead constants: a const vreg whose every use folds into an immediate never
-	   needs a register, so its IR_CONST is not emitted. A use folds when it is the
-	   immediate operand of an arithmetic/compare op, or a power-of-two divisor. */
-	e.cdead = calloc((size_t)nv, 1);
-	for (int v = 0; v < f->vreg_count; v++)
-	{
-		e.cdead[v] = e.cis[v];
-	}
-
-	for (int b = 0; b < f->block_count; b++)
-	{
-		IRBlock *blk = &f->blocks[b];
-		for (int i = 0; i < blk->count; i++)
-		{
-			IRInstr *in = &blk->instrs[i];
-			int op = in->op;
-			int comm = (op == IR_ADD || op == IR_MUL || op == IR_AND || op == IR_OR || op == IR_XOR);
-			long long t;
-			int a_imm = (in->a != IR_NO_REG && in->a < f->vreg_count) && const_imm32(&e, in->a, &t);
-			int b_imm = (in->b != IR_NO_REG && in->b < f->vreg_count) && const_imm32(&e, in->b, &t);
-
-			if (in->a != IR_NO_REG && in->a < f->vreg_count && e.cis[in->a])
-			{
-				if (!(comm && a_imm && !b_imm))   /* Folds only when swapped to the immediate. */
-				{
-					e.cdead[in->a] = 0;
-				}
-			}
-
-			if (in->b != IR_NO_REG && in->b < f->vreg_count && e.cis[in->b])
-			{
-				int k;
-				int folds = ((comm || op == IR_SUB) && b_imm)
-							|| ((op == IR_DIV || op == IR_MOD) && pow2_log(e.cval[in->b], &k))
-							|| (op == IR_CMP && b_imm);
-				if (!folds)
-				{
-					e.cdead[in->b] = 0;
-				}
-			}
-
-			if (in->c != IR_NO_REG && in->c < f->vreg_count && e.cis[in->c])
-			{
-				e.cdead[in->c] = 0;   /* A stored value is read, never folded. */
-			}
-		}
-	}
-
-	e.nn = calloc((size_t)nv, 1);
-	compute_nonneg(f, a, e.nn);
+	emit_tables_init(&e, f);
 
 	cg_emit(cg, "section .text");   /* A preceding function's exception record left .data active. */
 	cg_emit(cg, "global %s", label);
@@ -1046,51 +1118,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 		store_local_from(&e, slot, "rax");
 	}
 
-	for (int b = 0; b < f->block_count; b++)
-	{
-		cg_emit(cg, ".L%d:", e.blabel[b]);
-		IRBlock *blk = &f->blocks[b];
-		int next = (b + 1 < f->block_count) ? b + 1 : -1;
-		for (int i = 0; i < blk->count; )
-		{
-			IRInstr *in = &blk->instrs[i];
-			int k;
-			long long zero;
-			/* Fuse (x % 2^k) == 0 / != 0 feeding a branch into test + jz/jnz. The
-			   compare's constant rhs is emitted between the mod and the compare, so
-			   skip any constant defs in between (they fold to the immediate 0). */
-			int j = i + 1;
-			while (j < blk->count && blk->instrs[j].op == IR_CONST)
-			{
-				j++;
-			}
-
-			if (in->op == IR_MOD && in->b != IR_NO_REG && in->b < f->vreg_count
-				&& e.cis[in->b] && pow2_log(e.cval[in->b], &k) && k <= 31
-				&& j + 1 < blk->count
-				&& blk->instrs[j].op == IR_CMP && blk->instrs[j].a == in->dst
-				&& (blk->instrs[j].cmp_op == TOKEN_EQ || blk->instrs[j].cmp_op == TOKEN_NEQ)
-				&& const_imm32(&e, blk->instrs[j].b, &zero) && zero == 0
-				&& blk->instrs[j + 1].op == IR_BRCOND && blk->instrs[j + 1].a == blk->instrs[j].dst)
-			{
-				emit_divisibility_branch(&e, in, &blk->instrs[j], &blk->instrs[j + 1], k, next);
-				i = j + 2;
-			}
-			/* Fuse a compare feeding the very next branch into cmp + jcc. */
-			else if (in->op == IR_CMP && i + 1 < blk->count
-					 && blk->instrs[i + 1].op == IR_BRCOND
-					 && blk->instrs[i + 1].a == in->dst)
-			{
-				emit_fused_branch(&e, in, &blk->instrs[i + 1], next);
-				i += 2;
-			}
-			else
-			{
-				emit_instr(&e, in, next);
-				i++;
-			}
-		}
-	}
+	emit_blocks(&e, f);
 
 	/* Emit this function's exception record so a bounds error thrown from it is
 	   unwindable: the throw site's PC resolves to this record, which has no try
@@ -1101,10 +1129,69 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	cg->cur_try_count = 0;
 	cg_emit_exception_record(cg, label, frame, (Func *)src);
 
-	free(e.blabel);
-	free(e.cis);
-	free(e.cval);
-	free(e.cdead);
-	free(e.nn);
+	emit_tables_free(&e);
 	ra_free(a);
+}
+
+void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base)
+{
+	int linux_target = (cg->target == TARGET_LINUX);
+	Emit e;
+	e.cg = cg;
+	e.a = a;
+	e.spill_base = spill_base;
+	e.cs_base = spill_base + a->spill_bytes;
+
+	/* Which callee-saved registers the allocation actually used. rcx/rdx (the
+	   claimable indices past RA_NREGS) are caller-saved on both ABIs, so the
+	   base pool covers every save candidate. */
+	e.ncs = 0;
+	for (int i = 0; i < RA_NREGS; i++)
+	{
+		if (a->used_reg[i] && ra_is_callee_saved(i, linux_target))
+		{
+			e.cs_regs[e.ncs++] = i;
+		}
+	}
+
+	emit_tables_init(&e, f);
+	cg_emit(cg, "    ; ir-region begin");
+
+	/* Entry: save the callee-saved registers the allocation uses, then load each
+	   register-allocated frame local from its home slot (a local first written
+	   inside the region loads garbage here and is then overwritten - harmless). */
+	for (int j = 0; j < e.ncs; j++)
+	{
+		cg_emit(cg, "    mov [rbp - %d], %s", e.cs_base + j * 8, ra_reg_name(e.cs_regs[j]));
+	}
+
+	for (int k = 0; k < a->nlocal; k++)
+	{
+		int r = ra_local_reg(a, a->local_disp[k]);
+		if (r >= 0)
+		{
+			cg_emit(cg, "    mov %s, [rbp - %lld]", ra_reg_name(r), a->local_disp[k]);
+		}
+	}
+
+	emit_blocks(&e, f);
+
+	/* Exit (the final lowered block is empty and falls through here): store the
+	   register-allocated locals back to their home slots, restore callee-saved. */
+	for (int k = 0; k < a->nlocal; k++)
+	{
+		int r = ra_local_reg(a, a->local_disp[k]);
+		if (r >= 0)
+		{
+			cg_emit(cg, "    mov [rbp - %lld], %s", a->local_disp[k], ra_reg_name(r));
+		}
+	}
+
+	for (int j = e.ncs - 1; j >= 0; j--)
+	{
+		cg_emit(cg, "    mov %s, [rbp - %d]", ra_reg_name(e.cs_regs[j]), e.cs_base + j * 8);
+	}
+
+	cg_emit(cg, "    ; ir-region end");
+	emit_tables_free(&e);
 }
