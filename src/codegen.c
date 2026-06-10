@@ -28,6 +28,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->low32_ok=0;
 	cg->unrolling=0;
 	cg->unroll_iv_off=0;
+	cg->uc_n=0;
 	cg->exception_fn_count=0;
 	cg->exception_try_count=0;
 	cg->breeze_thunk_count=0;
@@ -802,6 +803,269 @@ static void cg_coerce(Codegen *cg, TypeKind to, TypeKind from)
 	}
 }
 
+/* The copy-constant value of local slot `off`, if recorded for the current
+   unrolled copy. */
+static int cg_unroll_const(Codegen *cg, int off, long long *out)
+{
+	for (int i = cg->uc_n - 1; i >= 0; i--)
+	{
+		if (cg->uc_off[i] == off)
+		{
+			*out = cg->uc_val[i];
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* True if `off` is currently recorded as a copy-constant. */
+static int cg_is_unroll_const(Codegen *cg, int off)
+{
+	long long t;
+	return cg_unroll_const(cg, off, &t);
+}
+
+/* Record/update a copy-constant. Silently full beyond 16 entries (sound: an
+   unrecorded local just reads its slot as before). */
+static void cg_unroll_const_set(Codegen *cg, int off, long long v)
+{
+	for (int i = 0; i < cg->uc_n; i++)
+	{
+		if (cg->uc_off[i] == off)
+		{
+			cg->uc_val[i] = v;
+			return;
+		}
+	}
+
+	if (cg->uc_n < 16)
+	{
+		cg->uc_off[cg->uc_n] = off;
+		cg->uc_val[cg->uc_n] = v;
+		cg->uc_n++;
+	}
+}
+
+/* Drop a recorded copy-constant (the local was assigned a non-foldable value).
+   Tombstones in place rather than swap-removing: an enclosing unrolled loop
+   restores uc_n to a snapshot at its inner loop's exit, and a swap-remove
+   would let that restore resurrect the killed entry as a stale ghost. */
+static void cg_unroll_const_kill(Codegen *cg, int off)
+{
+	for (int i = 0; i < cg->uc_n; i++)
+	{
+		if (cg->uc_off[i] == off)
+		{
+			cg->uc_off[i] = -1;
+			return;
+		}
+	}
+}
+
+/* Fold `e` to a compile-time constant under the copy-constant environment:
+   integer literals, recorded locals, casts between integer kinds, and the
+   low-32-pure operators of foldable operands. TY_INT results wrap to 32 bits,
+   mirroring what the emitted 32-bit ops would compute. */
+static int cg_fold_const(Codegen *cg, Expr *e, long long *out)
+{
+	if (!e || !cg->unrolling)
+	{
+		return 0;
+	}
+
+	long long va, vb;
+	switch (e->kind)
+	{
+	case EX_INT:
+		*out = e->int_val;
+		return 1;
+	case EX_IDENT:
+		return ty_is_int(e->type.kind) && e->anno_int > 0
+			   && cg_unroll_const(cg, e->anno_int, out);
+	case EX_CAST:
+		if (!ty_is_int(e->type.kind) || !ty_is_int(e->lhs->type.kind)
+			|| !cg_fold_const(cg, e->lhs, &va))
+		{
+			return 0;
+		}
+
+		*out = (e->type.kind == TY_INT) ? (long long)(int)va : va;
+		return 1;
+	case EX_BINARY:
+		if (!ty_is_int(e->type.kind)
+			|| !cg_fold_const(cg, e->lhs, &va) || !cg_fold_const(cg, e->rhs, &vb))
+		{
+			return 0;
+		}
+
+		switch (e->op)
+		{
+		case TOKEN_PLUS:
+			*out = va + vb;
+			break;
+		case TOKEN_MINUS:
+			*out = va - vb;
+			break;
+		case TOKEN_STAR:
+			*out = va * vb;
+			break;
+		case TOKEN_SHL:
+			if (vb < 0 || vb > 63)
+			{
+				return 0;
+			}
+
+			*out = va << vb;
+			break;
+		case TOKEN_SHR:
+			if (vb < 0 || vb > 63)
+			{
+				return 0;
+			}
+
+			*out = va >> vb;
+			break;
+		case TOKEN_AMP:
+			*out = va & vb;
+			break;
+		case TOKEN_PIPE:
+			*out = va | vb;
+			break;
+		case TOKEN_CARET:
+			*out = va ^ vb;
+			break;
+		default:
+			return 0;
+		}
+
+		if (e->type.kind == TY_INT)
+		{
+			*out = (long long)(int)*out;
+		}
+
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* Direct memory-operand text for a BCE-safe array access whose index folds
+   under the copy-constant environment ("[r8 + 284]"), or whose index is
+   IDENT + foldable-constant ("[r8 + rcx*4 + 60]", after loading the ident
+   into `scratch`). Returns 1 with the operand in buf; 0 when not matched.
+   The array base must already live in a register (promoted local or hoist
+   cache) - a stack-resident base falls back to the generic path. */
+static int cg_index_mem(Codegen *cg, Expr *e, char *buf, const char *scratch)
+{
+	if (!cg->unrolling || !e->anno_index_safe
+		|| e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
+	{
+		return 0;
+	}
+
+	const char *br = cg_local_reg(cg, e->lhs->anno_int);
+	if (!br)
+	{
+		br = cg_hoist_reg(cg, e->lhs->anno_int);
+	}
+
+	if (!br)
+	{
+		return 0;
+	}
+
+	int stride = cg_elem_stride(e->type.kind);
+	long long c;
+	if (cg_fold_const(cg, e->rhs, &c) && c >= 0)
+	{
+		sprintf(buf, "[%s + %lld]", br, 32 + c * stride);
+		return 1;
+	}
+
+	/* IDENT + foldable-constant (either order): one scratch load + scaled mode. */
+	if (e->rhs->kind == EX_BINARY && e->rhs->op == TOKEN_PLUS)
+	{
+		Expr *id = NULL;
+		long long k = 0;
+		if (e->rhs->lhs->kind == EX_IDENT && e->rhs->lhs->anno_int > 0
+			&& cg_fold_const(cg, e->rhs->rhs, &k))
+		{
+			id = e->rhs->lhs;
+		}
+		else if (e->rhs->rhs->kind == EX_IDENT && e->rhs->rhs->anno_int > 0
+				 && cg_fold_const(cg, e->rhs->lhs, &k))
+		{
+			id = e->rhs->rhs;
+		}
+
+		if (id && k >= 0 && !cg_is_unroll_const(cg, id->anno_int))
+		{
+			const char *ir = cg_local_reg(cg, id->anno_int);
+			if (!ir)
+			{
+				if (id->type.kind == TY_LONG)
+				{
+					cg_emit(cg, "    mov %s, [rbp - %d]", scratch, id->anno_int);
+				}
+				else
+				{
+					cg_emit(cg, "    movsxd %s, dword [rbp - %d]", scratch, id->anno_int);
+				}
+
+				ir = scratch;
+			}
+
+			sprintf(buf, "[%s + %s*%d + %lld]", br, ir, stride, 32 + k * stride);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* Pure probe for cg_index_mem: true if it would produce a direct operand.
+   Emits nothing, so a caller can pick its evaluation order first. */
+static int cg_index_mem_match(Codegen *cg, Expr *e)
+{
+	if (!cg->unrolling || e->kind != EX_INDEX || !e->anno_index_safe
+		|| e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
+	{
+		return 0;
+	}
+
+	if (!cg_local_reg(cg, e->lhs->anno_int) && !cg_hoist_reg(cg, e->lhs->anno_int))
+	{
+		return 0;
+	}
+
+	long long c;
+	if (cg_fold_const(cg, e->rhs, &c) && c >= 0)
+	{
+		return 1;
+	}
+
+	if (e->rhs->kind == EX_BINARY && e->rhs->op == TOKEN_PLUS)
+	{
+		long long k;
+		if (e->rhs->lhs->kind == EX_IDENT && e->rhs->lhs->anno_int > 0
+			&& cg_fold_const(cg, e->rhs->rhs, &k) && k >= 0
+			&& !cg_is_unroll_const(cg, e->rhs->lhs->anno_int))
+		{
+			return 1;
+		}
+
+		if (e->rhs->rhs->kind == EX_IDENT && e->rhs->rhs->anno_int > 0
+			&& cg_fold_const(cg, e->rhs->lhs, &k) && k >= 0
+			&& !cg_is_unroll_const(cg, e->rhs->rhs->anno_int))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 /* True if `e` is one of the strength-reduced accesses for the current loop. */
 static int cg_sr_contains(Codegen *cg, Expr *e)
 {
@@ -878,6 +1142,14 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	/* Unrolled copy with a foldable address: one lea from the direct operand. */
+	char imem[64];
+	if (cg_index_mem(cg, e, imem, "rcx"))
+	{
+		cg_emit(cg,"    lea rbx, %s", imem);
+		return;
+	}
+
 	/* Fast path: a register-resident index (a promoted local, typically a loop
 	   induction variable) needs neither a base spill nor a rematerialization into
 	   rax - bounds-check and address it straight from its register. The register
@@ -900,7 +1172,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 		&& e->rhs->lhs->kind==EX_IDENT && e->rhs->lhs->anno_int > 0
 		&& e->rhs->rhs->kind==EX_INT
 		&& e->rhs->rhs->int_val >= 0 && e->rhs->rhs->int_val <= 0x10000000LL
-		&& !(cg->unrolling && e->rhs->lhs->anno_int == cg->unroll_iv_off))
+		&& !(cg->unrolling && cg_is_unroll_const(cg, e->rhs->lhs->anno_int)))
 	{
 		const char *ir = cg_local_reg(cg, e->rhs->lhs->anno_int);
 		if (ir)
@@ -940,7 +1212,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	   a compile-time constant this copy (the register is not maintained). Falling
 	   through materializes that constant via cg_expr. */
 	const char *ireg = (e->rhs->kind==EX_IDENT && e->rhs->anno_int > 0
-						&& !(cg->unrolling && e->rhs->anno_int == cg->unroll_iv_off))
+						&& !(cg->unrolling && cg_is_unroll_const(cg, e->rhs->anno_int)))
 					   ? cg_local_reg(cg, e->rhs->anno_int) : NULL;
 	if (ireg)
 	{
@@ -1811,6 +2083,31 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		{
 			cg_eval_low32_operand(cg,tt,e->rhs,e->op);   /* Other operand -> eax. */
 			cg_emit(cg,"    %s eax, dword %s", opc, srm);
+			cg_extend_int_result(cg, e, want_low32);
+			return;
+		}
+
+		/* The unrolled-copy twin: a safe array element whose address folds via
+		   the copy-constant environment fuses the same way. The probe is pure,
+		   so the other operand evaluates into eax first; the operand's scratch
+		   load (rcx, if its index ident is stack-resident) follows safely. */
+		char umem[64];
+		if (fuse_op && e->type.kind==TY_INT && e->rhs->type.kind==TY_INT
+			&& cg_elem_stride(e->rhs->type.kind)==4 && cg_index_mem_match(cg, e->rhs))
+		{
+			cg_eval_low32_operand(cg,tt,e->lhs,e->op);   /* Other operand -> eax. */
+			cg_index_mem(cg, e->rhs, umem, "rcx");
+			cg_emit(cg,"    %s eax, dword %s", opc, umem);
+			cg_extend_int_result(cg, e, want_low32);
+			return;
+		}
+
+		if (fuse_op && commutative && e->type.kind==TY_INT && e->lhs->type.kind==TY_INT
+			&& cg_elem_stride(e->lhs->type.kind)==4 && cg_index_mem_match(cg, e->lhs))
+		{
+			cg_eval_low32_operand(cg,tt,e->rhs,e->op);   /* Other operand -> eax. */
+			cg_index_mem(cg, e->lhs, umem, "rcx");
+			cg_emit(cg,"    %s eax, dword %s", opc, umem);
 			cg_extend_int_result(cg, e, want_low32);
 			return;
 		}
@@ -4480,6 +4777,19 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	int want_low32 = cg->low32_ok;
 	cg->low32_ok = 0;
 
+	/* Inside an unrolled copy, any integer arithmetic over copy-constant locals
+	   is itself a constant: materialize it instead of computing it (cb * 100,
+	   cbase + xp, ...). Literals and bare ident reads already have fast paths. */
+	if (cg->unrolling && (e->kind == EX_BINARY || e->kind == EX_CAST))
+	{
+		long long ucv;
+		if (cg_fold_const(cg, e, &ucv))
+		{
+			cg_emit(cg,"    mov rax, %lld", ucv);
+			return;
+		}
+	}
+
 	switch (e->kind)
 	{
 	case EX_INT:
@@ -4544,6 +4854,15 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				cg_load_scalar(cg,e->type.kind,mode);
 			}
 
+			break;
+		}
+
+		/* Unrolled copy with a foldable address: load straight from a direct
+		   memory operand - no lea, no index materialization. */
+		char imem[64];
+		if (!ty_is_float(e->type.kind) && cg_index_mem(cg, e, imem, "rcx"))
+		{
+			cg_load_scalar(cg,e->type.kind,imem);
 			break;
 		}
 
@@ -4627,9 +4946,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			const char *r = cg_local_reg(cg, e->anno_int);
 			const char *h = r ? NULL : cg_hoist_reg(cg, e->anno_int);
-			if (cg->unrolling && e->anno_int == cg->unroll_iv_off && cg->unroll_iv_off != 0)
+			long long ucv;
+			if (cg->unrolling && e->anno_int > 0 && cg_unroll_const(cg, e->anno_int, &ucv))
 			{
-				cg_emit(cg,"    mov rax, %lld", cg->unroll_iv_val);   /* Unrolled loop: induction variable is a constant for this copy. */
+				cg_emit(cg,"    mov rax, %lld", ucv);   /* Unrolled loop: a copy-constant local (induction variable or derived). */
 			}
 			else if (r)
 			{
@@ -5934,12 +6254,16 @@ static int cg_try_unroll(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_ma
 	}
 
 	cg_loop_hoist_begin(cg, tt, s);   /* Pin SR bases / invariants / deferred accumulators. */
-	cg->unrolling = 1;
+	int saved_iv_off = cg->unroll_iv_off;
+	long long saved_iv_val = cg->unroll_iv_val;
+	int saved_uc_n = cg->uc_n;
+	cg->unrolling++;
 	cg->unroll_iv_off = io;
 	const char *ivreg = cg_local_reg(cg, io);
 	for (long long k = lo; (c->op == TOKEN_LT) ? (k < hi) : (k <= hi); k += step)
 	{
 		cg->unroll_iv_val = k;
+		cg_unroll_const_set(cg, io, k);
 		/* Materialize the induction value in its home so any read that bypasses the
 		   unroll-constant fast paths (a register operand, a slot load) still sees it.
 		   Strength-reduced accesses use the constant offset directly and ignore this. */
@@ -5955,9 +6279,11 @@ static int cg_try_unroll(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_ma
 		cg_block(cg, tt, f, body, in_main);
 	}
 
-	cg->unrolling = 0;
-	cg->unroll_iv_off = 0;
-	cg_loop_hoist_end(cg);            /* Re-extend deferred accumulators once. */
+	cg->unrolling--;
+	cg->unroll_iv_off = saved_iv_off;   /* An enclosing unroll keeps its state (this used to be zeroed, stranding the outer copy without its constant). */
+	cg->unroll_iv_val = saved_iv_val;
+	cg->uc_n = saved_uc_n;              /* Drop this loop's iv and derived constants. */
+	cg_loop_hoist_end(cg);              /* Re-extend deferred accumulators once. */
 	return 1;
 }
 
@@ -5966,6 +6292,21 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	if (cg_try_unroll(cg, tt, f, s, in_main))
 	{
 		return;
+	}
+
+	if (cg->unrolling)
+	{
+		/* A real (non-unrolled) loop inside an unrolled copy: anything it
+		   writes varies per iteration, so it is no longer a copy-constant. */
+		int w[128];
+		int wn = 0;
+		cg_hoist_writes_block(s->then_blk, w, &wn);
+		cg_hoist_writes_stmt(s->for_init, w, &wn);
+		cg_hoist_writes_stmt(s->for_post, w, &wn);
+		for (int i = 0; i < wn; i++)
+		{
+			cg_unroll_const_kill(cg, w[i]);
+		}
 	}
 
 	int top=cg_label(cg), end=cg_label(cg), cont=cg_label(cg);
@@ -6622,6 +6963,26 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_VARDECL:
 		if (s->decl_init)
 		{
+			long long dcv;
+			if (cg->unrolling && s->decl_offset > 0
+				&& (s->decl_type.kind == TY_INT || s->decl_type.kind == TY_LONG)
+				&& cg_fold_const(cg, s->decl_init, &dcv))
+			{
+				/* Inside an unrolled copy, a local assigned a foldable
+				   expression of the induction constants is itself a constant
+				   for this copy (cb = u * 8): record it so reads fold, and
+				   store the immediate to keep the slot truthful. */
+				cg_unroll_const_set(cg, s->decl_offset, dcv);
+				cg_emit(cg,"    mov rax, %lld", dcv);
+				cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
+				break;
+			}
+
+			if (cg->unrolling && s->decl_offset > 0)
+			{
+				cg_unroll_const_kill(cg, s->decl_offset);   /* Reassigned non-foldably. */
+			}
+
 			if (ty_is_managed(s->decl_type.kind))
 			{
 				cg_expr_owned(cg,tt,s->decl_init);
@@ -6643,6 +7004,23 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 		break;
 	case ST_ASSIGN:
+		if (cg->unrolling && s->target->kind == EX_IDENT && s->target->anno_int > 0
+			&& s != cg->cur_accum_stmt && !ty_is_managed(s->target->type.kind))
+		{
+			long long acv;
+			if ((s->target->type.kind == TY_INT || s->target->type.kind == TY_LONG)
+				&& cg_fold_const(cg, s->value, &acv))
+			{
+				/* Copy-constant reassignment: record and store the immediate. */
+				cg_unroll_const_set(cg, s->target->anno_int, acv);
+				cg_emit(cg,"    mov rax, %lld", acv);
+				cg_store_local_off(cg, s->target->anno_int, s->target->type.kind);
+				break;
+			}
+
+			cg_unroll_const_kill(cg, s->target->anno_int);   /* Reassigned non-foldably. */
+		}
+
 		if (s == cg->cur_accum_stmt)   /* P5: lower this iteration's accumulation to sb appends. */
 		{
 			cg_accum_append(cg,tt,s);
@@ -6663,6 +7041,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 		break;
 	case ST_EXPR:
+		if (cg->unrolling && s->expr && s->expr->kind == EX_INCDEC
+			&& s->expr->lhs && s->expr->lhs->kind == EX_IDENT
+			&& s->expr->lhs->anno_int > 0)
+		{
+			cg_unroll_const_kill(cg, s->expr->lhs->anno_int);   /* i++ rewrites it. */
+		}
+
 		cg_expr(cg,tt,s->expr);
 		if (ty_is_managed(s->expr->type.kind) && expr_is_owned(s->expr))
 		{
@@ -6747,6 +7132,20 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	case ST_IF:
 	{
+		if (cg->unrolling)
+		{
+			/* Conditional writes: a branch may or may not assign, so any local
+			   either branch writes is no longer a copy-constant. */
+			int w[128];
+			int wn = 0;
+			cg_hoist_writes_block(s->then_blk, w, &wn);
+			cg_hoist_writes_block(s->else_blk, w, &wn);
+			for (int i = 0; i < wn; i++)
+			{
+				cg_unroll_const_kill(cg, w[i]);
+			}
+		}
+
 		int else_l=cg_label(cg), end_l=cg_label(cg);
 		cg_branch_unless(cg,tt,s->cond, s->else_blk?else_l:end_l);
 		cg_block(cg,tt,f,s->then_blk,in_main);
@@ -6782,6 +7181,19 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		{
 			cg_accum_loop(cg,tt,f,s,in_main);
 			break;
+		}
+
+		if (cg->unrolling)
+		{
+			/* A real loop inside an unrolled copy: anything it writes varies
+			   per iteration, so it is no longer a copy-constant. */
+			int w[128];
+			int wn = 0;
+			cg_hoist_writes_block(s->then_blk, w, &wn);
+			for (int i = 0; i < wn; i++)
+			{
+				cg_unroll_const_kill(cg, w[i]);
+			}
 		}
 
 		int top=cg_label(cg), cont=cg_label(cg), end=cg_label(cg);

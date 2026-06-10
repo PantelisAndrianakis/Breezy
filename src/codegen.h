@@ -48,9 +48,12 @@ typedef struct
 	int   defer_n;           /* Promoted int accumulators in the current loop whose per-iteration sign-extension is deferred to the loop exit (every use is `acc = acc +/- EXPR`, lowered to a 32-bit add). */
 	int   defer_off[8];      /* Their slot offsets; re-extended once at the loop end label. */
 	int   low32_ok;          /* One-hop hint set by a parent before evaluating an int operand whose result it consumes only at 32 bits (the low-32-pure ops + - * & | ^ <<, and stores into an int slot, which reload sign-extended). When set, an int binary skips its trailing movsxd: the 32-bit op already left the low 32 bits correct, and the high bits are unobserved. cg_expr captures and clears it on entry, so it never reaches a grandchild. */
-	int   unrolling;         /* 1 while emitting a fully-unrolled fixed-trip loop body: the induction variable is a compile-time constant for this copy. */
-	int   unroll_iv_off;     /* The unrolled loop's induction variable slot. */
+	int   unrolling;         /* Depth of active fully-unrolled fixed-trip loops (0 = none): induction variables are compile-time constants per copy. */
+	int   unroll_iv_off;     /* The INNERMOST unrolled loop's induction variable slot. */
 	long long unroll_iv_val; /* Its constant value for the copy currently being emitted. */
+	int   uc_n;              /* Copy-constant environment: locals whose value is a compile-time constant for the current unrolled copy - the induction variables plus any local assigned a foldable expression of them (cb = u * 8). */
+	int   uc_off[16];        /* Their slot offsets. */
+	long long uc_val[16];    /* Their constant values. */
 	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */

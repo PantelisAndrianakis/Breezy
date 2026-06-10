@@ -802,5 +802,6 @@ void bce_annotate(Func *f)
 	Env env;
 	env.n = 0;
 	env.an = 0;
+	env.sbn = 0;   /* Was uninitialized: the symbolic-guard scan iterated stack garbage. */
 	bce_block(f->body, &env);
 }

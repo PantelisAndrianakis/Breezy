@@ -1,0 +1,33 @@
+// Unrolled nested loops with derived copy-constants (cb = u * 2) and an
+// accumulator that is recorded (acc = 0), killed inside the inner unrolled
+// loop, and read after it. Locks the copy-constant environment's stack
+// discipline: a killed entry must not be resurrected by an inner loop's
+// exit snapshot restore (a >> of stale constant 0 made 3 of 4 copies
+// contribute nothing).
+void main()
+{
+	int[] a;
+	a = new int[8];
+	for (int i = 0; i < 8; i = i + 1)
+	{
+		a[i] = i + 1;
+	}
+
+	long total;
+	total = 0;
+	for (int u = 0; u < 4; u = u + 1)
+	{
+		int acc;
+		acc = 0;
+		int cb;
+		cb = u * 2;
+		for (int xp = 0; xp < 8; xp = xp + 1)
+		{
+			acc = acc + a[xp] * cb;
+		}
+
+		total = total + (long)(acc >> 1);
+	}
+
+	print("" + total);
+}

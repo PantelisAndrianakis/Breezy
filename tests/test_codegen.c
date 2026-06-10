@@ -304,6 +304,149 @@ static void test_branch_fusion(void)
 	ASSERT_INT(strstr(g_asm, "cmp r12d, 3\n    jge") != NULL, 1);
 }
 
+static void test_unroll_folds_derived_constant(void)
+{
+	/* cb = u * 8 inside an unrolled 8-trip loop: u is a per-copy constant, so
+	   cb must fold to a literal - no shl (the *8 strength reduction) may
+	   survive anywhere in the function. */
+	emit("void main()\n"
+		 "{\n"
+		 "	int[] a;\n"
+		 "	a = new int[64];\n"
+		 "	long t;\n"
+		 "	t = 0;\n"
+		 "	for (int u = 0; u < 8; u = u + 1)\n"
+		 "	{\n"
+		 "		int cb;\n"
+		 "		cb = u * 8;\n"
+		 "		t = t + (long)a[cb];\n"
+		 "	}\n"
+		 "	print(\"\" + t);\n"
+		 "}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "shl") == NULL, 1);
+}
+
+static void test_nested_unroll_outer_constant_survives_inner(void)
+{
+	/* After an inner unrolled loop ends, statements still inside the OUTER
+	   unrolled copy must still see the outer induction constant (the old code
+	   zeroed the unroll state on inner exit). r * 100 after the inner loop
+	   must fold: the r = 3 copy materializes 300, and no imul by 100 remains. */
+	emit("void main()\n"
+		 "{\n"
+		 "	long t;\n"
+		 "	t = 0;\n"
+		 "	for (int r = 0; r < 4; r = r + 1)\n"
+		 "	{\n"
+		 "		for (int u = 0; u < 4; u = u + 1)\n"
+		 "		{\n"
+		 "			t = t + (long)u;\n"
+		 "		}\n"
+		 "		t = t + (long)(r * 100);\n"
+		 "	}\n"
+		 "	print(\"\" + t);\n"
+		 "}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, ", 300") != NULL, 1);
+	/* Prelude functions legitimately multiply; only main's own body (label to
+	   its epilogue ret) must be imul-free. */
+	const char *m = strstr(g_asm, "main:");
+	const char *mend = m ? strstr(m, "\n    ret") : NULL;
+	ASSERT_INT(m != NULL && mend != NULL, 1);
+	int main_imuls = 0;
+	for (const char *p = strstr(m, "imul"); p && p < mend; p = strstr(p + 1, "imul"))
+	{
+		main_imuls++;
+	}
+
+	ASSERT_INT(main_imuls, 0);
+}
+
+static void test_unroll_constant_index_direct_disp(void)
+{
+	/* a[cb + xp] with cb and xp both copy-constants folds to one direct
+	   address: element 63 = byte offset 32 + 63*4 = 284 appears as a literal
+	   displacement, with no index-register arithmetic for it. */
+	emit("void main()\n"
+		 "{\n"
+		 "	int[] a;\n"
+		 "	a = new int[64];\n"
+		 "	long t;\n"
+		 "	t = 0;\n"
+		 "	for (int u = 0; u < 8; u = u + 1)\n"
+		 "	{\n"
+		 "		int cb;\n"
+		 "		cb = u * 8;\n"
+		 "		for (int xp = 0; xp < 8; xp = xp + 1)\n"
+		 "		{\n"
+		 "			t = t + (long)a[cb + xp];\n"
+		 "		}\n"
+		 "	}\n"
+		 "	print(\"\" + t);\n"
+		 "}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "+ 284]") != NULL, 1);
+}
+
+static void test_unrolled_mac_memory_operand_imul(void)
+{
+	/* The codec MAC shape: both multiplicands are safe array loads with
+	   foldable addresses, so the multiply takes its second operand straight
+	   from memory - no park of the first operand in a scratch slot. */
+	emit("void main()\n"
+		 "{\n"
+		 "	int[] a;\n"
+		 "	a = new int[64];\n"
+		 "	int[] b;\n"
+		 "	b = new int[64];\n"
+		 "	long t;\n"
+		 "	t = 0;\n"
+		 "	for (int u = 0; u < 8; u = u + 1)\n"
+		 "	{\n"
+		 "		int acc;\n"
+		 "		acc = 0;\n"
+		 "		for (int xp = 0; xp < 8; xp = xp + 1)\n"
+		 "		{\n"
+		 "			acc = acc + a[u * 8 + xp] * b[u * 8 + xp];\n"
+		 "		}\n"
+		 "		t = t + (long)acc;\n"
+		 "	}\n"
+		 "	print(\"\" + t);\n"
+		 "}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "imul eax, dword [") != NULL, 1);
+}
+
+static void test_unroll_kill_not_resurrected_by_inner_exit(void)
+{
+	/* acc is recorded (acc = 0), killed by the accumulation inside the inner
+	   unrolled loop, and read after that loop exits. The inner loop's uc_n
+	   snapshot restore must not resurrect the killed entry: every copy's
+	   acc >> 1 computes for real - 4 sar instructions, not 1. */
+	emit("void main()\n"
+		 "{\n"
+		 "	int[] a;\n"
+		 "	a = new int[8];\n"
+		 "	long total;\n"
+		 "	total = 0;\n"
+		 "	for (int u = 0; u < 4; u = u + 1)\n"
+		 "	{\n"
+		 "		int acc;\n"
+		 "		acc = 0;\n"
+		 "		for (int xp = 0; xp < 8; xp = xp + 1)\n"
+		 "		{\n"
+		 "			acc = acc + a[xp];\n"
+		 "		}\n"
+		 "		total = total + (long)(acc >> 1);\n"
+		 "	}\n"
+		 "	print(\"\" + total);\n"
+		 "}\n", TARGET_WINDOWS);
+	int sars = 0;
+	for (const char *p = strstr(g_asm, "sar "); p; p = strstr(p + 1, "sar "))
+	{
+		sars++;
+	}
+
+	ASSERT_INT(sars, 4);
+}
+
 static void test_divisibility_test(void)
 {
 	/* (X % 2^k) == 0 / != 0 in a condition collapses to a single mask that sets ZF -
@@ -545,6 +688,11 @@ int main(void)
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);
+	RUN(test_unroll_folds_derived_constant);
+	RUN(test_nested_unroll_outer_constant_survives_inner);
+	RUN(test_unroll_kill_not_resurrected_by_inner_exit);
+	RUN(test_unroll_constant_index_direct_disp);
+	RUN(test_unrolled_mac_memory_operand_imul);
 	SUMMARY();
 	return 0;
 }

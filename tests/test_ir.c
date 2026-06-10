@@ -924,6 +924,7 @@ static void test_region_skipped_in_function_with_try(void)
 
 int main(void)
 {
+	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
 	RUN(test_ir_build_basic);
 	RUN(test_eligible_accepts_scalar_loop);
 	RUN(test_eligible_rejects_string);
