@@ -331,6 +331,19 @@ static Iv iv_expr(Expr *e, Env *env)
 				Iv t = { 1, 0, c };
 				r = t;
 			}
+			else if (b.known && b.lo >= 0)
+			{
+				/* Every set bit of a&b is also set in b, so 0 <= (a&b) <= b <= b.hi
+				   whenever b is non-negative - regardless of a's sign. */
+				Iv t = { 1, 0, b.hi };
+				r = t;
+			}
+			else if (a.known && a.lo >= 0)
+			{
+				/* Symmetric: a non-negative left operand bounds the result. */
+				Iv t = { 1, 0, a.hi };
+				r = t;
+			}
 
 			break;
 		default:

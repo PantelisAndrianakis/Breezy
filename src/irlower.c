@@ -1,4 +1,4 @@
-#include "irlower.h"
+﻿#include "irlower.h"
 #include "lexer.h"   /* TokenType values for operators. */
 #include <string.h>  /* strcmp for the arr.length field name. */
 
@@ -177,6 +177,11 @@ typedef struct
 	int     cont_blk;
 	int     ok;
 	int     depth;   /* Current loop-nesting depth, stamped on new blocks for spill weighting. */
+	/* Unrolled-loop induction constants: reads of slot cc_off[i] lower to
+	   IR_CONST cc_val[i] instead of a frame load. Stack-shaped (nesting). */
+	int       cc_n;
+	int       cc_off[8];
+	long long cc_val[8];
 } Low;
 
 /* A fresh block stamped with loop-nesting depth d. */
@@ -243,6 +248,43 @@ static int elem_stride(TypeKind k)
 	return 8;
 }
 
+/* Structural equality for the side-effect-free expression subset regions
+   lower (idents, literals, casts, unary/binary arithmetic, indexing,
+   .length). Used to recognise arr[X] = arr[X] op V so X lowers once. */
+static int expr_eq(const Expr *a, const Expr *b)
+{
+	if (!a || !b)
+	{
+		return a == b;
+	}
+
+	if (a->kind != b->kind || a->type.kind != b->type.kind)
+	{
+		return 0;
+	}
+
+	switch (a->kind)
+	{
+	case EX_INT:
+	case EX_BOOL:
+		return a->int_val == b->int_val;
+	case EX_IDENT:
+		return a->anno_int == b->anno_int;
+	case EX_CAST:
+		return expr_eq(a->lhs, b->lhs);
+	case EX_UNARY:
+		return a->op == b->op && expr_eq(a->lhs, b->lhs);
+	case EX_BINARY:
+		return a->op == b->op && expr_eq(a->lhs, b->lhs) && expr_eq(a->rhs, b->rhs);
+	case EX_INDEX:
+		return expr_eq(a->lhs, b->lhs) && expr_eq(a->rhs, b->rhs);
+	case EX_FIELD:
+		return strcmp(a->name, b->name) == 0 && expr_eq(a->lhs, b->lhs);
+	default:
+		return 0;
+	}
+}
+
 /* Lower an expression, returning the vreg holding its value (IR_NO_REG on bail). */
 static IRReg low_expr(Low *L, const Expr *e)
 {
@@ -265,6 +307,21 @@ static IRReg low_expr(Low *L, const Expr *e)
 	}
 	case EX_IDENT:
 	{
+		/* An unrolled loop's induction variable is a compile-time constant for
+		   the current copy: lower the read as that constant. */
+		for (int i = L->cc_n - 1; i >= 0; i--)
+		{
+			if (L->cc_off[i] == e->anno_int)
+			{
+				IRReg cr = ir_reg(L->f);
+				IRInstr *kc = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
+				kc->dst = cr;
+				kc->imm = L->cc_val[i];
+				kc->line = e->line;
+				return cr;
+			}
+		}
+
 		/* A local/param read: load from its frame slot at -anno_int. */
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, e->type.kind);
@@ -354,6 +411,30 @@ static IRReg low_expr(Low *L, const Expr *e)
 		return IR_NO_REG;
 	case EX_BINARY:
 	{
+		/* (int)bytearr[i] & 255 is an unsigned byte load: the masked value is
+		   exactly the zero-extension the hardware movzx produces, so the cast
+		   and the mask fold away. The canonical byte-parsing idiom. */
+		if (e->op == TOKEN_AMP && e->rhs->kind == EX_INT && e->rhs->int_val == 255
+			&& e->lhs->kind == EX_CAST && ty_is_int(e->lhs->type.kind)
+			&& e->lhs->lhs->kind == EX_INDEX
+			&& e->lhs->lhs->type.kind == TY_BYTE)
+		{
+			const Expr *ix = e->lhs->lhs;
+			IRReg base = low_expr(L, ix->lhs);
+			IRReg idx = low_expr(L, ix->rhs);
+			IRReg r = ir_reg(L->f);
+			IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, TY_UBYTE);
+			in->dst = r;
+			in->a = base;
+			in->b = idx;
+			in->scale = 1;
+			in->disp = 32;
+			in->is_frame = 0;
+			in->checked = !ix->anno_index_safe;
+			in->line = e->line;
+			return r;
+		}
+
 		if (tok_is_cmp(e->op))
 		{
 			IRReg la = low_expr(L, e->lhs);
@@ -420,6 +501,126 @@ static void low_br(Low *L, int blk, int target)
 
 static void low_block(Low *L, const Block *b);
 
+/* Defined below ir_lower_func; used by the constant-trip unroller here. */
+static int const_int(const Expr *e, long long *out);
+static long long const_trip_count(const Stmt *s);
+
+/* True if the subtree contains a break/continue that would target THIS loop
+   (does not descend into nested loops, which own their own targets). */
+static int block_has_breakcont(const Block *b);
+
+static int stmt_has_breakcont(const Stmt *s)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	if (s->kind == ST_BREAK || s->kind == ST_CONTINUE)
+	{
+		return 1;
+	}
+
+	if (s->kind == ST_FOR || s->kind == ST_WHILE || s->kind == ST_FOREACH)
+	{
+		return 0;
+	}
+
+	return block_has_breakcont(s->then_blk) || block_has_breakcont(s->else_blk);
+}
+
+static int block_has_breakcont(const Block *b)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (stmt_has_breakcont(b->stmts[i]))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* True if the subtree assigns local slot `off` (the unroll guard: a body that
+   rewrites its own counter cannot be constant-folded). */
+static int block_writes_off(const Block *b, int off);
+
+static int stmt_writes_off(const Stmt *s, int off)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	if (s->kind == ST_VARDECL && s->decl_offset == off)
+	{
+		return 1;
+	}
+
+	if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT
+		&& s->target->anno_int == off)
+	{
+		return 1;
+	}
+
+	if (s->kind == ST_FOREACH && (s->decl_offset == off || s->fe_val_offset == off))
+	{
+		return 1;
+	}
+
+	if (s->kind == ST_EXPR && s->expr && s->expr->kind == EX_INCDEC
+		&& s->expr->lhs && s->expr->lhs->kind == EX_IDENT
+		&& s->expr->lhs->anno_int == off)
+	{
+		return 1;
+	}
+
+	return stmt_writes_off(s->for_init, off) || stmt_writes_off(s->for_post, off)
+		   || block_writes_off(s->then_blk, off) || block_writes_off(s->else_blk, off);
+}
+
+static int block_writes_off(const Block *b, int off)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (stmt_writes_off(b->stmts[i], off))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* Statement count of a block subtree, the unroll code-growth guard. */
+static int block_stmt_count(const Block *b)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	int n = 0;
+	for (int i = 0; i < b->count; i++)
+	{
+		const Stmt *s = b->stmts[i];
+		n += 1 + block_stmt_count(s->then_blk) + block_stmt_count(s->else_blk);
+	}
+
+	return n;
+}
+
 static void low_stmt(Low *L, const Stmt *s)
 {
 	if (!L->ok)
@@ -445,6 +646,73 @@ static void low_stmt(Low *L, const Stmt *s)
 		}
 		else if (s->target->kind == EX_INDEX)
 		{
+			/* arr[X] = arr[X] op V (or V op arr[X], commutative op): lower the
+			   base and X once and reuse the vregs for the inner load and the
+			   store - the duplicated index expression is the costly part. */
+			const Expr *t = s->target;
+			const Expr *inner = NULL;
+			if (s->value->kind == EX_BINARY)
+			{
+				if (expr_eq(s->value->lhs, t))
+				{
+					inner = s->value->lhs;
+				}
+				else if ((s->value->op == TOKEN_PLUS || s->value->op == TOKEN_STAR
+						  || s->value->op == TOKEN_AMP || s->value->op == TOKEN_PIPE
+						  || s->value->op == TOKEN_CARET)
+						 && expr_eq(s->value->rhs, t))
+				{
+					inner = s->value->rhs;
+				}
+			}
+
+			if (inner)
+			{
+				IRReg base = low_expr(L, t->lhs);
+				IRReg idx = low_expr(L, t->rhs);
+
+				IRReg cur = ir_reg(L->f);
+				IRInstr *ld = ir_emit(L->f, L->cur, IR_LOAD, t->type.kind);
+				ld->dst = cur;
+				ld->a = base;
+				ld->b = idx;
+				ld->scale = elem_stride(t->type.kind);
+				ld->disp = 32;
+				ld->is_frame = 0;
+				ld->checked = !t->anno_index_safe;
+				ld->line = s->line;
+
+				const Expr *other = (inner == s->value->lhs) ? s->value->rhs : s->value->lhs;
+				IRReg ov = low_expr(L, other);
+				int aok;
+				IROp aop = tok_arith_op(s->value->op, &aok);
+				if (!aok)
+				{
+					L->ok = 0;
+					break;
+				}
+
+				IRReg nv = ir_reg(L->f);
+				IRInstr *bi = ir_emit(L->f, L->cur, aop, s->value->type.kind);
+				bi->dst = nv;
+				bi->a = (inner == s->value->lhs) ? cur : ov;
+				bi->b = (inner == s->value->lhs) ? ov : cur;
+				bi->line = s->line;
+
+				IRInstr *st = ir_emit(L->f, L->cur, IR_STORE, t->type.kind);
+				st->is_frame = 0;
+				st->a = base;
+				st->b = idx;
+				st->c = nv;
+				st->scale = elem_stride(t->type.kind);
+				st->disp = 32;
+				/* The load above already proved (or checked) the same base and
+				   index in range; a second check would be pure overhead. */
+				st->checked = 0;
+				st->line = s->line;
+				break;
+			}
+
 			/* a[i] = v -> store [base + i*stride + 32]. BCE-safe (eligibility). */
 			IRReg base = low_expr(L, s->target->lhs);
 			IRReg idx = low_expr(L, s->target->rhs);
@@ -563,6 +831,50 @@ static void low_stmt(Low *L, const Stmt *s)
 	}
 	case ST_FOR:
 	{
+		/* A small constant-trip loop lowers as straight-line copies with the
+		   induction variable folded to a constant per copy: no counter, no
+		   compare, no branch. The body must not rewrite the counter and must
+		   not break/continue; the trip and size caps bound code growth. */
+		long long trips = const_trip_count(s);
+		if (trips >= 2 && trips <= 16 && L->cc_n < 8
+			&& trips * (long long)block_stmt_count(s->then_blk) <= 96
+			&& !block_has_breakcont(s->then_blk))
+		{
+			int iv_off = (s->for_init->kind == ST_VARDECL)
+						 ? s->for_init->decl_offset
+						 : s->for_init->target->anno_int;
+			if (iv_off != 0 && !block_writes_off(s->then_blk, iv_off))
+			{
+				long long c0 = 0;
+				long long c2 = 0;
+				const_int(s->for_init->kind == ST_VARDECL
+						  ? s->for_init->decl_init : s->for_init->value, &c0);
+				const_int(s->for_post->value->rhs, &c2);
+
+				low_stmt(L, s->for_init);   /* Keeps the slot's value truthful. */
+
+				L->cc_off[L->cc_n] = iv_off;
+				L->cc_n++;
+				for (long long k = 0; k < trips && L->ok; k++)
+				{
+					L->cc_val[L->cc_n - 1] = c0 + k * c2;
+					low_block(L, s->then_blk);
+				}
+
+				L->cc_n--;
+
+				/* The counter's final value (the first failing the guard), for
+				   any read after the loop - regions keep every local live. */
+				IRReg fr = ir_reg(L->f);
+				IRInstr *kc = ir_emit(L->f, L->cur, IR_CONST, TY_INT);
+				kc->dst = fr;
+				kc->imm = c0 + trips * c2;
+				kc->line = s->line;
+				low_store_local(L, iv_off, TY_INT, fr);
+				break;
+			}
+		}
+
 		if (s->for_init)
 		{
 			low_stmt(L, s->for_init);
@@ -650,6 +962,7 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 	L.cont_blk = -1;
 	L.ok = 1;
 	L.depth = 0;
+	L.cc_n = 0;
 	low_block(&L, f->body);
 	if (!L.ok)
 	{
@@ -769,6 +1082,7 @@ IRFunc *ir_lower_region(const Func *f, const Stmt *s)
 	L.cont_blk = -1;
 	L.ok = 1;
 	L.depth = 0;
+	L.cc_n = 0;
 	low_stmt(&L, s);
 	if (!L.ok)
 	{

@@ -276,6 +276,235 @@ static const Stmt *first_loop(const Func *f)
 	return 0;
 }
 
+/* Region variant of first_elem_load_checked: lowers the function's first loop
+   as a region (so the function may use `new` outside the loop, giving BCE a
+   numeric array length) and returns the `checked` bit of the first non-frame
+   4-byte element load, -1 if none, -2 if the region is ineligible. */
+static int first_region_elem_load_checked(const char *src)
+{
+	const Func *f = parse_one_func(src);
+	IRFunc *ir = ir_lower_region(f, first_loop(f));
+	if (!ir)
+	{
+		return -2;
+	}
+
+	int checked = -1;
+	for (int b = 0; b < ir->block_count && checked < 0; b++)
+	{
+		for (int i = 0; i < ir->blocks[b].count; i++)
+		{
+			IRInstr *in = &ir->blocks[b].instrs[i];
+			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4 && in->disp == 32)
+			{
+				checked = in->checked;
+				break;
+			}
+		}
+	}
+
+	ir_func_free(ir);
+	return checked;
+}
+
+static void test_bce_variable_mask_is_safe(void)
+{
+	/* mask = 65535 (a derived constant); array length 65536: h & mask is in
+	   [0, 65535] regardless of h's sign, so the access is provably safe. */
+	ASSERT_INT(first_region_elem_load_checked(
+		"long f(int h)\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[65536];\n"
+		"	int n;\n"
+		"	n = 65536;\n"
+		"	int mask;\n"
+		"	mask = n - 1;\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < 100; i = i + 1)\n"
+		"	{\n"
+		"		h = h * 31 + 7;\n"
+		"		s = s + (long)a[h & mask];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n"), 0);
+}
+
+static void test_lower_masked_byte_load_is_movzx(void)
+{
+	/* (int)a[i] & 255 must lower to a single unsigned byte load: no IR_AND,
+	   no IR_CAST, one IR_LOAD of type TY_UBYTE (iremit emits movzx for it). */
+	const Func *f = parse_one_func(
+		"int f(byte[] a, int i)\n"
+		"{\n"
+		"	return (int)a[i] & 255;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+
+	int ands = 0;
+	int casts = 0;
+	int ubyte_loads = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			IRInstr *in = &irf->blocks[b].instrs[i];
+			if (in->op == IR_AND)
+			{
+				ands++;
+			}
+
+			if (in->op == IR_CAST)
+			{
+				casts++;
+			}
+
+			if (in->op == IR_LOAD && in->type == TY_UBYTE)
+			{
+				ubyte_loads++;
+			}
+		}
+	}
+
+	ASSERT_INT(ands, 0);
+	ASSERT_INT(casts, 0);
+	ASSERT_INT(ubyte_loads, 1);
+	ir_func_free(irf);
+}
+
+static void test_lower_rmw_index_lowered_once(void)
+{
+	/* a[i + 1] = a[i + 1] + 2: the index expression must lower once - one
+	   IR_ADD for i+1 plus one IR_ADD for the value add, not two for i+1. */
+	const Func *f = parse_one_func(
+		"void f(int[] a, int i)\n"
+		"{\n"
+		"	a[i + 1] = a[i + 1] + 2;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+
+	int adds = 0;
+	int loads = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			IRInstr *in = &irf->blocks[b].instrs[i];
+			if (in->op == IR_ADD)
+			{
+				adds++;
+			}
+
+			if (in->op == IR_LOAD && !in->is_frame)
+			{
+				loads++;
+			}
+		}
+	}
+
+	ASSERT_INT(adds, 2);
+	ASSERT_INT(loads, 1);
+	ir_func_free(irf);
+}
+
+static void test_lower_unrolls_constant_trip_loop(void)
+{
+	/* A 13-trip counted loop lowers as straight-line code: no IR_BRCOND, and
+	   the body's multiply appears 13 times. */
+	const Func *f = parse_one_func(
+		"int f(int h)\n"
+		"{\n"
+		"	for (int b = 0; b < 13; b = b + 1)\n"
+		"	{\n"
+		"		h = h * 16777619;\n"
+		"	}\n"
+		"	return h;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+
+	int brconds = 0;
+	int muls = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			IROp op = irf->blocks[b].instrs[i].op;
+			if (op == IR_BRCOND)
+			{
+				brconds++;
+			}
+
+			if (op == IR_MUL)
+			{
+				muls++;
+			}
+		}
+	}
+
+	ASSERT_INT(brconds, 0);
+	ASSERT_INT(muls, 13);
+	ir_func_free(irf);
+}
+
+static void test_lower_unroll_skips_iv_reassigned_in_body(void)
+{
+	/* The body writes the counter: must lower as a real loop (1 IR_BRCOND). */
+	const Func *f = parse_one_func(
+		"int f(int h)\n"
+		"{\n"
+		"	for (int b = 0; b < 13; b = b + 1)\n"
+		"	{\n"
+		"		b = b + h;\n"
+		"	}\n"
+		"	return h;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+
+	int brconds = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			if (irf->blocks[b].instrs[i].op == IR_BRCOND)
+			{
+				brconds++;
+			}
+		}
+	}
+
+	ASSERT_INT(brconds, 1);
+	ir_func_free(irf);
+}
+
+static void test_bce_negative_mask_stays_checked(void)
+{
+	/* The mask is an unbounded parameter, possibly negative: a & b with b of
+	   unknown sign proves nothing, so the check must stay. */
+	ASSERT_INT(first_region_elem_load_checked(
+		"long f(int h, int mask)\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[65536];\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < 100; i = i + 1)\n"
+		"	{\n"
+		"		h = h * 31 + 7;\n"
+		"		s = s + (long)a[h & mask];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n"), 1);
+}
+
 static void test_region_eligible_despite_call(void)
 {
 	/* The helper() call makes the whole function ineligible, but the loop subtree
@@ -634,6 +863,12 @@ int main(void)
 	RUN(test_bce_offbyone_stays_checked);
 	RUN(test_bce_other_array_stays_checked);
 	RUN(test_bce_counter_reassigned_stays_checked);
+	RUN(test_bce_variable_mask_is_safe);
+	RUN(test_bce_negative_mask_stays_checked);
+	RUN(test_lower_masked_byte_load_is_movzx);
+	RUN(test_lower_rmw_index_lowered_once);
+	RUN(test_lower_unrolls_constant_trip_loop);
+	RUN(test_lower_unroll_skips_iv_reassigned_in_body);
 	RUN(test_region_eligible_despite_call);
 	RUN(test_region_rejects_return);
 	RUN(test_region_rejects_managed_assign);
