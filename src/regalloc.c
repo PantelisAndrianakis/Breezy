@@ -685,7 +685,12 @@ IRAlloc *ra_run(IRFunc *f)
 
 			for (int v = 0; v < bw; v++)
 			{
-				char o = 0;
+				/* Region exit (the only successor-less block in a region): every
+				   frame local is potentially read after the region, so all local
+				   pseudo-values are live-out there. This keeps two live-out locals
+				   from ever sharing a register and keeps a local's updated value in
+				   its register until the region's store-back. */
+				char o = (f->is_region && ns == 0 && v >= a->vreg_count) ? 1 : 0;
 				for (int s = 0; s < ns; s++)
 				{
 					if (live_in[(size_t)succ[s] * bw + v])

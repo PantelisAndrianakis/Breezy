@@ -6762,9 +6762,12 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	}
 	case ST_WHILE:
 	{
-		/* IR loop region (Plan 4). Skipped while an enclosing emitter loop holds
-		   invariants in r8..r11 (hoist_n > 0): region code would clobber them. */
-		if (cg->hoist_n == 0)
+		/* IR loop region (Plan 4). Fires only outside any emitter loop (break
+		   label unset) and outside unrolled bodies: an enclosing loop keeps
+		   invariants, strength-reduction bases and deferred accumulators in
+		   registers the region would clobber. Matches the pre-scan, which never
+		   records a loop nested inside another loop. */
+		if (cg->cur_break_label == -1 && cg->cur_continue_label == -1 && !cg->unrolling)
 		{
 			int r = cg_region_find(cg, s);
 			if (r >= 0)
@@ -6806,9 +6809,12 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,"    jmp .L%d", cg->cur_continue_label);
 		break;
 	case ST_FOR:
-		/* IR loop region (Plan 4). Skipped while an enclosing emitter loop holds
-		   invariants in r8..r11 (hoist_n > 0): region code would clobber them. */
-		if (cg->hoist_n == 0)
+		/* IR loop region (Plan 4). Fires only outside any emitter loop (break
+		   label unset) and outside unrolled bodies: an enclosing loop keeps
+		   invariants, strength-reduction bases and deferred accumulators in
+		   registers the region would clobber. Matches the pre-scan, which never
+		   records a loop nested inside another loop. */
+		if (cg->cur_break_label == -1 && cg->cur_continue_label == -1 && !cg->unrolling)
 		{
 			int r = cg_region_find(cg, s);
 			if (r >= 0)
@@ -7122,11 +7128,14 @@ static int block_has_try(const Block *b)
 	return 0;
 }
 
-/* Collect outermost eligible loops as regions, lowering and allocating each. On
-   a hot-spill (the allocation would spill a value in the deepest loop, which the
-   emitter's tuned heuristics tend to handle better) the loop stays on the
-   emitter, but its body is still scanned so a cleaner inner loop can become a
-   region of its own. */
+/* Collect eligible loops as regions, lowering and allocating each. Only loops
+   reachable without crossing another loop qualify: a region nested inside an
+   emitter loop would clobber that loop's register-resident state (hoisted
+   invariants and strength-reduction bases in r8..r11, deferred accumulators
+   with dirty high bits in r12..r15), so loop bodies are never descended into -
+   an outermost eligible loop is taken whole or not at all. A hot-spill
+   allocation (a value in the deepest loop would spill, which the emitter's
+   tuned heuristics tend to handle better) keeps the loop on the emitter. */
 static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 {
 	if (!b)
@@ -7137,29 +7146,36 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 	for (int i = 0; i < b->count; i++)
 	{
 		Stmt *s = b->stmts[i];
-		if ((s->kind == ST_FOR || s->kind == ST_WHILE)
-			&& cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s))
+		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
-			IRFunc *irf = ir_lower_region(f, s);
-			if (irf)
+			if (cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s))
 			{
-				IRAlloc *a = ra_run(irf);
-				if (!a->hot_spill)
+				IRFunc *irf = ir_lower_region(f, s);
+				if (irf)
 				{
-					cg->region_stmt[cg->region_count] = s;
-					cg->region_irf[cg->region_count] = irf;
-					cg->region_alloc[cg->region_count] = a;
-					cg->region_count++;
-					continue;
-				}
+					IRAlloc *a = ra_run(irf);
+					if (!a->hot_spill)
+					{
+						cg->region_stmt[cg->region_count] = s;
+						cg->region_irf[cg->region_count] = irf;
+						cg->region_alloc[cg->region_count] = a;
+						cg->region_count++;
+						continue;
+					}
 
-				ra_free(a);
-				ir_func_free(irf);
+					ra_free(a);
+					ir_func_free(irf);
+				}
 			}
+
+			continue;   /* Never descend into a loop body (see above). */
 		}
 
-		cg_scan_regions(cg, f, s->then_blk);
-		cg_scan_regions(cg, f, s->else_blk);
+		if (s->kind == ST_IF)
+		{
+			cg_scan_regions(cg, f, s->then_blk);
+			cg_scan_regions(cg, f, s->else_blk);
+		}
 	}
 }
 

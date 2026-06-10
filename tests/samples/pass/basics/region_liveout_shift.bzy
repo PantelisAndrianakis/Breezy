@@ -1,0 +1,45 @@
+// Regression anchors for IR loop regions (Plan 4). Two bug classes this file
+// must keep dead:
+//   1. Live-out locals: every local set before a region and read after it must
+//      survive - the allocator may not reuse a live-out local's register inside
+//      the region (more locals than allocatable registers forces the issue).
+//   2. Shift count aliasing: in `x >> k` the count's register can be reused for
+//      the result; the emitter must read the count into cl before writing the
+//      destination, or the count is clobbered (the LCG extraction below produced
+//      a wrong sum when it was).
+void main()
+{
+	long a; a = 101;
+	long b; b = 202;
+	long c; c = 303;
+	long d; d = 404;
+	long e; e = 505;
+	long f; f = 606;
+	long g; g = 707;
+	long h; h = 808;
+	long i2; i2 = 909;
+	long j; j = 1010;
+	long k; k = 1111;
+	long l; l = 1212;
+	long m; m = 1313;
+	long n; n = 1414;
+
+	long s;
+	s = 1;
+	long sum;
+	sum = 0;
+	for (int i = 0; i < 100000; i = i + 1)
+	{
+		s = s * 6364136223846793005L + 1442695040888963407L;
+		sum = sum + ((s >> 16) & 255L);
+	}
+
+	print(sum);
+	print(a + b);
+	print(c + d);
+	print(e + f);
+	print(g + h);
+	print(i2 + j);
+	print(k + l);
+	print(m + n);
+}

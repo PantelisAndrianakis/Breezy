@@ -668,6 +668,7 @@ IRFunc *ir_lower_region(const Func *f, const Stmt *s)
 	}
 
 	IRFunc *irf = ir_func_new(f);
+	irf->is_region = 1;
 	int entry = ir_block_new(irf);
 	Low L;
 	L.f = irf;

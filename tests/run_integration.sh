@@ -54,6 +54,7 @@ check minimal     tests/samples/pass/basics/minimal.bzy    "0"
 check arith       tests/samples/pass/basics/arith.bzy      "14"
 check int_semantics tests/samples/pass/basics/int_semantics.bzy $'-294967296\n1410065408\n-4\n-3\n-1\n-123\n2\n4000000000\n48\n255\n240\n-2147483648\n1\n16'
 check int_defer   tests/samples/pass/basics/int_defer.bzy $'-1000000000\n-2000000000\n1294967296\n294967296\n-705032704'
+check region_liveout_shift tests/samples/pass/basics/region_liveout_shift.bzy $'12773843\n303\n707\n1111\n1515\n1919\n2323\n2727'
 check int_div     tests/samples/pass/basics/int_div.bzy $'-33\n-1\n33\n33\n-1\n306783378'
 check if_else     tests/samples/pass/control-flow/if_else.bzy    "1"
 check while       tests/samples/pass/control-flow/while.bzy      "10"

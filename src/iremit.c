@@ -807,17 +807,22 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	case IR_SHL:
 	case IR_SHR:
 	{
+		/* Count into cl FIRST: the count's register may be the same as dst (the
+		   count dies at this instruction, so the allocator may reuse its register
+		   for the result) and writing Rd before reading Rb would clobber it. Rd
+		   and Ra can never be rcx themselves: rcx is not allocatable while any
+		   shift exists (regalloc's claim guard). */
+		const char *Rb = vreg_in(e, in->b, "rcx");
+		if (strcmp(Rb, "rcx"))
+		{
+			cg_emit(cg, "    mov rcx, %s", Rb);
+		}
+
 		const char *Ra = vreg_in(e, in->a, "rax");
 		const char *Rd = dst_reg(e, in->dst);
 		if (strcmp(Rd, Ra))
 		{
 			cg_emit(cg, "    mov %s, %s", Rd, Ra);
-		}
-
-		const char *Rb = vreg_in(e, in->b, "rcx");
-		if (strcmp(Rb, "rcx"))
-		{
-			cg_emit(cg, "    mov rcx, %s", Rb);   /* Shift count in cl. */
 		}
 
 		if (in->op == IR_SHL)

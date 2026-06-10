@@ -55,6 +55,9 @@ typedef struct
 	int      block_count;
 	int      block_cap;
 	int      vreg_count;     /* Next vreg id to hand out. */
+	int      is_region;      /* Loop region (Plan 4): every frame local is potentially
+	                            read after the region, so the allocator keeps all
+	                            locals live through the region exit. */
 	const Func *src;         /* The AST function this was lowered from. */
 } IRFunc;
 
