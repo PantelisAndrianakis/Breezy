@@ -46,6 +46,7 @@ typedef struct
 	IRInstr *instrs;
 	int      count;
 	int      cap;
+	int      depth;       /* Loop-nesting depth (0 = function top level), for spill weighting. */
 } IRBlock;
 
 typedef struct

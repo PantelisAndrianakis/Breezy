@@ -185,6 +185,26 @@ static int uf_find(int *uf, int x)
 	return x;
 }
 
+/* A use/def at loop depth d weighs 10^d, so a value touched inside an inner loop
+   dominates a loop-invariant one - the allocator colours (keeps in a register) the
+   heaviest values first and spills the cheapest. Depth is capped so the weight sum
+   stays well inside a long long. */
+static long long depth_weight(int d)
+{
+	if (d > 9)
+	{
+		d = 9;
+	}
+
+	long long w = 1;
+	for (int i = 0; i < d; i++)
+	{
+		w *= 10;
+	}
+
+	return w;
+}
+
 /* Assign each value a register (or a spill slot) by graph colouring with copy
    coalescing. Interference is built precisely from per-point liveness (walking
    each block backward from its live_out set), so a value's live range carries the
@@ -211,11 +231,14 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	int *cp_d = malloc((size_t)cpcap * sizeof(int));
 	int *cp_s = malloc((size_t)cpcap * sizeof(int));
 	char *live = malloc((size_t)nval);
+	long long *weight = calloc((size_t)nval, sizeof(long long));   /* Per-value spill weight. */
 
-	/* Build interference + copy lists from per-point liveness. */
+	/* Build interference + copy lists from per-point liveness, and accumulate each
+	   value's loop-depth-weighted use/def count. */
 	for (int b = 0; b < f->block_count; b++)
 	{
 		IRBlock *blk = &f->blocks[b];
+		long long fac = depth_weight(blk->depth);
 		memcpy(live, live_out + (size_t)b * bw, (size_t)nval);
 		for (int i = blk->count - 1; i >= 0; i--)
 		{
@@ -224,6 +247,18 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			int uses[3];
 			int nuse;
 			instr_def_use(a, in, &def, uses, &nuse);
+			if (def >= 0)
+			{
+				weight[def] += fac;
+			}
+
+			for (int u = 0; u < nuse; u++)
+			{
+				if (uses[u] >= 0)
+				{
+					weight[uses[u]] += fac;
+				}
+			}
 
 			int is_copy = (in->op == IR_MOVE)
 						  || ((in->op == IR_LOAD || in->op == IR_STORE) && in->is_frame);
@@ -326,9 +361,12 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Live roots, ordered by earliest live-range start. */
+	/* Live roots, with each root's spill weight (sum of member weights) and earliest
+	   start. Colouring visits the heaviest roots first so the hottest values win
+	   registers and the cheapest spill (loop-depth-aware spilling). */
 	char *root_live = calloc((size_t)nval, 1);
 	int *rstart = malloc((size_t)nval * sizeof(int));
+	long long *rweight = calloc((size_t)nval, sizeof(long long));
 	for (int r = 0; r < nval; r++)
 	{
 		rstart[r] = 0x7fffffff;
@@ -342,6 +380,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			root_live[r] = 1;
 		}
 
+		rweight[r] += weight[v];
 		if (a->istart[v] < rstart[r])
 		{
 			rstart[r] = a->istart[v];
@@ -358,11 +397,13 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
+	/* Sort by weight descending; ties by earliest start (deterministic). */
 	for (int i = 1; i < no; i++)
 	{
 		int x = order[i];
 		int j = i - 1;
-		while (j >= 0 && rstart[order[j]] > rstart[x])
+		while (j >= 0 && (rweight[order[j]] < rweight[x]
+						  || (rweight[order[j]] == rweight[x] && rstart[order[j]] > rstart[x])))
 		{
 			order[j + 1] = order[j];
 			j--;
@@ -451,10 +492,12 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	free(cp_d);
 	free(cp_s);
 	free(live);
+	free(weight);
 	free(uf);
 	free(rintf);
 	free(root_live);
 	free(rstart);
+	free(rweight);
 	free(order);
 	free(color);
 	free(root_slot);

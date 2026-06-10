@@ -165,7 +165,16 @@ typedef struct
 	int     break_blk;
 	int     cont_blk;
 	int     ok;
+	int     depth;   /* Current loop-nesting depth, stamped on new blocks for spill weighting. */
 } Low;
+
+/* A fresh block stamped with loop-nesting depth d. */
+static int low_block_at(Low *L, int d)
+{
+	int b = ir_block_new(L->f);
+	L->f->blocks[b].depth = d;
+	return b;
+}
 
 static int tok_is_cmp(int t)
 {
@@ -460,9 +469,9 @@ static void low_stmt(Low *L, const Stmt *s)
 	case ST_IF:
 	{
 		IRReg c = low_expr(L, s->cond);
-		int then_blk = ir_block_new(L->f);
-		int else_blk = s->else_blk ? ir_block_new(L->f) : -1;
-		int join_blk = ir_block_new(L->f);
+		int then_blk = low_block_at(L, L->depth);
+		int else_blk = s->else_blk ? low_block_at(L, L->depth) : -1;
+		int join_blk = low_block_at(L, L->depth);
 		IRInstr *br = ir_emit(L->f, L->cur, IR_BRCOND, TY_BOOL);
 		br->a = c;
 		br->blk_true = then_blk;
@@ -490,11 +499,13 @@ static void low_stmt(Low *L, const Stmt *s)
 	}
 	case ST_WHILE:
 	{
-		int head = ir_block_new(L->f);
-		int body = ir_block_new(L->f);
-		int exit = ir_block_new(L->f);
+		int head = low_block_at(L, L->depth + 1);   /* Condition runs every iteration: hot. */
+		int body = low_block_at(L, L->depth + 1);
+		int exit = low_block_at(L, L->depth);
 		low_br(L, L->cur, head);
 
+		int sd = L->depth;
+		L->depth = sd + 1;
 		L->cur = head;
 		IRReg c = low_expr(L, s->cond);
 		IRInstr *br = ir_emit(L->f, L->cur, IR_BRCOND, TY_BOOL);
@@ -515,6 +526,7 @@ static void low_stmt(Low *L, const Stmt *s)
 
 		L->break_blk = sb;
 		L->cont_blk = sc;
+		L->depth = sd;
 		L->cur = exit;
 		break;
 	}
@@ -525,12 +537,14 @@ static void low_stmt(Low *L, const Stmt *s)
 			low_stmt(L, s->for_init);
 		}
 
-		int head = ir_block_new(L->f);
-		int body = ir_block_new(L->f);
-		int post = ir_block_new(L->f);
-		int exit = ir_block_new(L->f);
+		int head = low_block_at(L, L->depth + 1);   /* Condition + increment run every iteration. */
+		int body = low_block_at(L, L->depth + 1);
+		int post = low_block_at(L, L->depth + 1);
+		int exit = low_block_at(L, L->depth);
 		low_br(L, L->cur, head);
 
+		int sd = L->depth;
+		L->depth = sd + 1;
 		L->cur = head;
 		if (s->cond)
 		{
@@ -565,6 +579,7 @@ static void low_stmt(Low *L, const Stmt *s)
 		low_br(L, L->cur, head);
 		L->break_blk = sb;
 		L->cont_blk = sc;
+		L->depth = sd;
 		L->cur = exit;
 		break;
 	}
@@ -603,6 +618,7 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 	L.break_blk = -1;
 	L.cont_blk = -1;
 	L.ok = 1;
+	L.depth = 0;
 	low_block(&L, f->body);
 	if (!L.ok)
 	{
