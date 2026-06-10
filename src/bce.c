@@ -1,6 +1,7 @@
 #include "bce.h"
 #include "lexer.h"
 #include <stddef.h>
+#include <string.h>   /* strcmp for the .length field name. */
 
 /* Bounds-check elimination by forward interval analysis.
 
@@ -140,7 +141,51 @@ typedef struct
 	int an;
 	int aoff[BCE_MAX];
 	Iv  alen[BCE_MAX];
+	/* Symbolic guard facts: index var sb_io[i] is provably in [0, length of the
+	   array at sb_arr[i]) - from a loop guard `sb_io < arr.length`, with neither
+	   reassigned in the body. Lets arr[i] be proved safe without a numeric length. */
+	int sbn;
+	int sb_io[BCE_MAX];
+	int sb_arr[BCE_MAX];
 } Env;
+
+/* Record that index var io is bounded by the length of array arr_off. */
+static void sb_set(Env *e, int io, int arr_off)
+{
+	if (io == 0 || arr_off == 0)
+	{
+		return;
+	}
+
+	for (int i = 0; i < e->sbn; i++)
+	{
+		if (e->sb_io[i] == io && e->sb_arr[i] == arr_off)
+		{
+			return;
+		}
+	}
+
+	if (e->sbn < BCE_MAX)
+	{
+		e->sb_io[e->sbn] = io;
+		e->sb_arr[e->sbn] = arr_off;
+		e->sbn++;
+	}
+}
+
+/* True if index var io is known bounded by the length of array arr_off. */
+static int sb_has(Env *e, int io, int arr_off)
+{
+	for (int i = 0; i < e->sbn; i++)
+	{
+		if (e->sb_io[i] == io && e->sb_arr[i] == arr_off)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
 
 static Iv env_get(Env *e, int off)
 {
@@ -468,6 +513,14 @@ static void mark_indexes(Expr *e, Env *env)
 				e->anno_index_safe = 1;
 			}
 		}
+
+		/* Symbolic guard: arr[i] where i is provably in [0, arr.length) from the
+		   enclosing `for (i; i < arr.length; i++)` over this same array. */
+		if (e->rhs->kind == EX_IDENT
+			&& sb_has(env, e->rhs->anno_int, e->lhs->anno_int))
+		{
+			e->anno_index_safe = 1;
+		}
 	}
 }
 
@@ -496,9 +549,16 @@ static void bce_loop(Stmt *st, Env *env)
 	mod_block(st->then_blk, &mod);
 	mod_stmt(st->for_post, &mod);
 
+	/* Body-only modified set (excludes the post step): a value the body never
+	   rewrites is stable across the body, which the symbolic guard fact needs. */
+	OffSet body_mod = { .n = 0 };
+	mod_block(st->then_blk, &body_mod);
+
 	/* Recognise: for (int i = LO; i < HI; i = i + C>0)  (or i++). */
 	int ind = 0;
 	Iv ind_iv = IV_TOP;
+	int sb_ind = 0;     /* Index var with a symbolic array-length bound (0 = none). */
+	int sb_array = 0;   /* The array whose length bounds it. */
 	if (st->kind == ST_FOR && st->for_init && st->cond && st->for_post)
 	{
 		int io = 0;
@@ -555,6 +615,25 @@ static void bce_loop(Stmt *st, Env *env)
 					ind_iv = iv_clamp(t, TY_INT);
 				}
 			}
+
+			/* Symbolic guard fact (no numeric length needed): a STRICT `i < arr.length`
+			   over an array `arr` (a plain local) neither the body nor the step
+			   rewrites, with i starting >= 0 and only increasing, makes every arr[i]
+			   in the body provably in [0, arr.length). Requires i not reassigned in
+			   the body (only the +C step), so its value at each use still satisfies
+			   the guard checked at loop entry. */
+			Expr *bnd = cond->rhs;
+			if (cond->op == TOKEN_LT && lo_iv.known && lo_iv.lo >= 0
+				&& bnd->kind == EX_FIELD && bnd->lhs && bnd->lhs->kind == EX_IDENT
+				&& bnd->lhs->type.kind == TY_ARRAY && strcmp(bnd->name, "length") == 0)
+			{
+				int arr_off = bnd->lhs->anno_int;
+				if (arr_off != 0 && !off_has(&body_mod, arr_off) && !off_has(&body_mod, io))
+				{
+					sb_ind = io;
+					sb_array = arr_off;
+				}
+			}
 		}
 	}
 
@@ -567,6 +646,11 @@ static void bce_loop(Stmt *st, Env *env)
 	if (ind != 0)
 	{
 		env_set(&child, ind, ind_iv);
+	}
+
+	if (sb_ind != 0)
+	{
+		sb_set(&child, sb_ind, sb_array);
 	}
 
 	mark_indexes(st->cond, &child);

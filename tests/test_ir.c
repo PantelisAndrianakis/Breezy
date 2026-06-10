@@ -176,43 +176,83 @@ static void test_lower_collatz_succeeds(void)
 	ir_func_free(ir);
 }
 
-static void test_lower_array_sum(void)
+/* The `checked` bit of the first non-frame element load (scale 4, disp 32) in a
+   lowered function, or -1 if there is none. checked == !anno_index_safe. */
+static int first_elem_load_checked(const char *src)
 {
-	/* An array sweep is eligible and lowers a[i] to a non-frame element load with
-	   the folded address mode (scale 4, disp 32). The access is bounds-checked
-	   (the loop bound is `a.length` symbolically, which BCE cannot reduce to a
-	   numeric range), so `checked` is set. */
-	const Func *f = parse_one_func(
-		"long asum(int[] a)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < a.length; i = i + 1)\n"
-		"	{\n"
-		"		s = s + (long)a[i];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
-	ASSERT_INT(ir_eligible(f), 1);
-	IRFunc *ir = ir_lower_func(f, 0);
-	ASSERT(ir != NULL);
+	const Func *f = parse_one_func(src);
+	if (!ir_eligible(f))
+	{
+		return -2;
+	}
 
-	int found = 0;
-	for (int b = 0; b < ir->block_count; b++)
+	IRFunc *ir = ir_lower_func(f, 0);
+	int checked = -1;
+	for (int b = 0; b < ir->block_count && checked < 0; b++)
 	{
 		for (int i = 0; i < ir->blocks[b].count; i++)
 		{
 			IRInstr *in = &ir->blocks[b].instrs[i];
 			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4 && in->disp == 32)
 			{
-				found = 1;
-				ASSERT_INT(in->checked, 1);
+				checked = in->checked;
+				break;
 			}
 		}
 	}
 
-	ASSERT_INT(found, 1);
 	ir_func_free(ir);
+	return checked;
+}
+
+static void test_bce_guarded_sweep_is_safe(void)
+{
+	/* for (i = 0; i < a.length; i++) a[i]  -> provably in range, no bounds check. */
+	ASSERT_INT(first_elem_load_checked(
+		"long asum(int[] a)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	for (int i = 0; i < a.length; i = i + 1) { s = s + (long)a[i]; }\n"
+		"	return s;\n"
+		"}\n"), 0);
+}
+
+/* Adversarial cases - each MUST stay bounds-checked (checked == 1); a wrong
+   anno_index_safe here is a memory-safety hole. */
+static void test_bce_offbyone_stays_checked(void)
+{
+	/* `<=` lets i reach a.length. */
+	ASSERT_INT(first_elem_load_checked(
+		"long f(int[] a)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	for (int i = 0; i <= a.length; i = i + 1) { s = s + (long)a[i]; }\n"
+		"	return s;\n"
+		"}\n"), 1);
+}
+
+static void test_bce_other_array_stays_checked(void)
+{
+	/* Guard is on a.length but the access is into b. */
+	ASSERT_INT(first_elem_load_checked(
+		"long f(int[] a, int[] b)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	for (int i = 0; i < a.length; i = i + 1) { s = s + (long)b[i]; }\n"
+		"	return s;\n"
+		"}\n"), 1);
+}
+
+static void test_bce_counter_reassigned_stays_checked(void)
+{
+	/* The body bumps i past the guarded value before the access. */
+	ASSERT_INT(first_elem_load_checked(
+		"long f(int[] a)\n"
+		"{\n"
+		"	long s; s = 0;\n"
+		"	for (int i = 0; i < a.length; i = i + 1) { i = i + 5; s = s + (long)a[i]; }\n"
+		"	return s;\n"
+		"}\n"), 1);
 }
 
 int main(void)
@@ -226,7 +266,10 @@ int main(void)
 	RUN(test_eligible_rejects_new_array);
 	RUN(test_lower_produces_blocks_and_ret);
 	RUN(test_lower_collatz_succeeds);
-	RUN(test_lower_array_sum);
+	RUN(test_bce_guarded_sweep_is_safe);
+	RUN(test_bce_offbyone_stays_checked);
+	RUN(test_bce_other_array_stays_checked);
+	RUN(test_bce_counter_reassigned_stays_checked);
 	SUMMARY();
 	return 0;
 }

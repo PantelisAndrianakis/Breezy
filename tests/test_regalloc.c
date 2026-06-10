@@ -106,7 +106,8 @@ static void test_small_function_no_spill(void)
 
 static void test_many_locals_force_spill(void)
 {
-	/* Twelve longs all live at the final sum exceed the 11-register pool. */
+	/* Eighteen longs all live at the final sum exceed even the expanded pool
+	   (11 base + rcx + rdx = 13, claimable here because there is no shift/div). */
 	const Func *f = parse_one_func(
 		"long many(long a)\n"
 		"{\n"
@@ -114,7 +115,9 @@ static void test_many_locals_force_spill(void)
 		"	long b3; b3 = a + 3;  long b4; b4 = a + 4;  long b5; b5 = a + 5;\n"
 		"	long b6; b6 = a + 6;  long b7; b7 = a + 7;  long b8; b8 = a + 8;\n"
 		"	long b9; b9 = a + 9;  long b10; b10 = a + 10;  long b11; b11 = a + 11;\n"
-		"	return b0+b1+b2+b3+b4+b5+b6+b7+b8+b9+b10+b11;\n"
+		"	long b12; b12 = a + 12;  long b13; b13 = a + 13;  long b14; b14 = a + 14;\n"
+		"	long b15; b15 = a + 15;  long b16; b16 = a + 16;  long b17; b17 = a + 17;\n"
+		"	return b0+b1+b2+b3+b4+b5+b6+b7+b8+b9+b10+b11+b12+b13+b14+b15+b16+b17;\n"
 		"}\n");
 	IRFunc *ir = ir_lower_func(f, 0);
 	IRAlloc *a = ra_run(ir);

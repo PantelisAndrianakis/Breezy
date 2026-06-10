@@ -3,7 +3,8 @@
 
 #include "ir.h"
 
-#define RA_NREGS   11      /* Allocatable GP registers (rax/rcx/rdx stay scratch). */
+#define RA_NREGS   11      /* Base allocatable GP registers (rax stays scratch). */
+#define RA_MAXREGS 13      /* RA_NREGS + rcx, rdx: claimable when no shift / div-mod needs them. */
 #define RA_SPILLED (-1)    /* Not in a register: lives in a frame spill slot. */
 
 /* An allocation over "values": the real virtual registers (ids [0, vreg_count))
@@ -18,7 +19,7 @@ typedef struct
 	int       vreg_count;    /* Real virtual registers (value ids below this). */
 	int       nlocal;        /* Distinct frame locals. */
 	long long *local_disp;   /* [nlocal] frame offset of local k (value id vreg_count+k). */
-	int       used_reg[RA_NREGS];
+	int       used_reg[RA_MAXREGS];
 	int       spill_bytes;
 	int      *istart;        /* [nval] live-interval start position. */
 	int      *iend;          /* [nval] live-interval end position. */

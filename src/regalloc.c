@@ -4,8 +4,10 @@
 
 /* Allocatable GP registers. rax/rcx/rdx are deliberately absent: they stay
    scratch for idiv (rax/rdx), shift counts (cl), and spill reloads. */
-static const char *RA_REGS[RA_NREGS] =
-	{ "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15" };
+/* Indices 0..RA_NREGS-1 are the base pool; 11=rcx and 12=rdx are claimable per
+   function when no variable shift / div-mod needs them as fixed scratch. */
+static const char *RA_REGS[RA_MAXREGS] =
+	{ "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rcx", "rdx" };
 
 const char *ra_reg_name(int i)
 {
@@ -412,35 +414,88 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		order[j + 1] = x;
 	}
 
-	/* Greedy colour: lowest register not taken by an already-coloured neighbour. */
-	int *color = malloc((size_t)nval * sizeof(int));
-	for (int r = 0; r < nval; r++)
+	/* Claim rcx (11) / rdx (12) as extra allocatable registers when no variable
+	   shift / div-mod needs them as fixed scratch. They are only safe to hand to
+	   values when the colouring does not spill (a spill reload stages operands
+	   through rax/rcx/rdx); so colour with the extras, and if that still spills,
+	   recolour with the base 11 so the extras revert to scratch. */
+	int has_divmod = 0;
+	int has_shift = 0;
+	for (int b = 0; b < f->block_count; b++)
 	{
-		color[r] = -1;
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IROp op = blk->instrs[i].op;
+			if (op == IR_DIV || op == IR_MOD)
+			{
+				has_divmod = 1;
+			}
+			else if (op == IR_SHL || op == IR_SHR)
+			{
+				has_shift = 1;
+			}
+		}
 	}
 
-	for (int i = 0; i < no; i++)
+	char allow[RA_MAXREGS];
+	for (int r = 0; r < RA_MAXREGS; r++)
 	{
-		int r = order[i];
-		char used[RA_NREGS];
-		memset(used, 0, sizeof used);
-		for (int k = 0; k < i; k++)
+		allow[r] = (r < RA_NREGS) ? 1 : 0;
+	}
+
+	allow[11] = !has_shift;    /* rcx. */
+	allow[12] = !has_divmod;   /* rdx. */
+
+	int *color = malloc((size_t)nval * sizeof(int));
+	for (int attempt = 0; attempt < 2; attempt++)
+	{
+		for (int r = 0; r < nval; r++)
 		{
-			int r2 = order[k];
-			if (color[r2] >= 0 && rintf[(size_t)r * nval + r2])
+			color[r] = -1;
+		}
+
+		for (int i = 0; i < no; i++)
+		{
+			int r = order[i];
+			char used[RA_MAXREGS];
+			memset(used, 0, sizeof used);
+			for (int k = 0; k < i; k++)
 			{
-				used[color[r2]] = 1;
+				int r2 = order[k];
+				if (color[r2] >= 0 && rintf[(size_t)r * nval + r2])
+				{
+					used[color[r2]] = 1;
+				}
+			}
+
+			for (int rr = 0; rr < RA_MAXREGS; rr++)
+			{
+				if (allow[rr] && !used[rr])
+				{
+					color[r] = rr;
+					break;
+				}
 			}
 		}
 
-		for (int rr = 0; rr < RA_NREGS; rr++)
+		int spilled = 0;
+		for (int i = 0; i < no; i++)
 		{
-			if (!used[rr])
+			if (color[order[i]] < 0)
 			{
-				color[r] = rr;
+				spilled = 1;
 				break;
 			}
 		}
+
+		if (!spilled || (!allow[11] && !allow[12]))
+		{
+			break;   /* Fits, or already on the base pool - nothing more to try. */
+		}
+
+		allow[11] = 0;   /* Spilled with the extras: recolour without them so they */
+		allow[12] = 0;   /* stay available as spill-reload scratch. */
 	}
 
 	/* Project the root colours back onto every value. */
