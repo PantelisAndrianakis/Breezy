@@ -285,6 +285,65 @@ static int expr_eq(const Expr *a, const Expr *b)
 	}
 }
 
+static IRReg low_expr(Low *L, const Expr *e);
+
+/* The compile-time value of e, if it is an integer literal or an unrolled
+   loop's induction constant. */
+static int low_const(Low *L, const Expr *e, long long *out)
+{
+	if (e->kind == EX_INT)
+	{
+		*out = e->int_val;
+		return 1;
+	}
+
+	if (e->kind == EX_IDENT)
+	{
+		for (int i = L->cc_n - 1; i >= 0; i--)
+		{
+			if (L->cc_off[i] == e->anno_int)
+			{
+				*out = L->cc_val[i];
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+/* Lower an array-access index, folding a constant addend into the byte
+   displacement when the access is BCE-proved safe: arr[x + K] -> index x,
+   *disp += K*scale. A checked access must compare the full index against the
+   length, so it never folds. K may be a literal or an unrolled induction
+   constant, on either side of the +, or the rhs of a -. */
+static IRReg low_index(Low *L, const Expr *ix, int safe, int scale, long long *disp)
+{
+	long long k;
+	if (safe && ix->kind == EX_BINARY)
+	{
+		if (ix->op == TOKEN_PLUS && low_const(L, ix->rhs, &k))
+		{
+			*disp += k * scale;
+			return low_expr(L, ix->lhs);
+		}
+
+		if (ix->op == TOKEN_PLUS && low_const(L, ix->lhs, &k))
+		{
+			*disp += k * scale;
+			return low_expr(L, ix->rhs);
+		}
+
+		if (ix->op == TOKEN_MINUS && low_const(L, ix->rhs, &k))
+		{
+			*disp -= k * scale;
+			return low_expr(L, ix->lhs);
+		}
+	}
+
+	return low_expr(L, ix);
+}
+
 /* Lower an expression, returning the vreg holding its value (IR_NO_REG on bail). */
 static IRReg low_expr(Low *L, const Expr *e)
 {
@@ -344,17 +403,19 @@ static IRReg low_expr(Low *L, const Expr *e)
 	}
 	case EX_INDEX:
 	{
-		/* a[i] -> load [base + i*stride + 32]. Eligibility guaranteed the access is
-		   BCE-safe, so no bounds check is emitted. */
+		/* a[i] -> load [base + i*stride + 32]; a safe constant addend in the
+		   index folds into the displacement. */
 		IRReg base = low_expr(L, e->lhs);
-		IRReg idx = low_expr(L, e->rhs);
+		int scale = elem_stride(e->type.kind);
+		long long disp = 32;
+		IRReg idx = low_index(L, e->rhs, e->anno_index_safe, scale, &disp);
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, e->type.kind);
 		in->dst = r;
 		in->a = base;
 		in->b = idx;
-		in->scale = elem_stride(e->type.kind);
-		in->disp = 32;
+		in->scale = scale;
+		in->disp = disp;
 		in->is_frame = 0;
 		in->checked = !e->anno_index_safe;
 		in->line = e->line;
@@ -421,14 +482,15 @@ static IRReg low_expr(Low *L, const Expr *e)
 		{
 			const Expr *ix = e->lhs->lhs;
 			IRReg base = low_expr(L, ix->lhs);
-			IRReg idx = low_expr(L, ix->rhs);
+			long long disp = 32;
+			IRReg idx = low_index(L, ix->rhs, ix->anno_index_safe, 1, &disp);
 			IRReg r = ir_reg(L->f);
 			IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, TY_UBYTE);
 			in->dst = r;
 			in->a = base;
 			in->b = idx;
 			in->scale = 1;
-			in->disp = 32;
+			in->disp = disp;
 			in->is_frame = 0;
 			in->checked = !ix->anno_index_safe;
 			in->line = e->line;
@@ -669,15 +731,17 @@ static void low_stmt(Low *L, const Stmt *s)
 			if (inner)
 			{
 				IRReg base = low_expr(L, t->lhs);
-				IRReg idx = low_expr(L, t->rhs);
+				int scale = elem_stride(t->type.kind);
+				long long disp = 32;
+				IRReg idx = low_index(L, t->rhs, t->anno_index_safe, scale, &disp);
 
 				IRReg cur = ir_reg(L->f);
 				IRInstr *ld = ir_emit(L->f, L->cur, IR_LOAD, t->type.kind);
 				ld->dst = cur;
 				ld->a = base;
 				ld->b = idx;
-				ld->scale = elem_stride(t->type.kind);
-				ld->disp = 32;
+				ld->scale = scale;
+				ld->disp = disp;
 				ld->is_frame = 0;
 				ld->checked = !t->anno_index_safe;
 				ld->line = s->line;
@@ -704,8 +768,8 @@ static void low_stmt(Low *L, const Stmt *s)
 				st->a = base;
 				st->b = idx;
 				st->c = nv;
-				st->scale = elem_stride(t->type.kind);
-				st->disp = 32;
+				st->scale = scale;
+				st->disp = disp;
 				/* The load above already proved (or checked) the same base and
 				   index in range; a second check would be pure overhead. */
 				st->checked = 0;
@@ -713,17 +777,20 @@ static void low_stmt(Low *L, const Stmt *s)
 				break;
 			}
 
-			/* a[i] = v -> store [base + i*stride + 32]. BCE-safe (eligibility). */
+			/* a[i] = v -> store [base + i*stride + 32]; a safe constant addend
+			   in the index folds into the displacement. */
 			IRReg base = low_expr(L, s->target->lhs);
-			IRReg idx = low_expr(L, s->target->rhs);
+			int scale = elem_stride(s->target->type.kind);
+			long long disp = 32;
+			IRReg idx = low_index(L, s->target->rhs, s->target->anno_index_safe, scale, &disp);
 			IRReg v = low_expr(L, s->value);
 			IRInstr *in = ir_emit(L->f, L->cur, IR_STORE, s->target->type.kind);
 			in->is_frame = 0;
 			in->a = base;
 			in->b = idx;
 			in->c = v;
-			in->scale = elem_stride(s->target->type.kind);
-			in->disp = 32;
+			in->scale = scale;
+			in->disp = disp;
 			in->checked = !s->target->anno_index_safe;
 		}
 		else

@@ -271,6 +271,22 @@ static const char *vreg_in(Emit *e, IRReg v, const char *scratch)
 		return ra_reg_name(r);
 	}
 
+	/* Rematerialize: the value is a read-only local's load, so read the local
+	   where it lives (its register if it got one, else its home slot) instead
+	   of a spill slot the def would have had to fill. */
+	long long rd = ra_vreg_remat(e->a, v);
+	if (rd >= 0)
+	{
+		int lr = ra_local_reg(e->a, rd);
+		if (lr >= 0)
+		{
+			return ra_reg_name(lr);
+		}
+
+		cg_emit(e->cg, "    mov %s, [rbp - %lld]", scratch, rd);
+		return scratch;
+	}
+
 	cg_emit(e->cg, "    mov %s, [rbp - %d]", scratch, e->spill_base + ra_vreg_slot(e->a, v) * 8);
 	return scratch;
 }
@@ -670,6 +686,13 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	{
 		if (in->is_frame)
 		{
+			/* A rematerializing dst needs no def at all: every use reads the
+			   (never-stored) local directly. */
+			if (in->dst >= 0 && ra_vreg_remat(e->a, in->dst) >= 0)
+			{
+				break;
+			}
+
 			const char *Rl = local_in(e, in->disp, buf);
 			const char *Rd = dst_reg(e, in->dst);
 			if (strcmp(Rd, Rl))

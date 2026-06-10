@@ -7249,13 +7249,19 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 						continue;
 					}
 
-					verdict = "hot-spill";
+					if (cg_region_debug())
+					{
+						fprintf(stderr, "ir-region: %s line %d: hot-spill (%d deep temp spills)\n",
+								f->name, s->line, a->hot_spill_count);
+					}
+
+					verdict = NULL;
 					ra_free(a);
 					ir_func_free(irf);
 				}
 			}
 
-			if (cg_region_debug())
+			if (cg_region_debug() && verdict)
 			{
 				fprintf(stderr, "ir-region: %s line %d: %s\n", f->name, s->line, verdict);
 			}

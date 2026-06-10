@@ -23,7 +23,12 @@ typedef struct
 	int       spill_bytes;
 	int      *istart;        /* [nval] live-interval start position. */
 	int      *iend;          /* [nval] live-interval end position. */
-	int       hot_spill;     /* 1 if a value used in the deepest loop had to spill. */
+	int       hot_spill;       /* 1 if a temporary used in the deepest loop had to spill. */
+	int       hot_spill_count; /* How many distinct such temporaries spilled. */
+	long long *val_remat;    /* [nval] home-slot disp to rematerialize a spilled value
+	                            from (-1 = none): the value is the single-def load of
+	                            a local nothing stores, so reading the local's slot at
+	                            each use replaces the spill slot and the def's store. */
 } IRAlloc;
 
 IRAlloc *ra_run(IRFunc *f);
@@ -40,6 +45,7 @@ int  ra_is_callee_saved(int i, int linux_target);
 /* Emitter queries. A register index in [0,RA_NREGS) or RA_SPILLED. */
 int  ra_vreg_reg(const IRAlloc *a, IRReg v);
 int  ra_vreg_slot(const IRAlloc *a, IRReg v);
+long long ra_vreg_remat(const IRAlloc *a, IRReg v);
 int  ra_local_reg(const IRAlloc *a, long long disp);
 int  ra_local_slot(const IRAlloc *a, long long disp);
 

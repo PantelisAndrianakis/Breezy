@@ -7,6 +7,7 @@
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
+#include <string.h>   /* memset for hand-built IR functions. */
 
 /* Lex -> parse -> register -> resolve a snippet; return its first free function. */
 static TypeTable g_tt;
@@ -168,9 +169,134 @@ static void test_hot_spill_detected(void)
 	ir_func_free(ir);
 }
 
+/* Build the remat scenario: 14 loads of distinct never-stored locals, all
+   simultaneously live (loads first, consuming stores after), overflowing the
+   register pool so several classes spill - and every spilled class is a load
+   of a read-only local. `store_back` rewrites every source local between the
+   loads and their uses, disqualifying them all for the negative test. */
+static IRFunc *build_remat_func(IRReg *loads, int store_back)
+{
+	static Func dummy;
+	memset(&dummy, 0, sizeof(dummy));
+	IRFunc *f = ir_func_new(&dummy);
+	int b0 = ir_block_new(f);
+	f->blocks[b0].depth = 1;   /* Deepest block: the hot-spill gate watches it. */
+
+	for (int i = 0; i < 14; i++)
+	{
+		loads[i] = ir_reg(f);
+		IRInstr *ld = ir_emit(f, b0, IR_LOAD, TY_LONG);
+		ld->dst = loads[i];
+		ld->a = IR_NO_REG;
+		ld->b = IR_NO_REG;
+		ld->is_frame = 1;
+		ld->disp = 8 + i * 8;
+	}
+
+	/* Disqualifying stores sit BETWEEN the defs and their last uses: a reload
+	   after one of these would observe the new value, so remat must not fire.
+	   (Stores after the last use would be harmless and do not disqualify.) */
+	if (store_back)
+	{
+		for (int i = 0; i < 14; i++)
+		{
+			IRInstr *st = ir_emit(f, b0, IR_STORE, TY_LONG);
+			st->a = IR_NO_REG;
+			st->b = IR_NO_REG;
+			st->c = loads[(i + 1) % 14];
+			st->is_frame = 1;
+			st->disp = 8 + i * 8;
+		}
+	}
+
+	/* Consume each load as the value of an unindexed array-element store
+	   through one read-only base: no chain temporaries and no extra frame
+	   locals, so nothing but the loads themselves can ever spill. */
+	IRReg base = ir_reg(f);
+	IRInstr *bl = ir_emit(f, b0, IR_LOAD, TY_LONG);
+	bl->dst = base;
+	bl->a = IR_NO_REG;
+	bl->b = IR_NO_REG;
+	bl->is_frame = 1;
+	bl->disp = 800;
+
+	for (int i = 0; i < 14; i++)
+	{
+		IRInstr *st = ir_emit(f, b0, IR_STORE, TY_LONG);
+		st->a = base;
+		st->b = IR_NO_REG;
+		st->c = loads[i];
+		st->is_frame = 0;
+		st->scale = 8;
+		st->disp = 32;
+		st->checked = 0;
+	}
+
+	IRInstr *rt = ir_emit(f, b0, IR_RET, TY_VOID);
+	rt->a = IR_NO_REG;
+	return f;
+}
+
+static void test_remat_readonly_frame_load(void)
+{
+	/* 14 mutually-live classes overflow the pool: some spill, and every spill
+	   is the load of a never-stored local - each must carry its local's disp
+	   for rematerialization, and none may count as a hot spill. */
+	IRReg loads[14];
+	IRFunc *f = build_remat_func(loads, 0);
+	IRAlloc *a = ra_run(f);
+
+	int spilled = 0;
+	int remat_ok = 1;
+	for (int i = 0; i < 14; i++)
+	{
+		if (ra_vreg_reg(a, loads[i]) == RA_SPILLED)
+		{
+			spilled++;
+			if (ra_vreg_remat(a, loads[i]) != 8 + i * 8)
+			{
+				remat_ok = 0;
+			}
+		}
+	}
+
+	ASSERT(spilled > 0);            /* Precondition: the pool overflowed. */
+
+	ASSERT_INT(remat_ok, 1);        /* Every spilled load rematerializes. */
+	ASSERT_INT(a->hot_spill, 0);    /* Remat spills are exempt from the gate. */
+	ra_free(a);
+	ir_func_free(f);
+}
+
+static void test_remat_skipped_when_local_stored(void)
+{
+	/* Same shape, but every source local is stored at the end: a stale
+	   rematerialized read would observe the new value, so remat must not fire
+	   anywhere and the spills count as hot again. */
+	IRReg loads[14];
+	IRFunc *f = build_remat_func(loads, 1);
+	IRAlloc *a = ra_run(f);
+
+	int spilled = 0;
+	for (int i = 0; i < 14; i++)
+	{
+		if (ra_vreg_reg(a, loads[i]) == RA_SPILLED)
+		{
+			spilled++;
+			ASSERT_INT((int)ra_vreg_remat(a, loads[i]), -1);
+		}
+	}
+
+	ASSERT(spilled > 0);
+	ASSERT(a->hot_spill_count > 0);   /* Counted (non-remat), even if under the gate's tolerance. */
+	ra_free(a);
+	ir_func_free(f);
+}
 int main(void)
 {
 	RUN(test_reg_tables);
+	RUN(test_remat_readonly_frame_load);
+	RUN(test_remat_skipped_when_local_stored);
 	RUN(test_no_hot_spill_small_loop);
 	RUN(test_hot_spill_detected);
 	RUN(test_alloc_trivial_in_register);

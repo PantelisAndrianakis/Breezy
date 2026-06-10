@@ -101,6 +101,11 @@ int ra_vreg_slot(const IRAlloc *a, IRReg v)
 	return a->val_slot[v];
 }
 
+long long ra_vreg_remat(const IRAlloc *a, IRReg v)
+{
+	return a->val_remat[v];
+}
+
 int ra_local_reg(const IRAlloc *a, long long disp)
 {
 	int k = local_index(a, disp);
@@ -140,6 +145,7 @@ void ra_free(IRAlloc *a)
 	free(a->local_disp);
 	free(a->istart);
 	free(a->iend);
+	free(a->val_remat);
 	free(a);
 }
 
@@ -538,7 +544,125 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* One spill slot per spilled root, shared by its coalesced members. */
+	/* Rematerializable spills: a spilled vreg defined exactly once, by a frame
+	   load of a local nothing in the function stores, reloads from the local's
+	   home slot at each use - the reload costs what the spill-slot read would,
+	   the def's slot store disappears, and no spill slot is owned. Exempt from
+	   the hot-spill gate: a remat read is no worse than the register pressure
+	   the emitter fallback would face. */
+	{
+		int *defs = calloc((size_t)nval, sizeof(int));
+		long long *def_disp = malloc((size_t)nval * sizeof(long long));
+		int *def_blk = malloc((size_t)nval * sizeof(int));
+		int *def_idx = malloc((size_t)nval * sizeof(int));
+		char *lstored = calloc((size_t)(a->nlocal > 0 ? a->nlocal : 1), 1);
+		for (int v = 0; v < nval; v++)
+		{
+			def_disp[v] = -1;
+		}
+
+		/* Linear position of each block's first instruction: the same scheme
+		   liveness used, so positions are comparable with istart/iend. */
+		int *bfirst = malloc((size_t)(f->block_count > 0 ? f->block_count : 1) * sizeof(int));
+		int pos = 0;
+		for (int b = 0; b < f->block_count; b++)
+		{
+			bfirst[b] = pos;
+			pos += f->blocks[b].count;
+		}
+
+		for (int b = 0; b < f->block_count; b++)
+		{
+			for (int i = 0; i < f->blocks[b].count; i++)
+			{
+				IRInstr *in = &f->blocks[b].instrs[i];
+				if (in->dst >= 0)
+				{
+					defs[in->dst]++;
+					def_disp[in->dst] = (in->op == IR_LOAD && in->is_frame) ? in->disp : -1;
+					def_blk[in->dst] = b;
+					def_idx[in->dst] = i;
+				}
+
+				if (in->op == IR_STORE && in->is_frame)
+				{
+					int k = local_index(a, in->disp);
+					if (k >= 0)
+					{
+						lstored[k] = 1;
+					}
+				}
+			}
+		}
+
+		for (int v = 0; v < a->vreg_count; v++)
+		{
+			if (a->val_reg[v] != RA_SPILLED || a->iend[v] < 0
+				|| defs[v] != 1 || def_disp[v] < 0)
+			{
+				continue;
+			}
+
+			if (!lstored[local_index(a, def_disp[v])])
+			{
+				a->val_remat[v] = def_disp[v];
+				continue;
+			}
+
+			/* The local IS stored somewhere, but a load whose uses all sit in
+			   the def's own block is still safe when no store to that local
+			   lies strictly between the def and the last use: a basic block
+			   executes linearly, so every reload observes the defining value.
+			   (A store AT the last use reads its operands first, so it is
+			   harmless.) */
+			int b = def_blk[v];
+			IRBlock *blk = &f->blocks[b];
+			if (a->iend[v] >= bfirst[b] + blk->count)
+			{
+				continue;   /* Live past the block: path order is not linear. */
+			}
+
+			int lastu = a->iend[v] - bfirst[b];
+			int clean = 1;
+			for (int i = def_idx[v] + 1; i < lastu; i++)
+			{
+				IRInstr *in = &blk->instrs[i];
+				if (in->op == IR_STORE && in->is_frame && in->disp == def_disp[v])
+				{
+					clean = 0;
+					break;
+				}
+			}
+
+			if (clean)
+			{
+				a->val_remat[v] = def_disp[v];
+			}
+		}
+
+		/* A spilled local pseudo-value of a never-stored local is equally
+		   harmless: its reads already go to the home slot (no spill slot, no
+		   extra traffic), so it neither owns a slot nor counts as hot. */
+		for (int k = 0; k < a->nlocal; k++)
+		{
+			if (!lstored[k] && a->val_reg[a->vreg_count + k] == RA_SPILLED
+				&& a->iend[a->vreg_count + k] >= 0)
+			{
+				a->val_remat[a->vreg_count + k] = a->local_disp[k];
+			}
+		}
+
+		free(defs);
+		free(def_disp);
+		free(def_blk);
+		free(def_idx);
+		free(bfirst);
+		free(lstored);
+	}
+
+	/* One spill slot per spilled root, shared by its coalesced members. A
+	   rematerializing member does not force a slot (it reads the local's home
+	   slot); a non-remat member of the same class still gets one. */
 	int *root_slot = malloc((size_t)nval * sizeof(int));
 	for (int r = 0; r < nval; r++)
 	{
@@ -548,7 +672,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	int nspill = 0;
 	for (int v = 0; v < nval; v++)
 	{
-		if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0)
+		if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0 && a->val_remat[v] < 0)
 		{
 			int r = uf_find(uf, v);
 			if (root_slot[r] < 0)
@@ -562,20 +686,28 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 
 	a->spill_bytes = nspill * 8;
 
-	/* Hot spill: a value used in the function's deepest loop had to spill. Only
-	   meaningful when there is a loop (maxdepth >= 1); a spill in straight-line or
-	   shallow code is reloaded at most once and does not threaten the win. */
+	/* Hot spill: TEMPORARIES used in the function's deepest loop had to spill,
+	   in numbers the region's other gains cannot amortize. Only meaningful when
+	   there is a loop (maxdepth >= 1). Rematerializing values are exempt (no
+	   slot, def-store gone), and so are local pseudo-values: a spilled local
+	   simply lives in its home slot, which is no worse than the emitter
+	   fallback's own treatment of locals. The tolerance is empirical: the
+	   packet pipeline's region carries 14 spilled temps and still beats the
+	   emitter 2x, while the codec block sweep carries 559 and loses badly. */
 	a->hot_spill = 0;
+	a->hot_spill_count = 0;
 	if (maxdepth >= 1)
 	{
-		for (int v = 0; v < nval; v++)
+		for (int v = 0; v < a->vreg_count; v++)
 		{
-			if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0 && used_deep[v])
+			if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0 && used_deep[v]
+				&& a->val_remat[v] < 0)
 			{
-				a->hot_spill = 1;
-				break;
+				a->hot_spill_count++;
 			}
 		}
+
+		a->hot_spill = (a->hot_spill_count > 16);
 	}
 
 	free(interf);
@@ -606,11 +738,13 @@ IRAlloc *ra_run(IRFunc *f)
 	a->val_slot = calloc((size_t)nval, sizeof(int));
 	a->istart = malloc((size_t)nval * sizeof(int));
 	a->iend = malloc((size_t)nval * sizeof(int));
+	a->val_remat = malloc((size_t)nval * sizeof(long long));
 	for (int v = 0; v < nval; v++)
 	{
 		a->val_reg[v] = RA_SPILLED;
 		a->istart[v] = 0x7fffffff;
 		a->iend[v] = -1;
+		a->val_remat[v] = -1;
 	}
 
 	int nb = f->block_count;

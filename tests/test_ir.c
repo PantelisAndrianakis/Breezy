@@ -485,6 +485,80 @@ static void test_lower_unroll_skips_iv_reassigned_in_body(void)
 	ir_func_free(irf);
 }
 
+static void test_lower_folds_constant_index_addend(void)
+{
+	/* a[i + 10] with the access BCE-proved safe: the +10 folds into the load
+	   displacement (32 + 10*4 = 72) instead of an add on the index. */
+	const Func *f = parse_one_func(
+		"long f()\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[64];\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < 50; i = i + 1)\n"
+		"	{\n"
+		"		s = s + (long)a[i + 10];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n");
+	IRFunc *irf = ir_lower_region(f, first_loop(f));
+	ASSERT(irf != NULL);
+
+	int folded = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			IRInstr *in = &irf->blocks[b].instrs[i];
+			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4
+				&& in->disp == 72 && !in->checked)
+			{
+				folded++;
+			}
+		}
+	}
+
+	ASSERT_INT(folded, 1);
+	ir_func_free(irf);
+}
+
+static void test_lower_checked_index_addend_not_folded(void)
+{
+	/* The array length is unknown, so the access stays checked - the bounds
+	   check must compare the FULL index, so the +10 must NOT fold away. */
+	const Func *f = parse_one_func(
+		"long f(int[] a)\n"
+		"{\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < 50; i = i + 1)\n"
+		"	{\n"
+		"		s = s + (long)a[i + 10];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n");
+	IRFunc *irf = ir_lower_region(f, first_loop(f));
+	ASSERT(irf != NULL);
+
+	int base_disp_checked = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			IRInstr *in = &irf->blocks[b].instrs[i];
+			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4
+				&& in->disp == 32 && in->checked)
+			{
+				base_disp_checked++;
+			}
+		}
+	}
+
+	ASSERT_INT(base_disp_checked, 1);
+	ir_func_free(irf);
+}
+
 static void test_bce_negative_mask_stays_checked(void)
 {
 	/* The mask is an unbounded parameter, possibly negative: a & b with b of
@@ -869,6 +943,8 @@ int main(void)
 	RUN(test_lower_rmw_index_lowered_once);
 	RUN(test_lower_unrolls_constant_trip_loop);
 	RUN(test_lower_unroll_skips_iv_reassigned_in_body);
+	RUN(test_lower_folds_constant_index_addend);
+	RUN(test_lower_checked_index_addend_not_folded);
 	RUN(test_region_eligible_despite_call);
 	RUN(test_region_rejects_return);
 	RUN(test_region_rejects_managed_assign);
