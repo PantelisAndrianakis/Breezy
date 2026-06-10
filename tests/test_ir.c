@@ -431,6 +431,37 @@ static void test_region_emit_no_prologue_no_ret(void)
 	ASSERT(strstr(g_region_asm, ".L") != NULL);
 }
 
+static void test_region_lowers_bitwise_not(void)
+{
+	/* ~x lowers as x ^ -1 (one xor, no new IR op); compiler-bench solve-loop shape. */
+	const Func *f = parse_one_func(
+		"void k(long[] a, long[] b)\n"
+		"{\n"
+		"	for (int i = 0; i < a.length; i = i + 1)\n"
+		"	{\n"
+		"		a[i] = a[i] & ~b[i];\n"
+		"	}\n"
+		"}\n");
+	const Stmt *loop = first_loop(f);
+	ASSERT_INT(ir_region_eligible(loop), 1);
+	IRFunc *irf = ir_lower_region(f, loop);
+	ASSERT(irf != NULL);
+	int has_xor = 0;
+	for (int blk = 0; blk < irf->block_count; blk++)
+	{
+		for (int i = 0; i < irf->blocks[blk].count; i++)
+		{
+			if (irf->blocks[blk].instrs[i].op == IR_XOR)
+			{
+				has_xor = 1;
+			}
+		}
+	}
+
+	ASSERT_INT(has_xor, 1);
+	ir_func_free(irf);
+}
+
 /* Compile a full unit (prelude + src) through cg_program, exactly as the driver
    does, and load the emitted asm. The test_ir process never sets BZY_IR, so the
    IR backend and regions run with their defaults (on). */
@@ -547,6 +578,7 @@ int main(void)
 	RUN(test_region_rejects_managed_assign);
 	RUN(test_region_lower_has_no_ret);
 	RUN(test_whole_function_eligibility_unaffected);
+	RUN(test_region_lowers_bitwise_not);
 	RUN(test_region_emit_no_prologue_no_ret);
 	RUN(test_region_dispatch_in_main_shaped_function);
 	RUN(test_region_skipped_in_function_with_try);

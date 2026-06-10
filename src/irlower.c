@@ -330,6 +330,26 @@ static IRReg low_expr(Low *L, const Expr *e)
 			return r;
 		}
 
+		if (e->op == TOKEN_TILDE)
+		{
+			/* ~x == x ^ -1: one xor with a folded immediate, no new IR op. A clean
+			   sign-extended narrow int stays clean (all high bits flip together with
+			   bit 31), so no re-extension is needed. */
+			IRReg s = low_expr(L, e->lhs);
+			IRReg m = ir_reg(L->f);
+			IRInstr *kc = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
+			kc->dst = m;
+			kc->imm = -1;
+			kc->line = e->line;
+			IRReg r = ir_reg(L->f);
+			IRInstr *in = ir_emit(L->f, L->cur, IR_XOR, e->type.kind);
+			in->dst = r;
+			in->a = s;
+			in->b = m;
+			in->line = e->line;
+			return r;
+		}
+
 		L->ok = 0;
 		return IR_NO_REG;
 	case EX_BINARY:
