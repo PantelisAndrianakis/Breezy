@@ -322,6 +322,48 @@ static void store_local_from(Emit *e, long long disp, const char *src)
 	}
 }
 
+/* The `bytes`-wide sub-register of a 64-bit register name (for narrow array
+   element loads/stores). Falls back to the 64-bit name for an unknown register. */
+static const char *reg_low(const char *r, int bytes)
+{
+	static const struct { const char *q, *d, *w, *b; } m[] =
+	{
+		{ "rax", "eax", "ax", "al" },   { "rbx", "ebx", "bx", "bl" },
+		{ "rcx", "ecx", "cx", "cl" },   { "rdx", "edx", "dx", "dl" },
+		{ "rsi", "esi", "si", "sil" },  { "rdi", "edi", "di", "dil" },
+		{ "r8", "r8d", "r8w", "r8b" },  { "r9", "r9d", "r9w", "r9b" },
+		{ "r10", "r10d", "r10w", "r10b" }, { "r11", "r11d", "r11w", "r11b" },
+		{ "r12", "r12d", "r12w", "r12b" }, { "r13", "r13d", "r13w", "r13b" },
+		{ "r14", "r14d", "r14w", "r14b" }, { "r15", "r15d", "r15w", "r15b" },
+	};
+	for (int i = 0; i < (int)(sizeof m / sizeof m[0]); i++)
+	{
+		if (!strcmp(r, m[i].q))
+		{
+			return (bytes == 1) ? m[i].b : (bytes == 2) ? m[i].w : (bytes == 4) ? m[i].d : m[i].q;
+		}
+	}
+
+	return r;
+}
+
+/* Format the element address [base + index*scale + disp] (or [base + disp] when
+   there is no index) into buf. Base/index come from registers, or scratch when
+   spilled. */
+static void elem_addr(Emit *e, const IRInstr *in, char *buf, size_t n)
+{
+	const char *Rbase = vreg_in(e, in->a, "rax");
+	if (in->b != IR_NO_REG)
+	{
+		const char *Ridx = vreg_in(e, in->b, "rcx");
+		snprintf(buf, n, "[%s + %s*%d + %lld]", Rbase, Ridx, in->scale, in->disp);
+	}
+	else
+	{
+		snprintf(buf, n, "[%s + %lld]", Rbase, in->disp);
+	}
+}
+
 /* dst = a / 2^k or a % 2^k via shifts/masks, signed-correct (matches idiv's
    truncate-toward-zero), avoiding the ~20-40 cycle idiv. Stages through rax/rdx. */
 static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
@@ -543,11 +585,42 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 	case IR_LOAD:
 	{
-		const char *Rl = local_in(e, in->disp, buf);
-		const char *Rd = dst_reg(e, in->dst);
-		if (strcmp(Rd, Rl))
+		if (in->is_frame)
 		{
-			cg_emit(cg, "    mov %s, %s", Rd, Rl);
+			const char *Rl = local_in(e, in->disp, buf);
+			const char *Rd = dst_reg(e, in->dst);
+			if (strcmp(Rd, Rl))
+			{
+				cg_emit(cg, "    mov %s, %s", Rd, Rl);
+			}
+
+			finish_dst(e, in->dst);
+			break;
+		}
+
+		/* Array element / header load: [base + index*scale + disp]. The address is
+		   computed in one instruction, so dst may alias base/index scratch. */
+		char addr[64];
+		elem_addr(e, in, addr, sizeof addr);
+		const char *Rd = dst_reg(e, in->dst);
+		int bytes = in->scale ? in->scale : 8;   /* scale 0 = a .length (8-byte) load. */
+		int sgn = ty_is_signed(in->type);
+		if (bytes == 8)
+		{
+			cg_emit(cg, "    mov %s, %s", Rd, addr);
+		}
+		else if (bytes == 4)
+		{
+			cg_emit(cg, sgn ? "    movsxd %s, dword %s" : "    mov %s, dword %s",
+					sgn ? Rd : reg_low(Rd, 4), addr);
+		}
+		else if (bytes == 2)
+		{
+			cg_emit(cg, sgn ? "    movsx %s, word %s" : "    movzx %s, word %s", Rd, addr);
+		}
+		else
+		{
+			cg_emit(cg, sgn ? "    movsx %s, byte %s" : "    movzx %s, byte %s", Rd, addr);
 		}
 
 		finish_dst(e, in->dst);
@@ -555,8 +628,36 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 	case IR_STORE:
 	{
-		const char *Rc = vreg_in(e, in->c, "rax");
-		store_local_from(e, in->disp, Rc);
+		if (in->is_frame)
+		{
+			const char *Rc = vreg_in(e, in->c, "rax");
+			store_local_from(e, in->disp, Rc);
+			break;
+		}
+
+		/* Array element store: [base + index*scale + disp] = value (natural width).
+		   Base/index/value take distinct scratch (rax/rcx/rdx) when spilled. */
+		char addr[64];
+		elem_addr(e, in, addr, sizeof addr);
+		const char *Rc = vreg_in(e, in->c, "rdx");
+		int bytes = in->scale ? in->scale : 8;
+		if (bytes == 1)
+		{
+			cg_emit(cg, "    mov byte %s, %s", addr, reg_low(Rc, 1));
+		}
+		else if (bytes == 2)
+		{
+			cg_emit(cg, "    mov word %s, %s", addr, reg_low(Rc, 2));
+		}
+		else if (bytes == 4)
+		{
+			cg_emit(cg, "    mov dword %s, %s", addr, reg_low(Rc, 4));
+		}
+		else
+		{
+			cg_emit(cg, "    mov %s, %s", addr, Rc);
+		}
+
 		break;
 	}
 	case IR_ADD: emit_bin(e, in, "add", 1);  break;

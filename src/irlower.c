@@ -1,12 +1,26 @@
 #include "irlower.h"
 #include "lexer.h"   /* TokenType values for operators. */
+#include <string.h>  /* strcmp for the arr.length field name. */
 
 /* A scalar integer kind the v1 IR backend can hold in a register: any integer,
-   bool, or void (for void-returning functions). Floats, arrays, and managed kinds
-   are out of scope until a later plan (the naive emitter is integer-only). */
+   bool, or void (for void-returning functions). Floats and managed kinds are out
+   of scope (the naive emitter is integer-only); arrays are handled separately. */
 static int elig_type(TypeKind k)
 {
 	return ty_is_int(k) || k == TY_BOOL || k == TY_VOID;
+}
+
+/* An element kind the array path supports: integer or bool (no float arrays in
+   Plan 3 - that is Plan 3b / xmm). */
+static int elig_elem_kind(TypeKind k)
+{
+	return ty_is_int(k) || k == TY_BOOL;
+}
+
+/* A reference to an array of supported elements (e.g. an `int[]` parameter). */
+static int elig_arrayref(const TypeRef *t)
+{
+	return t && t->kind == TY_ARRAY && t->elem && elig_elem_kind(t->elem->kind);
 }
 
 static int elig_expr(const Expr *e)
@@ -21,8 +35,22 @@ static int elig_expr(const Expr *e)
 	case EX_INT:
 	case EX_BOOL:
 	case EX_FLOAT:
-	case EX_IDENT:
 		return elig_type(e->type.kind);
+	case EX_IDENT:
+		/* A scalar local/param, or an array reference (its pointer is a register
+		   value like any other 64-bit local). */
+		return (e->type.kind == TY_ARRAY) ? elig_arrayref(&e->type) : elig_type(e->type.kind);
+	case EX_INDEX:
+		/* arr[i]: only when BCE proved it in range, so no runtime check / bzy_oob
+		   is needed (the IR function stays call-free; bounds checking is a later
+		   step). The element must be an integer/bool. */
+		return e->anno_index_safe
+			   && elig_arrayref(&e->lhs->type) && elig_elem_kind(e->type.kind)
+			   && elig_expr(e->lhs) && elig_expr(e->rhs);
+	case EX_FIELD:
+		/* arr.length only (a load of the array header's length field). */
+		return e->lhs && e->lhs->type.kind == TY_ARRAY
+			   && strcmp(e->name, "length") == 0 && elig_expr(e->lhs);
 	case EX_BINARY:
 		return elig_type(e->type.kind) && elig_expr(e->lhs) && elig_expr(e->rhs);
 	case EX_UNARY:
@@ -30,8 +58,7 @@ static int elig_expr(const Expr *e)
 	case EX_CAST:
 		return elig_type(e->type.kind) && elig_type(e->lhs->type.kind) && elig_expr(e->lhs);
 	default:
-		/* EX_STR, EX_CALL, EX_METHOD_CALL, EX_NEW*, EX_FIELD, EX_INDEX, EX_THIS,
-		   EX_NULL, EX_INCDEC: not in v1 (arrays/indexing arrive in a later plan). */
+		/* EX_STR, EX_CALL, EX_METHOD_CALL, EX_NEW*, EX_THIS, EX_NULL, EX_INCDEC. */
 		return 0;
 	}
 }
@@ -108,7 +135,9 @@ int ir_eligible(const Func *f)
 
 	for (int i = 0; i < f->param_count; i++)
 	{
-		if (!elig_type(f->params[i].type.kind))
+		TypeKind pk = f->params[i].type.kind;
+		int ok = (pk == TY_ARRAY) ? elig_arrayref(&f->params[i].type) : elig_type(pk);
+		if (!ok)
 		{
 			return 0;
 		}
@@ -157,6 +186,35 @@ static IROp tok_arith_op(int t, int *ok)
 	}
 }
 
+/* Bytes per array element (a valid x86 index scale). Mirrors codegen.c's
+   cg_elem_stride exactly: 8-bit widths and bool pack to one byte; managed
+   elements are 8-byte pointers. The address mode must agree with the emitter. */
+static int elem_stride(TypeKind k)
+{
+	if (ty_is_managed(k))
+	{
+		return 8;
+	}
+
+	int bits = (k == TY_BOOL) ? 8 : ty_bits(k);
+	if (bits <= 8)
+	{
+		return 1;
+	}
+
+	if (bits <= 16)
+	{
+		return 2;
+	}
+
+	if (bits <= 32)
+	{
+		return 4;
+	}
+
+	return 8;
+}
+
 /* Lower an expression, returning the vreg holding its value (IR_NO_REG on bail). */
 static IRReg low_expr(Low *L, const Expr *e)
 {
@@ -196,6 +254,38 @@ static IRReg low_expr(Low *L, const Expr *e)
 		in->dst = r;
 		in->a = s;
 		in->to_kind = e->type.kind;
+		in->line = e->line;
+		return r;
+	}
+	case EX_INDEX:
+	{
+		/* a[i] -> load [base + i*stride + 32]. Eligibility guaranteed the access is
+		   BCE-safe, so no bounds check is emitted. */
+		IRReg base = low_expr(L, e->lhs);
+		IRReg idx = low_expr(L, e->rhs);
+		IRReg r = ir_reg(L->f);
+		IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, e->type.kind);
+		in->dst = r;
+		in->a = base;
+		in->b = idx;
+		in->scale = elem_stride(e->type.kind);
+		in->disp = 32;
+		in->is_frame = 0;
+		in->line = e->line;
+		return r;
+	}
+	case EX_FIELD:
+	{
+		/* arr.length -> load the 8-byte length at [base + 24]. */
+		IRReg base = low_expr(L, e->lhs);
+		IRReg r = ir_reg(L->f);
+		IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, TY_LONG);
+		in->dst = r;
+		in->a = base;
+		in->b = IR_NO_REG;
+		in->scale = 0;
+		in->disp = 24;
+		in->is_frame = 0;
 		in->line = e->line;
 		return r;
 	}
@@ -299,15 +389,28 @@ static void low_stmt(Low *L, const Stmt *s)
 
 		break;
 	case ST_ASSIGN:
-		if (s->target->kind != EX_IDENT)
-		{
-			L->ok = 0;   /* Field / index store targets are not in v1. */
-			break;
-		}
-
+		if (s->target->kind == EX_IDENT)
 		{
 			IRReg v = low_expr(L, s->value);
 			low_store_local(L, s->target->anno_int, s->target->type.kind, v);
+		}
+		else if (s->target->kind == EX_INDEX)
+		{
+			/* a[i] = v -> store [base + i*stride + 32]. BCE-safe (eligibility). */
+			IRReg base = low_expr(L, s->target->lhs);
+			IRReg idx = low_expr(L, s->target->rhs);
+			IRReg v = low_expr(L, s->value);
+			IRInstr *in = ir_emit(L->f, L->cur, IR_STORE, s->target->type.kind);
+			in->is_frame = 0;
+			in->a = base;
+			in->b = idx;
+			in->c = v;
+			in->scale = elem_stride(s->target->type.kind);
+			in->disp = 32;
+		}
+		else
+		{
+			L->ok = 0;   /* Field store targets are not in v1. */
 		}
 
 		break;
