@@ -64,6 +64,12 @@ static int elig_expr(const Expr *e)
 
 static int elig_block(const Block *b);
 
+/* Region mode (Plan 4): eligibility for a loop subtree emitted inline inside an
+   emitter function. Regions additionally reject ST_RETURN (a region cannot run
+   the function epilogue) and managed assignment targets (reassigning an array
+   local would skip refcounting; element stores remain fine). */
+static int elig_region_mode = 0;
+
 static int elig_stmt(const Stmt *s)
 {
 	if (!s)
@@ -76,6 +82,11 @@ static int elig_stmt(const Stmt *s)
 	case ST_VARDECL:
 		return elig_type(s->decl_type.kind) && elig_expr(s->decl_init);
 	case ST_ASSIGN:
+		if (elig_region_mode && ty_is_managed(s->target->type.kind))
+		{
+			return 0;
+		}
+
 		return elig_expr(s->target) && elig_expr(s->value);
 	case ST_IF:
 		return elig_expr(s->cond) && elig_block(s->then_blk) && elig_block(s->else_blk);
@@ -85,7 +96,7 @@ static int elig_stmt(const Stmt *s)
 		return elig_stmt(s->for_init) && elig_expr(s->cond)
 			   && elig_stmt(s->for_post) && elig_block(s->then_blk);
 	case ST_RETURN:
-		return elig_expr(s->ret_val);
+		return !elig_region_mode && elig_expr(s->ret_val);
 	case ST_EXPR:
 		return elig_expr(s->expr);
 	case ST_BREAK:
@@ -633,5 +644,54 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 		in->a = IR_NO_REG;
 	}
 
+	return irf;
+}
+
+int ir_region_eligible(const Stmt *s)
+{
+	if (!s || (s->kind != ST_FOR && s->kind != ST_WHILE) || s->accum_sb_offset)
+	{
+		return 0;
+	}
+
+	elig_region_mode = 1;
+	int ok = elig_stmt(s);
+	elig_region_mode = 0;
+	return ok;
+}
+
+IRFunc *ir_lower_region(const Func *f, const Stmt *s)
+{
+	if (!ir_region_eligible(s))
+	{
+		return 0;
+	}
+
+	IRFunc *irf = ir_func_new(f);
+	int entry = ir_block_new(irf);
+	Low L;
+	L.f = irf;
+	L.cur = entry;
+	L.break_blk = -1;
+	L.cont_blk = -1;
+	L.ok = 1;
+	L.depth = 0;
+	low_stmt(&L, s);
+	if (!L.ok)
+	{
+		ir_func_free(irf);
+		return 0;
+	}
+
+	/* Terminate into a final empty block (created last, so laid out last): the
+	   region has no IR_RET, and emission falls off this block into the region
+	   epilogue the codegen appends. */
+	int done = low_block_at(&L, 0);
+	if (!blk_terminated(irf, L.cur))
+	{
+		low_br(&L, L.cur, done);
+	}
+
+	L.cur = done;
 	return irf;
 }

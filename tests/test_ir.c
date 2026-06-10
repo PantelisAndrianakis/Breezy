@@ -255,6 +255,119 @@ static void test_bce_counter_reassigned_stays_checked(void)
 		"}\n"), 1);
 }
 
+/* The first for/while statement in f's top-level body, or NULL. */
+static const Stmt *first_loop(const Func *f)
+{
+	for (int i = 0; i < f->body->count; i++)
+	{
+		Stmt *s = f->body->stmts[i];
+		if (s->kind == ST_FOR || s->kind == ST_WHILE)
+		{
+			return s;
+		}
+	}
+
+	return 0;
+}
+
+static void test_region_eligible_despite_call(void)
+{
+	/* The helper() call makes the whole function ineligible, but the loop subtree
+	   alone is a valid region. */
+	const Func *f = parse_one_func(
+		"void k(byte[] buf, int[] tbl)\n"
+		"{\n"
+		"	helper();\n"
+		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+		"	{\n"
+		"		tbl[i] = (int)buf[i] & 255;\n"
+		"	}\n"
+		"}\n"
+		"void helper() { }\n");
+	ASSERT_INT(ir_eligible(f), 0);
+	const Stmt *loop = first_loop(f);
+	ASSERT(loop != 0);
+	ASSERT_INT(ir_region_eligible(loop), 1);
+}
+
+static void test_region_rejects_return(void)
+{
+	/* A region cannot run the function epilogue, so returns inside it bail. */
+	const Func *f = parse_one_func(
+		"int k(int[] a)\n"
+		"{\n"
+		"	for (int i = 0; i < a.length; i = i + 1)\n"
+		"	{\n"
+		"		if (a[i] < 0)\n"
+		"		{\n"
+		"			return i;\n"
+		"		}\n"
+		"	}\n"
+		"	return 0 - 1;\n"
+		"}\n");
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
+}
+
+static void test_region_rejects_managed_assign(void)
+{
+	/* Reassigning an array local inside a region would skip refcounting. */
+	const Func *f = parse_one_func(
+		"void k(int[] a, int[] b)\n"
+		"{\n"
+		"	for (int i = 0; i < 3; i = i + 1)\n"
+		"	{\n"
+		"		a = b;\n"
+		"	}\n"
+		"}\n");
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
+}
+
+static void test_region_lower_has_no_ret(void)
+{
+	const Func *f = parse_one_func(
+		"void k(int[] tbl)\n"
+		"{\n"
+		"	helper();\n"
+		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+		"	{\n"
+		"		tbl[i] = tbl[i] * 3;\n"
+		"	}\n"
+		"}\n"
+		"void helper() { }\n");
+	IRFunc *irf = ir_lower_region(f, first_loop(f));
+	ASSERT(irf != NULL);
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			ASSERT(irf->blocks[b].instrs[i].op != IR_RET);
+		}
+	}
+
+	/* The fall-off block is last and empty: emission falls through it into the
+	   region epilogue. */
+	ASSERT_INT(irf->blocks[irf->block_count - 1].count, 0);
+	ir_func_free(irf);
+}
+
+static void test_whole_function_eligibility_unaffected(void)
+{
+	/* The region-mode flag must not leak into whole-function checks. */
+	const Func *f = parse_one_func(
+		"long sum(int limit)\n"
+		"{\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < limit; i = i + 1)\n"
+		"	{\n"
+		"		s = s + (long)i;\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n");
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 1);
+	ASSERT_INT(ir_eligible(f), 1);
+}
+
 int main(void)
 {
 	RUN(test_ir_build_basic);
@@ -270,6 +383,11 @@ int main(void)
 	RUN(test_bce_offbyone_stays_checked);
 	RUN(test_bce_other_array_stays_checked);
 	RUN(test_bce_counter_reassigned_stays_checked);
+	RUN(test_region_eligible_despite_call);
+	RUN(test_region_rejects_return);
+	RUN(test_region_rejects_managed_assign);
+	RUN(test_region_lower_has_no_ret);
+	RUN(test_whole_function_eligibility_unaffected);
 	SUMMARY();
 	return 0;
 }
