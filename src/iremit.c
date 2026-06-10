@@ -347,6 +347,40 @@ static const char *reg_low(const char *r, int bytes)
 	return r;
 }
 
+/* Sign/zero-extend `Ra` to width `to` directly into `Rd` (one instruction), instead
+   of staging through rax. For a 32-bit unsigned target a plain 32-bit mov suffices
+   (it zero-extends to 64). Rd == Ra is fine (re-extends in place). */
+static void norm_reg(Codegen *cg, const char *Rd, const char *Ra, TypeKind to)
+{
+	switch (ty_bits(to))
+	{
+	case 8:
+		cg_emit(cg, ty_is_signed(to) ? "    movsx %s, %s" : "    movzx %s, %s", Rd, reg_low(Ra, 1));
+		break;
+	case 16:
+		cg_emit(cg, ty_is_signed(to) ? "    movsx %s, %s" : "    movzx %s, %s", Rd, reg_low(Ra, 2));
+		break;
+	case 32:
+		if (ty_is_signed(to))
+		{
+			cg_emit(cg, "    movsxd %s, %s", Rd, reg_low(Ra, 4));
+		}
+		else
+		{
+			cg_emit(cg, "    mov %s, %s", reg_low(Rd, 4), reg_low(Ra, 4));
+		}
+
+		break;
+	default:
+		if (strcmp(Rd, Ra))
+		{
+			cg_emit(cg, "    mov %s, %s", Rd, Ra);
+		}
+
+		break;
+	}
+}
+
 /* Emit a runtime bounds check for index `Ridx` against array `Rbase`'s length at
    [base + 24]: in range -> fall through; out of range -> call bzy_oob (no return).
    The check is the only hot-path cost (cmp + jb); the oob argument setup and call
@@ -797,16 +831,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		}
 		else
 		{
-			if (strcmp(Ra, "rax"))
-			{
-				cg_emit(cg, "    mov rax, %s", Ra);
-			}
-
-			norm_rax(cg, in->to_kind);
-			if (strcmp(Rd, "rax"))
-			{
-				cg_emit(cg, "    mov %s, rax", Rd);
-			}
+			norm_reg(cg, Rd, Ra, in->to_kind);   /* Extend straight into Rd, no rax round-trip. */
 		}
 
 		finish_dst(e, in->dst);
