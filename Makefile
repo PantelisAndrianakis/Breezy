@@ -153,7 +153,8 @@ test: $(TEST_BINS) breezy
 	$(OBJDIR)/test_coroutine
 	$(OBJDIR)/test_reactor
 	$(OBJDIR)/test_runtime
-	bash tests/run_integration.sh
+	bash tests/run_integration.sh                 # IR backend (the default for eligible functions).
+	BZY_IR=0 bash tests/run_integration.sh        # Emitter fallback path.
 
 integration: breezy $(LIB)
 	bash tests/run_integration.sh

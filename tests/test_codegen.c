@@ -4,6 +4,7 @@
 #include "resolve.h"
 #include "codegen.h"
 #include "prelude.h"
+#include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
 #define MAX_U 64
 static char g_asm[1 << 16];
@@ -513,6 +514,10 @@ static void test_inline_alloc_windows_pool_pop(void)
 
 int main(void)
 {
+	/* These assertions check the EMITTER's output specifically; force it on even
+	   now that the IR backend is the default for eligible functions. */
+	putenv("BZY_IR=0");
+
 	RUN(test_inline_alloc_windows_pool_pop);
 	RUN(test_inline_arc_fast_paths);
 	RUN(test_array_elem_stride);

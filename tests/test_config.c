@@ -46,10 +46,11 @@ static void test_empty_is_noop(void)
 	ASSERT_INT(cfg.nlib_paths, 0);
 }
 
-static void test_ir_flag_defaults_off(void)
+static void test_ir_flag_defaults_on(void)
 {
-	/* With BZY_IR unset, the experimental IR backend is disabled. */
-	ASSERT_INT(bzy_ir_enabled(), 0);
+	/* With BZY_IR unset, the IR backend is the default for eligible functions
+	   (the hot-spill safety gate keeps losing functions on the emitter). */
+	ASSERT_INT(bzy_ir_enabled(), 1);
 }
 
 int main(void)
@@ -58,7 +59,7 @@ int main(void)
 	RUN(test_parse_lib_paths);
 	RUN(test_ignores_other_sections_and_comments);
 	RUN(test_empty_is_noop);
-	RUN(test_ir_flag_defaults_off);
+	RUN(test_ir_flag_defaults_on);
 	SUMMARY();
 	return 0;
 }

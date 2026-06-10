@@ -9,8 +9,11 @@ int bzy_ir_enabled(void)
 	static int cached = -1;
 	if (cached < 0)
 	{
+		/* Default ON: eligible call-free functions use the IR backend (the hot-spill
+		   safety gate keeps any function the IR would lose on the emitter). Set
+		   BZY_IR=0 to force the emitter everywhere. */
 		const char *v = getenv("BZY_IR");
-		cached = (v && v[0] && !(v[0] == '0' && v[1] == '\0')) ? 1 : 0;
+		cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
 
 	return cached;
