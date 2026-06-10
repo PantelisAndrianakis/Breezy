@@ -2,9 +2,9 @@
 
 ## What is Breezy?
 
-Breezy is a statically-typed, object-oriented language with clean, familiar syntax that compiles **straight to native x86-64 assembly**. No virtual machine. No bytecode. No tracing heap garbage collector. Just your code, lowered to the metal - with memory and concurrency handled *for* you, automatically.
+Breezy is a statically-typed, object-oriented language with clean, familiar syntax that compiles **directly to native x86-64 machine code**. No virtual machine. No bytecode. No tracing heap garbage collector. Just your code, lowered to the metal - with memory and concurrency handled automatically by the language.
 
-The promise is simple: **the ergonomics of a managed language, the footprint and latency of C.**
+The promise is simple: **the ergonomics of a managed language, with the footprint and latency characteristics traditionally associated with C.**
 
 ---
 
@@ -28,29 +28,28 @@ class Greeter
 
 void main()
 {
-    Greeter g;
-    g = new Greeter();
+    Greeter g = new Greeter();
     g.init("Breezy");
     g.greet();              // Prints: Hello, Breezy!
 }
 ```
 
-Familiar on purpose. If you've written Java or C#, you already know how to read it - and it compiles straight to a native executable with no separate runtime to install.
+Familiar on purpose. If you have written object-oriented code before, you already know how to read it - and it compiles to a native executable with no separate runtime to install.
 
 ---
 
 ## Why Breezy is fast - and stays fast
 
-Most "easy" languages buy their convenience with a heavy runtime: a JIT that warms up, a GC that pauses, a heap that balloons to 2–5× your live data. Breezy refuses that trade.
+Most high-level languages buy their convenience with a heavier runtime: a JIT that warms up, a GC that pauses, a heap that balloons to 2–5× your live data. Breezy refuses that trade.
 
 | What you get                          | How Breezy delivers it                                                                                                                                             |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 🚀 **Native execution**               | Compiles directly to x86-64 assembly. No interpreter, no bytecode, and no JIT compilation.                                                                         |
-| 🪶 **Low memory usage**               | Automatic Reference Counting (ARC) releases objects when their reference count reaches zero, keeping memory usage close to the application's live data.            |
-| ⚡ **Predictable latency**             | No stop-the-world heap scans. Memory reclamation occurs incrementally as objects become unreachable, with a bounded cycle collector only for reference cycles.     |
-| 🧵 **Scalable concurrency**           | Lightweight coroutines ("breezes") allow large numbers of concurrent tasks to be multiplexed across a small number of operating-system threads.                    |
-| 🔌 **Direct native interoperability** | Objects are never relocated in memory, allowing pointers to be passed directly to C libraries without pinning or object movement.                                  |
-| ✍️ **Automatic resource management**  | Memory management and concurrency are handled by the language, eliminating manual deallocation, ownership tracking, and lifetime management from application code. |
+| 🚀 **Native execution**               | Compiles directly to x86-64 machine code. No interpreter, no bytecode, no JIT warm-up.                                                                  |
+| 🪶 **Low memory usage**               | Automatic Reference Counting (ARC) releases objects as soon as they are no longer referenced, keeping memory close to the application's live data.      |
+| ⚡ **Predictable latency**             | No stop-the-world heap scans. Reclamation happens incrementally, with a bounded cycle collector only for reference cycles.                              |
+| 🧵 **Scalable concurrency**           | Lightweight coroutines ("breezes") multiplex large numbers of concurrent tasks across a small number of operating-system threads.                       |
+| 🔌 **Direct native interoperability** | Objects never move in memory, so pointers pass directly to native libraries without pinning or copying.                                                 |
+| ✍️ **Automatic resource management**  | Memory and concurrency are handled by the language - no manual deallocation, ownership tracking, or lifetime management in application code.            |
 
 
 **The headline use case:** Breezy is being built so you can write **high-throughput enterprise software** in it - backend services and APIs that hold tens of thousands of concurrent connections, with predictable low latency (no GC pauses to spike your p99), a tight RAM footprint that cuts your hosting bill, and direct access to native database and crypto libraries. That goal drives every design decision below.
@@ -73,7 +72,7 @@ Its purpose is to allow developers to write straightforward code while relying o
 
 ## The Real Problems to Solve
 
-After decades of software development, only a small number of challenges consistently prevent developers from writing simple and maintainable code:
+After decades of software development, two of the most fundamental challenges are:
 
 * Memory management
 * Concurrency
@@ -101,7 +100,7 @@ It should be capable of powering:
 * Distributed consensus systems
 * Real-time operating systems
 
-If the language cannot be used effectively in these environments, then it has failed one of its primary objectives.
+Success means being capable of addressing these demanding domains without sacrificing the language's core principles.
 
 ## Automatic Without Hidden Costs
 
