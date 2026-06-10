@@ -7128,6 +7128,34 @@ static int block_has_try(const Block *b)
 	return 0;
 }
 
+/* Diagnostics / prototype overrides for the region pre-scan, read once.
+   BZY_IR_DEBUG=1 prints each candidate loop's verdict to stderr;
+   BZY_IR_HOTSPILL=1 accepts hot-spill regions anyway (a measurement override
+   for gate experiments, not a supported mode). */
+static int cg_region_debug(void)
+{
+	static int cached = -1;
+	if (cached < 0)
+	{
+		const char *v = getenv("BZY_IR_DEBUG");
+		cached = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+	}
+
+	return cached;
+}
+
+static int cg_region_hotspill_override(void)
+{
+	static int cached = -1;
+	if (cached < 0)
+	{
+		const char *v = getenv("BZY_IR_HOTSPILL");
+		cached = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+	}
+
+	return cached;
+}
+
 /* Collect eligible loops as regions, lowering and allocating each. Only loops
    reachable without crossing another loop qualify: a region nested inside an
    emitter loop would clobber that loop's register-resident state (hoisted
@@ -7148,24 +7176,38 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		Stmt *s = b->stmts[i];
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
+			const char *verdict = "ineligible";
 			if (cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s))
 			{
 				IRFunc *irf = ir_lower_region(f, s);
 				if (irf)
 				{
 					IRAlloc *a = ra_run(irf);
-					if (!a->hot_spill)
+					if (!a->hot_spill || cg_region_hotspill_override())
 					{
 						cg->region_stmt[cg->region_count] = s;
 						cg->region_irf[cg->region_count] = irf;
 						cg->region_alloc[cg->region_count] = a;
 						cg->region_count++;
+						if (cg_region_debug())
+						{
+							fprintf(stderr, "ir-region: %s line %d: REGION (%d locals, %d spill bytes%s)\n",
+									f->name, s->line, a->nlocal, a->spill_bytes,
+									a->hot_spill ? ", HOT-SPILL OVERRIDE" : "");
+						}
+
 						continue;
 					}
 
+					verdict = "hot-spill";
 					ra_free(a);
 					ir_func_free(irf);
 				}
+			}
+
+			if (cg_region_debug())
+			{
+				fprintf(stderr, "ir-region: %s line %d: %s\n", f->name, s->line, verdict);
 			}
 
 			continue;   /* Never descend into a loop body (see above). */
