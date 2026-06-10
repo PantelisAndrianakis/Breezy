@@ -41,11 +41,10 @@ static int elig_expr(const Expr *e)
 		   value like any other 64-bit local). */
 		return (e->type.kind == TY_ARRAY) ? elig_arrayref(&e->type) : elig_type(e->type.kind);
 	case EX_INDEX:
-		/* arr[i]: only when BCE proved it in range, so no runtime check / bzy_oob
-		   is needed (the IR function stays call-free; bounds checking is a later
-		   step). The element must be an integer/bool. */
-		return e->anno_index_safe
-			   && elig_arrayref(&e->lhs->type) && elig_elem_kind(e->type.kind)
+		/* arr[i]: a BCE-proved access skips the check; otherwise a runtime bounds
+		   check + bzy_oob is emitted (the function carries an exception record). The
+		   element must be an integer/bool. */
+		return elig_arrayref(&e->lhs->type) && elig_elem_kind(e->type.kind)
 			   && elig_expr(e->lhs) && elig_expr(e->rhs);
 	case EX_FIELD:
 		/* arr.length only (a load of the array header's length field). */
@@ -131,6 +130,15 @@ int ir_eligible(const Func *f)
 	if (f->param_count > 4)
 	{
 		return 0;   /* v1 spills register args only (<= 4 covers Win64 and System V). */
+	}
+
+	if (f->obj_local_count > 0)
+	{
+		/* Owned managed locals are released on unwind at frame offsets the emitter
+		   assigns; the IR allocates its own layout, so a thrown bounds error would
+		   release garbage. IR-eligible functions never `new`, so this is normally 0;
+		   bail to the emitter if any exist. */
+		return 0;
 	}
 
 	for (int i = 0; i < f->param_count; i++)
@@ -271,6 +279,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 		in->scale = elem_stride(e->type.kind);
 		in->disp = 32;
 		in->is_frame = 0;
+		in->checked = !e->anno_index_safe;
 		in->line = e->line;
 		return r;
 	}
@@ -407,6 +416,7 @@ static void low_stmt(Low *L, const Stmt *s)
 			in->c = v;
 			in->scale = elem_stride(s->target->type.kind);
 			in->disp = 32;
+			in->checked = !s->target->anno_index_safe;
 		}
 		else
 		{

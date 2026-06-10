@@ -92,12 +92,38 @@ static void test_eligible_rejects_call(void)
 	ASSERT_INT(ir_eligible(f), 0);
 }
 
-static void test_eligible_rejects_array(void)
+static void test_eligible_accepts_int_array(void)
 {
+	/* Integer arrays are supported (bounds-checked): an int[] parameter indexed by
+	   a constant is eligible. */
 	const Func *f = parse_one_func(
 		"int first(int[] xs)\n"
 		"{\n"
 		"	return xs[0];\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+}
+
+static void test_eligible_rejects_float_array(void)
+{
+	/* Float-element arrays are out of scope (Plan 3b / xmm). */
+	const Func *f = parse_one_func(
+		"int firstd(double[] xs)\n"
+		"{\n"
+		"	return (int)xs[0];\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 0);
+}
+
+static void test_eligible_rejects_new_array(void)
+{
+	/* Allocating an array is a managed call, excluded from the call-free IR. */
+	const Func *f = parse_one_func(
+		"int mk()\n"
+		"{\n"
+		"	int[] a;\n"
+		"	a = new int[4];\n"
+		"	return a[0];\n"
 		"}\n");
 	ASSERT_INT(ir_eligible(f), 0);
 }
@@ -150,15 +176,57 @@ static void test_lower_collatz_succeeds(void)
 	ir_func_free(ir);
 }
 
+static void test_lower_array_sum(void)
+{
+	/* An array sweep is eligible and lowers a[i] to a non-frame element load with
+	   the folded address mode (scale 4, disp 32). The access is bounds-checked
+	   (the loop bound is `a.length` symbolically, which BCE cannot reduce to a
+	   numeric range), so `checked` is set. */
+	const Func *f = parse_one_func(
+		"long asum(int[] a)\n"
+		"{\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < a.length; i = i + 1)\n"
+		"	{\n"
+		"		s = s + (long)a[i];\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *ir = ir_lower_func(f, 0);
+	ASSERT(ir != NULL);
+
+	int found = 0;
+	for (int b = 0; b < ir->block_count; b++)
+	{
+		for (int i = 0; i < ir->blocks[b].count; i++)
+		{
+			IRInstr *in = &ir->blocks[b].instrs[i];
+			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4 && in->disp == 32)
+			{
+				found = 1;
+				ASSERT_INT(in->checked, 1);
+			}
+		}
+	}
+
+	ASSERT_INT(found, 1);
+	ir_func_free(ir);
+}
+
 int main(void)
 {
 	RUN(test_ir_build_basic);
 	RUN(test_eligible_accepts_scalar_loop);
 	RUN(test_eligible_rejects_string);
 	RUN(test_eligible_rejects_call);
-	RUN(test_eligible_rejects_array);
+	RUN(test_eligible_accepts_int_array);
+	RUN(test_eligible_rejects_float_array);
+	RUN(test_eligible_rejects_new_array);
 	RUN(test_lower_produces_blocks_and_ret);
 	RUN(test_lower_collatz_succeeds);
+	RUN(test_lower_array_sum);
 	SUMMARY();
 	return 0;
 }

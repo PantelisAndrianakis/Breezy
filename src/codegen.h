@@ -76,4 +76,9 @@ void cg_init(Codegen *cg, FILE *out);
 void cg_emit(Codegen *cg, const char *fmt, ...);
 int  cg_label(Codegen *cg);
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count);
+
+/* Emit one per-function exception record (PC range, frame size, name, object-local
+   offsets, try table) into .data, leaving .text active. Shared with the IR emitter
+   so an IR function that can throw a bounds error is unwindable. */
+void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f);
 #endif

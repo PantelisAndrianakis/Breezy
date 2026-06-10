@@ -347,15 +347,37 @@ static const char *reg_low(const char *r, int bytes)
 	return r;
 }
 
-/* Format the element address [base + index*scale + disp] (or [base + disp] when
-   there is no index) into buf. Base/index come from registers, or scratch when
-   spilled. */
-static void elem_addr(Emit *e, const IRInstr *in, char *buf, size_t n)
+/* Emit a runtime bounds check for index `Ridx` against array `Rbase`'s length at
+   [base + 24]: in range -> fall through; out of range -> call bzy_oob (no return).
+   The check is the only hot-path cost (cmp + jb); the oob argument setup and call
+   are reached only on the failing path, so clobbering arg/scratch registers there
+   is harmless. The order loads length into rax before overwriting any arg register
+   so an array base or index that happens to be allocated to an arg register is not
+   destroyed before it is read. The pc passed to bzy_oob is a label inside this
+   function's recorded PC range, so the unwinder finds its exception record. */
+static void emit_bounds_check(Emit *e, const char *Rbase, const char *Ridx)
 {
-	const char *Rbase = vreg_in(e, in->a, "rax");
-	if (in->b != IR_NO_REG)
+	Codegen *cg = e->cg;
+	int ok = cg_label(cg);
+	int pc = cg_label(cg);
+	cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase);   /* Unsigned: catches negative and >= length. */
+	cg_emit(cg, "    jb .L%d", ok);
+	cg_emit(cg, "    mov rax, [%s + 24]", Rbase);         /* Length into rax (rax is never an arg register). */
+	cg_emit(cg, "    mov %s, %s", iremit_iarg(cg, 0), Ridx);   /* index. */
+	cg_emit(cg, "    mov %s, rax", iremit_iarg(cg, 1));        /* length. */
+	cg_emit(cg, "    lea %s, [rel .L%d]", iremit_iarg(cg, 2), pc);
+	cg_emit(cg, ".L%d:", pc);
+	cg_emit(cg, "    mov %s, rbp", iremit_iarg(cg, 3));
+	cg_emit(cg, "    call bzy_oob");
+	cg_emit(cg, ".L%d:", ok);
+}
+
+/* Format the element address [base + index*scale + disp] (or [base + disp] with no
+   index) into buf, from already-fetched base/index register names. */
+static void elem_addr(const IRInstr *in, const char *Rbase, const char *Ridx, char *buf, size_t n)
+{
+	if (Ridx)
 	{
-		const char *Ridx = vreg_in(e, in->b, "rcx");
 		snprintf(buf, n, "[%s + %s*%d + %lld]", Rbase, Ridx, in->scale, in->disp);
 	}
 	else
@@ -598,10 +620,16 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			break;
 		}
 
-		/* Array element / header load: [base + index*scale + disp]. The address is
-		   computed in one instruction, so dst may alias base/index scratch. */
+		/* Array element / header load: [base + index*scale + disp]. */
+		const char *Rbase = vreg_in(e, in->a, "rax");
+		const char *Ridx = (in->b != IR_NO_REG) ? vreg_in(e, in->b, "rcx") : NULL;
+		if (in->checked && Ridx)
+		{
+			emit_bounds_check(e, Rbase, Ridx);
+		}
+
 		char addr[64];
-		elem_addr(e, in, addr, sizeof addr);
+		elem_addr(in, Rbase, Ridx, addr, sizeof addr);
 		const char *Rd = dst_reg(e, in->dst);
 		int bytes = in->scale ? in->scale : 8;   /* scale 0 = a .length (8-byte) load. */
 		int sgn = ty_is_signed(in->type);
@@ -637,8 +665,15 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 
 		/* Array element store: [base + index*scale + disp] = value (natural width).
 		   Base/index/value take distinct scratch (rax/rcx/rdx) when spilled. */
+		const char *Rbase = vreg_in(e, in->a, "rax");
+		const char *Ridx = (in->b != IR_NO_REG) ? vreg_in(e, in->b, "rcx") : NULL;
+		if (in->checked && Ridx)
+		{
+			emit_bounds_check(e, Rbase, Ridx);
+		}
+
 		char addr[64];
-		elem_addr(e, in, addr, sizeof addr);
+		elem_addr(in, Rbase, Ridx, addr, sizeof addr);
 		const char *Rc = vreg_in(e, in->c, "rdx");
 		int bytes = in->scale ? in->scale : 8;
 		if (bytes == 1)
@@ -944,6 +979,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	e.nn = calloc((size_t)nv, 1);
 	compute_nonneg(f, a, e.nn);
 
+	cg_emit(cg, "section .text");   /* A preceding function's exception record left .data active. */
 	cg_emit(cg, "global %s", label);
 	cg_emit(cg, "%s:", label);
 	cg_emit(cg, "    push rbp");
@@ -956,14 +992,23 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 		cg_emit(cg, "    mov [rbp - %d], %s", cs_base + j * 8, ra_reg_name(e.cs_regs[j]));
 	}
 
-	/* Spill integer args into their local's register (or home slot), sign/zero-
-	   extending narrow ints so the high bits are well-defined. */
+	/* Load parameters in two phases. The allocator may assign a parameter's local
+	   to a register that is also a LATER parameter's incoming argument register
+	   (e.g. param 0 -> r8, which on Win64 carries param 2); distributing args one at
+	   a time would overwrite an argument before it is read. So first dump every
+	   incoming argument register to its home stack slot, then load each from its
+	   slot into its allocated register (or back to the slot), sign/zero-extending
+	   narrow ints so the high bits are well-defined. */
+	for (int i = 0; i < src->param_count; i++)
+	{
+		cg_emit(cg, "    mov [rbp - %d], %s", 8 + i * 8, iremit_iarg(cg, i));
+	}
+
 	for (int i = 0; i < src->param_count; i++)
 	{
 		int slot = 8 + i * 8;
-		const char *ar = iremit_iarg(cg, i);
 		TypeKind pk = src->params[i].type.kind;
-		cg_emit(cg, "    mov rax, %s", ar);
+		cg_emit(cg, "    mov rax, [rbp - %d]", slot);
 		if (pk == TY_BOOL)
 		{
 			cg_emit(cg, "    movzx rax, al");
@@ -1021,6 +1066,15 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 			}
 		}
 	}
+
+	/* Emit this function's exception record so a bounds error thrown from it is
+	   unwindable: the throw site's PC resolves to this record, which has no try
+	   region (eligibility rejects try) and no object locals (guarded in
+	   ir_eligible), so the unwinder walks straight through to the caller's handler.
+	   cur_try_count is zeroed because the early IR dispatch skips the emitter's
+	   per-function reset, and the helper leaves .text active for the next function. */
+	cg->cur_try_count = 0;
+	cg_emit_exception_record(cg, label, frame, (Func *)src);
 
 	free(e.blabel);
 	free(e.cis);

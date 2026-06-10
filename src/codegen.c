@@ -6987,7 +6987,7 @@ static void cg_accum_loop(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_m
 /* Emits one per-function exception record into .data (PC range, frame size, name,
    object-local offsets, and the try-region table). The end label is placed in
    .text just past the function; the record is appended in .data. */
-static void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f)
+void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f)
 {
 	int i = cg->exception_fn_count++;
 	cg_emit(cg,"__exceptionend%d:", i);                 /* In .text, just past the function. */
