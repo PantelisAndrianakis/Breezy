@@ -282,6 +282,49 @@ static void test_map_foreach_snapshot_handle(void)
 	ASSERT_INT(strstr(g_asm, "call bzy_map_iter") != NULL, 1);
 }
 
+static void test_shared_set_closure(void)
+{
+	/* A class reachable only through a builtin-container channel element, a
+	   spawned function's parameter, or a static field must still allocate with
+	   the SHARED gcinfo literal (atomic refcounts). */
+	/* Every snippet allocates through an escaping `make()` (a non-escaping local
+	   is stack-allocated and never carries the literal), and the channel appears
+	   in a signature (a purely local channel can never reach another breeze, so
+	   signatures + statics + spawns are the complete seed set). */
+	emit(
+		"class Dog { int age; }"
+		"Dog make() { return new Dog(); }"
+		"void pump(channel<List<Dog>> ch) { }"
+		"void main() { Dog d; d = make(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "or qword [rax + 16], 8") != NULL, 1);
+
+	emit(
+		"class Dog { int age; }"
+		"Dog make() { return new Dog(); }"
+		"void feed(Dog d) { }"
+		"void main() { Dog d; d = make(); spawn feed(d); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "or qword [rax + 16], 8") != NULL, 1);
+
+	emit(
+		"class Dog { int age; }"
+		"Dog make() { return new Dog(); }"
+		"class Kennel { static Dog mascot; }"
+		"void main() { Kennel.mascot = make(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "or qword [rax + 16], 8") != NULL, 1);
+
+	/* Negative control: an escaping allocation of a class that never crosses
+	   cores stays non-shared (no literal). */
+	emit(
+		"class Dog { int age; }"
+		"Dog make() { return new Dog(); }"
+		"void main() { Dog d; d = make(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "or qword [rax + 16], 8") == NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -770,6 +813,7 @@ int main(void)
 	RUN(test_register_index_addr);
 	RUN(test_foreach_base_hoist);
 	RUN(test_map_foreach_snapshot_handle);
+	RUN(test_shared_set_closure);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

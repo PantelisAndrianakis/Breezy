@@ -75,6 +75,8 @@ typedef struct
 	InterfaceInfo interfaces[64];
 	int interface_count;
 	int iface_slots;               /* K: total interface methods = reserved vtable slots [0..K). */
+	TypeRef shared_containers[256];   /* Builtin container types (array/map/List/...) that may cross cores. */
+	int     shared_container_count;
 } TypeTable;
 
 void       types_init(TypeTable *tt);
@@ -85,7 +87,8 @@ void       types_register_unit_names(TypeTable *tt, Unit *u);
 void       types_register_unit_members(TypeTable *tt, Unit *u);
 InterfaceInfo *types_find_interface(TypeTable *tt, const char *name);
 int        types_is_interface(TypeTable *tt, const char *name);
-void       types_compute_shared_set(TypeTable *tt);   /* Conservative-static: mark channel-reachable classes shared (6a-3). */
+void       types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count);   /* Conservative-static: mark cross-core-reachable types shared (channels, spawn params, statics). */
+int        types_typeref_maybe_shared(TypeTable *tt, TypeRef *t);   /* 1 if a value of this static type may be SHARED at runtime (codegen gating). */
 ClassInfo *types_find_class(TypeTable *tt, const char *name);
 FuncInfo  *types_find_func(TypeTable *tt, const char *name);
 MethodInfo*types_find_method(ClassInfo *c, const char *name);

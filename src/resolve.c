@@ -3334,7 +3334,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 {
-	types_compute_shared_set(tt);   /* Decide which classes get atomic refcounts before resolving bodies. */
+	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
 
 	for (int i=0; i<unit_count; i++)
 	{

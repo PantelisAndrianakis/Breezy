@@ -75,12 +75,96 @@ ClassInfo *types_find_class(TypeTable *tt, const char *name)
 	return NULL;
 }
 
-/* Seed step: any channel<T> with an object element type T marks T's class shared.
-   Recurses through container TypeRefs (array/map) so a channel nested inside, e.g.,
-   a parameter type is still found. (Sending a *collection* of confined objects
-   without the element type itself being a channel element is a known conservative
-   gap; builtin managed types string/array/map crossing a channel are likewise not
-   marked here, since they carry no ClassInfo.) */
+/* ---- Maybe-shared closure -------------------------------------------------
+   Decides which types may cross a core boundary. Classes in the set allocate
+   with the SHARED gcinfo literal (atomic refcounts from birth); builtin
+   container types in the set make codegen emit a SHARED-bit test at their op
+   sites (types_typeref_maybe_shared). Share points are channel handoffs, spawn
+   arguments, and static-field stores; the closure drags along everything a
+   shared value of a seeded type can reach. Conservative and type-based: a
+   type in the set may never actually cross, but its objects only pay the
+   atomic refcount / a predicted-not-taken bit test, never the lock. */
+
+static int typeref_same(TypeRef *a, TypeRef *b)
+{
+	if (!a || !b)
+	{
+		return a==b;
+	}
+
+	if (a->kind!=b->kind || strcmp(a->class_name,b->class_name)!=0)
+	{
+		return 0;
+	}
+
+	return typeref_same(a->elem,b->elem) && typeref_same(a->elem2,b->elem2);
+}
+
+static int g_shared_changed;   /* Fixpoint dirty flag for the current computation. */
+
+static void mark_type_shared(TypeTable *tt, TypeRef *t);
+
+static void mark_class_shared(TypeTable *tt, const char *name)
+{
+	ClassInfo *c=types_find_class(tt,name);
+	if (c && !c->is_shared)
+	{
+		c->is_shared=1;
+		g_shared_changed=1;
+	}
+}
+
+static void add_shared_container(TypeTable *tt, TypeRef *t)
+{
+	for (int i=0; i<tt->shared_container_count; i++)
+	{
+		if (typeref_same(&tt->shared_containers[i],t))
+		{
+			return;
+		}
+	}
+
+	if (tt->shared_container_count<256)
+	{
+		tt->shared_containers[tt->shared_container_count++]=*t;   /* Struct copy; elem pointers stay owned by the AST. */
+		g_shared_changed=1;
+	}
+}
+
+/* Mark one type as maybe-crossing-cores and drag everything a shared value of
+   that type can reach: container element/key/value types and builtin-template
+   args (List<T> stays TY_GENERIC after monomorphization). Shared classes drag
+   their field types in the fixpoint below. */
+static void mark_type_shared(TypeTable *tt, TypeRef *t)
+{
+	if (!t)
+	{
+		return;
+	}
+
+	switch (t->kind)
+	{
+	case TY_OBJECT:
+		mark_class_shared(tt,t->class_name);
+		break;
+	case TY_ARRAY:
+	case TY_MAP:
+	case TY_GENERIC:
+	case TY_ENTRY:
+		add_shared_container(tt,t);
+		mark_type_shared(tt,t->elem);
+		mark_type_shared(tt,t->elem2);
+		break;
+	case TY_STRING:
+	case TY_CHANNEL:
+		break;   /* Strings are immutable leaves (runtime promotion covers refcounts); channels are shared at alloc already. */
+	default:
+		break;   /* Value types never carry a SHARED bit. */
+	}
+}
+
+/* Seed pass over a TypeRef found in a signature: every channel element type is
+   a share seed, whatever its kind. */
 static void seed_shared_from_typeref(TypeTable *tt, TypeRef *t)
 {
 	if (!t)
@@ -88,31 +172,75 @@ static void seed_shared_from_typeref(TypeTable *tt, TypeRef *t)
 		return;
 	}
 
-	if (t->kind==TY_CHANNEL && t->elem && t->elem->kind==TY_OBJECT)
+	if (t->kind==TY_CHANNEL && t->elem)
 	{
-		ClassInfo *c=types_find_class(tt,t->elem->class_name);
-		if (c)
-		{
-			c->is_shared=1;
-		}
+		mark_type_shared(tt,t->elem);
 	}
 
 	seed_shared_from_typeref(tt,t->elem);
 	seed_shared_from_typeref(tt,t->elem2);
 }
 
-void types_compute_shared_set(TypeTable *tt)
+/* Seed pass over statements: a spawned function's parameters cross to another
+   core as spawn args. Same nesting walk as codegen's stmt_has_try. */
+static void seed_shared_from_spawns(TypeTable *tt, Block *b);
+
+static void seed_shared_from_spawn_stmt(TypeTable *tt, Stmt *s)
 {
-	/* Seed from every channel<T> that appears in a signature the runtime can use
-	   to move a channel between breezes: class fields, method/function/ctor
-	   parameters, and return types. A channel only reaches another breeze through
-	   one of these, so this is sufficient to catch every cross-core object. */
+	if (!s)
+	{
+		return;
+	}
+
+	if (s->kind==ST_SPAWN && s->expr)
+	{
+		FuncInfo *fi=types_find_func(tt,s->expr->name);
+		if (fi)
+		{
+			for (int pi=0; pi<fi->param_count; pi++)
+			{
+				mark_type_shared(tt,&fi->param_types[pi]);
+			}
+		}
+	}
+
+	seed_shared_from_spawn_stmt(tt,s->for_init);
+	seed_shared_from_spawn_stmt(tt,s->for_post);
+	seed_shared_from_spawns(tt,s->then_blk);
+	seed_shared_from_spawns(tt,s->else_blk);
+}
+
+static void seed_shared_from_spawns(TypeTable *tt, Block *b)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i=0; i<b->count; i++)
+	{
+		seed_shared_from_spawn_stmt(tt,b->stmts[i]);
+	}
+}
+
+void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
+{
+	g_shared_changed=0;
+
+	/* Seeds: channel element types anywhere in a usable signature (class fields,
+	   method/function/ctor parameters and returns - a channel only reaches
+	   another breeze through one of these); static field types (reachable from
+	   every breeze with no handoff point); spawned functions' parameter types. */
 	for (int ci=0; ci<tt->class_count; ci++)
 	{
 		ClassInfo *c=&tt->classes[ci];
 		for (int fi=0; fi<c->field_count; fi++)
 		{
 			seed_shared_from_typeref(tt,&c->fields[fi].type);
+			if (c->fields[fi].is_static)
+			{
+				mark_type_shared(tt,&c->fields[fi].type);
+			}
 		}
 
 		for (int mi=0; mi<c->method_count; mi++)
@@ -141,12 +269,36 @@ void types_compute_shared_set(TypeTable *tt)
 		}
 	}
 
-	/* Fixpoint: a shared object reachable across cores drags its object-typed
-	   fields along, so they must be shared too. Iterate until nothing changes. */
-	int changed=1;
-	while (changed)
+	for (int ui=0; ui<unit_count; ui++)
 	{
-		changed=0;
+		Unit *u=units[ui];
+		for (int k=0; k<u->func_count; k++)
+		{
+			seed_shared_from_spawns(tt,u->funcs[k]->body);
+		}
+
+		for (int ci=0; ci<u->class_count; ci++)
+		{
+			ClassDecl *d=u->klasses[ci];
+			for (int k=0; k<d->method_count; k++)
+			{
+				seed_shared_from_spawns(tt,d->methods[k]->body);
+			}
+
+			if (d->ctor)
+			{
+				seed_shared_from_spawns(tt,d->ctor->body);
+			}
+		}
+	}
+
+	/* Fixpoint: a shared class drags ALL its managed field types (object fields
+	   as before, container fields newly - a shared object's container field
+	   crosses with it), and a shared container drags its element types (inside
+	   mark_type_shared). Iterate to closure. */
+	do
+	{
+		g_shared_changed=0;
 		for (int ci=0; ci<tt->class_count; ci++)
 		{
 			ClassInfo *c=&tt->classes[ci];
@@ -157,19 +309,35 @@ void types_compute_shared_set(TypeTable *tt)
 
 			for (int fi=0; fi<c->field_count; fi++)
 			{
-				FieldInfo *f=&c->fields[fi];
-				if (f->type.kind==TY_OBJECT)
-				{
-					ClassInfo *fc=types_find_class(tt,f->type.class_name);
-					if (fc && !fc->is_shared)
-					{
-						fc->is_shared=1;
-						changed=1;
-					}
-				}
+				mark_type_shared(tt,&c->fields[fi].type);
 			}
 		}
 	}
+	while (g_shared_changed);
+}
+
+int types_typeref_maybe_shared(TypeTable *tt, TypeRef *t)
+{
+	if (!t)
+	{
+		return 0;
+	}
+
+	if (t->kind==TY_OBJECT)
+	{
+		ClassInfo *c=types_find_class(tt,t->class_name);
+		return c && c->is_shared;
+	}
+
+	for (int i=0; i<tt->shared_container_count; i++)
+	{
+		if (typeref_same(&tt->shared_containers[i],t))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 FuncInfo *types_find_func(TypeTable *tt, const char *name)
