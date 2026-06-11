@@ -3360,17 +3360,14 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 			}
 
 			/* Static field initializers live outside any function body; resolve
-			   each in an empty scope and type-check against the field. */
+			   each in an empty scope and type-check against the field. Instance
+			   field initializers were already lowered to constructor assignments
+			   by fieldinit_expand, so any init left here belongs to a static
+			   field and is type-checked through the normal assignment path. */
 			for (int k=0; k<d->field_count; k++)
 			{
-				int fstatic = d->fields[k].is_static || d->is_static;
 				if (d->fields[k].init)
 				{
-					if (!fstatic)
-					{
-						die(d->fields[k].init->line,"Field initializers are only allowed on static fields.",NULL);
-					}
-
 					SymTable es;
 					sym_init(&es);
 					resolve_expr(&es,d->fields[k].init,NULL);

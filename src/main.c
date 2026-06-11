@@ -5,6 +5,7 @@
 #include "parser.h"
 #include "enums.h"
 #include "generics.h"
+#include "fieldinit.h"
 #include "types.h"
 #include "resolve.h"
 #include "codegen.h"
@@ -164,6 +165,11 @@ int main(int argc, char *argv[])
 	/* Lower user generics: synthesize one ordinary class per (template, type-args)
 	   tuple, rewrite applications, and drop templates. Grows `total` in place. */
 	generics_expand(units,&total,MAX_FILES);
+
+	/* Lower instance-field initializers into constructor-body assignments
+	   (synthesizing zero-arg constructors where needed). Must run before the
+	   type table captures has_ctor and the constructor label from d->ctor. */
+	fieldinit_expand(units,total);
 
 	static TypeTable tt;   /* ~8 MB: in BSS, not on the stack (would overflow Linux's 8 MB default). */
 	types_init(&tt);

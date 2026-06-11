@@ -41,7 +41,7 @@ RELEASE_CFLAGS = -std=c99 -Wall -Wextra -O2 -Isrc \
                  -ffunction-sections -Wl,--gc-sections \
                  -s $(STACKFLAG)
 
-OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/types.c \
+OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/fieldinit.c src/types.c \
           src/resolve.c src/symtable.c src/codegen.c src/ownership.c src/escape.c src/constprop.c src/promote.c src/nonneg.c src/bce.c src/prelude.c src/config.c \
           src/ir.c src/irlower.c src/iremit.c src/regalloc.c
 

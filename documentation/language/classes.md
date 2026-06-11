@@ -26,7 +26,21 @@ class Animal
 - A **method** is a function that belongs to the class: `void birthday() { ... }`.
 - Inside a method, you reach the current object's fields directly by name (`age`), or explicitly through `this` (`this.age`). Both refer to the same field.
 
-> **Rule: no instance-field initializers.** You may *not* write `int age = 0;` on an instance field - the compiler rejects it. Give fields their starting values in a [constructor](#constructors) instead. (Only `static` fields may have an initializer; see [Static members](static-members.md).)
+> **Two ways to initialize a field.** A field may be initialized right at its declaration (`int age = 0;`) or in a [constructor](#constructors) - use whichever reads best. An initializer may be any expression, including calls and `new`. Initializers run when the object is built: parent-class fields first, then the class's own, each in declaration order, and *then* the constructor body - so a constructor assignment overrides a field initializer. Fields without an initializer start at their zero value (`0`, `0.0`, `false`, `null`).
+>
+> ```breezy
+> class Animal
+> {
+> 	int legs = 4;                      // Set at the declaration.
+> 	List<int> tags = new List<int>();  // Any expression works.
+> 	string name;                       // Or leave it to the constructor.
+>
+> 	Animal(string name)
+> 	{
+> 		this.name = name;
+> 	}
+> }
+> ```
 
 ---
 
@@ -147,7 +161,7 @@ void main()
 }
 ```
 
-Use `this.` to disambiguate when a parameter has the same name as a field, as above. Constructors are the right place to initialize fields, since instance fields cannot have initializers of their own.
+Use `this.` to disambiguate when a parameter has the same name as a field, as above. Field initializers (see [Declaring a class](#declaring-a-class)) run first, then the constructor body - so the constructor is the right place for anything that depends on constructor arguments, and it wins when both set the same field.
 
 ---
 
@@ -244,7 +258,7 @@ void main()
 
 - **One class per file (recommended).** Each class usually lives in its own `.bzy` file whose name matches the class, though the compiler allows several per file. The program's entry point is a top-level `void main()`. See [One class per file](one-class-per-file.md).
 - **Initialize where you declare.** `Type x = value;` is the idiomatic form. The two-step `Type x;` then `x = ...;` is still valid for declare-now-assign-later.
-- **No instance-field initializers.** Initialize fields in a constructor, not at the field declaration.
+- **Field initializers run before the constructor.** `int age = 0;` at the declaration is fine; initializers run parent-first in declaration order, then the constructor body (the constructor wins on conflict).
 - **Single inheritance only.** A class `extends` at most one parent. For multiple contracts, use [interfaces](interfaces.md).
 - **All methods are virtual.** An override always wins, chosen by the object's real type at run time. There is no way to make a method non-virtual.
 - **Memory is automatic.** You never `free` an object. Objects that escape their scope are reference-counted; objects that do not are stack-allocated for free. See [Automatic memory](../memory/automatic-memory.md).

@@ -126,7 +126,7 @@ Static fields are global slots (named `__static_<Class>_<field>` internally), ex
 ## Rules & gotchas
 
 - **Reach static members by class name** (`Class.field`, `Class.method()`), even inside the class itself.
-- **Only static fields may have initializers** - instance fields must be set in a constructor.
+- **Static field initializers run once, at program start** - instance field initializers run per object, just before the constructor body (see [Classes](classes.md)).
 - **A `static class` cannot be instantiated** and all of its members are static.
 - **A singleton is just a static field** holding one instance - a pattern, not a keyword.
 

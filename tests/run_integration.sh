@@ -188,7 +188,6 @@ check_fail static_new     tests/samples/fail/oop/static_new.bzy
 check_fail static_ctor    tests/samples/fail/oop/static_ctor.bzy
 check_fail static_unknown tests/samples/fail/oop/static_unknown.bzy
 check_fail dup_class_name tests/samples/fail/oop/dup_class_name.bzy
-check_fail field_init_instance tests/samples/fail/oop/field_init_instance.bzy
 check enum_basic tests/samples/pass/enums/proj_enum_basic $'1\nGREEN\n255\n255\n3\n255'
 check enum_body  tests/samples/pass/enums/proj_enum_body  $'7\n7\n42\nADD\nOp'
 check enum_switch tests/samples/pass/enums/proj_enum_switch $'2'
