@@ -723,6 +723,30 @@ static void test_shared_array_get_set(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_shared_vec_ops(void)
+{
+	/* Shared vector: ops run under the stripe, the insert barrier marks managed
+	   elements, set/remove release old occupants outside the lock, and the live
+	   count balances. */
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(3 /* String elements. */);
+	bzy_share_crosscore(v);
+	void *s = bzy_str_new("x", 1);
+	bzy_vec_push_back(v, (int64_t)s);
+	ASSERT(*(int64_t*)((char*)s + 16) & (1ll << 3));   /* Insert barrier on the shared path. */
+	ASSERT_INT(bzy_vec_len(v), 1);
+	void *s2 = bzy_str_new("y", 1);
+	bzy_vec_set(v, 0, (int64_t)s2);                    /* Overwrites: releases s's slot ref. */
+	ASSERT(*(int64_t*)((char*)s2 + 16) & (1ll << 3));
+	void *got = (void*)bzy_vec_pop_back(v);            /* Owned out. */
+	ASSERT(got == s2);
+	bzy_release(got);
+	bzy_release(s);
+	bzy_release(s2);
+	bzy_release(v);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1781,6 +1805,7 @@ int main(void)
 	RUN(test_deep_share_marks_graph);
 	RUN(test_stripe_lock_roundtrip);
 	RUN(test_shared_array_get_set);
+	RUN(test_shared_vec_ops);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
