@@ -49,32 +49,34 @@ int64_t bzy_array_len(void *a)
 	return *(int64_t*)((char*)a + 24);
 }
 
-/* Shared-array element access. Codegen reaches these only from the out-of-line
-   stub behind a SHARED-bit test, and only for managed-element arrays after the
-   inline bounds check has passed (so no bounds logic here - the catchable
+/* Shared-array element access, striped by SLOT address: a fixed array's layout
+   is immutable, so the slot address is stable and every access to one slot
+   serializes on the same stripe while distinct slots stay concurrent. Codegen
+   reaches these behind a SHARED-bit test, only for managed-element arrays,
+   after the inline bounds check has passed (so no bounds logic here - the
    subscript exception is raised by the unchanged inline path). Value arrays
    never come here: aligned native loads/stores are already atomic, so a shared
    value array's fast path is the ordinary inline code. */
-int64_t bzy_array_get_shared(void *a, int64_t i)
+int64_t bzy_array_get_shared(void *slot)
 {
-	bzy_shared_lock(a);
-	void *e = *(void**)((char*)a + 32 + i * 8);
+	bzy_shared_lock(slot);
+	void *e = *(void**)slot;
 	bzy_retain(e);   /* Retain inside the stripe, or a concurrent overwrite could release it first. */
-	bzy_shared_unlock(a);
+	bzy_shared_unlock(slot);
 	return (int64_t)e;
 }
 
-void bzy_array_set_shared(void *a, int64_t i, int64_t v)
+void bzy_array_set_shared(void *slot, int64_t v)
 {
 	/* Insert barrier: anything stored into a shared container is itself shared.
 	   Deep-share BEFORE taking the stripe (lock ordering: the roots lock and a
-	   stripe are never held together). */
+	   stripe are never held together). Takes ownership of the caller's +1 on v,
+	   matching the inline store's transfer semantics. */
 	bzy_share_crosscore((void*)v);
-	bzy_retain((void*)v);
-	bzy_shared_lock(a);
-	void *old = *(void**)((char*)a + 32 + i * 8);
-	*(void**)((char*)a + 32 + i * 8) = (void*)v;
-	bzy_shared_unlock(a);
+	bzy_shared_lock(slot);
+	void *old = *(void**)slot;
+	*(void**)slot = (void*)v;
+	bzy_shared_unlock(slot);
 	bzy_release(old);   /* Outside the stripe: a destructor cascade must not hold it. */
 }
 

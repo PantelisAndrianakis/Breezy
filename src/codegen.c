@@ -1416,6 +1416,49 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));   /* e->type is the element type. */
 }
 
+/* Like cg_index_addr, but guarantees the array base survives in rax alongside
+   rbx = element address. SHARED-gated managed-element sites need the base's
+   gcinfo bit tested after the bounds check, so the folded/strength-reduced
+   fast paths (which lose the base) are intentionally skipped - gated sites are
+   never hot value loops. */
+static void cg_index_addr_based(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	int safe = e->anno_index_safe;
+	if (e->lhs->kind == EX_IDENT)
+	{
+		/* An array-typed local cannot be reassigned by the index expression and
+		   the base load cannot throw, so loading it after the index is
+		   order-equivalent (same argument as cg_index_addr's remat path). */
+		cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));   /* Index parked. */
+		cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
+	}
+	else
+	{
+		cg_expr(cg,tt,e->lhs);                 /* Base -> rax. */
+		cg_temp_push(cg);
+		cg_expr(cg,tt,e->rhs);                 /* Index -> rax. */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_temp_pop(cg);                       /* Base back in rax. */
+	}
+
+	if (!safe)
+	{
+		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
+		int ok = cg_label(cg);
+		int pc = cg_label(cg);
+		cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
+		cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
+		cg_emit(cg,".L%d:", pc);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+		cg_emit(cg,"    call bzy_oob");        /* Never returns. */
+		cg_emit(cg,".L%d:", ok);
+	}
+
+	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));
+}
+
 
 /* Preserve rax in a fixed frame temp slot instead of on the hardware stack, so
    the stack pointer stays static across the calls the caller is about to make.
@@ -1624,6 +1667,13 @@ static int expr_is_owned(Expr *e)
 
 	/* A static managed field read (C.field) retains the slot's value. */
 	if (e->kind==EX_FIELD && e->anno_int==-1)
+	{
+		return 1;
+	}
+
+	/* A SHARED-gated managed array element read retains on both paths (the
+	   retain must be atomic with the load when the array crossed cores). */
+	if (e->kind==EX_INDEX && e->anno_shared_gate)
 	{
 		return 1;
 	}
@@ -4960,6 +5010,26 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		break;
 	case EX_INDEX:
 	{
+		if (e->anno_shared_gate)
+		{
+			/* Managed element of a maybe-shared array: the load and its retain
+			   must be atomic against a concurrent overwrite's release when the
+			   array crossed cores. Both paths produce an OWNED element (see
+			   expr_is_owned), so consumers treat this read like a call. */
+			cg_index_addr_based(cg,tt,e);                /* rax = base, rbx = slot. */
+			int sh = cg_label(cg), join = cg_label(cg);
+			cg_emit(cg,"    test qword [rax + 16], 8");  /* BZY_GCINFO_SHARED. */
+			cg_emit(cg,"    jnz .L%d", sh);
+			cg_emit(cg,"    mov rax, [rbx]");            /* Confined: plain load... */
+			cg_retain_rax(cg);                           /* ...and plain retain. */
+			cg_emit(cg,"    jmp .L%d", join);
+			cg_emit(cg,".L%d:", sh);
+			cg_emit(cg,"    mov %s, rbx", cg_iarg(cg, 0));
+			cg_aligned_call(cg,"bzy_array_get_shared");  /* Locked load+retain (owned). */
+			cg_emit(cg,".L%d:", join);
+			break;
+		}
+
 		char mode[40];
 		if (cg_sr_mode(cg, e, mode))   /* Strength-reduced: load straight from [base + iv*stride], no lea. */
 		{
@@ -5469,6 +5539,34 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 {
 	if (target->kind==EX_INDEX)
 	{
+		if (target->anno_shared_gate)
+		{
+			/* Maybe-shared managed element store: when the array crossed cores,
+			   the swap must run under the slot stripe and the new element must be
+			   deep-shared (insert barrier) - the locked helper does both and
+			   takes ownership of the +1. The confined path is the unchanged
+			   inline swap. The bit test happens while the base is still live;
+			   cg_temp_pop is a plain mov, so the flags survive to the jnz. */
+			cg_expr_owned(cg,tt,value);              /* +1 new element -> rax. */
+			cg_temp_push(cg);
+			cg_index_addr_based(cg,tt,target);       /* rax = base, rbx = slot. */
+			cg_emit(cg,"    test qword [rax + 16], 8");   /* BZY_GCINFO_SHARED. */
+			cg_temp_pop(cg);                          /* Value back in rax. */
+			int sh = cg_label(cg), join = cg_label(cg);
+			cg_emit(cg,"    jnz .L%d", sh);
+			cg_emit(cg,"    mov rdx, [rbx]");         /* Old element. */
+			cg_emit(cg,"    mov [rbx], rax");         /* Store new (transfers the +1). */
+			cg_emit(cg,"    mov %s, rdx", cg_iarg(cg, 0));
+			cg_release_rcx(cg);                       /* Release old. */
+			cg_emit(cg,"    jmp .L%d", join);
+			cg_emit(cg,".L%d:", sh);
+			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
+			cg_emit(cg,"    mov %s, rbx", cg_iarg(cg, 0));
+			cg_aligned_call(cg,"bzy_array_set_shared");   /* Locked swap; consumes the +1; releases old. */
+			cg_emit(cg,".L%d:", join);
+			return;
+		}
+
 		cg_expr_owned(cg,tt,value);          /* +1 new element -> rax. */
 		cg_temp_push(cg);
 		cg_index_addr(cg,tt,target);         /* rbx = element address. */
@@ -8887,6 +8985,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	}
 	cg_emit(cg,"extern bzy_retain");
 	cg_emit(cg,"extern bzy_share_crosscore");
+	cg_emit(cg,"extern bzy_array_get_shared");
+	cg_emit(cg,"extern bzy_array_set_shared");
 	cg_emit(cg,"extern bzy_release");
 	cg_emit(cg,"extern bzy_live_count");
 	cg_emit(cg,"extern bzy_collect_cycles");

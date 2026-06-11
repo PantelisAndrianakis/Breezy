@@ -20,8 +20,8 @@ void    bzy_release(void *obj);    /* Decrement the refcount; free acyclic garba
 void    bzy_share_crosscore(void *o); /* Deep-share an object graph before a cross-core handoff (channel send / spawn arg / static store). */
 void    bzy_shared_lock(void *o);     /* Stripe lock for shared-container ops (address-hashed). */
 void    bzy_shared_unlock(void *o);
-int64_t bzy_array_get_shared(void *a, int64_t i);            /* Locked load+retain (owned); managed elements, bounds pre-checked. */
-void    bzy_array_set_shared(void *a, int64_t i, int64_t v); /* Locked swap; retains new (after deep-share), releases old outside the stripe. */
+int64_t bzy_array_get_shared(void *slot);            /* Locked slot load+retain (owned); managed elements, bounds pre-checked. */
+void    bzy_array_set_shared(void *slot, int64_t v); /* Locked slot swap; deep-shares and consumes the +1 on v, releases old outside the stripe. */
 int64_t bzy_live_count(void);      /* Number of objects currently alive (for tests and leak checks). */
 
 void   *bzy_class_name(void *obj);  /* Owned (+1) string: the object's dynamic class name. */

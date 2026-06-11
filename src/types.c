@@ -9,6 +9,7 @@ void types_init(TypeTable *tt)
 	tt->func_count = 0;
 	tt->interface_count = 0;
 	tt->iface_slots = 0;
+	tt->shared_container_count = 0;
 }
 
 void types_register_builtins(TypeTable *tt)

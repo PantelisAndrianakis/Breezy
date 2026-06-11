@@ -171,6 +171,7 @@ struct Expr
 	int      arg_count;
 	int      anno_nonneg;     /* Non-neg pass: 1 if this /,% node's dividend is provably >= 0. */
 	int      anno_index_safe; /* BCE pass: 1 if this EX_INDEX's index is provably in [0, length). */
+	int      anno_shared_gate;/* Resolver: EX_INDEX on a managed element of a maybe-shared array -> SHARED-bit gated access (owned result). */
 };
 
 typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN } StmtKind;

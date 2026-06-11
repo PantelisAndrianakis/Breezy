@@ -325,6 +325,36 @@ static void test_shared_set_closure(void)
 	ASSERT_INT(strstr(g_asm, "or qword [rax + 16], 8") == NULL, 1);
 }
 
+static void test_shared_array_gating(void)
+{
+	/* Managed-element array sites whose static type may cross cores emit a
+	   SHARED-bit test routing to the locked slot helpers; value arrays and
+	   types that can never be shared emit no gating at all. */
+	emit(
+		"void pump(channel<string[]> ch) { }"
+		"void main() { string[] a; a = new string[4]; a[1] = \"x\"; string s; s = a[1]; }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_array_get_shared") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_array_set_shared") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "test qword [rax + 16], 8") != NULL, 1);
+
+	/* Same code, no share point: zero gating bytes (the extern declarations are
+	   unconditional, so match the calls). */
+	emit(
+		"void main() { string[] a; a = new string[4]; a[1] = \"x\"; string s; s = a[1]; }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_array_get_shared") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_array_set_shared") == NULL, 1);
+
+	/* Value arrays never gate, even when the type may be shared. */
+	emit(
+		"void pump(channel<int[]> ch) { }"
+		"void main() { int[] a; a = new int[4]; a[1] = 7; int x; x = a[1]; }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_array_get_shared") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_array_set_shared") == NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -814,6 +844,7 @@ int main(void)
 	RUN(test_foreach_base_hoist);
 	RUN(test_map_foreach_snapshot_handle);
 	RUN(test_shared_set_closure);
+	RUN(test_shared_array_gating);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

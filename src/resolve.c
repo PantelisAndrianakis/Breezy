@@ -1024,6 +1024,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		e->type = *e->lhs->type.elem;
+		/* A managed element of an array whose static type may cross cores gets
+		   SHARED-bit gated access in codegen (the locked slot helpers when the
+		   array actually crossed); the gated read is OWNED on both paths. Value
+		   arrays never gate - aligned native element access is already atomic. */
+		e->anno_shared_gate = ty_is_managed(e->type.kind)
+							  && types_typeref_maybe_shared(g_types,&e->lhs->type);
 		break;
 	case EX_CAST:
 	{
