@@ -34,6 +34,22 @@ Core operations: `put(k, v)`, `get(k)`, `containsKey(k)`, `containsValue(v)`, `r
 
 ---
 
+## Compound operations
+
+Two operations combine a lookup and its follow-up into **one atomic step**:
+
+```breezy
+int id = ids.putIfAbsent("alice", nextId);   // Insert if absent; returns the value now at the key.
+int n  = counts.getOrDefault("pears", 0);    // The value, or the default when absent.
+```
+
+- `putIfAbsent(k, v)` inserts `v` only when `k` is absent and returns **the value now associated
+  with `k`** - the existing value when the key was already present, else `v`.
+- `getOrDefault(k, d)` returns the value, or `d` when the key is absent - no ambiguity about
+  whether a returned `0` was stored or missing.
+
+---
+
 ## Views and iteration
 
 You can pull keys, values, or entries out of a map:
@@ -81,7 +97,7 @@ Managed keys and values are **retained** while stored and **released** when remo
 
 Maps are **automatically safe to share across [breezes](../concurrency/breezes.md)**. Once a map crosses to another breeze (channel, `spawn` argument, or static field), every operation - `put`, `get`, `remove`, `containsKey`, even the internal rehash on growth - runs atomically, with no locking in your code. A map that stays within one breeze pays no synchronization cost.
 
-The guarantee is **per operation**: a check-then-act sequence like `if (!m.containsKey(k)) m.put(k, v)` can still interleave with another breeze between the two calls. Iterating a shared map is always safe and sees a consistent point-in-time view; updates made by other breezes during the loop may not appear until the next iteration over the map.
+The guarantee is **per operation**: a check-then-act sequence like `if (!m.containsKey(k)) m.put(k, v)` can still interleave with another breeze between the two calls. For exactly those patterns, use the [compound operations](#compound-operations) - `putIfAbsent` and `getOrDefault` are single atomic steps, so on a shared map they replace the check-then-act sequences outright. Iterating a shared map is always safe and sees a consistent point-in-time view; updates made by other breezes during the loop may not appear until the next iteration over the map.
 
 ---
 

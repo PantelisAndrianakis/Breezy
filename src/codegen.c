@@ -3135,6 +3135,45 @@ static void cg_map_method(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	/* putIfAbsent / getOrDefault: receiver + key + value/default, atomic in the
+	   runtime; the result is the map's value type (owned when managed), so the
+	   marshaling mirrors put and the result handling mirrors get. FP map values
+	   are rejected at resolve, so no xmm bridging arises. */
+	if (strcmp(e->name,"putIfAbsent")==0 || strcmp(e->name,"getOrDefault")==0)
+	{
+		const char *cfn = (e->name[0]=='p') ? "bzy_map_put_if_absent" : "bzy_map_get_or_default";
+		cg_expr(cg,tt,e->lhs);                 /* Map. */
+		int cb = cg_scratch_alloc(cg, 32);
+		cg_emit(cg,"    mov [rbp - %d], rax", cb);
+		cg_expr(cg,tt,e->args[0]);             /* Key. */
+		cg_extend_reg(cg, e->lhs->type.elem->kind);   /* Canonicalize the key to 64 bits. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cb - 8);
+		cg_expr(cg,tt,e->args[1]);             /* Value / default. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cb - 16);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cb);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), cb - 8);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 2), cb - 16);
+		cg_aligned_call(cg,cfn);               /* Result in rax (owned when V is managed). */
+		if (expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cb);   /* Preserve the result across the release. */
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cb - 8);
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rbp - %d]", cb);
+		}
+
+		if (expr_is_owned(e->args[1]))
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cb);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cb - 16);
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rbp - %d]", cb);
+		}
+
+		cg_scratch_free(cg, 32);
+		return;
+	}
+
 	/* get / has / remove: receiver + one key argument. */
 	const char *fn = strcmp(e->name,"get")==0 ? "bzy_map_get"
 					 : strcmp(e->name,"containsKey")==0 ? "bzy_map_has"
@@ -9093,6 +9132,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_map_new");
 	cg_emit(cg,"extern bzy_map_put");
 	cg_emit(cg,"extern bzy_map_get");
+	cg_emit(cg,"extern bzy_map_put_if_absent");
+	cg_emit(cg,"extern bzy_map_get_or_default");
 	cg_emit(cg,"extern bzy_map_has");
 	cg_emit(cg,"extern bzy_map_remove");
 	cg_emit(cg,"extern bzy_map_contains_value");

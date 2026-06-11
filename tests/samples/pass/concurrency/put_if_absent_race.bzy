@@ -1,0 +1,45 @@
+// Eight breezes contend to claim one key with distinct values: exactly one
+// insert wins and every breeze observes the same winning value - the
+// check-then-act window does not exist.
+void claim(map<int,int> m, int val, channel<int> winners)
+{
+	winners.send(m.putIfAbsent(42, val));
+}
+
+void main()
+{
+	map<int,int> m;
+	m = new map<int,int>();
+	channel<int> winners;
+	winners = new channel<int>(8);
+
+	int w;
+	for (w = 0; w < 8; w++)
+	{
+		spawn claim(m, 100 + w, winners);
+	}
+
+	int first;
+	first = winners.recv();
+	int same;
+	same = 1;
+	int i;
+	for (i = 1; i < 8; i++)
+	{
+		if (winners.recv() != first)
+		{
+			same = 0;
+		}
+	}
+
+	print(same);          // 1: every breeze saw the same winner.
+	print(m.size);        // 1: exactly one insert happened.
+	if (m.getOrDefault(42, -1) == first)
+	{
+		print(1);         // The map agrees with the winner.
+	}
+	else
+	{
+		print(0);
+	}
+}

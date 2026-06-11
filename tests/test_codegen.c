@@ -411,6 +411,21 @@ static void test_subclass_declared_before_parent(void)
 		"    dq Dog__speak") != NULL, 1);   /* Full table: reserved slots 0/1, speak at slot 2. */
 }
 
+static void test_map_compound_lowering(void)
+{
+	/* putIfAbsent/getOrDefault lower to the atomic runtime intrinsics. */
+	emit(
+		"void main() {"
+		"  map<int,int> m; m = new map<int,int>();"
+		"  int x; x = m.putIfAbsent(1, 10);"
+		"  int y; y = m.getOrDefault(1, 5);"
+		"  print(x + y);"
+		"}",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_map_put_if_absent") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_map_get_or_default") != NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -903,6 +918,7 @@ int main(void)
 	RUN(test_shared_array_gating);
 	RUN(test_vec_gating_and_store_barriers);
 	RUN(test_subclass_declared_before_parent);
+	RUN(test_map_compound_lowering);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);
