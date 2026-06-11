@@ -1,0 +1,7 @@
+// The value argument must be assignable to the map's value type.
+void main()
+{
+	map<string,int> m;
+	m = new map<string,int>();
+	m.putIfAbsent("k", "not an int");
+}

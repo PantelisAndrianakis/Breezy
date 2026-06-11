@@ -102,6 +102,7 @@ check map_enum_key   tests/samples/pass/collections/proj_map_enum_key    $'100\n
 check map_object_key tests/samples/pass/collections/proj_map_object_key  $'42\nfalse\n1'
 check map_object_cycle tests/samples/pass/collections/proj_map_object_cycle  $'0'
 check_fail map_float tests/samples/fail/collections/map_float.bzy
+check_fail pia_type tests/samples/fail/collections/put_if_absent_type.bzy
 check incdec      tests/samples/pass/basics/incdec.bzy    $'42\n40'
 check break_loop  tests/samples/pass/control-flow/break.bzy     $'8'
 check_fail break_outside tests/samples/fail/control-flow/break_outside.bzy

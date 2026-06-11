@@ -2173,6 +2173,27 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_VOID;
 			}
+			else if (strcmp(e->name,"putIfAbsent")==0)
+			{
+				/* Atomic compound op: the result is the value now associated with
+				   the key (the existing value when present, else the inserted one). */
+				if (e->arg_count!=2 || !assignable(K,&e->args[0]->type) || !assignable(V,&e->args[1]->type))
+				{
+					die(e->line,"Map.putIfAbsent(key,value) type mismatch.",NULL);
+				}
+
+				e->type = *V;
+			}
+			else if (strcmp(e->name,"getOrDefault")==0)
+			{
+				/* Atomic compound op: the value when present, else the default. */
+				if (e->arg_count!=2 || !assignable(K,&e->args[0]->type) || !assignable(V,&e->args[1]->type))
+				{
+					die(e->line,"Map.getOrDefault(key,default) type mismatch.",NULL);
+				}
+
+				e->type = *V;
+			}
 			else if (strcmp(e->name,"getKeys")==0)
 			{
 				if (e->arg_count!=0)
