@@ -662,6 +662,30 @@ static void test_collector_skips_shared(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_deep_share_marks_graph(void)
+{
+	/* A map with string keys and object values: deep share must mark the map,
+	   its keys/vals backing arrays, every key string, and every value object. */
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(1 /* String keys. */, 1 /* Managed values. */);
+	void *k = bzy_str_new("alpha", 5);
+	void *v = bzy_alloc(32);
+	*(void**)v = node_vtable();
+	bzy_map_put(m, (int64_t)k, (int64_t)v);
+	bzy_share_crosscore(m);
+	ASSERT(*(int64_t*)((char*)m + 16) & (1ll << 3));   /* Map header. */
+	void *keys = *(void**)((char*)m + 48);
+	void *vals = *(void**)((char*)m + 56);
+	ASSERT(*(int64_t*)((char*)keys + 16) & (1ll << 3));   /* Keys backing array. */
+	ASSERT(*(int64_t*)((char*)vals + 16) & (1ll << 3));   /* Vals backing array. */
+	ASSERT(*(int64_t*)((char*)k + 16) & (1ll << 3));   /* Key string. */
+	ASSERT(*(int64_t*)((char*)v + 16) & (1ll << 3));   /* Value object. */
+	bzy_release(k);
+	bzy_release(v);
+	bzy_release(m);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1717,6 +1741,7 @@ int main(void)
 	RUN(test_self_cycle_collected);
 	RUN(test_live_cycle_kept);
 	RUN(test_collector_skips_shared);
+	RUN(test_deep_share_marks_graph);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);

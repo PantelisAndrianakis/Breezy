@@ -404,19 +404,32 @@ void *bzy_alloc(int64_t size)
 }
 
 /* Cross-core publication: an object handed to another worker thread (a channel
-   value, a spawn argument) needs an atomic refcount, or its non-atomic count
-   races across cores and is freed early (use-after-free). The SHARED bit is
-   normally fixed at allocation; promoting it here is safe ONLY for a leaf (no
-   managed children): a leaf is never cycle-buffered and never visited by the
-   collector, and at the first cross-core handoff the object is still confined to
-   this thread (an unshared object is single-core by invariant), so this thread is
-   its only accessor and the plain OR cannot race. Objects WITH managed children
-   can be cycle-buffered, and the roots buffer (g_roots) is shared across threads,
-   so promoting them here could race a collector running on another thread; those
-   are covered at compile time when their class is a channel element type (see
-   types_compute_shared_set). The remaining cases -- builtin containers of objects
-   crossing a channel, and spawn args that are objects with object fields -- are a
-   documented gap (bench/REPORT.md P7). Idempotent and NULL/unmanaged-safe. */
+   value, a spawn argument, a static-field store) needs an atomic refcount, or
+   its non-atomic count races across cores and is freed early (use-after-free).
+   share_walk ORs the SHARED bit into EVERY object reachable from the handed-off
+   root: at the first cross-core handoff the whole graph is still confined to
+   this thread (an unshared object is single-core by invariant), so this thread
+   is its only mutator; holding g_roots_lock additionally excludes a collection
+   pass on another thread from writing the gcinfo color/crc bits of buffered
+   nodes while we OR bit 3. An already-SHARED node terminates recursion (its
+   reachable set is already fully shared), so re-sharing a graph is O(1) at the
+   root. The collector drops SHARED candidates untouched, so a previously
+   buffered node is simply skipped at the next collection. Idempotent and
+   NULL/unmanaged-safe. */
+static void share_walk(void *o)
+{
+	if (*GI(o) & BZY_GCINFO_SHARED)
+	{
+		return;
+	}
+
+	*GI(o) |= BZY_GCINFO_SHARED;
+	FOR_EACH_CHILD(o, child,
+	{
+		share_walk(child);
+	});
+}
+
 void bzy_share_crosscore(void *o)
 {
 	if (!o || *RC(o) == 0)
@@ -426,15 +439,12 @@ void bzy_share_crosscore(void *o)
 
 	if (*GI(o) & BZY_GCINFO_SHARED)
 	{
-		return;   /* Already shared (idempotent). */
+		return;   /* Already shared (idempotent, lock-free fast path). */
 	}
 
-	if (has_object_children(o))
-	{
-		return;   /* Not a leaf: promotion here would race the cycle collector. */
-	}
-
-	*GI(o) |= BZY_GCINFO_SHARED;
+	bzy_mutex_lock(&g_roots_lock);
+	share_walk(o);
+	bzy_mutex_unlock(&g_roots_lock);
 }
 
 void bzy_retain(void *obj)
