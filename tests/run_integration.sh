@@ -230,6 +230,7 @@ check shared_list_hammer tests/samples/pass/concurrency/shared_list_hammer.bzy $
 check shared_map_hammer  tests/samples/pass/concurrency/shared_map_hammer.bzy  $'8000\n500'
 check shared_array_obj   tests/samples/pass/concurrency/shared_array_obj.bzy   $'OK'
 check pia_race tests/samples/pass/concurrency/put_if_absent_race.bzy $'1\n1\n1'
+check mc_pingpong tests/samples/pass/concurrency/mc_pingpong.bzy $'40000'
 check file_async  tests/samples/pass/io/file_async.bzy    $'50'
 check system_shell  tests/samples/pass/io/system_shell.bzy  $'5'
 check classname     tests/samples/pass/oop/proj_classname      $'Dog'

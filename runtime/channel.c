@@ -275,11 +275,20 @@ void bzy_channel_send(void *p, int64_t v)
 			return;
 		}
 
-		/* Full. Take the lock and re-try before parking: a receiver may have drained
-		   a slot in the meantime, and registering under the lock closes the wake race. */
+		/* Full. Take the lock and REGISTER BEFORE the final re-try: a receiver that
+		   frees a slot after our re-try is then guaranteed to see the bumped waiter
+		   count (its release-publish + seq_cst fence + seq_cst load cannot miss our
+		   seq_cst increment AND have our re-try miss its publish), so it wakes us; a
+		   receiver that freed a slot earlier is caught by the re-try itself. Checking
+		   before registering left a window where the counterpart published, read the
+		   count as zero, skipped the wake, and we parked forever (~1%% of mc_sum
+		   runs). On the found-a-slot path the registration is rolled back; a stale
+		   wake_one_* pops nothing and is harmless. */
 		bzy_mutex_lock(&c->lock);
+		__atomic_add_fetch(&c->send_waiters, 1, __ATOMIC_SEQ_CST);
 		if (ring_enqueue(c, v))
 		{
+			__atomic_sub_fetch(&c->send_waiters, 1, __ATOMIC_SEQ_CST);
 			bzy_mutex_unlock(&c->lock);
 			__atomic_thread_fence(__ATOMIC_SEQ_CST);
 			if (__atomic_load_n(&c->recv_waiters, __ATOMIC_SEQ_CST) > 0)
@@ -293,7 +302,6 @@ void bzy_channel_send(void *p, int64_t v)
 		CWaiter w;
 		w.breeze = bzy_sched_current();
 		wq_push(&c->send_head, &c->send_tail, &w);
-		__atomic_add_fetch(&c->send_waiters, 1, __ATOMIC_SEQ_CST);
 		bzy_sched_park_unlock(&c->lock);   /* Scheduler drops the lock once we are off-CPU. */
 		/* Resumed because a receiver freed a slot: loop and retry the enqueue. */
 	}
@@ -317,9 +325,12 @@ int64_t bzy_channel_recv(void *p)
 			return v;
 		}
 
+		/* Empty. Same register-then-re-try protocol as the sender (see above). */
 		bzy_mutex_lock(&c->lock);
+		__atomic_add_fetch(&c->recv_waiters, 1, __ATOMIC_SEQ_CST);
 		if (ring_dequeue(c, &v))
 		{
+			__atomic_sub_fetch(&c->recv_waiters, 1, __ATOMIC_SEQ_CST);
 			bzy_mutex_unlock(&c->lock);
 			__atomic_thread_fence(__ATOMIC_SEQ_CST);
 			if (__atomic_load_n(&c->send_waiters, __ATOMIC_SEQ_CST) > 0)
@@ -333,7 +344,6 @@ int64_t bzy_channel_recv(void *p)
 		CWaiter w;
 		w.breeze = bzy_sched_current();
 		wq_push(&c->recv_head, &c->recv_tail, &w);
-		__atomic_add_fetch(&c->recv_waiters, 1, __ATOMIC_SEQ_CST);
 		bzy_sched_park_unlock(&c->lock);
 		/* Resumed because a sender published a value: loop and retry the dequeue. */
 	}

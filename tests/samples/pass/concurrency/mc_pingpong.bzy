@@ -1,0 +1,30 @@
+// Capacity-1 ping-pong: every send meets a full ring and every recv an empty
+// one many times over, maximizing the park/wake slow paths where a lost
+// wakeup would hide. Guards the channel's register-then-re-check protocol.
+void ponger(channel<int> ping, channel<int> pong)
+{
+	int i;
+	for (i = 0; i < 20000; i++)
+	{
+		pong.send(ping.recv() + 1);
+	}
+}
+
+void main()
+{
+	channel<int> ping;
+	ping = new channel<int>(1);
+	channel<int> pong;
+	pong = new channel<int>(1);
+	spawn ponger(ping, pong);
+
+	int v;
+	v = 0;
+	int i;
+	for (i = 0; i < 20000; i++)
+	{
+		ping.send(v);
+		v = pong.recv() + 1;
+	}
+	print(v);            // 40000: each round adds 2.
+}
