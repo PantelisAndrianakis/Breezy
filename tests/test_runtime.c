@@ -803,6 +803,42 @@ static void test_map_iter_snapshot(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_map_compound_ops(void)
+{
+	/* putIfAbsent returns the value now in the map (existing wins); getOrDefault
+	   returns the default only when absent; both balance refcounts, and on a
+	   shared map the insert barrier marks the stored key/value. */
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(0 /* Int keys. */, 0);
+	ASSERT_INT(bzy_map_get_or_default(m, 7, 99), 99);   /* Absent -> default. */
+	ASSERT_INT(bzy_map_put_if_absent(m, 7, 70), 70);    /* Absent -> inserts, returns v. */
+	ASSERT_INT(bzy_map_put_if_absent(m, 7, 71), 70);    /* Present -> existing wins. */
+	ASSERT_INT(bzy_map_get_or_default(m, 7, 99), 70);
+	ASSERT_INT(bzy_map_len(m), 1);
+	bzy_release(m);
+
+	/* Shared map with managed keys/values: barrier and ownership. */
+	void *sm = bzy_map_new(1 /* String keys. */, 1 /* Managed values. */);
+	bzy_share_crosscore(sm);
+	void *k = bzy_str_new("k", 1);
+	void *v = bzy_str_new("v", 1);
+	void *got = (void*)bzy_map_put_if_absent(sm, (int64_t)k, (int64_t)v);   /* Owned (+1). */
+	ASSERT(got == v);
+	ASSERT(*(int64_t*)((char*)k + 16) & (1ll << 3));    /* Insert barrier: key. */
+	ASSERT(*(int64_t*)((char*)v + 16) & (1ll << 3));    /* Insert barrier: value. */
+	bzy_release(got);
+	void *d = bzy_str_new("d", 1);
+	void *g2 = (void*)bzy_map_get_or_default(sm, (int64_t)k, (int64_t)d);   /* Owned (+1). */
+	ASSERT(g2 == v);
+	bzy_release(g2);
+	bzy_release(k);
+	bzy_release(v);
+	bzy_release(d);
+	bzy_release(sm);
+	bzy_collect_cycles();   /* Reclaim any deferred buffered candidates before the balance check. */
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1864,6 +1900,7 @@ int main(void)
 	RUN(test_shared_vec_ops);
 	RUN(test_shared_map_ops);
 	RUN(test_map_iter_snapshot);
+	RUN(test_map_compound_ops);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);

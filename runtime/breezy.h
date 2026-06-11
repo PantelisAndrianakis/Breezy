@@ -96,6 +96,8 @@ void    bzy_oob_abort(int64_t index, int64_t length);                      /* Pr
 void   *bzy_map_new(int64_t key_kind, int64_t val_is_managed); /* Owned (+1). */
 void    bzy_map_put(void *m, int64_t key, int64_t val);
 int64_t bzy_map_get(void *m, int64_t key);   /* 0/NULL if absent; retains a managed value. */
+int64_t bzy_map_put_if_absent(void *m, int64_t key, int64_t val); /* Atomic; returns the value now at key (retained when managed). */
+int64_t bzy_map_get_or_default(void *m, int64_t key, int64_t dflt); /* Atomic; value or dflt (retained when managed, both branches). */
 int64_t bzy_map_has(void *m, int64_t key);   /* 1 / 0. */
 void    bzy_map_remove(void *m, int64_t key);
 int64_t bzy_map_len(void *m);

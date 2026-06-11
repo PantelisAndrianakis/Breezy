@@ -724,6 +724,110 @@ void *bzy_map_iter_snapshot(void *m)
 	return c;
 }
 
+/* Compound atomic operations: one probe under the stripe when the map is
+   shared, so a check-then-act sequence cannot interleave with another breeze.
+   Results are returned owned (+1) when values are managed, like bzy_map_get -
+   getOrDefault retains the default too, so the caller's result is uniformly
+   owned. putIfAbsent returns the value now associated with the key. */
+static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_t h)
+{
+	if ((*M_SIZE(m) + 1) > (*M_CAP(m) * 7) / 8)
+	{
+		map_grow(m);
+	}
+
+	int64_t slot = map_find_insert(m, key, h);
+	uint8_t *ctrl = *M_CTRL(m);
+	int64_t *keys = keys_data(m), *vals = vals_data(m);
+	if (ctrl[slot] != CTRL_EMPTY && ctrl[slot] != CTRL_DELETED)
+	{
+		int64_t v = vals[slot];
+		if (*M_VMAN(m))
+		{
+			bzy_retain((void*)v);   /* The existing value wins; owned result. */
+		}
+
+		return v;
+	}
+
+	if (key_managed(m))
+	{
+		bzy_retain((void*)key);
+	}
+
+	if (*M_VMAN(m))
+	{
+		bzy_retain((void*)val);     /* The map's reference. */
+	}
+
+	keys[slot] = key;
+	vals[slot] = val;
+	ctrl[slot] = (uint8_t)(h & 0x7f);
+	if (hash_is_cached(m))
+	{
+		map_hashes(m)[slot] = h;
+	}
+
+	(*M_SIZE(m))++;
+	if (*M_VMAN(m))
+	{
+		bzy_retain((void*)val);     /* The caller's owned result, independent of the map's reference. */
+	}
+
+	return val;
+}
+
+int64_t bzy_map_put_if_absent(void *m, int64_t key, int64_t val)
+{
+	if (map_is_shared(m))
+	{
+		/* Insert barrier and the (possibly user) hash both before the stripe. */
+		if (key_managed(m))
+		{
+			bzy_share_crosscore((void*)key);
+		}
+
+		if (*M_VMAN(m))
+		{
+			bzy_share_crosscore((void*)val);
+		}
+
+		uint64_t h = hash_key(m, key);
+		bzy_shared_lock(m);
+		int64_t v = map_put_if_absent_impl(m, key, val, h);
+		bzy_shared_unlock(m);
+		return v;
+	}
+
+	return map_put_if_absent_impl(m, key, val, hash_key(m, key));
+}
+
+static int64_t map_get_or_default_impl(void *m, int64_t key, int64_t dflt, uint64_t h)
+{
+	int64_t slot = map_find(m, key, h);
+	int64_t v = (slot >= 0) ? vals_data(m)[slot] : dflt;
+	if (*M_VMAN(m))
+	{
+		bzy_retain((void*)v);   /* Owned result on both branches (the default included). */
+	}
+
+	return v;
+}
+
+int64_t bzy_map_get_or_default(void *m, int64_t key, int64_t dflt)
+{
+	if (map_is_shared(m))
+	{
+		uint64_t h = hash_key(m, key);
+		bzy_shared_lock(m);
+		int64_t v = map_get_or_default_impl(m, key, dflt, h);
+		bzy_shared_unlock(m);
+		return v;
+	}
+
+	return map_get_or_default_impl(m, key, dflt, hash_key(m, key));
+}
+
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 {
 	for (int64_t i = 0; i < cap; i++)
