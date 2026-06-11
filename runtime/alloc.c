@@ -535,9 +535,20 @@ void bzy_release(void *obj)
 	   be the root of a dead cycle, so buffer it as a candidate. */
 	if (has_object_children(obj))
 	{
+		if (buffered(obj))
+		{
+			/* Already a candidate in g_roots: just re-purple. No lock - this is
+			   exactly as racy as the pre-lock code, and it is the hot case (an
+			   object released repeatedly between collections buffers once). If
+			   the flag read races a collection dropping the entry, the object
+			   simply re-buffers on its next release. */
+			set_color(obj, PURPLE);
+			return;
+		}
+
 		bzy_mutex_lock(&g_roots_lock);
 		set_color(obj, PURPLE);
-		if (!buffered(obj))
+		if (!buffered(obj))   /* Re-check under the lock. */
 		{
 			set_buffered(obj, 1);
 			roots_push(obj);

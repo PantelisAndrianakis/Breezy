@@ -77,6 +77,14 @@ Managed keys and values are **retained** while stored and **released** when remo
 
 ---
 
+## Thread safety
+
+Maps are **automatically safe to share across [breezes](../concurrency/breezes.md)**. Once a map crosses to another breeze (channel, `spawn` argument, or static field), every operation - `put`, `get`, `remove`, `containsKey`, even the internal rehash on growth - runs atomically, with no locking in your code. A map that stays within one breeze pays no synchronization cost.
+
+The guarantee is **per operation**: a check-then-act sequence like `if (!m.containsKey(k)) m.put(k, v)` can still interleave with another breeze between the two calls. Iterating a shared map is always safe and sees a consistent point-in-time view; updates made by other breezes during the loop may not appear until the next iteration over the map.
+
+---
+
 ## Rules & gotchas
 
 - **Keys** may be any integer type, `string`, an `enum`, or an object; values can be any type. Enum and object keys match by **identity**.

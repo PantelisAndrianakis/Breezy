@@ -1,0 +1,34 @@
+// Eight breezes each put a disjoint range of 1000 keys into one shared map.
+// Inserts and the rehashes they trigger all run under the map's stripe, so the
+// final size and every entry are exact.
+void worker(map<int,int> m, int base, channel<int> done)
+{
+	int i;
+	for (i = 0; i < 1000; i++)
+	{
+		m.put(base + i, i);
+	}
+	done.send(1);
+}
+
+void main()
+{
+	map<int,int> m;
+	m = new map<int,int>();
+	channel<int> done;
+	done = new channel<int>(8);
+
+	int w;
+	for (w = 0; w < 8; w++)
+	{
+		spawn worker(m, w * 1000, done);
+	}
+
+	int finished;
+	for (finished = 0; finished < 8; finished++)
+	{
+		done.recv();
+	}
+	print(m.size);               // 8000
+	print(m.get(3500));          // 500 (worker 3, i = 500)
+}

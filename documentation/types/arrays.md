@@ -73,6 +73,17 @@ Arrays are heap-allocated reference types. An array of **objects** participates 
 
 ---
 
+## Thread safety
+
+Arrays are **automatically safe to share across [breezes](../concurrency/breezes.md)**. When an array crosses to another breeze - over a [channel](../concurrency/channels.md), as a `spawn` argument, or through a static field - the runtime marks it shared, and from then on each element read and write is atomic and memory-safe, with no locking in your code:
+
+- **Value arrays** (`int[]`, `double[]`, ...) pay nothing at all: the length is fixed and element access is naturally atomic.
+- **Object and string arrays** synchronize each shared element access automatically, so a read can never see a half-replaced element or touch a freed one.
+
+Each *operation* is atomic; a sequence of operations can still interleave with other breezes (two breezes writing the same slot - last write wins). An array that never leaves its breeze pays no synchronization cost whatsoever.
+
+---
+
 ## Rules & gotchas
 
 - **Arrays are fixed-length** - the size is set at `new` and does not change. For a growable sequence, use [`List<T>`](collections.md).

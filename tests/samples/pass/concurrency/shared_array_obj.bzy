@@ -1,0 +1,36 @@
+// Eight breezes overwrite their own slot of one shared string array while
+// reading a neighbor's slot. Every write allocates a fresh string, so the
+// gated slot helpers' retain/release pairs are hammered from all cores; the
+// run passing without a crash or leak is the assertion.
+void worker(string[] a, int idx, channel<int> done)
+{
+	int i;
+	for (i = 0; i < 500; i++)
+	{
+		a[idx] = "x";
+		string s;
+		s = a[(idx + 1) % 8];    // May be null before the neighbor's first write.
+	}
+	done.send(1);
+}
+
+void main()
+{
+	string[] a;
+	a = new string[8];
+	channel<int> done;
+	done = new channel<int>(8);
+
+	int w;
+	for (w = 0; w < 8; w++)
+	{
+		spawn worker(a, w, done);
+	}
+
+	int finished;
+	for (finished = 0; finished < 8; finished++)
+	{
+		done.recv();
+	}
+	print("OK");
+}

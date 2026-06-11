@@ -57,7 +57,11 @@ The heap is **non-moving**: an object's address never changes for its lifetime. 
 
 ## A note on concurrency
 
-Reference-count updates are kept **non-atomic on the hot path** and only pay the atomic cost for objects that actually cross between breezes. The [zone model](../concurrency/zone-model.md) is what makes this safe and fast.
+Reference-count updates are kept **non-atomic on the hot path** and only pay the atomic cost for objects that actually cross between breezes. The [zone model](../concurrency/zone-model.md) is what makes this fast.
+
+The crossing itself is handled for you. At every **share point** - a [channel](../concurrency/channels.md) send, a `spawn` argument, or a store to a static field - the runtime walks the value's whole object graph and marks it shared: every reachable object switches to atomic reference counting, and shared [containers](../types/collections.md) synchronize their operations automatically from then on. Channel handoffs also order memory (a receiver always sees everything the sender wrote before the send), so values arrive consistent.
+
+One corner case: a **reference cycle made entirely of shared objects is not collected** - the cycle collector works on zone-local data. Cycles are rare to begin with; if you build one across breezes, break it by hand (clear a field) when you are done with it.
 
 ---
 

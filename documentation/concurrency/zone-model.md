@@ -2,6 +2,8 @@
 
 The zone model is Breezy's **recommended architecture** for a concurrent service. You shard your state into **zones** - per tenant, account, region, or whatever boundary fits your domain - and give each zone to a single breeze that **exclusively owns its data**. Inside a zone there are **no locks**; across zones, breezes talk through [channels](channels.md). This scales across all your cores with near-zero contention.
 
+Zones are the **fast path**, not a safety requirement: sharing a container across breezes is automatically safe in Breezy (each operation is atomic and memory-safe, with no locking in your code). The zone model is how you make a service *fast* - data that stays zone-local keeps non-atomic reference counts and lock-free containers.
+
 ← [Back to the guide](../guide.md)
 
 ---
@@ -37,10 +39,11 @@ The pieces from the previous pages combine into the recommended shape of a Breez
 
 ## Rules & gotchas
 
-- **One breeze owns each zone's data** - never share a zone's mutable state across breezes.
+- **One breeze owns each zone's data** - keeping a zone's mutable state private is what makes it fast.
 - **No locks inside a zone** - ownership replaces locking.
 - **Cross-zone communication is by channel**, not by direct access.
-- **Keeping objects zone-local keeps their refcounts non-atomic** - cross-breeze sharing is what costs more, so share deliberately.
+- **Sharing a container across breezes is safe** - operations on shared [arrays](../types/arrays.md), [collections](../types/collections.md), and [maps](../types/maps.md) synchronize automatically. It is the slower path, not a forbidden one.
+- **Keeping objects zone-local keeps their refcounts non-atomic and their containers lock-free** - cross-breeze sharing is what costs more, so share deliberately.
 
 ---
 

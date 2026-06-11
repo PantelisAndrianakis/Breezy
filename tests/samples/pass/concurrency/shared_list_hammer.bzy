@@ -1,0 +1,33 @@
+// Eight breezes hammer one shared list concurrently. The list crosses cores as
+// a spawn argument (deep-shared), so every add runs under its stripe and the
+// final size is exact regardless of how the work interleaves across cores.
+void worker(List<int> items, channel<int> done)
+{
+	int i;
+	for (i = 0; i < 1000; i++)
+	{
+		items.add(i);
+	}
+	done.send(1);
+}
+
+void main()
+{
+	List<int> l;
+	l = new List<int>();
+	channel<int> done;
+	done = new channel<int>(8);
+
+	int w;
+	for (w = 0; w < 8; w++)
+	{
+		spawn worker(l, done);
+	}
+
+	int finished;
+	for (finished = 0; finished < 8; finished++)
+	{
+		done.recv();
+	}
+	print(l.size);               // 8000
+}

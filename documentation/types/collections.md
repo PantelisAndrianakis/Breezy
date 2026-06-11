@@ -72,6 +72,14 @@ A growable doubling vector backs `List` and `Stack`; a ring buffer over that bac
 
 ---
 
+## Thread safety
+
+Collections are **automatically safe to share across [breezes](../concurrency/breezes.md)**. When a `List`, `Stack`, `Queue`, `Deque`, or `Set` crosses to another breeze - over a [channel](../concurrency/channels.md), as a `spawn` argument, or through a static field - every operation (`add`, `get`, `set`, pops, growth) runs atomically from then on, with no locking in your code. A collection that never leaves its breeze keeps today's full inline speed - it pays nothing.
+
+The guarantee is **per operation**: individual calls are atomic, but a compound sequence (check `size`, then `get`) can interleave with other breezes' updates. Iteration over a shared collection is safe and never crashes; it may or may not reflect updates that race with the loop.
+
+---
+
 ## Rules & gotchas
 
 - **No boxing for primitives** - `List<int>` stores real 32-bit integers.

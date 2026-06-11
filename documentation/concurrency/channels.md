@@ -56,7 +56,8 @@ The bounded capacity is the whole point. If a consumer is slower than its produc
 - **`send` parks when full; `recv` parks when empty** - both yield the breeze, not the OS thread.
 - **A full channel applies backpressure** to the producer, bounding memory use.
 - **Pass channels to spawned workers** as arguments (up to four arguments of any type).
-- **Prefer channels over shared mutable state** for cross-breeze communication.
+- **Any value can cross a channel safely** - objects, strings, [arrays](../types/arrays.md), [collections](../types/collections.md), and [maps](../types/maps.md) included. The runtime marks the whole object graph shared at the handoff, and shared containers synchronize their operations automatically.
+- **Prefer channels over shared mutable state** for cross-breeze communication - sharing is safe, but message passing stays the faster, clearer architecture.
 
 ---
 
