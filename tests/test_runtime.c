@@ -747,6 +747,31 @@ static void test_shared_vec_ops(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_shared_map_ops(void)
+{
+	/* Shared map: put deep-shares key and value (insert barrier), get retains
+	   inside the stripe, remove releases outside it, and the live count
+	   balances. */
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(1 /* String keys. */, 1 /* Managed values. */);
+	bzy_share_crosscore(m);
+	void *k = bzy_str_new("k", 1);
+	void *v = bzy_str_new("v", 1);
+	bzy_map_put(m, (int64_t)k, (int64_t)v);
+	ASSERT(*(int64_t*)((char*)k + 16) & (1ll << 3));   /* Insert barrier: key. */
+	ASSERT(*(int64_t*)((char*)v + 16) & (1ll << 3));   /* Insert barrier: value. */
+	ASSERT_INT(bzy_map_has(m, (int64_t)k), 1);
+	void *got = (void*)bzy_map_get(m, (int64_t)k);     /* Retains the value. */
+	ASSERT(got == v);
+	bzy_release(got);
+	bzy_map_remove(m, (int64_t)k);
+	ASSERT_INT(bzy_map_len(m), 0);
+	bzy_release(k);
+	bzy_release(v);
+	bzy_release(m);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1806,6 +1831,7 @@ int main(void)
 	RUN(test_stripe_lock_roundtrip);
 	RUN(test_shared_array_get_set);
 	RUN(test_shared_vec_ops);
+	RUN(test_shared_map_ops);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);

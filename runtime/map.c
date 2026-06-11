@@ -76,6 +76,20 @@ static int key_managed(void *m)
 	return *M_KKIND(m) != 0;
 }
 
+/* Shared-receiver gate. Every public map op funnels through one: a map that
+   crossed cores (SHARED gcinfo bit) runs whole-op under its stripe; a confined
+   map skips the branch entirely. The user hashCode (record keys) and the insert
+   barrier both run BEFORE the stripe is taken - user code under a container
+   lock could touch another shared container and, on a stripe collision,
+   deadlock. The user equals during a locked probe is the residual exception: a
+   user equals that touches the SAME shared map is documented user error (as in
+   Java). Displaced/removed occupants are released AFTER the stripe is dropped
+   so destructor cascades never run under the lock. */
+static int map_is_shared(void *m)
+{
+	return (*(int64_t*)((char*)m + 16) & (1ll << 3)) != 0;
+}
+
 static int64_t *keys_data(void *m)
 {
 	return (int64_t*)((char*)(*M_KEYS(m)) + 32);
@@ -272,14 +286,15 @@ static int64_t map_find_insert(void *m, int64_t key, uint64_t h)
 
 static void map_grow(void *m);
 
-void bzy_map_put(void *m, int64_t key, int64_t val)
+/* Returns the displaced value (0 when the key was new or values are unmanaged)
+   so callers can release it outside the stripe. */
+static int64_t map_put_impl(void *m, int64_t key, int64_t val, uint64_t h)
 {
 	if ((*M_SIZE(m) + 1) > (*M_CAP(m) * 7) / 8)
 	{
 		map_grow(m);
 	}
 
-	uint64_t h = hash_key(m, key);
 	int64_t slot = map_find_insert(m, key, h);
 	uint8_t *ctrl = *M_CTRL(m);
 	int64_t *keys = keys_data(m), *vals = vals_data(m);
@@ -287,14 +302,15 @@ void bzy_map_put(void *m, int64_t key, int64_t val)
 
 	if (existing)
 	{
+		int64_t old = 0;
 		if (*M_VMAN(m))
 		{
 			bzy_retain((void*)val);
-			bzy_release((void*)vals[slot]);
+			old = vals[slot];
 		}
 
 		vals[slot] = val;
-		return;
+		return old;
 	}
 
 	if (key_managed(m))
@@ -316,11 +332,42 @@ void bzy_map_put(void *m, int64_t key, int64_t val)
 	}
 
 	(*M_SIZE(m))++;
+	return 0;
 }
 
-int64_t bzy_map_get(void *m, int64_t key)
+void bzy_map_put(void *m, int64_t key, int64_t val)
 {
-	int64_t slot = map_find(m, key, hash_key(m, key));
+	if (map_is_shared(m))
+	{
+		/* Insert barrier and the (possibly user) hash both before the stripe. */
+		if (key_managed(m))
+		{
+			bzy_share_crosscore((void*)key);
+		}
+
+		if (*M_VMAN(m))
+		{
+			bzy_share_crosscore((void*)val);
+		}
+
+		uint64_t h = hash_key(m, key);
+		bzy_shared_lock(m);
+		int64_t old = map_put_impl(m, key, val, h);
+		bzy_shared_unlock(m);
+		bzy_release((void*)old);
+		return;
+	}
+
+	int64_t old = map_put_impl(m, key, val, hash_key(m, key));
+	if (old)
+	{
+		bzy_release((void*)old);
+	}
+}
+
+static int64_t map_get_impl(void *m, int64_t key, uint64_t h)
+{
+	int64_t slot = map_find(m, key, h);
 	if (slot < 0)
 	{
 		return 0;
@@ -329,20 +376,47 @@ int64_t bzy_map_get(void *m, int64_t key)
 	int64_t v = vals_data(m)[slot];
 	if (*M_VMAN(m))
 	{
-		bzy_retain((void*)v);
+		bzy_retain((void*)v);   /* Retain inside the stripe on the shared path. */
 	}
 
 	return v;
 }
 
+int64_t bzy_map_get(void *m, int64_t key)
+{
+	if (map_is_shared(m))
+	{
+		uint64_t h = hash_key(m, key);
+		bzy_shared_lock(m);
+		int64_t v = map_get_impl(m, key, h);
+		bzy_shared_unlock(m);
+		return v;
+	}
+
+	return map_get_impl(m, key, hash_key(m, key));
+}
+
 int64_t bzy_map_has(void *m, int64_t key)
 {
+	if (map_is_shared(m))
+	{
+		uint64_t h = hash_key(m, key);
+		bzy_shared_lock(m);
+		int64_t found = map_find(m, key, h) >= 0 ? 1 : 0;
+		bzy_shared_unlock(m);
+		return found;
+	}
+
 	return map_find(m, key, hash_key(m, key)) >= 0 ? 1 : 0;
 }
 
-void bzy_map_remove(void *m, int64_t key)
+/* Writes the removed key/value (or 0s) to the out-params so callers can release
+   them outside the stripe. */
+static void map_remove_impl(void *m, int64_t key, uint64_t h, int64_t *out_key, int64_t *out_val)
 {
-	int64_t slot = map_find(m, key, hash_key(m, key));
+	*out_key = 0;
+	*out_val = 0;
+	int64_t slot = map_find(m, key, h);
 	if (slot < 0)
 	{
 		return;
@@ -351,12 +425,12 @@ void bzy_map_remove(void *m, int64_t key)
 	int64_t *keys = keys_data(m), *vals = vals_data(m);
 	if (key_managed(m))
 	{
-		bzy_release((void*)keys[slot]);
+		*out_key = keys[slot];
 	}
 
 	if (*M_VMAN(m))
 	{
-		bzy_release((void*)vals[slot]);
+		*out_val = vals[slot];
 	}
 
 	keys[slot] = 0;
@@ -365,12 +439,39 @@ void bzy_map_remove(void *m, int64_t key)
 	(*M_SIZE(m))--;
 }
 
+void bzy_map_remove(void *m, int64_t key)
+{
+	int64_t okey, oval;
+	if (map_is_shared(m))
+	{
+		uint64_t h = hash_key(m, key);
+		bzy_shared_lock(m);
+		map_remove_impl(m, key, h, &okey, &oval);
+		bzy_shared_unlock(m);
+	}
+	else
+	{
+		map_remove_impl(m, key, hash_key(m, key), &okey, &oval);
+	}
+
+	bzy_release((void*)okey);
+	bzy_release((void*)oval);
+}
+
 int64_t bzy_map_len(void *m)
 {
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		int64_t n = *M_SIZE(m);
+		bzy_shared_unlock(m);
+		return n;
+	}
+
 	return *M_SIZE(m);
 }
 
-int64_t bzy_map_iter(void *m, int64_t from)
+static int64_t map_iter_impl(void *m, int64_t from)
 {
 	int64_t cap = *M_CAP(m);
 	uint8_t *ctrl = *M_CTRL(m);
@@ -385,18 +486,47 @@ int64_t bzy_map_iter(void *m, int64_t from)
 	return -1;
 }
 
+int64_t bzy_map_iter(void *m, int64_t from)
+{
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		int64_t i = map_iter_impl(m, from);
+		bzy_shared_unlock(m);
+		return i;
+	}
+
+	return map_iter_impl(m, from);
+}
+
 int64_t bzy_map_key_at(void *m, int64_t slot)
 {
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		int64_t k = keys_data(m)[slot];
+		bzy_shared_unlock(m);
+		return k;   /* Borrowed: the map keeps the reference. */
+	}
+
 	return keys_data(m)[slot];   /* Borrowed: the map keeps the reference. */
 }
 
 int64_t bzy_map_val_at(void *m, int64_t slot)
 {
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		int64_t v = vals_data(m)[slot];
+		bzy_shared_unlock(m);
+		return v;   /* Borrowed: the map keeps the reference. */
+	}
+
 	return vals_data(m)[slot];   /* Borrowed: the map keeps the reference. */
 }
 
 /* val_kind: 3 = string (content equality), anything else = raw 8-byte equality. */
-int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
+static int64_t map_contains_value_impl(void *m, int64_t needle, int64_t val_kind)
 {
 	int64_t cap = *M_CAP(m);
 	uint8_t *ctrl = *M_CTRL(m);
@@ -415,6 +545,19 @@ int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
 	}
 
 	return 0;
+}
+
+int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
+{
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		int64_t r = map_contains_value_impl(m, needle, val_kind);
+		bzy_shared_unlock(m);
+		return r;
+	}
+
+	return map_contains_value_impl(m, needle, val_kind);
 }
 
 /* Write a 64-bit value v into a packed output buffer at byte offset (n * esize),
@@ -439,7 +582,7 @@ static void pack_write(char *base, int64_t n, int64_t esize, int64_t v)
 	}
 }
 
-void *bzy_map_keys(void *m, int64_t elem_size)
+static void *map_keys_impl(void *m, int64_t elem_size)
 {
 	int64_t managed = key_managed(m) ? 1 : 0;
 	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed);   /* Owned (+1). */
@@ -463,7 +606,20 @@ void *bzy_map_keys(void *m, int64_t elem_size)
 	return a;
 }
 
-void *bzy_map_values(void *m, int64_t elem_size)
+void *bzy_map_keys(void *m, int64_t elem_size)
+{
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		void *a = map_keys_impl(m, elem_size);
+		bzy_shared_unlock(m);
+		return a;
+	}
+
+	return map_keys_impl(m, elem_size);
+}
+
+static void *map_values_impl(void *m, int64_t elem_size)
 {
 	int64_t managed = *M_VMAN(m);
 	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed);   /* Owned (+1). */
@@ -487,7 +643,20 @@ void *bzy_map_values(void *m, int64_t elem_size)
 	return a;
 }
 
-void *bzy_map_entries(void *m)
+void *bzy_map_values(void *m, int64_t elem_size)
+{
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		void *a = map_values_impl(m, elem_size);
+		bzy_shared_unlock(m);
+		return a;
+	}
+
+	return map_values_impl(m, elem_size);
+}
+
+static void *map_entries_impl(void *m)
 {
 	void *a = bzy_array_new(*M_SIZE(m), 1);   /* Object array (entries are managed). */
 	void **out = (void**)((char*)a + 32);
@@ -503,6 +672,19 @@ void *bzy_map_entries(void *m)
 	}
 
 	return a;
+}
+
+void *bzy_map_entries(void *m)
+{
+	if (map_is_shared(m))
+	{
+		bzy_shared_lock(m);
+		void *a = map_entries_impl(m);
+		bzy_shared_unlock(m);
+		return a;
+	}
+
+	return map_entries_impl(m);
 }
 
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
@@ -543,6 +725,15 @@ static void map_grow(void *m)
 	void *nvals = bzy_array_new(newcap, *M_VMAN(m));
 	int64_t *nk = (int64_t*)((char*)nkeys + 32);
 	int64_t *nv = (int64_t*)((char*)nvals + 32);
+
+	/* A shared map's fresh backing arrays inherit the SHARED bit: they are
+	   newborn and sole-referenced here, so a plain OR is race-free (and the
+	   roots lock must NOT be taken while holding a stripe). */
+	if (map_is_shared(m))
+	{
+		*(int64_t*)((char*)nkeys + 16) |= (1ll << 3);
+		*(int64_t*)((char*)nvals + 16) |= (1ll << 3);
+	}
 
 	*M_CTRL(m) = nctrl;        /* Publish new buffers before re-probing. */
 	*M_KEYS(m) = nkeys;
