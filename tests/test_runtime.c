@@ -631,6 +631,37 @@ static void test_live_cycle_kept(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_collector_skips_shared(void)
+{
+	/* Two objects in a cycle, buffered as candidates, then marked SHARED (the
+	   deep-share walk marks whole graphs): the collector must drop them without
+	   freeing or traversing them - shared cycles leak by design, and a collection
+	   pass must never touch the gcinfo of a cross-core object. */
+	int64_t before = bzy_live_count();
+	void *a = bzy_alloc(32);
+	void *b = bzy_alloc(32);
+	*(void**)a = node_vtable();
+	*(void**)b = node_vtable();
+	*(void**)((char*)a + 24) = b;
+	bzy_retain(b);
+	*(void**)((char*)b + 24) = a;
+	bzy_retain(a);
+	/* Drop both external references: both buffer as cycle candidates. */
+	bzy_release(a);
+	bzy_release(b);
+	ASSERT_INT(bzy_live_count(), before + 2);
+	*(int64_t*)((char*)a + 16) |= (1ll << 3);   /* BZY_GCINFO_SHARED. */
+	*(int64_t*)((char*)b + 16) |= (1ll << 3);
+	bzy_collect_cycles();
+	ASSERT_INT(bzy_live_count(), before + 2);   /* Skipped, not collected. */
+	ASSERT_INT(bzy_roots_buffered(), 0);        /* And no longer buffered. */
+	/* Break the cycle by hand so the leak does not poison later live counts:
+	   clearing a's edge then releasing b frees b, whose child release frees a. */
+	*(void**)((char*)a + 24) = NULL;
+	bzy_release(b);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1685,6 +1716,7 @@ int main(void)
 	RUN(test_cycle_is_collected);
 	RUN(test_self_cycle_collected);
 	RUN(test_live_cycle_kept);
+	RUN(test_collector_skips_shared);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);

@@ -1,4 +1,5 @@
 #include "breezy.h"
+#include "platform.h"  /* bzy_mutex for the cycle-roots lock. */
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>   /* offsetof, for the inline-allocator layout asserts. */
@@ -117,6 +118,15 @@ static void (*finalizer_of(void *o))(void *)
 static void   **g_roots = NULL;
 static int64_t g_roots_n = 0;
 static int64_t g_roots_cap = 0;
+
+/* Guards g_roots/g_roots_n/g_roots_cap and the whole collection pass. Buffering
+   happens on whichever worker thread runs the release, so the buffer is
+   cross-thread; the same lock also excludes a collection pass while
+   bzy_share_crosscore promotes an object graph (the SHARED OR and the
+   collector's color/crc updates land in the same gcinfo word). */
+static bzy_mutex g_roots_lock = BZY_MUTEX_INIT;
+
+static void collect_cycles_locked(void);
 
 static void roots_push(void *o)
 {
@@ -515,6 +525,7 @@ void bzy_release(void *obj)
 	   be the root of a dead cycle, so buffer it as a candidate. */
 	if (has_object_children(obj))
 	{
+		bzy_mutex_lock(&g_roots_lock);
 		set_color(obj, PURPLE);
 		if (!buffered(obj))
 		{
@@ -525,9 +536,10 @@ void bzy_release(void *obj)
 			   long-running programs bound cycle garbage without explicit calls. */
 			if (g_roots_n >= 10000)
 			{
-				bzy_collect_cycles();
+				collect_cycles_locked();
 			}
 		}
+		bzy_mutex_unlock(&g_roots_lock);
 	}
 }
 
@@ -554,7 +566,10 @@ int64_t bzy_live_count(void)
 
 int64_t bzy_roots_buffered(void)
 {
-	return g_roots_n;
+	bzy_mutex_lock(&g_roots_lock);
+	int64_t n = g_roots_n;
+	bzy_mutex_unlock(&g_roots_lock);
+	return n;
 }
 
 /* Trial deletion (Bacon-Rajan), operating on the per-object crc scratch so the
@@ -567,6 +582,17 @@ int64_t bzy_roots_buffered(void)
    list and freed only after the whole walk, so no traversal ever dereferences
    freed memory. */
 
+/* SHARED objects are traversal BOUNDARIES for trial deletion: their liveness is
+   governed by their atomic refcount alone, they are never part of a collectable
+   cycle, and another core may be using them concurrently - so no pass may gray
+   them, trial-decrement their crc, or recolor them (all of which write the same
+   gcinfo word the SHARED bit lives in). An edge from a dying confined subgraph
+   into a shared object is settled later by free_object's child release. */
+static int is_shared_obj(void *o)
+{
+	return (*GI(o) & BZY_GCINFO_SHARED) != 0;
+}
+
 static void mark_gray(void *s)
 {
 	if (color_of(s) == GRAY)
@@ -578,12 +604,15 @@ static void mark_gray(void *s)
 	set_crc(s, *RC(s));
 	FOR_EACH_CHILD(s, t,
 	{
-		if (color_of(t) != GRAY)
+		if (!is_shared_obj(t))
 		{
-			mark_gray(t);
-		}
+			if (color_of(t) != GRAY)
+			{
+				mark_gray(t);
+			}
 
-		set_crc(t, crc_of(t) - 1);
+			set_crc(t, crc_of(t) - 1);
+		}
 	});
 }
 
@@ -592,7 +621,7 @@ static void scan_black(void *s)
 	set_color(s, BLACK);
 	FOR_EACH_CHILD(s, t,
 	{
-		if (color_of(t) != BLACK)
+		if (!is_shared_obj(t) && color_of(t) != BLACK)
 		{
 			scan_black(t);
 		}
@@ -615,7 +644,10 @@ static void scan(void *s)
 	set_color(s, WHITE);
 	FOR_EACH_CHILD(s, t,
 	{
-		scan(t);
+		if (!is_shared_obj(t))
+		{
+			scan(t);
+		}
 	});
 }
 
@@ -655,17 +687,29 @@ static void gather_white(void *s)
 	white_push(s);
 	FOR_EACH_CHILD(s, t,
 	{
-		gather_white(t);
+		if (!is_shared_obj(t))
+		{
+			gather_white(t);
+		}
 	});
 }
 
-void bzy_collect_cycles(void)
+static void collect_cycles_locked(void)
 {
 	/* Mark: gray every still-PURPLE candidate; drop the stale ones. */
 	int64_t kept = 0;
 	for (int64_t i = 0; i < g_roots_n; i++)
 	{
 		void *s = g_roots[i];
+		if (is_shared_obj(s))
+		{
+			/* Promoted to cross-core after being buffered: shared objects are
+			   exempt from cycle collection (a fully shared cycle leaks; this is
+			   documented). Unbuffer and drop the candidate untouched. */
+			set_buffered(s, 0);
+			continue;
+		}
+
 		if (color_of(s) == PURPLE)
 		{
 			mark_gray(s);
@@ -719,4 +763,11 @@ void bzy_collect_cycles(void)
 	}
 
 	g_white_n = 0;
+}
+
+void bzy_collect_cycles(void)
+{
+	bzy_mutex_lock(&g_roots_lock);
+	collect_cycles_locked();
+	bzy_mutex_unlock(&g_roots_lock);
 }
