@@ -49,6 +49,35 @@ int64_t bzy_array_len(void *a)
 	return *(int64_t*)((char*)a + 24);
 }
 
+/* Shared-array element access. Codegen reaches these only from the out-of-line
+   stub behind a SHARED-bit test, and only for managed-element arrays after the
+   inline bounds check has passed (so no bounds logic here - the catchable
+   subscript exception is raised by the unchanged inline path). Value arrays
+   never come here: aligned native loads/stores are already atomic, so a shared
+   value array's fast path is the ordinary inline code. */
+int64_t bzy_array_get_shared(void *a, int64_t i)
+{
+	bzy_shared_lock(a);
+	void *e = *(void**)((char*)a + 32 + i * 8);
+	bzy_retain(e);   /* Retain inside the stripe, or a concurrent overwrite could release it first. */
+	bzy_shared_unlock(a);
+	return (int64_t)e;
+}
+
+void bzy_array_set_shared(void *a, int64_t i, int64_t v)
+{
+	/* Insert barrier: anything stored into a shared container is itself shared.
+	   Deep-share BEFORE taking the stripe (lock ordering: the roots lock and a
+	   stripe are never held together). */
+	bzy_share_crosscore((void*)v);
+	bzy_retain((void*)v);
+	bzy_shared_lock(a);
+	void *old = *(void**)((char*)a + 32 + i * 8);
+	*(void**)((char*)a + 32 + i * 8) = (void*)v;
+	bzy_shared_unlock(a);
+	bzy_release(old);   /* Outside the stripe: a destructor cascade must not hold it. */
+}
+
 void bzy_oob_abort(int64_t index, int64_t length)
 {
 	fprintf(stderr, "Array index %lld out of bounds for length %lld.\n",

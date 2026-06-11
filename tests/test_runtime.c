@@ -701,6 +701,28 @@ static void test_stripe_lock_roundtrip(void)
 	ASSERT(1);
 }
 
+static void test_shared_array_get_set(void)
+{
+	/* Shared managed-array element access: set deep-shares the incoming element
+	   (insert barrier), get returns it retained, overwrite releases the old
+	   occupant, and the whole dance balances the live count. */
+	int64_t before = bzy_live_count();
+	void *a = bzy_array_new(4, 1 /* Managed elements. */);
+	void *s1 = bzy_str_new("one", 3);
+	bzy_share_crosscore(a);
+	bzy_array_set_shared(a, 2, (int64_t)s1);            /* Retains; slot now owns a ref. */
+	ASSERT(*(int64_t*)((char*)s1 + 16) & (1ll << 3));   /* Insert barrier marked the element. */
+	void *got = (void*)bzy_array_get_shared(a, 2);      /* Owned (+1). */
+	ASSERT(got == s1);
+	void *s2 = bzy_str_new("two", 3);
+	bzy_array_set_shared(a, 2, (int64_t)s2);            /* Overwrites: releases s1's slot ref. */
+	bzy_release(got);
+	bzy_release(s1);
+	bzy_release(s2);   /* Caller refs gone; the array still holds s2. */
+	bzy_release(a);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1758,6 +1780,7 @@ int main(void)
 	RUN(test_collector_skips_shared);
 	RUN(test_deep_share_marks_graph);
 	RUN(test_stripe_lock_roundtrip);
+	RUN(test_shared_array_get_set);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
