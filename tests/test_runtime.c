@@ -686,6 +686,21 @@ static void test_deep_share_marks_graph(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_stripe_lock_roundtrip(void)
+{
+	/* The stripe primitive: lock/unlock must round-trip on the same address, and
+	   distinct addresses must work nested here (LIFO order). Production code
+	   never nests stripes - container critical sections are single-stripe. */
+	char a[32], b[32];
+	bzy_shared_lock(a);
+	bzy_shared_unlock(a);
+	bzy_shared_lock(a);
+	bzy_shared_lock(b);
+	bzy_shared_unlock(b);
+	bzy_shared_unlock(a);
+	ASSERT(1);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1742,6 +1757,7 @@ int main(void)
 	RUN(test_live_cycle_kept);
 	RUN(test_collector_skips_shared);
 	RUN(test_deep_share_marks_graph);
+	RUN(test_stripe_lock_roundtrip);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
