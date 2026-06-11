@@ -531,6 +531,43 @@ static void test_fp_indexed_load_direct_addressing(void)
 	ASSERT_INT(strstr(g_asm, ", qword [r8 + r") != NULL, 1);
 }
 
+static void test_loop_scoped_float_promotion(void)
+{
+	/* A double accumulator whose live range crosses a call OUTSIDE the inner loop
+	   cannot take a caller-saved xmm2..5 home, but the call-free inner loop
+	   promotes it into callee-saved xmm6..xmm11 for the loop's span: load before
+	   the loop, register arithmetic inside, store back after. On Windows the
+	   clobbered callee-saved registers are preserved around the loop with movups;
+	   on SysV they are volatile and need no preservation. */
+	const char *src =
+		"void main()\n"
+		"{\n"
+		"	int n; n = 100;\n"
+		"	double[] a; a = new double[n * 2];\n"
+		"	double acc; acc = 0.0;\n"
+		"	for (int f = 0; f < 3; f = f + 1)\n"
+		"	{\n"
+		"		long t; t = Clock.currentTimeNanos();\n"
+		"		for (int i = 0; i < n; i = i + 1)\n"
+		"		{\n"
+		"			int b; b = i * 2;\n"
+		"			double x; x = a[b + 0];\n"
+		"			double y; y = a[b + 1];\n"
+		"			acc = acc + (x * y);\n"
+		"		}\n"
+		"		print(t);\n"
+		"	}\n"
+		"	print((long)acc);\n"
+		"}\n";
+	emit(src, TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "movsd xmm6, qword [rbp - ") != NULL, 1);   /* Preheader load. */
+	ASSERT_INT(strstr(g_asm, "], xmm6") != NULL, 1);                      /* Exit store to the slot. */
+	ASSERT_INT(strstr(g_asm, "movups") != NULL, 1);                       /* Win64: xmm6 is callee-saved. */
+	emit(src, TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "movsd xmm6, qword [rbp - ") != NULL, 1);   /* Same promotion on SysV... */
+	ASSERT_INT(strstr(g_asm, "movups") == NULL, 1);                       /* ...without the save/restore. */
+}
+
 static void test_inplace_register_arithmetic(void)
 {
 	/* state = state * C1 + C2 updates r13 in place (no `mov r13, rax`), and
@@ -699,6 +736,7 @@ int main(void)
 	RUN(test_promotion_register_resident);
 	RUN(test_float_promotion_xmm);
 	RUN(test_fp_indexed_load_direct_addressing);
+	RUN(test_loop_scoped_float_promotion);
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);
 	RUN(test_linux_receiver_and_release);

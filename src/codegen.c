@@ -85,8 +85,16 @@ static const char *cg_local_reg(Codegen *cg, int off)
    never live across a call - needs no prologue save/restore. Index i == fpromo_reg. */
 static const char *const CG_FPROMO_REGS[4] = { "xmm2", "xmm3", "xmm4", "xmm5" };
 
+/* Loop-scoped float promotion: callee-saved XMM homes for hot doubles inside the
+   current innermost call-free loop (see cg_lpromo_begin). Callee-saved on Win64
+   (preserved around the loop with movups), volatile on SysV. */
+#define LPROMO_NREGS 6
+static const char *const CG_LPROMO_REGS[LPROMO_NREGS] = { "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11" };
+
 /* If double local slot `off` is float-promoted in the current function, return its
-   XMM register name ("xmm2".."xmm5"); otherwise NULL. NULL for synthesized frames. */
+   XMM register name ("xmm2".."xmm5"); otherwise NULL. NULL for synthesized frames.
+   A loop-scoped promotion (xmm6..xmm11) takes effect only while its loop is being
+   emitted - lpromo_n is zero outside the armed region. */
 static const char *cg_local_xmm(Codegen *cg, int off)
 {
 	Func *f = cg->cur_func;
@@ -100,6 +108,14 @@ static const char *cg_local_xmm(Codegen *cg, int off)
 		if (f->fpromo_off[i] == off)
 		{
 			return CG_FPROMO_REGS[f->fpromo_reg[i]];
+		}
+	}
+
+	for (int i = 0; i < cg->lpromo_n; i++)
+	{
+		if (cg->lpromo_off[i] == off)
+		{
+			return CG_LPROMO_REGS[i];
 		}
 	}
 
@@ -162,7 +178,10 @@ static void cg_store_local_fp(Codegen *cg, int off, TypeKind k)
 	const char *xr = k==TY_DOUBLE ? cg_local_xmm(cg, off) : NULL;
 	if (xr)
 	{
-		cg_emit(cg, "    movsd %s, xmm0", xr);
+		/* movaps, not movsd: the register form of movsd merges into the
+		   destination's upper half, adding a false dependency on the home's
+		   previous value - a loop-carried stall for a promoted accumulator. */
+		cg_emit(cg, "    movaps %s, xmm0", xr);
 	}
 	else
 	{
@@ -1886,7 +1905,10 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 		char abuf[48], bbuf[48];
 		cg_expr(cg,tt,e->lhs);
 		cg_fp_promote(cg, e->lhs->type.kind, ct);
-		cg_emit(cg,"    %s xmm1, %s", mov, cg_fp_local_opnd(cg, e->rhs->lhs, ct, abuf, sizeof abuf));
+		const char *aop = cg_fp_local_opnd(cg, e->rhs->lhs, ct, abuf, sizeof abuf);
+		/* A register source takes movaps: the register form of movsd/movss merges
+		   into xmm1's upper bits, false-depending on its previous value. */
+		cg_emit(cg,"    %s xmm1, %s", strncmp(aop, "xmm", 3)==0 ? "movaps" : mov, aop);
 		cg_emit(cg,"    mul%s xmm1, %s", sfx, cg_fp_local_opnd(cg, e->rhs->rhs, ct, bbuf, sizeof bbuf));
 		cg_emit(cg,"    %s%s xmm0, xmm1", e->op==TOKEN_PLUS ? "add" : "sub", sfx);
 		return;
@@ -1902,7 +1924,7 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);   /* Spill lhs (float lives in the low 4 bytes). */
 		cg_expr(cg,tt,e->rhs);
 		cg_fp_promote(cg, e->rhs->type.kind, ct);
-		cg_emit(cg,"    movsd xmm1, xmm0");          /* rhs -> xmm1. */
+		cg_emit(cg,"    movaps xmm1, xmm0");          /* rhs -> xmm1. */
 		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);   /* lhs -> xmm0. */
 		cg_scratch_free(cg, 8);
 		rhs = "xmm1";
@@ -3987,7 +4009,7 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 			int b = cg_scratch_alloc(cg, 16);
 			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
 			cg_to_double(cg,tt,e->args[1]);
-			cg_emit(cg,"    movsd xmm1, xmm0");
+			cg_emit(cg,"    movaps xmm1, xmm0");
 			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
 			cg_scratch_free(cg, 16);
 			cg_emit(cg, ismin ? "    minsd xmm0, xmm1" : "    maxsd xmm0, xmm1");
@@ -4075,7 +4097,7 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		int b = cg_scratch_alloc(cg, 16);
 		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
 		cg_to_double(cg,tt,e->args[1]);
-		cg_emit(cg,"    movsd xmm1, xmm0");
+		cg_emit(cg,"    movaps xmm1, xmm0");
 		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
 		cg_scratch_free(cg, 16);
 		cg_aligned_call(cg,"pow");          /* base xmm0, exp xmm1; result xmm0. */
@@ -5039,7 +5061,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			const char *xr = e->type.kind==TY_DOUBLE ? cg_local_xmm(cg, e->anno_int) : NULL;
 			if (xr)
 			{
-				cg_emit(cg,"    movsd xmm0, %s", xr);   /* Promoted double: read from its XMM home. */
+				cg_emit(cg,"    movaps xmm0, %s", xr);   /* Promoted double: read from its XMM home (movaps: no upper-half merge dependency). */
 			}
 			else
 			{
@@ -5615,6 +5637,202 @@ static int cg_hoist_block_ok(Block *b)
 	}
 
 	return 1;
+}
+
+/* --- Loop-scoped float promotion (xmm6..xmm11). ----------------------------------
+   Function-scope float promotion (xmm2..5) refuses any double whose live range
+   crosses a call: those registers are caller-saved. A call-free innermost loop can
+   still home such doubles in callee-saved XMM registers for just the loop's span -
+   the per-frame accumulator of a hot FP kernel is the canonical win. Each chosen
+   double is loaded from its slot BEFORE the entry guard and stored back after the
+   end label, so the guard-fail path round-trips the values unchanged and break
+   exits (which jump to the end label) pass through the stores. The body allowlist
+   is the same one that protects the r8..r11 caches (call-free, BCE-safe, no
+   return/throw/try/foreach), extended to the loop's own condition and any nested
+   for headers, which the hoist predicate never vets. On Win64 xmm6+ belong to the
+   caller and are preserved in scratch slots around the loop; SysV leaves them
+   volatile. */
+
+/* Nested for/while headers (cond, init, post) are emitted per-entry or per-
+   iteration inside the armed region, so they must satisfy the same call-free
+   allowlist as the body statements. */
+static int cg_lpromo_headers_ok_block(Block *b);
+
+static int cg_lpromo_headers_ok_stmt(Stmt *s)
+{
+	if (!s)
+	{
+		return 1;
+	}
+
+	if (s->kind == ST_FOR
+		&& (!cg_hoist_expr_ok(s->cond) || !cg_hoist_stmt_ok(s->for_init) || !cg_hoist_stmt_ok(s->for_post)))
+	{
+		return 0;
+	}
+
+	return cg_lpromo_headers_ok_stmt(s->for_init) && cg_lpromo_headers_ok_stmt(s->for_post)
+		   && cg_lpromo_headers_ok_block(s->then_blk) && cg_lpromo_headers_ok_block(s->else_blk);
+}
+
+static int cg_lpromo_headers_ok_block(Block *b)
+{
+	if (!b)
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (!cg_lpromo_headers_ok_stmt(b->stmts[i]))
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+/* Use-count collection for double locals that hold no caller-saved XMM home. */
+typedef struct
+{
+	int off;
+	int count;
+} LpCand;
+
+#define LPROMO_MAX_CAND 32
+
+static void cg_lpromo_note(Codegen *cg, int off, LpCand *cand, int *n)
+{
+	if (off <= 0 || cg_local_xmm(cg, off))
+	{
+		return;   /* Already homed function-wide (xmm2..5), or not a local slot. */
+	}
+
+	for (int i = 0; i < *n; i++)
+	{
+		if (cand[i].off == off)
+		{
+			cand[i].count++;
+			return;
+		}
+	}
+
+	if (*n < LPROMO_MAX_CAND)
+	{
+		cand[*n].off = off;
+		cand[*n].count = 1;
+		(*n)++;
+	}
+}
+
+static void cg_lpromo_uses_expr(Codegen *cg, Expr *e, LpCand *cand, int *n)
+{
+	if (!e)
+	{
+		return;
+	}
+
+	if (e->kind == EX_IDENT && e->type.kind == TY_DOUBLE && e->anno_int > 0)
+	{
+		cg_lpromo_note(cg, e->anno_int, cand, n);
+	}
+
+	cg_lpromo_uses_expr(cg, e->lhs, cand, n);
+	cg_lpromo_uses_expr(cg, e->rhs, cand, n);
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		cg_lpromo_uses_expr(cg, e->args[i], cand, n);
+	}
+}
+
+static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand *cand, int *n);
+
+static void cg_lpromo_uses_stmt(Codegen *cg, Stmt *s, LpCand *cand, int *n)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	if (s->kind == ST_VARDECL && s->decl_type.kind == TY_DOUBLE && s->decl_offset > 0)
+	{
+		cg_lpromo_note(cg, s->decl_offset, cand, n);
+	}
+
+	cg_lpromo_uses_expr(cg, s->target, cand, n);
+	cg_lpromo_uses_expr(cg, s->cond, cand, n);
+	cg_lpromo_uses_expr(cg, s->expr, cand, n);
+	cg_lpromo_uses_expr(cg, s->value, cand, n);
+	cg_lpromo_uses_expr(cg, s->decl_init, cand, n);
+	cg_lpromo_uses_stmt(cg, s->for_init, cand, n);
+	cg_lpromo_uses_stmt(cg, s->for_post, cand, n);
+	cg_lpromo_uses_block(cg, s->then_blk, cand, n);
+	cg_lpromo_uses_block(cg, s->else_blk, cand, n);
+}
+
+static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand *cand, int *n)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		cg_lpromo_uses_stmt(cg, b->stmts[i], cand, n);
+	}
+}
+
+/* Arm loop-scoped float promotion for `loop` if eligible: pick the hottest
+   slot-resident doubles used in it, preserve the caller's xmm6.. (Win64), and
+   load each candidate into its register. Must be emitted BEFORE the loop's
+   entry guard; cg_loop_hoist_end emits the matching stores and restores. */
+static void cg_lpromo_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
+{
+	(void)tt;
+	Block *body = loop->then_blk;
+	if (!cg->cur_func || cg->hoist_depth > 0 || cg->lpromo_n > 0 || cg->unrolling
+		|| !body || !cg_hoist_block_ok(body) || !cg_lpromo_headers_ok_block(body)
+		|| !cg_hoist_expr_ok(loop->cond)
+		|| (loop->kind == ST_FOR && !cg_hoist_stmt_ok(loop->for_post)))
+	{
+		return;
+	}
+
+	LpCand cand[LPROMO_MAX_CAND];
+	int nc = 0;
+	cg_lpromo_uses_block(cg, body, cand, &nc);
+	cg_lpromo_uses_expr(cg, loop->cond, cand, &nc);
+	cg_lpromo_uses_stmt(cg, loop->for_post, cand, &nc);
+
+	while (cg->lpromo_n < LPROMO_NREGS)
+	{
+		int best = -1;
+		for (int i = 0; i < nc; i++)
+		{
+			if (cand[i].count >= 2 && (best < 0 || cand[i].count > cand[best].count))
+			{
+				best = i;
+			}
+		}
+
+		if (best < 0)
+		{
+			break;
+		}
+
+		int k = cg->lpromo_n;
+		if (cg->target == TARGET_WINDOWS)
+		{
+			cg_emit(cg, "    movups [rbp - %d], %s", cg->lpromo_save_base + k*16, CG_LPROMO_REGS[k]);
+		}
+
+		cg_emit(cg, "    movsd %s, qword [rbp - %d]", CG_LPROMO_REGS[k], cand[best].off);
+		cg->lpromo_off[k] = cand[best].off;
+		cg->lpromo_n++;
+		cand[best].count = 0;
+	}
 }
 
 /* Collect, into w[0..*wn), the slot offsets a region writes (the values that are
@@ -6248,6 +6466,23 @@ static void cg_loop_hoist_end(Codegen *cg)
 		}
 	}
 
+	/* Loop-scoped float promotion: write each promoted double back to its slot
+	   (on the guard-fail path this stores the values just loaded - a harmless
+	   round trip) and, on Win64, restore the caller's xmm6.. from scratch. */
+	for (int i = 0; i < cg->lpromo_n; i++)
+	{
+		cg_emit(cg, "    movsd qword [rbp - %d], %s", cg->lpromo_off[i], CG_LPROMO_REGS[i]);
+	}
+
+	if (cg->target == TARGET_WINDOWS)
+	{
+		for (int i = 0; i < cg->lpromo_n; i++)
+		{
+			cg_emit(cg, "    movups %s, [rbp - %d]", CG_LPROMO_REGS[i], cg->lpromo_save_base + i*16);
+		}
+	}
+
+	cg->lpromo_n = 0;
 	cg->hoist_n = 0;
 	cg->sr_n = 0;
 	cg->sr_ivreg = NULL;
@@ -6442,6 +6677,7 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 	}
 
+	cg_lpromo_begin(cg, tt, s);           /* Home hot doubles in xmm6.. before the guard (see cg_lpromo_begin). */
 	cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
 	cg_loop_hoist_begin(cg, tt, s);       /* Pin loop-invariant locals into r8..r11 if the body allows. */
 	cg_emit(cg,".L%d:", top);
@@ -7316,6 +7552,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		int sb=cg->cur_break_label, sc=cg->cur_continue_label;
 		cg->cur_break_label=end;
 		cg->cur_continue_label=cont;          /* continue re-tests the condition at the bottom. */
+		cg_lpromo_begin(cg, tt, s);           /* Home hot doubles in xmm6.. before the guard (see cg_lpromo_begin). */
 		cg_branch_unless(cg,tt,s->cond,end);  /* Entry guard: skip the loop if false up front. */
 		cg_loop_hoist_begin(cg, tt, s);       /* Pin loop-invariant locals into r8..r11 if the body allows. */
 		cg_emit(cg,".L%d:",top);
@@ -7958,10 +8195,17 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	cg->scratch_base    = locals + scratch + stack_objs + temps;
 	cg->cur_scratch     = 0;
 	cg->cur_scratch_cap = arena;
+	cg->lpromo_n        = 0;   /* No loop-scoped XMM homes are armed at function entry. */
+
+	/* Loop-scoped float promotion preserves the caller's xmm6..xmm11 around an
+	   armed loop on Win64 (callee-saved there); the save area sits after the
+	   region area. SysV leaves those registers volatile and reserves nothing. */
+	int lpromo_area = (cg->target == TARGET_WINDOWS) ? LPROMO_NREGS * 16 : 0;
+	cg->lpromo_save_base = locals + scratch + stack_objs + temps + arena + region_area + 16;
 
 	/* The region spill/callee-save area sits between the scratch arena and the
 	   outgoing-arg region; region spill slot 0 is at [rbp - region_base]. */
-	int frame = locals + scratch + stack_objs + temps + arena + region_area + outargs;
+	int frame = locals + scratch + stack_objs + temps + arena + region_area + lpromo_area + outargs;
 	if (frame % 16 != 0)
 	{
 		frame = (frame/16 + 1)*16;   /* Keep rsp 16-aligned after the prologue so calls are aligned. */

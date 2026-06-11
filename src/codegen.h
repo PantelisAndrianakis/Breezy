@@ -47,6 +47,9 @@ typedef struct
 	int   cur_counter_off;   /* Slot offset of the current loop's promoted, non-negative, unit-step int counter (0 if none): its `i=i+1` skips the re-extension, since a 32-bit add zero-extends and the value never goes negative. */
 	int   defer_n;           /* Promoted int accumulators in the current loop whose per-iteration sign-extension is deferred to the loop exit (every use is `acc = acc +/- EXPR`, lowered to a 32-bit add). */
 	int   defer_off[8];      /* Their slot offsets; re-extended once at the loop end label. */
+	int   lpromo_n;          /* Loop-scoped float promotion: hot doubles homed in xmm6..xmm11 for the current innermost call-free loop (loaded before the entry guard, stored back after the end label). */
+	int   lpromo_off[6];     /* Their slot offsets; entry i lives in CG_LPROMO_REGS[i]. */
+	int   lpromo_save_base;  /* rbp offset of the dedicated frame area preserving the caller's xmm6.. around an armed loop on Win64 (callee-saved there; SysV leaves them volatile). Register i saves at [rbp - (lpromo_save_base + i*16)]. */
 	int   low32_ok;          /* One-hop hint set by a parent before evaluating an int operand whose result it consumes only at 32 bits (the low-32-pure ops + - * & | ^ <<, and stores into an int slot, which reload sign-extended). When set, an int binary skips its trailing movsxd: the 32-bit op already left the low 32 bits correct, and the high bits are unobserved. cg_expr captures and clears it on entry, so it never reaches a grandchild. */
 	int   unrolling;         /* Depth of active fully-unrolled fixed-trip loops (0 = none): induction variables are compile-time constants per copy. */
 	int   unroll_iv_off;     /* The INNERMOST unrolled loop's induction variable slot. */
