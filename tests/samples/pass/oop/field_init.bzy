@@ -1,0 +1,91 @@
+// Instance-field initializers: declaration-site init, constructor override,
+// inheritance through a synthesized constructor, records, generics, and
+// object construction inside an initializer.
+
+int seed()
+{
+	return 10;
+}
+
+class Animal
+{
+	int legs = 4;
+	string name = "animal";
+}
+
+class Dog extends Animal
+{
+	string kind = "dog";
+
+	Dog()
+	{
+		name = "rex";   // Constructor body runs after initializers and wins.
+	}
+}
+
+class Pair
+{
+	int a = seed();     // Full expressions: a call.
+	int b = a + 1;      // Reads the already-initialized field above.
+}
+
+class Keeper
+{
+	Animal pet = new Animal();   // Object construction in an initializer.
+	int count;
+
+	Keeper()
+	{
+		count = count + 7;       // Fields without initializers still start at zero.
+	}
+}
+
+record Point
+{
+	int x = 7;
+	int y;
+}
+
+class Crate<T>
+{
+	int tag = 9;
+	T value;
+}
+
+class Puppy extends Dog
+{
+	// No constructor: the synthesized one embeds Animal's and Dog's field
+	// initializers. Dog's constructor BODY does not run (no chaining), so
+	// name stays "animal", not "rex".
+}
+
+void main()
+{
+	Dog d = new Dog();
+	print(d.legs);       // 4: Animal's initializer ran for a Dog.
+	print(d.name);       // rex: Dog's constructor overrode Animal's initializer.
+	print(d.kind);       // dog
+
+	Animal a = new Animal();
+	print(a.name);       // animal: synthesized zero-arg constructor.
+
+	Pair p = new Pair();
+	print(p.a);          // 10
+	print(p.b);          // 11
+
+	Keeper k = new Keeper();
+	print(k.pet.legs);   // 4: nested construction.
+	print(k.count);      // 7
+
+	Point pt = new Point();
+	print(pt.x);         // 7
+	print(pt.y);         // 0
+
+	Crate<int> c = new Crate<int>();
+	print(c.tag);        // 9: initializer survives generic instantiation.
+
+	Puppy q = new Puppy();
+	print(q.legs);       // 4: ancestor initializers via the synthesized constructor.
+	print(q.name);       // animal: Dog's constructor body does not run for Puppy.
+	print(q.kind);       // dog
+}
