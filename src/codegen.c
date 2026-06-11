@@ -1105,6 +1105,95 @@ static int cg_sr_mode(Codegen *cg, Expr *e, char *buf)
 	return 0;
 }
 
+/* Pure single-mode operand for a BCE-safe array access: when the element
+   address folds into one x86 addressing mode from register-resident values
+   ("[r8 + r12*8 + 32]"), write it into buf and return 1. Nothing is emitted
+   and no scratch register is clobbered, so callers fuse the operand straight
+   into an FP load or arithmetic op instead of staging the address in rbx.
+   Covers the strength-reduced accesses plus a register-resident IDENT or
+   IDENT +/- small-constant index over a register-resident base. */
+static int cg_index_opnd(Codegen *cg, Expr *e, char *buf)
+{
+	if (cg_sr_mode(cg, e, buf))
+	{
+		return 1;
+	}
+
+	if (!e->anno_index_safe || e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
+	{
+		return 0;
+	}
+
+	Expr *idx = NULL;
+	long long k = 0;
+	if (e->rhs->kind == EX_IDENT)
+	{
+		idx = e->rhs;
+	}
+	else if (e->rhs->kind == EX_BINARY
+			 && (e->rhs->op == TOKEN_PLUS || e->rhs->op == TOKEN_MINUS)
+			 && e->rhs->lhs->kind == EX_IDENT
+			 && e->rhs->rhs->kind == EX_INT
+			 && e->rhs->rhs->int_val >= 0 && e->rhs->rhs->int_val <= 0x10000000LL)
+	{
+		idx = e->rhs->lhs;
+		k = (e->rhs->op == TOKEN_PLUS) ? e->rhs->rhs->int_val : -e->rhs->rhs->int_val;
+	}
+
+	if (!idx || idx->anno_int <= 0
+		|| (cg->unrolling && cg_is_unroll_const(cg, idx->anno_int)))
+	{
+		return 0;
+	}
+
+	const char *ir = cg_local_reg(cg, idx->anno_int);
+	if (!ir)
+	{
+		return 0;
+	}
+
+	const char *br = cg_local_reg(cg, e->lhs->anno_int);
+	if (!br)
+	{
+		br = cg_hoist_reg(cg, e->lhs->anno_int);
+	}
+
+	if (!br)
+	{
+		return 0;
+	}
+
+	int stride = cg_elem_stride(e->type.kind);
+	sprintf(buf, "[%s + %s*%d + %lld]", br, ir, stride, 32 + k * stride);
+	return 1;
+}
+
+/* `x = a[i]` where x is a float-promoted double and the element address folds
+   into a single mode: load the element straight into x's XMM home - one movsd,
+   no xmm0 bounce, no address staging. Returns 1 when emitted. */
+static int cg_fp_load_into_home(Codegen *cg, int off, TypeKind k, Expr *value)
+{
+	if (k != TY_DOUBLE || !value || value->kind != EX_INDEX || value->type.kind != TY_DOUBLE)
+	{
+		return 0;
+	}
+
+	const char *xr = cg_local_xmm(cg, off);
+	if (!xr)
+	{
+		return 0;
+	}
+
+	char iop[64];
+	if (!cg_index_opnd(cg, value, iop))
+	{
+		return 0;
+	}
+
+	cg_emit(cg, "    movsd %s, qword %s", xr, iop);
+	return 1;
+}
+
 /* If `e` is a strength-reduced access arr[INV + iv], its element-0 address is
    already pinned in a register, so the element address is just base + iv*stride -
    a single lea, no base reload, no index reconstruction, no bounds check. Leaves
@@ -1748,6 +1837,13 @@ static const char *cg_fp_rhs_leaf(Codegen *cg, TypeTable *tt, Expr *e, TypeKind 
 
 	if (e->kind==EX_INDEX)
 	{
+		char iop[64];
+		if (cg_index_opnd(cg, e, iop))
+		{
+			snprintf(buf, bufsz, "%s %s", sz, iop);   /* Folded mode: no lea, no rbx. */
+			return buf;
+		}
+
 		cg_index_addr(cg,tt,e);            /* rbx = element address; xmm0 untouched. */
 		snprintf(buf, bufsz, "%s [rbx]", sz);
 		return buf;
@@ -4866,6 +4962,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
+		/* FP element whose address is a single register-built mode: fold base,
+		   scaled index, and header displacement into the movsd itself. */
+		if (ty_is_float(e->type.kind) && cg_index_opnd(cg, e, imem))
+		{
+			cg_load_fp(cg,e->type.kind,imem);
+			break;
+		}
+
 		cg_index_addr(cg,tt,e);
 		if (ty_is_float(e->type.kind))
 		{
@@ -5273,6 +5377,13 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	{
 		if (fp)
 		{
+			char iop[64];
+			if (cg_index_opnd(cg, target, iop))
+			{
+				cg_store_fp(cg,target->type.kind,iop);   /* Folded mode: no lea, no rbx. */
+				return;
+			}
+
 			cg_index_addr(cg,tt,target);   /* rbx = element address; xmm0 preserved. */
 			cg_store_fp(cg,target->type.kind,"[rbx]");
 		}
@@ -6988,7 +7099,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				cg_expr_owned(cg,tt,s->decl_init);
 				cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
 			}
-			else
+			else if (!cg_fp_load_into_home(cg, s->decl_offset, s->decl_type.kind, s->decl_init))
 			{
 				cg_expr(cg,tt,s->decl_init);
 				cg_coerce(cg,s->decl_type.kind,s->decl_init->type.kind);
@@ -7032,6 +7143,11 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		else if (cg_try_inplace(cg,tt,s->target,s->value))
 		{
 			/* Emitted in place on the target's promoted register. */
+		}
+		else if (s->target->kind == EX_IDENT && s->target->anno_int > 0
+				 && cg_fp_load_into_home(cg, s->target->anno_int, s->target->type.kind, s->value))
+		{
+			/* Element loaded straight into the target's XMM home. */
 		}
 		else
 		{
@@ -8477,6 +8593,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 {
 	cg_emit(cg,"bits 64");
 	cg_emit(cg,"default rel");
+	/* Multi-byte nop padding for align directives: loop headers fall through
+	   their padding once per entry, and long nops retire far fewer uops than
+	   the default single-byte fill. */
+	cg_emit(cg,"%%use smartalign");
+	cg_emit(cg,"alignmode p6");
 	cg_emit(cg,"extern malloc");
 	cg_emit(cg,"extern free");
 	cg_emit(cg,"extern bzy_alloc");

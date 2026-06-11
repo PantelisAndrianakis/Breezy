@@ -503,6 +503,34 @@ static void test_float_promotion_xmm(void)
 	ASSERT_INT(strstr(g_asm, "mulsd xmm1, xmm") != NULL, 1); /* MAC operand read from a register, not a slot. */
 }
 
+static void test_fp_indexed_load_direct_addressing(void)
+{
+	/* A BCE-safe double[] access in a hoisted-base counted loop loads with one
+	   instruction - movsd from the full [base + index*8 + disp] addressing mode -
+	   instead of materializing the address in rbx with a lea first. Mirrors the
+	   matrix kernel's flattened vertex sweep. */
+	emit(
+		"void main()\n"
+		"{\n"
+		"	int n; n = 100;\n"
+		"	double[] a; a = new double[n * 2];\n"
+		"	double m0; m0 = 1.5;\n"
+		"	double m1; m1 = 2.5;\n"
+		"	double acc; acc = 0.0;\n"
+		"	for (int i = 0; i < n; i = i + 1)\n"
+		"	{\n"
+		"		int b; b = i * 2;\n"
+		"		double x; x = a[b + 0];\n"
+		"		double y; y = a[b + 1];\n"
+		"		acc = acc + (m0 * x + m1 * y);\n"
+		"	}\n"
+		"	print((long)acc);\n"
+		"}\n", TARGET_WINDOWS);
+	/* The element load folds base, scaled index, and header displacement into the
+	   movsd itself (r8 holds the hoisted base, the index lives in a register). */
+	ASSERT_INT(strstr(g_asm, ", qword [r8 + r") != NULL, 1);
+}
+
 static void test_inplace_register_arithmetic(void)
 {
 	/* state = state * C1 + C2 updates r13 in place (no `mov r13, rax`), and
@@ -670,6 +698,7 @@ int main(void)
 	RUN(test_inplace_register_arithmetic);
 	RUN(test_promotion_register_resident);
 	RUN(test_float_promotion_xmm);
+	RUN(test_fp_indexed_load_direct_addressing);
 	RUN(test_linux_arg_regs);
 	RUN(test_windows_arg_regs_unchanged);
 	RUN(test_linux_receiver_and_release);
