@@ -100,6 +100,7 @@ int64_t bzy_map_has(void *m, int64_t key);   /* 1 / 0. */
 void    bzy_map_remove(void *m, int64_t key);
 int64_t bzy_map_len(void *m);
 int64_t bzy_map_iter(void *m, int64_t from);   /* Next full slot index >= from, or -1. */
+void   *bzy_map_iter_snapshot(void *m);        /* Owned handle for foreach: m itself (retained) when confined, a frozen clone when shared. */
 int64_t bzy_map_key_at(void *m, int64_t slot); /* Key at slot (borrowed; no retain). */
 int64_t bzy_map_val_at(void *m, int64_t slot); /* Value at slot (borrowed; no retain). */
 int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind); /* 1 if any value equals needle. */

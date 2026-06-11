@@ -6732,6 +6732,29 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 
 	cg_expr(cg,tt,s->expr);                     /* Container pointer -> rax. */
 	cg_emit(cg,"    mov [rbp - %d], rax", s->fe_coll_offset);
+
+	if (ik==TY_MAP || gen_set)
+	{
+		/* Iterate through an owned snapshot handle: the map itself (retained) when
+		   confined - two instructions in the runtime - or a frozen clone when
+		   shared, so a concurrent rehash can never invalidate the slot cursor.
+		   The handle replaces the container in fe_coll; an owned original is
+		   released right here (the handle holds its own reference), and the
+		   handle itself is released at loop exit. fe_aux is free for maps
+		   (string foreach only), so it stashes the handle across the release. */
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
+		cg_aligned_call(cg,"bzy_map_iter_snapshot");   /* Owned handle in rax. */
+		if (owned)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", s->fe_aux_offset);
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rbp - %d]", s->fe_aux_offset);
+		}
+
+		cg_emit(cg,"    mov [rbp - %d], rax", s->fe_coll_offset);
+	}
+
 	if (curreg)
 	{
 		cg_emit(cg,"    mov %s, 0", curreg);
@@ -6923,7 +6946,14 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	cg_emit(cg,"    jmp .L%d", top);
 	cg_emit(cg,".L%d:", end);
 
-	if (owned)   /* An owned iterable temporary (e.g. `new int[3]`) is released here. */
+	if (ik==TY_MAP || gen_set)
+	{
+		/* The snapshot handle is always owned (an owned original was already
+		   released at setup, after the handle took its own reference). */
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
+		cg_release_rcx(cg);
+	}
+	else if (owned)   /* An owned iterable temporary (e.g. `new int[3]`) is released here. */
 	{
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
 		cg_release_rcx(cg);
@@ -8951,6 +8981,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_logger_close");
 	cg_emit(cg,"extern bzy_str_data");
 	cg_emit(cg,"extern bzy_map_iter");
+	cg_emit(cg,"extern bzy_map_iter_snapshot");
 	cg_emit(cg,"extern bzy_map_key_at");
 	cg_emit(cg,"extern bzy_map_val_at");
 	cg_emit(cg,"extern bzy_str_eq");

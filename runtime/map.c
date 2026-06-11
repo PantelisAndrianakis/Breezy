@@ -687,6 +687,43 @@ void *bzy_map_entries(void *m)
 	return map_entries_impl(m);
 }
 
+/* Foreach support. A confined map is iterated in place (identity, retained so
+   the caller's release at loop end is uniform). A SHARED map is cloned under
+   its stripe and the frozen clone is iterated lock-free: slot cursors survive
+   because nothing rehashes the clone, and the contract is per-op (the view may
+   be stale by the time the body runs - safe, not snapshot-consistent for the
+   original). The clone is born confined; it never escapes the iterating
+   breeze. Cached per-slot hashes are reused, so no user hashCode runs under
+   the stripe. */
+void *bzy_map_iter_snapshot(void *m)
+{
+	if (!map_is_shared(m))
+	{
+		bzy_retain(m);
+		return m;
+	}
+
+	void *c = bzy_map_new(*M_KKIND(m), *M_VMAN(m));   /* Owned (+1). */
+	bzy_shared_lock(m);
+	int64_t cap = *M_CAP(m);
+	if (cap > 0)
+	{
+		uint8_t *ctrl = *M_CTRL(m);
+		int64_t *keys = keys_data(m), *vals = vals_data(m);
+		int cached = hash_is_cached(m);
+		for (int64_t s = 0; s < cap; s++)
+		{
+			if ((ctrl[s] & 0x80) == 0)
+			{
+				uint64_t h = cached ? map_hashes(m)[s] : hash_key(m, keys[s]);
+				map_put_impl(c, keys[s], vals[s], h);   /* Retains key and value into the clone. */
+			}
+		}
+	}
+	bzy_shared_unlock(m);
+	return c;
+}
+
 static void map_init_ctrl(uint8_t *ctrl, int64_t cap)
 {
 	for (int64_t i = 0; i < cap; i++)

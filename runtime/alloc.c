@@ -715,8 +715,15 @@ static void collect_cycles_locked(void)
 		{
 			/* Promoted to cross-core after being buffered: shared objects are
 			   exempt from cycle collection (a fully shared cycle leaks; this is
-			   documented). Unbuffer and drop the candidate untouched. */
+			   documented). Unbuffer and drop the candidate; like the stale branch
+			   below, a node freed while still buffered (deferred by free_object)
+			   is reclaimed now that it leaves the roots buffer. */
 			set_buffered(s, 0);
+			if (*RC(s) == 0)
+			{
+				pool_free(s);
+			}
+
 			continue;
 		}
 

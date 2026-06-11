@@ -772,6 +772,34 @@ static void test_shared_map_ops(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_map_iter_snapshot(void)
+{
+	/* Foreach handle: identity (retained) for a confined map, an independent
+	   frozen clone for a shared one - slot cursors survive because nothing
+	   rehashes the clone. */
+	int64_t before = bzy_live_count();
+	void *m = bzy_map_new(0 /* Int keys. */, 0);
+	bzy_map_put(m, 7, 70);
+	void *it = bzy_map_iter_snapshot(m);
+	ASSERT(it == m);
+	bzy_release(it);
+	bzy_share_crosscore(m);
+	it = bzy_map_iter_snapshot(m);
+	ASSERT(it != m);
+	bzy_map_put(m, 8, 80);                       /* Mutating the original... */
+	ASSERT_INT(bzy_map_len(it), 1);              /* ...does not disturb the snapshot. */
+	int64_t slot = bzy_map_iter(it, 0);
+	ASSERT_INT(bzy_map_key_at(it, slot), 7);
+	ASSERT_INT(bzy_map_val_at(it, slot), 70);
+	bzy_release(it);
+	bzy_release(m);
+	/* m was cycle-buffered while still confined (released to a positive count
+	   with children), so its free was deferred; the collector reclaims it when
+	   dropping the now-shared candidate. */
+	bzy_collect_cycles();
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_regex_matches_basic(void)
 {
 	ASSERT_INT(bzy_regex_matches(bzy_str_new("a+b", 3), bzy_str_new("aaab", 4)), 1);
@@ -1832,6 +1860,7 @@ int main(void)
 	RUN(test_shared_array_get_set);
 	RUN(test_shared_vec_ops);
 	RUN(test_shared_map_ops);
+	RUN(test_map_iter_snapshot);
 	RUN(test_cycle_buffer_grows);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);

@@ -265,6 +265,23 @@ static void test_foreach_base_hoist(void)
 	ASSERT_INT(strstr(g_asm, "[r9 + rcx*8 + 32]") != NULL, 1);     /* element via hoisted base */
 }
 
+static void test_map_foreach_snapshot_handle(void)
+{
+	/* Map foreach iterates through an owned snapshot handle (identity when the
+	   map is confined, a frozen clone when shared, so a concurrent rehash can
+	   never invalidate the slot cursor); the handle is released at loop exit. */
+	emit(
+		"void main() {"
+		"  map<int,int> m; m = new map<int,int>();"
+		"  m.put(1, 10);"
+		"  int s; s = 0;"
+		"  foreach (int k in m) { s = s + k; }"
+		"}",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_map_iter_snapshot") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_map_iter") != NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -752,6 +769,7 @@ int main(void)
 	RUN(test_inplace_mac);
 	RUN(test_register_index_addr);
 	RUN(test_foreach_base_hoist);
+	RUN(test_map_foreach_snapshot_handle);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);
