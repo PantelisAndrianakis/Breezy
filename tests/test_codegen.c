@@ -355,6 +355,46 @@ static void test_shared_array_gating(void)
 	ASSERT_INT(strstr(g_asm, "call bzy_array_set_shared") == NULL, 1);
 }
 
+static void test_vec_gating_and_store_barriers(void)
+{
+	/* Inlined vec fast paths (get/set/add of value elements) gate on the
+	   receiver's SHARED bit when the List type may cross cores; the gated route
+	   is the shared-aware runtime call. */
+	emit(
+		"void pump(channel<List<int>> ch) { }"
+		"void main() { List<int> l; l = new List<int>(); l.add(7); l.set(0, 8); int x; x = l.get(0); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "test qword [rdx + 16], 8") != NULL, 1);
+
+	/* No share point: the inline fast paths stay test-free. */
+	emit(
+		"void main() { List<int> l; l = new List<int>(); l.add(7); l.set(0, 8); int x; x = l.get(0); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "test qword [rdx + 16], 8") == NULL, 1);
+
+	/* A managed store to a static slot deep-shares the value before publishing. */
+	emit(
+		"class Holder { static List<int> cache; }"
+		"void main() { List<int> mine; mine = new List<int>(); Holder.cache = mine; }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") != NULL, 1);
+
+	/* A managed store into a field of a shared class deep-shares the value. */
+	emit(
+		"class Box { List<int> items; }"
+		"void pump(channel<Box> ch) { }"
+		"void main() { Box b; b = new Box(); b.items = new List<int>(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") != NULL, 1);
+
+	/* No share reachability: a plain field store emits no share call. */
+	emit(
+		"class Box { List<int> items; }"
+		"void main() { Box b; b = new Box(); b.items = new List<int>(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") == NULL, 1);
+}
+
 static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
@@ -845,6 +885,7 @@ int main(void)
 	RUN(test_map_foreach_snapshot_handle);
 	RUN(test_shared_set_closure);
 	RUN(test_shared_array_gating);
+	RUN(test_vec_gating_and_store_barriers);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

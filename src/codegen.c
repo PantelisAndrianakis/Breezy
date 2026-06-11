@@ -3502,10 +3502,23 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 			   still calls bzy_oob_abort(index, length) -- behaviour-identical to
 			   bzy_vec_get (a hard abort, not the catchable array-subscript
 			   throw). Vector layout: length@24, cap@32, head@40, data array@48
-			   (its 8-byte slots at +32); phys = (head+i) & (cap-1). */
+			   (its 8-byte slots at +32); phys = (head+i) & (cap-1). A receiver
+			   whose static type may cross cores first tests its SHARED bit and
+			   routes to the (shared-aware) runtime call; a confined receiver
+			   falls through to the unchanged inline load. */
 			int ok = cg_label(cg);
+			int gated = types_typeref_maybe_shared(tt,&e->lhs->type);
+			int sh = 0, join = 0;
 			cg_emit(cg,"    mov rcx, rax");               /* index */
 			cg_emit(cg,"    mov rdx, [rbp - %d]", b);     /* receiver */
+			if (gated)
+			{
+				sh = cg_label(cg);
+				join = cg_label(cg);
+				cg_emit(cg,"    test qword [rdx + 16], 8");   /* BZY_GCINFO_SHARED. */
+				cg_emit(cg,"    jnz .L%d", sh);
+			}
+
 			cg_emit(cg,"    mov r8, [rdx + 24]");         /* length */
 			cg_emit(cg,"    cmp rcx, r8");
 			cg_emit(cg,"    jb .L%d", ok);                /* unsigned: catches <0 and >=length */
@@ -3520,6 +3533,15 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    dec r8");                     /* cap - 1 */
 			cg_emit(cg,"    and rcx, r8");                /* phys = (head+i) & (cap-1) */
 			cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
+			if (gated)
+			{
+				cg_emit(cg,"    jmp .L%d", join);
+				cg_emit(cg,".L%d:", sh);
+				cg_emit(cg,"    mov %s, rcx", cg_iarg(cg, 1));        /* Index (before arg0 clobbers rcx on Win64). */
+				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+				cg_aligned_call(cg,"bzy_vec_get");        /* Shared receiver: locked in the runtime. */
+				cg_emit(cg,".L%d:", join);
+			}
 		}
 		if (fp)
 		{
@@ -3598,10 +3620,22 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 			/* Value element: inline the bounds check + ring store, skipping the
 			   bzy_vec_set call (value sets have no retain/release). Out-of-range
 			   still calls bzy_oob_abort(index, length) -- behaviour-identical to
-			   bzy_vec_set. No call on the in-range path, so r8/r9 scratch is free. */
+			   bzy_vec_set. No call on the in-range path, so r8/r9 scratch is free.
+			   A maybe-shared receiver tests its SHARED bit first and routes to the
+			   (shared-aware) runtime call. */
 			int ok = cg_label(cg);
+			int gated = types_typeref_maybe_shared(tt,&e->lhs->type);
+			int sh = 0, join = 0;
 			cg_emit(cg,"    mov rdx, [rbp - %d]", b);      /* receiver */
 			cg_emit(cg,"    mov rcx, [rbp - %d]", b - 8);  /* index */
+			if (gated)
+			{
+				sh = cg_label(cg);
+				join = cg_label(cg);
+				cg_emit(cg,"    test qword [rdx + 16], 8");    /* BZY_GCINFO_SHARED. */
+				cg_emit(cg,"    jnz .L%d", sh);
+			}
+
 			cg_emit(cg,"    mov r8, [rdx + 24]");          /* length */
 			cg_emit(cg,"    cmp rcx, r8");
 			cg_emit(cg,"    jb .L%d", ok);                 /* unsigned: catches <0 and >=length */
@@ -3617,6 +3651,16 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    and rcx, r8");                 /* phys = (head+i) & (cap-1) */
 			cg_emit(cg,"    mov r9, [rbp - %d]", b - 16);  /* value bits */
 			cg_emit(cg,"    mov [rax + rcx*8 + 32], r9");  /* store slot */
+			if (gated)
+			{
+				cg_emit(cg,"    jmp .L%d", join);
+				cg_emit(cg,".L%d:", sh);
+				cg_emit(cg,"    mov %s, rcx", cg_iarg(cg, 1));         /* Index (before arg0 clobbers rcx on Win64). */
+				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 2), b - 16);   /* Value bits. */
+				cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);        /* Receiver. */
+				cg_aligned_call(cg,"bzy_vec_set");         /* Shared receiver: locked in the runtime. */
+				cg_emit(cg,".L%d:", join);
+			}
 		}
 
 		cg_scratch_free(cg, 32);
@@ -3652,6 +3696,14 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		int slow = cg_label(cg), done = cg_label(cg);
 		const char *recv = cg_iarg(cg, 0), *val = cg_iarg(cg, 1);
+		if (types_typeref_maybe_shared(tt,&e->lhs->type))
+		{
+			/* A receiver that crossed cores must take the (shared-aware) runtime
+			   call - the existing grow fallback is exactly that call. */
+			cg_emit(cg,"    test qword [%s + 16], 8", recv);   /* BZY_GCINFO_SHARED. */
+			cg_emit(cg,"    jnz .L%d", slow);
+		}
+
 		cg_emit(cg,"    mov rax, [%s + 24]", recv);        /* length */
 		cg_emit(cg,"    cmp rax, [%s + 32]", recv);        /* vs cap */
 		cg_emit(cg,"    jge .L%d", slow);                  /* full -> grow via call */
@@ -5590,6 +5642,13 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 		char mem[192];
 		snprintf(mem,sizeof(mem),"[rel __static_%s_%s]", target->anno_str, target->name);
 		cg_expr_owned(cg,tt,value);            /* +1 new value -> rax. */
+		/* Static slots are reachable from every breeze with no handoff point:
+		   deep-share the value before publishing it (a share point, like a
+		   channel send). The call preserves nothing, so park the value first. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_aligned_call(cg,"bzy_share_crosscore");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->assign_save);
 		cg_emit(cg,"    mov rbx, %s", mem);    /* Old occupant. */
 		cg_emit(cg,"    mov %s, rax", mem);    /* Store new (transfers the +1). */
 		cg_emit(cg,"    mov %s, rbx", cg_iarg(cg, 0));
@@ -5599,6 +5658,20 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 	{
 		cg_expr_owned(cg,tt,value);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);
+		/* A field store on a shared-class instance publishes the value to every
+		   breeze that can reach the object: instances of is_shared classes are
+		   born SHARED, so deep-share the incoming value unconditionally here
+		   (the value is parked in assign_save across the call). */
+		if (target->lhs->type.kind==TY_OBJECT)
+		{
+			ClassInfo *rc = types_find_class(tt,target->lhs->type.class_name);
+			if (rc && rc->is_shared)
+			{
+				cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+				cg_aligned_call(cg,"bzy_share_crosscore");
+			}
+		}
+
 		cg_expr(cg,tt,target->lhs);
 		cg_emit(cg,"    mov rbx, rax");
 		cg_emit(cg,"    mov rdx, [rbx + %d]", target->anno_int);
@@ -7793,9 +7866,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		}
 
 		/* Each managed arg crosses to the spawned breeze (possibly another core);
-		   promote leaves to an atomic refcount before the breeze can run. The block
-		   still holds each arg; load and share it (object graphs are a no-op here
-		   and rely on the compile-time shared-set). */
+		   deep-share it before the breeze can run (bzy_share_crosscore walks the
+		   whole reachable graph). The block still holds each arg. */
 		for (int i=0; i<n; i++)
 		{
 			if (ty_is_managed(s->expr->args[i]->type.kind))
@@ -8944,6 +9016,13 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 				else if (ty_is_managed(tk))
 				{
 					cg_expr_owned(cg,tt,d->fields[k].init);   /* Owned (+1); slot starts 0, no release. */
+					/* A static slot is reachable from every breeze: deep-share the
+					   initial value before publishing (hand-rolled frame: park the
+					   value in rbx, which this frame preserves, across the call). */
+					cg_emit(cg,"    mov rbx, rax");
+					cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+					cg_aligned_call(cg,"bzy_share_crosscore");
+					cg_emit(cg,"    mov rax, rbx");
 					cg_emit(cg,"    mov %s, rax", mem);
 				}
 				else
