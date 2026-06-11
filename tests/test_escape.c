@@ -18,8 +18,7 @@ static Func *build(const char *body)
 	u[1]=parse_unit(&ps[1]);
 	types_register_unit_names(&g_tt,u[0]);
 	types_register_unit_names(&g_tt,u[1]);
-	types_register_unit_members(&g_tt,u[0]);
-	types_register_unit_members(&g_tt,u[1]);
+	types_register_all_members(&g_tt,u,2);
 	resolve_program(&g_tt,u,2);
 	Func *f=u[1]->funcs[0];
 	escape_annotate(&g_tt,f);

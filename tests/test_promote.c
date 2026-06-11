@@ -39,10 +39,7 @@ static Func *resolve_one(const char *src, const char *fname)
 		types_register_interfaces(&tt, units[i]);
 	}
 
-	for (int i = 0; i < total; i++)
-	{
-		types_register_unit_members(&tt, units[i]);
-	}
+	types_register_all_members(&tt, units, total);
 
 	resolve_program(&tt, units, total);
 

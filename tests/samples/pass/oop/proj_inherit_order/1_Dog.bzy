@@ -1,0 +1,9 @@
+// Deliberately sorts BEFORE the parent's file: registration must not depend on
+// directory order (ext4 returns hash order, NTFS alphabetical).
+class Dog extends Animal
+{
+	void speak()
+	{
+		print(2);
+	}
+}

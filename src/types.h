@@ -44,6 +44,7 @@ typedef struct ClassInfo
 	int implements_count;
 	int is_static;                 /* `static class`: not instantiable; all members static. */
 	int is_record;                 /* `record`: final class with synthesized hashCode/equals. */
+	int members_done;              /* Registration fixpoint: fields/methods/vtable complete (parents first). */
 } ClassInfo;
 typedef struct
 {
@@ -84,7 +85,7 @@ void       types_register_builtins(TypeTable *tt);
 void       types_reserve_hashable(TypeTable *tt);              /* Before interfaces: reserves slots 0/1 for record hashCode/equals. */
 void       types_register_interfaces(TypeTable *tt, Unit *u);   /* Before members: reserves slots [0..K). */
 void       types_register_unit_names(TypeTable *tt, Unit *u);
-void       types_register_unit_members(TypeTable *tt, Unit *u);
+void       types_register_all_members(TypeTable *tt, Unit **units, int unit_count);   /* Classes parent-first, whatever the file/declaration order. */
 InterfaceInfo *types_find_interface(TypeTable *tt, const char *name);
 int        types_is_interface(TypeTable *tt, const char *name);
 void       types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count);   /* Conservative-static: mark cross-core-reachable types shared (channels, spawn params, statics). */

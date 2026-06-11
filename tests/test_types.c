@@ -19,10 +19,7 @@ static void build(TypeTable *tt, Unit **units, const char **srcs, int n)
 	{
 		types_register_interfaces(tt, units[i]);
 	}
-	for (int i=0; i<n; i++)
-	{
-		types_register_unit_members(tt, units[i]);
-	}
+	types_register_all_members(tt, units, n);
 }
 
 static void test_field_offsets_and_size(void)

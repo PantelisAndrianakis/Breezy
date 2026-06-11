@@ -21,7 +21,7 @@ static const Func *parse_one_func(const char *src)
 	u = parse_unit(&ps);
 	types_register_unit_names(&g_tt, u);
 	types_register_interfaces(&g_tt, u);
-	types_register_unit_members(&g_tt, u);
+	types_register_all_members(&g_tt, &u, 1);
 	resolve_program(&g_tt, &u, 1);
 	return u->funcs[0];
 }

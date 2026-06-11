@@ -37,14 +37,12 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 	{
 		types_register_unit_names(&tt, units[i]);
 	}
+	types_reserve_hashable(&tt);   /* Mirror main.c: slots 0/1 for record hashCode/equals, before interfaces. */
 	for (int i = 0; i < total; i++)
 	{
 		types_register_interfaces(&tt, units[i]);
 	}
-	for (int i = 0; i < total; i++)
-	{
-		types_register_unit_members(&tt, units[i]);
-	}
+	types_register_all_members(&tt, units, total);
 	resolve_program(&tt, units, total);
 
 	/* A real file in the cwd (MinGW's tmpfile() targets C:\ and may return NULL). */
@@ -393,6 +391,24 @@ static void test_vec_gating_and_store_barriers(void)
 		"void main() { Box b; b = new Box(); b.items = new List<int>(); }",
 		TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") == NULL, 1);
+}
+
+static void test_subclass_declared_before_parent(void)
+{
+	/* Class member registration must be parent-first regardless of declaration
+	   (or file) order: a subclass registered against a name-only parent copies
+	   zeroed layout, truncating its vtable and misnumbering its slots - the
+	   Linux proj_inherit segfault (ext4 readdir order put Dog.bzy first). */
+	emit(
+		"class Dog extends Animal { void speak() { print(2); } }"
+		"class Animal { int sound; void speak() { print(1); } }"
+		"void main() { Animal a; a = new Dog(); a.speak(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm,
+		"__vtable_Dog:\n"
+		"    dq 0\n"
+		"    dq 0\n"
+		"    dq Dog__speak") != NULL, 1);   /* Full table: reserved slots 0/1, speak at slot 2. */
 }
 
 static void test_div_strength_reduction(void)
@@ -886,6 +902,7 @@ int main(void)
 	RUN(test_shared_set_closure);
 	RUN(test_shared_array_gating);
 	RUN(test_vec_gating_and_store_barriers);
+	RUN(test_subclass_declared_before_parent);
 	RUN(test_div_strength_reduction);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);

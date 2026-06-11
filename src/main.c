@@ -183,10 +183,7 @@ int main(int argc, char *argv[])
 	{
 		types_register_interfaces(&tt,units[i]);   /* Reserve vtable slots [0..K) before members. */
 	}
-	for (int i=0; i<total; i++)
-	{
-		types_register_unit_members(&tt,units[i]);
-	}
+	types_register_all_members(&tt,units,total);   /* Classes parent-first: file order is filesystem-dependent. */
 	resolve_program(&tt,units,total);
 
 	FILE *out=fopen("out.asm","w");

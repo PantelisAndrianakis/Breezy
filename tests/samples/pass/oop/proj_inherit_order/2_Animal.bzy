@@ -1,0 +1,9 @@
+class Animal
+{
+	int sound;
+
+	void speak()
+	{
+		print(1);
+	}
+}

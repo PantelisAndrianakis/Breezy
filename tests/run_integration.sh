@@ -61,6 +61,7 @@ check if_else     tests/samples/pass/control-flow/if_else.bzy    "1"
 check while       tests/samples/pass/control-flow/while.bzy      "10"
 check multi_fn    tests/samples/pass/basics/multi_fn.bzy   "42"
 check inheritance tests/samples/pass/oop/proj_inherit  "2"
+check inherit_order tests/samples/pass/oop/proj_inherit_order  "2"
 check ctor        tests/samples/pass/oop/proj_ctor      $'3
 4
 7'

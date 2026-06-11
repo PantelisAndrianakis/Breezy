@@ -524,7 +524,7 @@ static void link_parent(TypeTable *tt, ClassInfo *c, ClassDecl *d)
 
 static void link_unit_class(TypeTable *tt, ClassDecl *d);
 
-void types_register_unit_members(TypeTable *tt, Unit *u)
+static void register_unit_funcs(TypeTable *tt, Unit *u)
 {
 	for (int i=0; i<u->func_count; i++)
 	{
@@ -551,10 +551,91 @@ void types_register_unit_members(TypeTable *tt, Unit *u)
 			snprintf(fi->asm_label,sizeof(fi->asm_label),"bzy_%s",f->name);
 		}
 	}
+}
 
-	for (int ci=0; ci<u->class_count; ci++)
+/* Register every unit's members with classes processed PARENT-FIRST, whatever
+   the declaration or file order: a subclass copies its parent's fields,
+   methods, vtable size, and object size, so registering it against a name-only
+   parent truncates its vtable and misnumbers its slots (the call sites later
+   compute slots from the complete view - a guaranteed crash). File order is
+   filesystem-dependent (ext4 returns hash order, NTFS alphabetical), so it can
+   never be load-bearing. Builtins and other ClassInfos with no ClassDecl are
+   already complete and count as done; a stalled pass means an inheritance
+   cycle. */
+void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
+{
+	for (int i=0; i<unit_count; i++)
 	{
-		link_unit_class(tt, u->klasses[ci]);
+		register_unit_funcs(tt,units[i]);
+	}
+
+	/* Everything starts done (builtins, enum classes); user-declared classes pend. */
+	for (int ci=0; ci<tt->class_count; ci++)
+	{
+		tt->classes[ci].members_done=1;
+	}
+
+	int pending=0;
+	for (int i=0; i<unit_count; i++)
+	{
+		for (int ci=0; ci<units[i]->class_count; ci++)
+		{
+			ClassInfo *c=types_find_class(tt,units[i]->klasses[ci]->name);
+			if (c)
+			{
+				c->members_done=0;
+				pending++;
+			}
+		}
+	}
+
+	while (pending>0)
+	{
+		int progressed=0;
+		for (int i=0; i<unit_count; i++)
+		{
+			for (int ci=0; ci<units[i]->class_count; ci++)
+			{
+				ClassDecl *d=units[i]->klasses[ci];
+				ClassInfo *c=types_find_class(tt,d->name);
+				if (!c || c->members_done)
+				{
+					continue;
+				}
+
+				if (d->has_parent)
+				{
+					ClassInfo *p=types_find_class(tt,d->parent_name);
+					if (p && !p->members_done)
+					{
+						continue;   /* Parent still pending: defer to a later pass. */
+					}
+				}
+
+				link_unit_class(tt,d);
+				c->members_done=1;
+				pending--;
+				progressed=1;
+			}
+		}
+
+		if (!progressed)
+		{
+			for (int i=0; i<unit_count; i++)
+			{
+				for (int ci=0; ci<units[i]->class_count; ci++)
+				{
+					ClassInfo *c=types_find_class(tt,units[i]->klasses[ci]->name);
+					if (c && !c->members_done)
+					{
+						fprintf(stderr,"Inheritance cycle involving class %s.\n",c->name);
+						exit(1);
+					}
+				}
+			}
+
+			break;   /* Unreachable: no progress implies a pending class above. */
+		}
 	}
 }
 
