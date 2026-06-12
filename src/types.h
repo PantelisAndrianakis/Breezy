@@ -2,9 +2,6 @@
 #define TYPES_H
 #include "ast.h"
 
-#define MAX_CLASSES 128
-#define MAX_FUNCS   128
-
 typedef struct
 {
 	char name[64];

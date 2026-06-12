@@ -4,9 +4,9 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MAX_NODES 200000
-static void *g_nodes[MAX_NODES];
-static int   g_node_count = 0;
+static void **g_nodes = NULL;
+static int    g_node_count = 0;
+static int    g_node_cap = 0;
 
 static void *track(void *p)
 {
@@ -15,11 +15,7 @@ static void *track(void *p)
 		fprintf(stderr, "Ast: out of memory.\n");
 		exit(1);
 	}
-	if (g_node_count >= MAX_NODES)
-	{
-		fprintf(stderr, "Ast: too many nodes.\n");
-		exit(1);
-	}
+	g_nodes = grow_ensure(g_nodes, g_node_count, &g_node_cap, sizeof(*g_nodes));
 	g_nodes[g_node_count++] = p;
 	return p;
 }
