@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "grow.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -641,6 +642,8 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	TypeKind k;
 	out->elem=NULL;
 	out->elem2=NULL;
+	out->targs=NULL;
+	out->targ_cap=0;
 	out->targ_count=0;   /* Cleared for every base type; only user generics set it. */
 	/* A known template name immediately followed by '<' is a generic. Since
 	   parse_base_type is only reached in type position, an unknown IDENT before
@@ -668,13 +671,9 @@ static int parse_base_type(Parser *p, TypeRef *out)
 			/* User-generic application: Name<T1, T2, ...>; validated whole-program. */
 			do
 			{
-				if (out->targ_count>=MAX_TYPE_ARGS)
-				{
-					fprintf(stderr,"line %d: Too many type arguments.\n",p->cur.line);
-					exit(1);
-				}
 				TypeRef a;
 				parse_type(p,&a);
+				out->targs=grow_ensure(out->targs,out->targ_count,&out->targ_cap,sizeof(*out->targs));
 				out->targs[out->targ_count++]=typeref_box(a);
 			}
 			while (match(p,TOKEN_COMMA));
@@ -1458,11 +1457,9 @@ static ClassDecl *parse_class(Parser *p)
 	{
 		do
 		{
-			if (c->type_param_count>=MAX_TYPE_PARAMS)
-			{
-				fprintf(stderr,"line %d: Too many type parameters.\n",p->cur.line);
-				exit(1);
-			}
+			c->type_params       = grow_ensure(c->type_params,       c->type_param_count, &c->type_param_cap,        sizeof(*c->type_params));
+			c->type_param_bounds = grow_ensure(c->type_param_bounds, c->type_param_count, &c->type_param_bounds_cap, sizeof(*c->type_param_bounds));
+			c->type_param_bounds[c->type_param_count][0]='\0';   /* Default: no bound. */
 			Token tp=expect(p,TOKEN_IDENT);
 			strcpy(c->type_params[c->type_param_count],tp.text);
 			if (match(p,TOKEN_COLON))

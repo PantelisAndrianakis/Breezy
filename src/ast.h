@@ -25,15 +25,16 @@ typedef enum
 	TY_STRING,  /* Immutable string. */
 	TY_NULL     /* The `null` literal: a bare 0 assignable to any managed reference. */
 } TypeKind;
-#define MAX_TYPE_ARGS 4
 typedef struct TypeRef
 {
 	TypeKind kind;
 	char class_name[64];
 	struct TypeRef *elem;    /* TY_ARRAY element, or TY_MAP key; NULL otherwise. */
 	struct TypeRef *elem2;   /* TY_MAP value; NULL otherwise. */
-	struct TypeRef *targs[MAX_TYPE_ARGS];   /* User-generic application args (TY_GENERIC, user class). */
+	struct TypeRef **targs;  /* User-generic application args (TY_GENERIC, user class). Built once
+	                            at parse; value-copies share it read-only (typeref_deepcopy clones it). */
 	int targ_count;          /* 0 for built-in templates (Box/List/...), which use elem/elem2. */
+	int targ_cap;
 } TypeRef;
 
 /* Width in bits of a scalar kind. A bool reports 1; objects/strings are
@@ -255,7 +256,6 @@ typedef struct
 	int   is_static;          /* Static field: one shared global slot, not in the object. */
 	Expr *init;               /* Static-field declaration initializer, or NULL. */
 } Field;
-#define MAX_TYPE_PARAMS 4
 typedef struct
 {
 	char  name[64];
@@ -265,9 +265,11 @@ typedef struct
 	int has_parent;
 	char implements[8][64];   /* Interface names this class implements. */
 	int implements_count;
-	char type_params[MAX_TYPE_PARAMS][64];        /* Generic class: parameter names, e.g. "T". */
-	char type_param_bounds[MAX_TYPE_PARAMS][64];  /* Interface bound per param, or "" if none. */
-	int  type_param_count;                        /* 0 = ordinary (non-generic) class. */
+	char (*type_params)[64];        /* Generic class: parameter names, e.g. "T". Grown at parse. */
+	char (*type_param_bounds)[64];  /* Interface bound per param, or "" if none. */
+	int  type_param_count;          /* 0 = ordinary (non-generic) class. */
+	int  type_param_cap;
+	int  type_param_bounds_cap;
 	Field *fields;            /* Grown via class_add_field. */
 	int field_count;
 	int fields_cap;

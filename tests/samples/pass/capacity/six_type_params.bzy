@@ -1,0 +1,13 @@
+class Six<A, B, C, D, E, F>
+{
+	A a;
+	void setA(A x) { this.a = x; }
+	A getA() { return this.a; }
+}
+
+void main()
+{
+	Six<int, long, bool, int, long, bool> s = new Six<int, long, bool, int, long, bool>();
+	s.setA(7);
+	print(s.getA());   // 7
+}

@@ -104,12 +104,18 @@ void unit_add_class(Unit *u, ClassDecl *c)
 
 TypeRef typeref_deepcopy(const TypeRef *t)
 {
-	TypeRef r=*t;   /* Copies scalars + class_name + targ_count by value. */
+	TypeRef r=*t;   /* Shallow: scalars + class_name + the targs pointer (replaced below). */
 	r.elem  = t->elem  ? typeref_box(typeref_deepcopy(t->elem))  : NULL;
 	r.elem2 = t->elem2 ? typeref_box(typeref_deepcopy(t->elem2)) : NULL;
-	for (int i=0; i<t->targ_count; i++)
+	r.targs=NULL;   /* Own buffer: do not alias t's (the copy is mutated independently). */
+	r.targ_cap=0;
+	if (t->targ_count>0)
 	{
-		r.targs[i]=typeref_box(typeref_deepcopy(t->targs[i]));
+		r.targs=grow_reserve(r.targs,t->targ_count,&r.targ_cap,sizeof(*r.targs));
+		for (int i=0; i<t->targ_count; i++)
+		{
+			r.targs[i]=typeref_box(typeref_deepcopy(t->targs[i]));
+		}
 	}
 	return r;
 }

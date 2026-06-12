@@ -101,6 +101,7 @@ check datetime_cmpfmt tests/samples/pass/datetime/compare_format.bzy $'true\ntru
 check_in io_input tests/samples/pass/io/input.bzy $'Breezy\n21\nlast line\n' $'Hi Breezy\n42\n[last line]'
 check many_nodes tests/samples/pass/capacity/many_nodes.bzy 60000
 check many_instances tests/samples/pass/capacity/many_instances.bzy 300
+check six_type_params tests/samples/pass/capacity/six_type_params.bzy 7
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
 check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check_fail desktop_bad_listener tests/samples/fail/desktop/bad_listener_arg.bzy
