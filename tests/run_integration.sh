@@ -85,6 +85,9 @@ check_fail overload_ambig_null      tests/samples/fail/overload/ambiguous_null.b
 check_fail overload_default_overlap tests/samples/fail/overload/default_overlap.bzy
 check datetime_read   tests/samples/pass/datetime/read.bzy          $'2025\n6\n15\n15\n6\n40\n7\n1750000000000'
 check datetime_before tests/samples/pass/datetime/epoch_before.bzy  $'1960\n3\n1\n6\n1960\n3'
+check datetime_roundtrip tests/samples/pass/datetime/roundtrip.bzy  $'2024\n2\n29\n23\n59\n59\n31\n7'
+check datetime_mutate tests/samples/pass/datetime/mutate.bzy        $'2027\n1\n2\n1\n3\n0\n2\n28\n2025\n2\n28\n2\n2'
+check datetime_cmpfmt tests/samples/pass/datetime/compare_format.bzy $'true\ntrue\ntrue\nfalse\n2026-06-12 14:30:09\n2026/06/12 14:30'
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
 check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check_fail desktop_bad_listener tests/samples/fail/desktop/bad_listener_arg.bzy

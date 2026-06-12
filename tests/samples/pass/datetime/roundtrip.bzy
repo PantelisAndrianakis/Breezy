@@ -1,0 +1,14 @@
+void main()
+{
+	DateTime a = new DateTime(2024, 2, 29, 23, 59, 59);   // Leap day, end of day.
+	print(a.getYear());        // 2024
+	print(a.getMonth());       // 2
+	print(a.getDay());         // 29
+	print(a.getHour());        // 23
+	print(a.getMinute());      // 59
+	print(a.getSecond());      // 59
+
+	DateTime b = new DateTime(2000, 12, 31);
+	print(b.getDay());         // 31
+	print(b.getDayOfWeek());   // 7  (2000-12-31 is a Sunday)
+}

@@ -1,0 +1,14 @@
+void main()
+{
+	DateTime a = new DateTime(2026, 6, 12, 14, 30, 9);
+	DateTime b = new DateTime(a.toMillis());
+	b.addDays(7);
+
+	print(a.before(b));            // true
+	print(b.after(a));             // true
+	print(a.equals(a));            // true
+	print(a.equals(b));            // false
+
+	print(a.toString());           // 2026-06-12 14:30:09
+	print(a.format("yyyy/MM/dd HH:mm"));   // 2026/06/12 14:30
+}
