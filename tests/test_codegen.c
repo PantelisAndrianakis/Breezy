@@ -4,6 +4,7 @@
 #include "resolve.h"
 #include "codegen.h"
 #include "prelude.h"
+#include "overload.h"
 #include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
 #define MAX_U 64
@@ -950,6 +951,68 @@ static void test_inline_alloc_windows_pool_pop(void)
 	ASSERT_INT(strstr(g_asm, "call bzy_alloc") != NULL, 1);
 }
 
+/* ---- Overload module (pure: signature encoding + best-match selection). ---- */
+
+static void test_overload_encode(void)
+{
+	TypeRef ii[2] = { { .kind = TY_INT }, { .kind = TY_INT } };
+	char buf[64];
+	overload_encode_types(buf, sizeof(buf), ii, 2);
+	ASSERT_STR(buf, "ii");
+
+	TypeRef none[1] = { { .kind = TY_VOID } };
+	overload_encode_types(buf, sizeof(buf), none, 0);
+	ASSERT_STR(buf, "v");
+
+	TypeRef obj[1] = { { .kind = TY_OBJECT } };
+	strcpy(obj[0].class_name, "Dog");
+	overload_encode_types(buf, sizeof(buf), obj, 1);
+	ASSERT_STR(buf, "O3Dog");
+}
+
+static void test_overload_select_exact_beats_widening(void)
+{
+	TypeRef pi[1] = { { .kind = TY_INT } };
+	TypeRef pl[1] = { { .kind = TY_LONG } };
+	OverloadCand cands[2] = { { pi, 1, 1 }, { pl, 1, 1 } };
+
+	TypeRef arg_int[1] = { { .kind = TY_INT } };
+	ASSERT_INT(overload_select(cands, 2, arg_int, 1), 0);   /* int arg -> f(int). */
+
+	TypeRef arg_long[1] = { { .kind = TY_LONG } };
+	ASSERT_INT(overload_select(cands, 2, arg_long, 1), 1);  /* long arg -> f(long). */
+}
+
+static void test_overload_select_null_ambiguous(void)
+{
+	TypeRef pa[1] = { { .kind = TY_OBJECT } };
+	TypeRef pb[1] = { { .kind = TY_OBJECT } };
+	strcpy(pa[0].class_name, "Dog");
+	strcpy(pb[0].class_name, "Cat");
+	OverloadCand cands[2] = { { pa, 1, 1 }, { pb, 1, 1 } };
+
+	TypeRef arg_null[1] = { { .kind = TY_NULL } };
+	ASSERT_INT(overload_select(cands, 2, arg_null, 1), OVL_AMBIG);
+
+	TypeRef arg_dog[1] = { { .kind = TY_OBJECT } };
+	strcpy(arg_dog[0].class_name, "Dog");
+	ASSERT_INT(overload_select(cands, 2, arg_dog, 1), 0);   /* Exact class wins. */
+}
+
+static void test_overload_set_ambiguous(void)
+{
+	/* Box(int) [1,1] vs Box(int, int=0) [1,2] collide at arity 1. */
+	TypeRef p1[1] = { { .kind = TY_INT } };
+	TypeRef p2[2] = { { .kind = TY_INT }, { .kind = TY_INT } };
+	OverloadCand amb[2] = { { p1, 1, 1 }, { p2, 2, 1 } };
+	ASSERT_INT(overload_set_is_ambiguous(amb, 2), 1);
+
+	/* f(int) vs f(string): never collide. */
+	TypeRef ps[1] = { { .kind = TY_STRING } };
+	OverloadCand ok[2] = { { p1, 1, 1 }, { ps, 1, 1 } };
+	ASSERT_INT(overload_set_is_ambiguous(ok, 2), 0);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -998,6 +1061,10 @@ int main(void)
 	RUN(test_unrolled_mac_memory_operand_imul);
 	RUN(test_desktop_is_enabled_lowers);
 	RUN(test_desktop_button_listener_lowers);
+	RUN(test_overload_encode);
+	RUN(test_overload_select_exact_beats_widening);
+	RUN(test_overload_select_null_ambiguous);
+	RUN(test_overload_set_ambiguous);
 	SUMMARY();
 	return 0;
 }
