@@ -81,11 +81,12 @@ while (i < 100)
 
 ## for
 
-A C-style `for` loop bundles three parts: an initializer, a condition, and a step. The initializer commonly declares the loop variable inline (`int j = 0`). The `++` and `--` operators increment and decrement.
+A C-style `for` loop bundles three parts: an initializer, a condition, and a step. Declare the loop variable on the line above the loop, then assign it in the initializer (`int j;` then `for (j = 0; ...)`). The `++` and `--` operators increment and decrement.
 
 ```breezy
 int sum = 0;
-for (int j = 0; j <= 10; j++)
+int j;
+for (j = 0; j <= 10; j++)
 {
 	sum = sum + j;
 }
@@ -184,7 +185,8 @@ A `void` function may use a bare `return;` to exit early.
 ## Rules & gotchas
 
 - **Conditions are `bool` expressions** in parentheses - combine them with `and`, `or`, and `not`.
-- **Combine declaration and assignment freely** (`int i = 0;`, `for (int i = 0; ...)`); this is the idiomatic form wherever a variable has a value right away.
+- **Combine declaration and assignment** for ordinary variables (`int i = 0;`) wherever a variable has a value right away.
+- **Declare a `for` loop's counter on the line above** the loop and assign it in the initializer (`int i;` then `for (i = 0; ...)`); the initializer takes an assignment, not a declaration.
 - **`switch` falls through** - add `break` unless you intend a case to run into the next.
 - **`switch` rejects `float`/`double`** - use `if`/`else` for floating-point comparisons.
 - **`break`/`continue` act on the nearest enclosing loop.**

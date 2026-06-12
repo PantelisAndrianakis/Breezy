@@ -11,7 +11,8 @@ void main()
 	a = new int[4];
 	int acc;
 	acc = 0;
-	for (int i = 0; i < 4; i = i + 1)
+	int i;
+	for (i = 0; i < 4; i = i + 1)
 	{
 		acc = acc - 1000000000;
 		a[i] = acc;
@@ -26,7 +27,8 @@ void main()
 	// negative, exercising the exit re-extension.
 	int sum;
 	sum = 0;
-	for (int k = 0; k < 5; k = k + 1)
+	int k;
+	for (k = 0; k < 5; k = k + 1)
 	{
 		sum = sum - 1000000000;
 	}

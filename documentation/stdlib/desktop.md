@@ -91,7 +91,10 @@ class Greeter implements ActionListener
 
 void main()
 {
-	if (not Desktop.isEnabled()) { return; }
+	if (not Desktop.isEnabled())
+	{
+		return;
+	}
 
 	Frame frame = new Frame();
 	frame.setTitle("Hello");

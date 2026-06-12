@@ -6,7 +6,8 @@ void main()
 	ch = File.openChannel("ri_test.dat");
 	byte[] src;
 	src = new byte[10];
-	for (int i = 0; i < 10; i = i + 1)
+	int i;
+	for (i = 0; i < 10; i = i + 1)
 	{
 		src[i] = (byte)(65 + i);
 	}

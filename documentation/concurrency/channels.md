@@ -34,7 +34,8 @@ void main()
 	spawn producer(c);
 
 	int total = 0;
-	for (int i = 0; i < 3; i++)
+	int i;
+	for (i = 0; i < 3; i++)
 	{
 		total += c.recv();   // Parks while the channel is empty.
 	}
