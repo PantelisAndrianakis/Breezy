@@ -21,7 +21,8 @@ typedef struct
 	Func *ast;
 	TypeRef ret_type;
 	int param_count;
-	TypeRef param_types[8];
+	TypeRef *param_types;          /* Grown to param_count; param_types_cap allocated. */
+	int param_types_cap;
 	int is_static;    /* Static method: no `this`, called via the class name. */
 } MethodInfo;
 typedef struct ClassInfo
@@ -61,7 +62,8 @@ typedef struct
 	Func *ast;
 	TypeRef ret_type;
 	int param_count;
-	TypeRef param_types[8];
+	TypeRef *param_types;          /* Grown to param_count; param_types_cap allocated. */
+	int param_types_cap;
 	int is_extern;            /* FFI: asm_label is the raw C symbol; no body emitted. */
 	int is_blocking;          /* FFI: dispatch via the offload pool (parks the breeze). */
 } FuncInfo;

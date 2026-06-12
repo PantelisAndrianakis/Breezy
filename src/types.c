@@ -1,8 +1,16 @@
 #include "types.h"
 #include "overload.h"
+#include "grow.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Append one parameter type at index idx to a dynamic param_types array. */
+static void add_param_type(TypeRef **arr, int *cap, int idx, TypeRef t)
+{
+	*arr = grow_ensure(*arr, idx, cap, sizeof(TypeRef));
+	(*arr)[idx] = t;
+}
 
 void types_init(TypeTable *tt)
 {
@@ -621,7 +629,7 @@ static void register_unit_funcs(TypeTable *tt, Unit *u)
 		fi->param_count=f->param_count;
 		for (int k=0; k<f->param_count; k++)
 		{
-			fi->param_types[k]=f->params[k].type;
+			add_param_type(&fi->param_types,&fi->param_types_cap,k,f->params[k].type);
 		}
 
 		if (f->is_extern)
@@ -854,6 +862,20 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		memcpy(c->fields,c->parent->fields,sizeof(FieldInfo)*c->field_count);
 		c->method_count=c->parent->method_count;
 		memcpy(c->methods,c->parent->methods,sizeof(MethodInfo)*c->method_count);
+		/* The memcpy aliased each inherited method's param_types pointer onto the
+		   parent's buffer; give every inherited method its own copy so a later
+		   override or grow never corrupts the parent. */
+		for (int mi=0; mi<c->method_count; mi++)
+		{
+			MethodInfo *src=&c->parent->methods[mi];
+			MethodInfo *dst=&c->methods[mi];
+			dst->param_types=NULL;
+			dst->param_types_cap=0;
+			for (int p=0; p<src->param_count; p++)
+			{
+				add_param_type(&dst->param_types,&dst->param_types_cap,p,src->param_types[p]);
+			}
+		}
 		c->vtable_size=c->parent->vtable_size;
 	}
 	else
@@ -959,7 +981,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		mi->param_count=m->param_count;
 		for (int k=0; k<m->param_count; k++)
 		{
-			mi->param_types[k]=m->params[k].type;
+			add_param_type(&mi->param_types,&mi->param_types_cap,k,m->params[k].type);
 		}
 	}
 
@@ -1065,7 +1087,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		eq->ast=NULL;
 		eq->ret_type=(TypeRef){.kind=TY_BOOL};
 		eq->param_count=1;
-		eq->param_types[0]=(TypeRef){.kind=TY_OBJECT};
+		add_param_type(&eq->param_types,&eq->param_types_cap,0,(TypeRef){.kind=TY_OBJECT});
 		strcpy(eq->param_types[0].class_name,c->name);
 	}
 
@@ -1084,7 +1106,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		mi->param_count=cf->param_count;
 		for (int k=0; k<cf->param_count; k++)
 		{
-			mi->param_types[k]=cf->params[k].type;
+			add_param_type(&mi->param_types,&mi->param_types_cap,k,cf->params[k].type);
 		}
 	}
 
