@@ -1,4 +1,5 @@
 #include "escape.h"
+#include "grow.h"
 #include <string.h>
 
 /* The escape pass is two sweeps over a resolved function body. The first sweep
@@ -12,9 +13,9 @@
    field, aliased into another local, or returned. Reading or writing a field of
    a local (c.v) does NOT escape c. */
 
-#define MAX_ESC 256
-static int g_esc[MAX_ESC];
-static int g_esc_n;
+static int *g_esc=NULL;
+static int  g_esc_n=0;
+static int  g_esc_cap=0;
 
 static void esc_add(int off)
 {
@@ -26,10 +27,8 @@ static void esc_add(int off)
 		}
 	}
 
-	if (g_esc_n<MAX_ESC)
-	{
-		g_esc[g_esc_n++]=off;
-	}
+	g_esc=grow_ensure(g_esc,g_esc_n,&g_esc_cap,sizeof(*g_esc));
+	g_esc[g_esc_n++]=off;
 }
 
 static int esc_has(int off)

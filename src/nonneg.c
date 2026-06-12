@@ -1,13 +1,13 @@
 #include "nonneg.h"
 #include "lexer.h"
+#include "grow.h"
 #include <stddef.h>
-
-#define NN_MAX 64
 
 typedef struct
 {
-	int off[NN_MAX];   /* slot offsets of locals currently known >= 0. */
+	int *off;   /* slot offsets of locals currently known >= 0; grown dynamically. */
 	int count;
+	int cap;
 } NonNeg;
 
 static int nn_has(NonNeg *s, int off)
@@ -25,8 +25,9 @@ static int nn_has(NonNeg *s, int off)
 
 static void nn_add(NonNeg *s, int off)
 {
-	if (off > 0 && !nn_has(s, off) && s->count < NN_MAX)
+	if (off > 0 && !nn_has(s, off))
 	{
+		s->off = grow_ensure(s->off, s->count, &s->cap, sizeof(*s->off));
 		s->off[s->count++] = off;
 	}
 }
@@ -192,6 +193,8 @@ void nonneg_annotate(Func *f)
 	}
 
 	NonNeg s;
+	s.off = NULL;
 	s.count = 0;
+	s.cap = 0;
 	nn_block(f->body, &s);
 }
