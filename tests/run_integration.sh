@@ -68,6 +68,7 @@ check ctor        tests/samples/pass/oop/proj_ctor      $'3
 check bare_field     tests/samples/pass/oop/bare_field.bzy     $'2\n1\n3'
 check default_args   tests/samples/pass/basics/proj_default_args  $'15\n6\n1\n2\n7\n2'
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
+check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check leak        tests/samples/pass/memory/proj_leak      "1"
 check cycle       tests/samples/pass/memory/proj_cycle     "0"
 check scalars     tests/samples/pass/numbers/scalars.bzy   $'0\n0\n5000000000\n4000000000\ntrue\n-1\nfalse\ntrue'

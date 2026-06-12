@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <dirent.h>
 #include "parser.h"
 #include "enums.h"
@@ -137,9 +138,39 @@ int main(int argc, char *argv[])
 	static Parser parsers[MAX_FILES];
 	static Unit *units[MAX_FILES];
 
-	/* The prelude (built-in vector classes etc.) compiles ahead of user files. */
+	/* Read user sources up front so we can decide whether the Desktop GUI
+	   prelude needs injecting before any parsing happens. The Desktop prelude
+	   is added only when a user source references the `Desktop` identifier, so
+	   non-GUI programs reserve none of its names and pull no GTK runtime. */
+	static char *srcs[MAX_FILES];
+	int uses_desktop=0;
+	for (int i=0; i<nfiles; i++)
+	{
+		srcs[i]=read_file(paths[i]);
+		if (!uses_desktop)
+		{
+			const char *p=srcs[i];
+			while ((p=strstr(p,"Desktop"))!=NULL)
+			{
+				char before=(p==srcs[i])?' ':p[-1];
+				char after=p[7];
+				int b_ok=!(isalnum((unsigned char)before)||before=='_');
+				int a_ok=!(isalnum((unsigned char)after)||after=='_');
+				if (b_ok && a_ok)
+				{
+					uses_desktop=1;
+					break;
+				}
+				p+=7;
+			}
+		}
+	}
+
+	/* The prelude (built-in vector classes etc.) compiles ahead of user files;
+	   the Desktop prelude follows it only when Desktop is referenced. */
 	int np=BZY_PRELUDE_COUNT;
-	int total=np+nfiles;
+	int ndesk=uses_desktop?BZY_DESKTOP_PRELUDE_COUNT:0;
+	int total=np+ndesk+nfiles;
 	if (total>MAX_FILES)
 	{
 		fprintf(stderr,"Too many files (prelude + sources).\n");
@@ -151,11 +182,15 @@ int main(int argc, char *argv[])
 		parser_init(&parsers[i],BZY_PRELUDE[i]);
 		units[i]=parse_unit(&parsers[i]);
 	}
+	for (int i=0; i<ndesk; i++)
+	{
+		parser_init(&parsers[np+i],BZY_DESKTOP_PRELUDE[i]);
+		units[np+i]=parse_unit(&parsers[np+i]);
+	}
 	for (int i=0; i<nfiles; i++)
 	{
-		char *src=read_file(paths[i]);
-		parser_init(&parsers[np+i],src);
-		units[np+i]=parse_unit(&parsers[np+i]);
+		parser_init(&parsers[np+ndesk+i],srcs[i]);
+		units[np+ndesk+i]=parse_unit(&parsers[np+ndesk+i]);
 	}
 
 	/* Lower enums to synthesized classes (base + per-constant subclasses) before
@@ -213,7 +248,7 @@ int main(int argc, char *argv[])
 	{
 		/* -L. finds a co-located lib_breezy.a (distribution); -Lbuild/linux finds
 		   the per-host build output when running from the project tree. */
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl");
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl -ldl");
 	}
 	else
 	{

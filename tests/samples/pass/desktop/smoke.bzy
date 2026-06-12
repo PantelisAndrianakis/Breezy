@@ -1,0 +1,12 @@
+// Display-independent smoke: references Desktop (triggering prelude injection),
+// exercises the full toolchain (extern lowering, desktop.o link, GTK dlopen
+// attempt), and prints a constant regardless of whether a display exists.
+// It never constructs a widget, so it opens no window during the test suite.
+void main()
+{
+	bool enabled = Desktop.isEnabled();
+	if (enabled or not enabled)   // Always true; result intentionally ignored.
+	{
+		print("desktop-ok");
+	}
+}

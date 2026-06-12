@@ -72,6 +72,58 @@ static void emit(const char *src, Target target)
 	emit_n(srcs, 1, target);
 }
 
+/* Compile prelude + desktop-prelude + the user source, exactly as the driver
+   does when Desktop is referenced, and load the emitted asm into g_asm. */
+static void emit_desktop(const char *src, Target target)
+{
+	static Parser parsers[MAX_U];
+	static Unit *units[MAX_U];
+	static TypeTable tt;
+
+	int n = 0;
+	for (int i = 0; i < BZY_PRELUDE_COUNT; i++)
+	{
+		parser_init(&parsers[n], BZY_PRELUDE[i]);
+		units[n] = parse_unit(&parsers[n]);
+		n++;
+	}
+	for (int i = 0; i < BZY_DESKTOP_PRELUDE_COUNT; i++)
+	{
+		parser_init(&parsers[n], BZY_DESKTOP_PRELUDE[i]);
+		units[n] = parse_unit(&parsers[n]);
+		n++;
+	}
+	parser_init(&parsers[n], src);
+	units[n] = parse_unit(&parsers[n]);
+	n++;
+
+	types_init(&tt);
+	types_register_builtins(&tt);
+	for (int i = 0; i < n; i++) { types_register_unit_names(&tt, units[i]); }
+	types_reserve_hashable(&tt);
+	for (int i = 0; i < n; i++) { types_register_interfaces(&tt, units[i]); }
+	types_register_all_members(&tt, units, n);
+	resolve_program(&tt, units, n);
+
+	FILE *f = fopen("out_cg_test.asm", "w+");
+	if (!f) { printf("FAIL\n    cannot open out_cg_test.asm\n"); exit(1); }
+	Codegen cg;
+	cg_init(&cg, f);
+	cg.target = target;
+	cg_program(&cg, &tt, units, n);
+	fflush(f);
+	rewind(f);
+	size_t got = fread(g_asm, 1, sizeof(g_asm) - 1, f);
+	g_asm[got] = '\0';
+	fclose(f);
+}
+
+static void test_desktop_is_enabled_lowers(void)
+{
+	emit_desktop("void main() { bool e; e = Desktop.isEnabled(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_desktop_is_enabled") != NULL, 1);
+}
+
 static void test_linux_arg_regs(void)
 {
 	/* add(a,b) called as add(2,3): on SysV the two int args load into rdi/rsi. */
@@ -927,6 +979,7 @@ int main(void)
 	RUN(test_unroll_kill_not_resurrected_by_inner_exit);
 	RUN(test_unroll_constant_index_direct_disp);
 	RUN(test_unrolled_mac_memory_operand_imul);
+	RUN(test_desktop_is_enabled_lowers);
 	SUMMARY();
 	return 0;
 }

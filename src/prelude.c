@@ -180,3 +180,24 @@ static const char VEC3D[] =
 
 const char *BZY_PRELUDE[] = { VEC2I, VEC2L, VEC2F, VEC2D, VEC3I, VEC3L, VEC3F, VEC3D };
 const int   BZY_PRELUDE_COUNT = 8;
+
+/* ---- Desktop GUI prelude (Breezy source). ---- */
+
+/* The C entry points implemented in runtime/desktop.c. Marshalled to the GTK
+   thread; marked `blocking` so the calling breeze parks instead of stalling a
+   scheduler core while the GTK thread services the request. */
+static const char DESKTOP_EXTERNS[] =
+	"extern blocking bool bzy_desktop_is_enabled();\n";
+
+/* Desktop: the entry point and (later) the event-dispatch loop. */
+static const char DESKTOP_CORE[] =
+	"static class Desktop\n"
+	"{\n"
+	"	static bool isEnabled()\n"
+	"	{\n"
+	"		return bzy_desktop_is_enabled();\n"
+	"	}\n"
+	"}\n";
+
+const char *BZY_DESKTOP_PRELUDE[] = { DESKTOP_EXTERNS, DESKTOP_CORE };
+const int   BZY_DESKTOP_PRELUDE_COUNT = 2;
