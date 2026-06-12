@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 #include <string.h>
+#include <stdlib.h>   /* malloc/free/getenv on all targets. */
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -264,6 +265,54 @@ static struct border *border_find(void *window)
 }
 
 static int open_windows = 0;
+static void *event_queue = NULL;   /* GAsyncQueue*, created lazily. */
+
+/* One queued UI event. kind: 0=action, 1=window-close. reg_index identifies the
+   Breezy widget object (its slot in Desktop._reg). The sentinel record with
+   reg_index -1 tells the run-loop to stop. */
+struct ui_event { int64_t reg_index; int64_t kind; };
+
+/* The current event reported by the last next_event(), so event_kind() can read
+   its kind. Single-consumer (the one Desktop.run loop), so a static is safe. */
+static int64_t cur_event_kind = 0;
+
+static void ensure_event_queue(void)
+{
+	if (!event_queue && G.async_queue_new)
+	{
+		event_queue = G.async_queue_new();
+	}
+}
+
+/* Push a heap-allocated event record (GAsyncQueue stores pointers). */
+static void push_event(int64_t reg_index, int64_t kind)
+{
+	if (!event_queue) { return; }
+	struct ui_event *ev = (struct ui_event *)malloc(sizeof(*ev));
+	ev->reg_index = reg_index;
+	ev->kind = kind;
+	G.async_queue_push(event_queue, ev);
+}
+
+/* GTK signal trampolines. They run on the GTK thread and only enqueue; they
+   never touch Breezy state, so no callback ever crosses into Breezy. The user
+   data carries the Breezy registration index. */
+static void on_action(void *widget, void *user_data)
+{
+	(void)widget;
+	push_event((int64_t)(intptr_t)user_data, 0);
+}
+
+static void on_window_close(void *widget, void *user_data)
+{
+	(void)widget;
+	push_event((int64_t)(intptr_t)user_data, 1);
+	if (open_windows > 0) { open_windows--; }
+	if (open_windows == 0)
+	{
+		push_event(-1, 0);    /* Sentinel: stop the run-loop. */
+	}
+}
 
 /* Forward decl: the actual GTK work, executed on the GTK thread. */
 static void cmd_execute(struct cmd *c);
@@ -302,6 +351,7 @@ static void ensure_gtk_thread(void)
 {
 	if (!start_mtx_init) { MTX_INIT(&start_mtx); start_mtx_init = 1; }
 	MTX_LOCK(&start_mtx);
+	ensure_event_queue();   /* Create once under the lock: no creation race. */
 	if (!gtk_thread_started)
 	{
 		gtk_thread_started = 1;
@@ -421,8 +471,15 @@ static void cmd_execute(struct cmd *c)
 		case OP_WIN_DISPOSE:
 			G.widget_destroy((void *)(intptr_t)c->a);
 			break;
-		case OP_LISTEN_ACTION:   /* Connected in Task 5. */
-		case OP_LISTEN_CLOSE:    /* Connected in Task 5. */
+		case OP_LISTEN_ACTION:
+			ensure_event_queue();
+			G.signal_connect_data((void *)(intptr_t)c->a, "clicked",
+				(void (*)(void))on_action, (void *)(intptr_t)c->b, NULL, 0);
+			break;
+		case OP_LISTEN_CLOSE:
+			ensure_event_queue();
+			G.signal_connect_data((void *)(intptr_t)c->a, "destroy",
+				(void (*)(void))on_window_close, (void *)(intptr_t)c->b, NULL, 0);
 			break;
 	}
 }
@@ -444,8 +501,24 @@ void bzy_desktop_window_set_size(int64_t w, int a, int b) { gtk_call(OP_WIN_SIZE
 void bzy_desktop_window_show(int64_t w) { gtk_call(OP_WIN_SHOW, w, 0, 0, NULL); }
 void bzy_desktop_window_dispose(int64_t w) { gtk_call(OP_WIN_DISPOSE, w, 0, 0, NULL); }
 
-/* ---- Event entry points: stubs filled in by Task 5. ---- */
-void bzy_desktop_listen_action(int64_t w, int i) { (void)w; (void)i; }
-void bzy_desktop_listen_window_close(int64_t w, int i) { (void)w; (void)i; }
-int bzy_desktop_next_event(void) { return -1; }
-int bzy_desktop_event_kind(void) { return 0; }
+/* ---- Event entry points. ---- */
+void bzy_desktop_listen_action(int64_t w, int i) { gtk_call(OP_LISTEN_ACTION, w, i, 0, NULL); }
+void bzy_desktop_listen_window_close(int64_t w, int i) { gtk_call(OP_LISTEN_CLOSE, w, i, 0, NULL); }
+
+int bzy_desktop_next_event(void)
+{
+	if (!desktop_load()) { return -1; }
+	ensure_gtk_thread();
+	ensure_event_queue();
+	if (!event_queue) { return -1; }
+	struct ui_event *ev = (struct ui_event *)G.async_queue_pop(event_queue);   /* Blocks. */
+	int idx = (int)ev->reg_index;
+	cur_event_kind = ev->kind;
+	free(ev);
+	return idx;
+}
+
+int bzy_desktop_event_kind(void)
+{
+	return (int)cur_event_kind;
+}
