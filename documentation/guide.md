@@ -69,6 +69,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | --- | --- |
 | [Math](stdlib/math.md) | The `Math` namespace - SSE-inlined and libm operations. |
 | [Clock](stdlib/clock.md) | Time and dates - monotonic durations and wall-clock formatting. |
+| [DateTime](stdlib/datetime.md) | Mutable date-time object - field access, calendar arithmetic, comparison, formatting. |
 | [Random](stdlib/random.md) | The fast `xoshiro256**` pseudo-random number generator. |
 | [Regex](stdlib/regex.md) | The linear-time, ReDoS-safe `Regex` engine. |
 | [File](stdlib/file.md) | The `File` namespace - filesystem work with `IOException`. |

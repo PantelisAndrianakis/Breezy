@@ -1,6 +1,6 @@
 # Clock
 
-`Clock` gives you time - monotonic for measuring durations, wall-clock for dates. It is a static namespace.
+`Clock` gives you time - monotonic for measuring durations, wall-clock for dates. It is a static namespace. For field access (year, month, day…) and calendar arithmetic, see [DateTime](datetime.md), which builds on `Clock`.
 
 ← [Back to the guide](../guide.md)
 
@@ -21,7 +21,7 @@ long now = Clock.currentTimeMillis();     // Wall-clock milliseconds since the e
 
 ## Formatting dates
 
-`Clock.getDateString` turns epoch milliseconds into a **local-time** date string - either a fixed ISO default or a Java-style pattern.
+`Clock.getDateString` turns epoch milliseconds into a **local-time** date string - either a fixed ISO default or a token-based pattern.
 
 ```breezy
 long now = Clock.currentTimeMillis();
@@ -38,9 +38,9 @@ string custom = Clock.getDateString(now, "yyyy/MM/dd HH:mm");   // 2026/06/02 14
 ## Rules & gotchas
 
 - **Use `currentTimeNanos` for durations** (monotonic) and `currentTimeMillis` for dates/timestamps (wall-clock).
-- **`getDateString` is local time** and accepts a Java-style pattern; unknown characters pass through literally.
+- **`getDateString` is local time** and accepts a token-based pattern; unknown characters pass through literally.
 - **The namespace is static** - call through `Clock.`.
 
 ---
 
-← [Math](math.md) · [Back to the guide](../guide.md) · Next: [Random](random.md)
+← [Math](math.md) · [Back to the guide](../guide.md) · Next: [DateTime](datetime.md)
