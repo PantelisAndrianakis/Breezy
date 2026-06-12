@@ -29,15 +29,18 @@ typedef struct ClassInfo
 {
 	char name[64];
 	struct ClassInfo *parent;
-	FieldInfo fields[64];
+	FieldInfo *fields;             /* Pre-sized in register_class_members; field_count live. */
 	int field_count;
-	MethodInfo methods[64];
+	int fields_cap;
+	MethodInfo *methods;
 	int method_count;
+	int methods_cap;
 	int vtable_size;
 	int object_size;
 	int has_ctor;                  /* 1 if the class declares >= 1 constructor. */
-	MethodInfo ctors[8];           /* Constructor overload set (ast/param_types/asm_label per entry). */
+	MethodInfo *ctors;             /* Constructor overload set (ast/param_types/asm_label per entry). */
 	int ctor_count;
+	int ctors_cap;
 	int is_shared;                 /* 1 if instances may cross a core boundary -> atomic refcounts (6a-3). */
 	char implements[8][64];        /* Interface names this class implements. */
 	int implements_count;

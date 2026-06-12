@@ -58,6 +58,7 @@ void types_register_builtins(TypeTable *tt)
 {
 	ClassInfo *c = tt_add_class(tt);
 	memset(c, 0, sizeof(*c));
+	c->fields = grow_reserve(c->fields, 1, &c->fields_cap, sizeof(FieldInfo));
 	strcpy(c->name, "Exception");
 	c->parent = NULL;
 	strcpy(c->fields[0].name, "message");
@@ -70,6 +71,7 @@ void types_register_builtins(TypeTable *tt)
 
 	ClassInfo *o = tt_add_class(tt);
 	memset(o, 0, sizeof(*o));
+	o->fields = grow_reserve(o->fields, 1, &o->fields_cap, sizeof(FieldInfo));
 	strcpy(o->name, "IndexOutOfBounds");
 	o->parent = c;                       /* `c` is the Exception entry above. */
 	strcpy(o->fields[0].name, "message");
@@ -82,6 +84,7 @@ void types_register_builtins(TypeTable *tt)
 
 	ClassInfo *io = tt_add_class(tt);
 	memset(io, 0, sizeof(*io));
+	io->fields = grow_reserve(io->fields, 1, &io->fields_cap, sizeof(FieldInfo));
 	strcpy(io->name, "IOException");
 	io->parent = c;                      /* Subclass of Exception. */
 	strcpy(io->fields[0].name, "message");
@@ -94,6 +97,7 @@ void types_register_builtins(TypeTable *tt)
 
 	ClassInfo *nf = tt_add_class(tt);
 	memset(nf, 0, sizeof(*nf));
+	nf->fields = grow_reserve(nf->fields, 1, &nf->fields_cap, sizeof(FieldInfo));
 	strcpy(nf->name, "NumberFormatException");
 	nf->parent = c;                      /* Subclass of Exception. */
 	strcpy(nf->fields[0].name, "message");
@@ -871,6 +875,20 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 
 	c->implements_count=d->implements_count;
 	memcpy(c->implements,d->implements,sizeof(c->implements));
+
+	/* Pre-size the per-class arrays once (inherited entries + this class's own,
+	   + 2 methods for a record's synthesized hashCode/equals). The registration
+	   loops below then never realloc, so the MethodInfo* pointers they hold for
+	   override detection stay valid. */
+	int pfields=(c->parent?c->parent->field_count:0)+d->field_count;
+	int pmethods=(c->parent?c->parent->method_count:0)+d->method_count+2;
+	c->fields=grow_reserve(c->fields,pfields,&c->fields_cap,sizeof(FieldInfo));
+	c->methods=grow_reserve(c->methods,pmethods,&c->methods_cap,sizeof(MethodInfo));
+	if (d->ctor_count>0)
+	{
+		c->ctors=grow_reserve(c->ctors,d->ctor_count,&c->ctors_cap,sizeof(MethodInfo));
+	}
+
 	if (c->parent)
 	{
 		c->field_count=c->parent->field_count;
