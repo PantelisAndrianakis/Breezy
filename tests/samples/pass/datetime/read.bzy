@@ -1,0 +1,12 @@
+void main()
+{
+	DateTime d = new DateTime(1750000000000L);
+	print(d.getYear());        // 2025
+	print(d.getMonth());       // 6
+	print(d.getDay());         // 15
+	print(d.getHour());        // 15
+	print(d.getMinute());      // 6
+	print(d.getSecond());      // 40
+	print(d.getDayOfWeek());   // 7  (Sunday, ISO)
+	print(d.toMillis());       // 1750000000000
+}

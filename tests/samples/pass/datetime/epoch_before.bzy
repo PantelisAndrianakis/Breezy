@@ -1,0 +1,11 @@
+void main()
+{
+	DateTime d = new DateTime(1960, 3, 1, 6, 30, 0);
+	print(d.getYear());          // 1960
+	print(d.getMonth());         // 3
+	print(d.getDay());           // 1
+	print(d.getHour());          // 6
+	DateTime e = new DateTime(d.toMillis());
+	print(e.getYear());          // 1960
+	print(e.getMonth());         // 3
+}

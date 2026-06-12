@@ -163,9 +163,20 @@ static int64_t local_offset(time_t secs)
 
 	struct tm tmv;
 #ifdef _WIN32
-	struct tm *lt = localtime(&secs);
+	/* MSVCRT's localtime() returns NULL for negative (pre-1970) time_t. The
+	   Gregorian calendar and civil wall clock repeat exactly every 400 years
+	   (146097 days), so shift a negative instant up by whole cycles into the
+	   representable range; the zone offset there matches the original. */
+	int64_t shifted = s;
+	const int64_t CYCLE = 12622780800LL;   /* 400 years = 146097 days, in seconds. */
+	while (shifted < 0)
+	{
+		shifted += CYCLE;
+	}
+	time_t st = (time_t)shifted;
+	struct tm *lt = localtime(&st);
 	tmv = *lt;
-	int64_t off = (int64_t)_mkgmtime(&tmv) - s;   /* Re-interpret the local fields as UTC -> offset. */
+	int64_t off = (int64_t)_mkgmtime(&tmv) - shifted;   /* Re-interpret the local fields as UTC -> offset. */
 #else
 	localtime_r(&secs, &tmv);
 	int64_t off = (int64_t)timegm(&tmv) - s;
@@ -177,6 +188,13 @@ static int64_t local_offset(time_t secs)
 	cache_off = off;
 	cache_valid = 1;
 	return off;
+}
+
+/* Exposed to Breezy (DateTime): the local UTC offset, in seconds, for the given
+   epoch-seconds value. local = utc + offset. */
+int64_t bzy_local_offset_secs(int64_t secs)
+{
+	return local_offset((time_t)secs);
 }
 
 /* Format millis (epoch ms) in local time using a Java-style pattern. Tokens:
