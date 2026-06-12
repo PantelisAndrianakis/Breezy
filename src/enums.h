@@ -5,8 +5,9 @@
 typedef struct
 {
 	char name[64];                 /* Enum class name, e.g. "Color". */
-	char implements[8][64];
+	char (*implements)[64];
 	int  implements_count;
+	int  implements_cap;
 	int  constant_count;
 	char const_name[64][64];       /* Constant names, ordinal order. */
 	char const_class[64][64];      /* Instantiated class: "Color" or "Color$RED". */

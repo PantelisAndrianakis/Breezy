@@ -263,8 +263,9 @@ typedef struct
 	int is_record;            /* `record`: final class with compiler-synthesized hashCode/equals. */
 	char parent_name[64];
 	int has_parent;
-	char implements[8][64];   /* Interface names this class implements. */
+	char (*implements)[64];   /* Interface names this class implements. Grown at parse. */
 	int implements_count;
+	int implements_cap;
 	char (*type_params)[64];        /* Generic class: parameter names, e.g. "T". Grown at parse. */
 	char (*type_param_bounds)[64];  /* Interface bound per param, or "" if none. */
 	int  type_param_count;          /* 0 = ordinary (non-generic) class. */
@@ -302,8 +303,9 @@ typedef struct
 typedef struct
 {
 	char  name[64];
-	char  implements[8][64];
+	char  (*implements)[64];
 	int   implements_count;
+	int   implements_cap;
 	EnumConstant constants[64];
 	int   constant_count;
 	Field fields[32];         /* Shared instance fields (user-declared). */
@@ -318,12 +320,15 @@ typedef struct
 	ClassDecl    **klasses;       /* Peer top-level classes declared in this file. */
 	int            class_count;
 	int            class_cap;
-	InterfaceDecl *interfaces[8]; /* File-scope interface declarations. */
+	InterfaceDecl **interfaces;   /* File-scope interface declarations. Grown at parse. */
 	int            interface_count;
-	EnumDecl      *enums[8];      /* File-scope enum declarations. */
+	int            interfaces_cap;
+	EnumDecl      **enums;        /* File-scope enum declarations. */
 	int            enum_count;
-	Func          *funcs[8];      /* File-scope functions. */
+	int            enums_cap;
+	Func          **funcs;        /* File-scope functions. */
 	int            func_count;
+	int            funcs_cap;
 } Unit;
 
 void   ast_free_all(void);

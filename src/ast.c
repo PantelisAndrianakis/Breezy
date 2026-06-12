@@ -252,6 +252,13 @@ ClassDecl *classdecl_clone(const ClassDecl *c)
 	n->ctors=NULL;
 	n->ctor_count=0;
 	n->ctors_cap=0;
+	n->implements=NULL;                      /* Own buffer (generic instances do implement interfaces). */
+	n->implements_cap=0;
+	for (int i=0; i<c->implements_count; i++)
+	{
+		n->implements=grow_reserve(n->implements,c->implements_count,&n->implements_cap,sizeof(*n->implements));
+		strcpy(n->implements[i],c->implements[i]);
+	}
 	for (int i=0; i<c->field_count; i++)
 	{
 		Field *fl=class_add_field(n);

@@ -19,6 +19,7 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 {
 	ClassDecl *c=class_new();
 	strcpy(c->name,e->name);
+	c->implements=grow_reserve(c->implements,e->implements_count,&c->implements_cap,sizeof(*c->implements));
 	c->implements_count=e->implements_count;
 	for (int i=0; i<e->implements_count; i++)
 	{
@@ -104,6 +105,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 	EnumInfo *info=&g_enums[g_enum_count++];
 	memset(info,0,sizeof(*info));
 	strcpy(info->name,e->name);
+	info->implements=grow_reserve(info->implements,e->implements_count,&info->implements_cap,sizeof(*info->implements));
 	info->implements_count=e->implements_count;
 	for (int i=0; i<e->implements_count; i++)
 	{

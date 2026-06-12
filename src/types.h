@@ -39,8 +39,9 @@ typedef struct ClassInfo
 	int ctor_count;
 	int ctors_cap;
 	int is_shared;                 /* 1 if instances may cross a core boundary -> atomic refcounts (6a-3). */
-	char implements[8][64];        /* Interface names this class implements. */
+	char (*implements)[64];        /* Interface names this class implements. */
 	int implements_count;
+	int implements_cap;
 	int is_static;                 /* `static class`: not instantiable; all members static. */
 	int is_record;                 /* `record`: final class with synthesized hashCode/equals. */
 	int members_done;              /* Registration fixpoint: fields/methods/vtable complete (parents first). */

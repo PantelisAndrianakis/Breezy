@@ -1,0 +1,32 @@
+interface I0 { int v0(); }
+interface I1 { int v1(); }
+interface I2 { int v2(); }
+interface I3 { int v3(); }
+interface I4 { int v4(); }
+interface I5 { int v5(); }
+interface I6 { int v6(); }
+interface I7 { int v7(); }
+interface I8 { int v8(); }
+interface I9 { int v9(); }
+class Impl implements I0, I1, I2, I3, I4, I5, I6, I7, I8, I9
+{
+	int v0() { return 0; }
+	int v1() { return 1; }
+	int v2() { return 2; }
+	int v3() { return 3; }
+	int v4() { return 4; }
+	int v5() { return 5; }
+	int v6() { return 6; }
+	int v7() { return 7; }
+	int v8() { return 8; }
+	int v9() { return 9; }
+}
+
+void main()
+{
+	Impl o = new Impl();
+	I7 a = o;
+	I9 b = o;
+	print(a.v7());   // 7
+	print(b.v9());   // 9
+}

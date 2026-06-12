@@ -1481,12 +1481,7 @@ static ClassDecl *parse_class(Parser *p)
 		do
 		{
 			Token in=expect(p,TOKEN_IDENT);
-			if (c->implements_count>=8)
-			{
-				fprintf(stderr,"Too many implemented interfaces.\n");
-				exit(1);
-			}
-
+			c->implements=grow_ensure(c->implements,c->implements_count,&c->implements_cap,sizeof(*c->implements));
 			strcpy(c->implements[c->implements_count++],in.text);
 		}
 		while (match(p,TOKEN_COMMA));
@@ -1591,12 +1586,8 @@ static EnumDecl *parse_enum(Parser *p)
 	{
 		do
 		{
-			if (e->implements_count>=8)
-			{
-				fprintf(stderr,"Too many implemented interfaces.\n");
-				exit(1);
-			}
 			Token in=expect(p,TOKEN_IDENT);
+			e->implements=grow_ensure(e->implements,e->implements_count,&e->implements_cap,sizeof(*e->implements));
 			strcpy(e->implements[e->implements_count++],in.text);
 		}
 		while (match(p,TOKEN_COMMA));
@@ -1759,20 +1750,12 @@ Unit *parse_unit(Parser *p)
 	{
 		if (check(p,TOKEN_INTERFACE))
 		{
-			if (u->interface_count>=8)
-			{
-				fprintf(stderr,"Too many interfaces per file.\n");
-				exit(1);
-			}
+			u->interfaces=grow_ensure(u->interfaces,u->interface_count,&u->interfaces_cap,sizeof(*u->interfaces));
 			u->interfaces[u->interface_count++]=parse_interface(p);
 		}
 		else if (check(p,TOKEN_EXTERN))
 		{
-			if (u->func_count>=8)
-			{
-				fprintf(stderr,"Too many top-level functions.\n");
-				exit(1);
-			}
+			u->funcs=grow_ensure(u->funcs,u->func_count,&u->funcs_cap,sizeof(*u->funcs));
 			u->funcs[u->func_count++]=parse_extern(p);
 		}
 		else if (check(p,TOKEN_STATIC) && p->peek.type==TOKEN_CLASS)
@@ -1794,20 +1777,12 @@ Unit *parse_unit(Parser *p)
 		}
 		else if (check(p,TOKEN_ENUM))
 		{
-			if (u->enum_count>=8)
-			{
-				fprintf(stderr,"Too many enums per file.\n");
-				exit(1);
-			}
+			u->enums=grow_ensure(u->enums,u->enum_count,&u->enums_cap,sizeof(*u->enums));
 			u->enums[u->enum_count++]=parse_enum(p);
 		}
 		else
 		{
-			if (u->func_count>=8)
-			{
-				fprintf(stderr,"Too many top-level functions.\n");
-				exit(1);
-			}
+			u->funcs=grow_ensure(u->funcs,u->func_count,&u->funcs_cap,sizeof(*u->funcs));
 			u->funcs[u->func_count++]=parse_function(p);
 		}
 	}

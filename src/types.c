@@ -898,8 +898,12 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		exit(1);
 	}
 
+	c->implements=grow_reserve(c->implements,d->implements_count,&c->implements_cap,sizeof(*c->implements));
 	c->implements_count=d->implements_count;
-	memcpy(c->implements,d->implements,sizeof(c->implements));
+	for (int i=0; i<d->implements_count; i++)
+	{
+		strcpy(c->implements[i],d->implements[i]);
+	}
 
 	/* Pre-size the per-class arrays once (inherited entries + this class's own,
 	   + 2 methods for a record's synthesized hashCode/equals). The registration
