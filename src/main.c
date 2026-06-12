@@ -262,6 +262,11 @@ int main(int argc, char *argv[])
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",cfg.libs[i]);
 	}
+	/* Strip symbols (-s): the emitted program carries no source-level debug info
+	   and the runtime is opaque, so the only thing the linker would otherwise
+	   embed is the toolchain CRT's own debug sections - ~3x the binary size for
+	   no debugging value. */
+	off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -s");
 	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o %s",out_arg);
 	if (system(link_cmd)!=0)
 	{
