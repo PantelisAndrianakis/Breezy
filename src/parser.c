@@ -1434,12 +1434,7 @@ static InterfaceDecl *parse_interface(Parser *p)
 		expect(p,TOKEN_RPAREN);
 		expect(p,TOKEN_SEMICOLON);   /* Signature only, no body. */
 		m->body=NULL;
-		if (itf->method_count>=16)
-		{
-			fprintf(stderr,"Too many interface methods.\n");
-			exit(1);
-		}
-
+		itf->methods=grow_ensure(itf->methods,itf->method_count,&itf->methods_cap,sizeof(*itf->methods));
 		itf->methods[itf->method_count++]=m;
 	}
 

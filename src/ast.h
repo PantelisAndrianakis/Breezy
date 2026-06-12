@@ -285,8 +285,9 @@ typedef struct
 typedef struct
 {
 	char  name[64];
-	Func *methods[16];        /* Bodyless signature Funcs (body == NULL). */
+	Func **methods;           /* Bodyless signature Funcs (body == NULL). Grown at parse. */
 	int   method_count;
+	int   methods_cap;
 } InterfaceDecl;
 
 typedef struct

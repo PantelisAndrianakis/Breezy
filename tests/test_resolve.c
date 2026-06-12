@@ -4,6 +4,7 @@
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
+#include "grow.h"
 
 static TypeTable g_tt;
 static Unit *build1(const char *s)
@@ -25,7 +26,8 @@ static Unit *build1(const char *s)
 static TypeTable *build_generic(const char **srcs, int n)
 {
 	static Parser ps[16];
-	static Unit *units[64];
+	int units_cap=0;
+	Unit **units=grow_reserve(NULL,n,&units_cap,sizeof(*units));
 	for (int i=0; i<n; i++)
 	{
 		parser_init(&ps[i],srcs[i]);
@@ -33,7 +35,7 @@ static TypeTable *build_generic(const char **srcs, int n)
 	}
 
 	int total=n;
-	generics_expand(units,&total,64);
+	generics_expand(&units,&total,&units_cap);
 	types_init(&g_tt);
 	types_register_builtins(&g_tt);
 	for (int i=0; i<total; i++)
@@ -73,7 +75,8 @@ static Func *prog_find_func(const char *name)
 static TypeTable *build_program(const char **srcs, int n)
 {
 	static Parser ps[16];
-	static Unit *units[64];
+	int units_cap=0;
+	Unit **units=grow_reserve(NULL,n,&units_cap,sizeof(*units));
 	for (int i=0; i<n; i++)
 	{
 		parser_init(&ps[i],srcs[i]);
@@ -81,8 +84,8 @@ static TypeTable *build_program(const char **srcs, int n)
 	}
 
 	int total=n;
-	enums_expand(units,&total,64);
-	generics_expand(units,&total,64);
+	enums_expand(&units,&total,&units_cap);
+	generics_expand(&units,&total,&units_cap);
 	for (int i=0; i<total; i++)
 	{
 		g_prog_units[i]=units[i];

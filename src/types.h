@@ -47,13 +47,14 @@ typedef struct ClassInfo
 } ClassInfo;
 typedef struct
 {
-	char    name[64];
-	char    methods[16][64];       /* Method names, declaration order. */
-	TypeRef ret_types[16];
-	TypeRef param_types[16][8];
-	int     param_counts[16];
-	int     vslot[16];             /* The global vtable slot of each interface method. */
-	int     method_count;
+	char     name[64];
+	char   (*methods)[64];   /* [method] name, declaration order. */
+	TypeRef  *ret_types;     /* [method] return type. */
+	TypeRef **param_types;   /* [method] -> array of exactly param_counts[m] param types. */
+	int      *param_counts;  /* [method] param count. */
+	int      *vslot;         /* [method] global vtable slot. */
+	int       method_count;
+	int       method_cap;    /* One cap for all five parallel arrays (grown in lockstep). */
 } InterfaceInfo;
 typedef struct
 {

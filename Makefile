@@ -83,8 +83,8 @@ $(OBJDIR)/test_lexer: tests/test_lexer.c src/lexer.c | $(OBJDIR)
 $(OBJDIR)/test_ast: tests/test_ast.c src/ast.c src/grow.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_ast.c src/ast.c src/grow.c
 
-$(OBJDIR)/test_config: tests/test_config.c src/config.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -o $@ tests/test_config.c src/config.c
+$(OBJDIR)/test_config: tests/test_config.c src/config.c src/grow.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_config.c src/config.c src/grow.c
 
 $(OBJDIR)/test_codegen: tests/test_codegen.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_codegen.c $(OBJS)

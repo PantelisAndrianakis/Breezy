@@ -536,6 +536,39 @@ int types_is_interface(TypeTable *tt, const char *name)
 	return types_find_interface(tt,name) != NULL;
 }
 
+/* Grow all five InterfaceInfo parallel arrays in lockstep under one cap. Done
+   manually (not five grow_ensure calls) because a single shared cap would
+   short-circuit calls 2..5 after the first grew it, leaving those undersized. */
+static void iface_reserve(InterfaceInfo *itf)
+{
+	if (itf->method_count < itf->method_cap)
+	{
+		return;
+	}
+
+	int nc = itf->method_cap ? itf->method_cap * 2 : 4;
+	itf->methods      = realloc(itf->methods,      (size_t)nc * sizeof(*itf->methods));
+	itf->ret_types    = realloc(itf->ret_types,    (size_t)nc * sizeof(*itf->ret_types));
+	itf->param_types  = realloc(itf->param_types,  (size_t)nc * sizeof(*itf->param_types));
+	itf->param_counts = realloc(itf->param_counts, (size_t)nc * sizeof(*itf->param_counts));
+	itf->vslot        = realloc(itf->vslot,        (size_t)nc * sizeof(*itf->vslot));
+	itf->method_cap = nc;
+}
+
+/* Append one interface method (name / return type / param count); allocates
+   param_types[k] to exactly pcount entries (filled by the caller) and returns
+   the index k. The caller assigns vslot[k]. */
+static int iface_add_method(InterfaceInfo *itf, const char *name, TypeRef ret, int pcount)
+{
+	iface_reserve(itf);
+	int k = itf->method_count++;
+	strcpy(itf->methods[k], name);
+	itf->ret_types[k] = ret;
+	itf->param_counts[k] = pcount;
+	itf->param_types[k] = pcount ? calloc((size_t)pcount, sizeof(TypeRef)) : NULL;
+	return k;
+}
+
 /* Reserve global vtable slots 0 and 1 for the synthesized record methods, before
    any user interface claims a slot. Every vtable then has slot 0 = hashCode and
    slot 1 = equals (zero/gap for non-records), so the runtime can hardcode those
@@ -545,15 +578,10 @@ void types_reserve_hashable(TypeTable *tt)
 	InterfaceInfo *itf=tt_add_interface(tt);
 	memset(itf,0,sizeof(*itf));
 	strcpy(itf->name,"__Hashable");
-	itf->method_count=2;
-	strcpy(itf->methods[0],"hashCode");
-	itf->ret_types[0]=(TypeRef){.kind=TY_INT};
-	itf->param_counts[0]=0;
-	itf->vslot[0]=tt->iface_slots++;   /* Global slot 0. */
-	strcpy(itf->methods[1],"equals");
-	itf->ret_types[1]=(TypeRef){.kind=TY_BOOL};
-	itf->param_counts[1]=1;            /* (other); param type is the record itself, set per record. */
-	itf->vslot[1]=tt->iface_slots++;   /* Global slot 1. */
+	int hc=iface_add_method(itf,"hashCode",(TypeRef){.kind=TY_INT},0);
+	itf->vslot[hc]=tt->iface_slots++;   /* Global slot 0. */
+	int eq=iface_add_method(itf,"equals",(TypeRef){.kind=TY_BOOL},1);   /* param type set per record. */
+	itf->vslot[eq]=tt->iface_slots++;   /* Global slot 1. */
 }
 
 /* Register each interface, assigning every method a global vtable slot in [0..K).
@@ -567,19 +595,16 @@ void types_register_interfaces(TypeTable *tt, Unit *u)
 		InterfaceInfo *itf=tt_add_interface(tt);
 		memset(itf,0,sizeof(*itf));
 		strcpy(itf->name,d->name);
-		itf->method_count=d->method_count;
 		for (int k=0; k<d->method_count; k++)
 		{
 			Func *m=d->methods[k];
-			strcpy(itf->methods[k],m->name);
-			itf->ret_types[k]=m->ret_type;
-			itf->param_counts[k]=m->param_count;
+			int idx=iface_add_method(itf,m->name,m->ret_type,m->param_count);
 			for (int p=0; p<m->param_count; p++)
 			{
-				itf->param_types[k][p]=m->params[p].type;
+				itf->param_types[idx][p]=m->params[p].type;
 			}
 
-			itf->vslot[k]=tt->iface_slots++;   /* Global reserved slot. */
+			itf->vslot[idx]=tt->iface_slots++;   /* Global reserved slot. */
 		}
 	}
 }
