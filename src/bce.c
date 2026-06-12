@@ -1,6 +1,8 @@
 #include "bce.h"
 #include "lexer.h"
+#include "grow.h"
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>   /* strcmp for the .length field name. */
 
 /* Bounds-check elimination by forward interval analysis.
@@ -21,7 +23,6 @@
    declared width, so a result that could wrap on the hardware degrades to the
    full range rather than a false-tight one. */
 
-#define BCE_MAX 256
 #define I32_MIN (-2147483648LL)
 #define I32_MAX 2147483647LL
 
@@ -136,18 +137,59 @@ static Iv iv_mul(Iv a, Iv b)
 typedef struct
 {
 	int n;
-	int off[BCE_MAX];
-	Iv  iv[BCE_MAX];
+	int *off;        /* scalar-int interval keys; grown dynamically. */
+	Iv  *iv;
+	int cap;
 	int an;
-	int aoff[BCE_MAX];
-	Iv  alen[BCE_MAX];
+	int *aoff;       /* array-length interval keys. */
+	Iv  *alen;
+	int acap;
 	/* Symbolic guard facts: index var sb_io[i] is provably in [0, length of the
 	   array at sb_arr[i]) - from a loop guard `sb_io < arr.length`, with neither
 	   reassigned in the body. Lets arr[i] be proved safe without a numeric length. */
 	int sbn;
-	int sb_io[BCE_MAX];
-	int sb_arr[BCE_MAX];
+	int *sb_io;
+	int *sb_arr;
+	int sbcap;
 } Env;
+
+/* Deep copy: a child scope must own its interval buffers so narrowing it does
+   not mutate the parent's. (The arrays are dynamic now, so a plain `*env` would
+   alias them.) The child's buffers are leaked at scope end, like all compiler
+   allocation. */
+static Env env_dup(const Env *s)
+{
+	Env d;
+	memset(&d, 0, sizeof(d));
+	d.n = s->n;
+	d.an = s->an;
+	d.sbn = s->sbn;
+	if (s->n)
+	{
+		d.cap = s->n;
+		d.off = malloc((size_t)s->n * sizeof(*d.off));
+		d.iv  = malloc((size_t)s->n * sizeof(*d.iv));
+		memcpy(d.off, s->off, (size_t)s->n * sizeof(*d.off));
+		memcpy(d.iv,  s->iv,  (size_t)s->n * sizeof(*d.iv));
+	}
+	if (s->an)
+	{
+		d.acap = s->an;
+		d.aoff = malloc((size_t)s->an * sizeof(*d.aoff));
+		d.alen = malloc((size_t)s->an * sizeof(*d.alen));
+		memcpy(d.aoff, s->aoff, (size_t)s->an * sizeof(*d.aoff));
+		memcpy(d.alen, s->alen, (size_t)s->an * sizeof(*d.alen));
+	}
+	if (s->sbn)
+	{
+		d.sbcap = s->sbn;
+		d.sb_io  = malloc((size_t)s->sbn * sizeof(*d.sb_io));
+		d.sb_arr = malloc((size_t)s->sbn * sizeof(*d.sb_arr));
+		memcpy(d.sb_io,  s->sb_io,  (size_t)s->sbn * sizeof(*d.sb_io));
+		memcpy(d.sb_arr, s->sb_arr, (size_t)s->sbn * sizeof(*d.sb_arr));
+	}
+	return d;
+}
 
 /* Record that index var io is bounded by the length of array arr_off. */
 static void sb_set(Env *e, int io, int arr_off)
@@ -165,12 +207,15 @@ static void sb_set(Env *e, int io, int arr_off)
 		}
 	}
 
-	if (e->sbn < BCE_MAX)
+	if (e->sbn == e->sbcap)
 	{
-		e->sb_io[e->sbn] = io;
-		e->sb_arr[e->sbn] = arr_off;
-		e->sbn++;
+		e->sbcap = e->sbcap ? e->sbcap * 2 : 8;
+		e->sb_io  = realloc(e->sb_io,  (size_t)e->sbcap * sizeof(*e->sb_io));
+		e->sb_arr = realloc(e->sb_arr, (size_t)e->sbcap * sizeof(*e->sb_arr));
 	}
+	e->sb_io[e->sbn] = io;
+	e->sb_arr[e->sbn] = arr_off;
+	e->sbn++;
 }
 
 /* True if index var io is known bounded by the length of array arr_off. */
@@ -216,12 +261,15 @@ static void env_set(Env *e, int off, Iv v)
 		}
 	}
 
-	if (e->n < BCE_MAX)
+	if (e->n == e->cap)
 	{
-		e->off[e->n] = off;
-		e->iv[e->n] = v;
-		e->n++;
+		e->cap = e->cap ? e->cap * 2 : 8;
+		e->off = realloc(e->off, (size_t)e->cap * sizeof(*e->off));
+		e->iv  = realloc(e->iv,  (size_t)e->cap * sizeof(*e->iv));
 	}
+	e->off[e->n] = off;
+	e->iv[e->n] = v;
+	e->n++;
 }
 
 static Iv alen_get(Env *e, int off)
@@ -253,12 +301,15 @@ static void alen_set(Env *e, int off, Iv v)
 		}
 	}
 
-	if (e->an < BCE_MAX)
+	if (e->an == e->acap)
 	{
-		e->aoff[e->an] = off;
-		e->alen[e->an] = v;
-		e->an++;
+		e->acap = e->acap ? e->acap * 2 : 8;
+		e->aoff = realloc(e->aoff, (size_t)e->acap * sizeof(*e->aoff));
+		e->alen = realloc(e->alen, (size_t)e->acap * sizeof(*e->alen));
 	}
+	e->aoff[e->an] = off;
+	e->alen[e->an] = v;
+	e->an++;
 }
 
 /* ---- interval of an expression under the current environment ---- */
@@ -361,8 +412,9 @@ static Iv iv_expr(Expr *e, Env *env)
 
 typedef struct
 {
-	int off[BCE_MAX];
+	int *off;
 	int n;
+	int cap;
 } OffSet;
 
 static void off_add(OffSet *s, int off)
@@ -380,10 +432,8 @@ static void off_add(OffSet *s, int off)
 		}
 	}
 
-	if (s->n < BCE_MAX)
-	{
-		s->off[s->n++] = off;
-	}
+	s->off = grow_ensure(s->off, s->n, &s->cap, sizeof(*s->off));
+	s->off[s->n++] = off;
 }
 
 static int off_has(OffSet *s, int off)
@@ -692,7 +742,7 @@ static void bce_loop(Stmt *st, Env *env)
 		}
 	}
 
-	Env child = *env;
+	Env child = env_dup(env);
 	for (int i = 0; i < mod.n; i++)
 	{
 		env_set(&child, mod.off[i], IV_TOP);   /* Loop-carried values: unknown in the body. */
@@ -775,8 +825,8 @@ static void bce_stmt(Stmt *st, Env *env)
 		OffSet mod = { .n = 0 };
 		mod_block(st->then_blk, &mod);
 		mod_block(st->else_blk, &mod);
-		Env c1 = *env;
-		Env c2 = *env;
+		Env c1 = env_dup(env);
+		Env c2 = env_dup(env);
 		bce_block(st->then_blk, &c1);
 		bce_block(st->else_blk, &c2);
 		for (int i = 0; i < mod.n; i++)
@@ -799,9 +849,9 @@ static void bce_stmt(Stmt *st, Env *env)
 		OffSet mod = { .n = 0 };
 		mod_block(st->then_blk, &mod);
 		mod_block(st->else_blk, &mod);
-		Env child = *env;
+		Env child = env_dup(env);
 		bce_block(st->then_blk, &child);
-		Env child2 = *env;
+		Env child2 = env_dup(env);
 		bce_block(st->else_blk, &child2);
 		for (int i = 0; i < mod.n; i++)
 		{
@@ -842,8 +892,6 @@ void bce_annotate(Func *f)
 	}
 
 	Env env;
-	env.n = 0;
-	env.an = 0;
-	env.sbn = 0;   /* Was uninitialized: the symbolic-guard scan iterated stack garbage. */
+	memset(&env, 0, sizeof(env));   /* All counts/caps zero, all buffers NULL. */
 	bce_block(f->body, &env);
 }
