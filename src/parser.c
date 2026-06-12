@@ -1555,7 +1555,13 @@ static ClassDecl *parse_class(Parser *p)
 
 			expect(p,TOKEN_RPAREN);
 			f->body=parse_block(p);
-			c->ctor=f;
+			if (c->ctor_count>=8)
+			{
+				fprintf(stderr,"Too many constructors.\n");
+				exit(1);
+			}
+			c->ctors[c->ctor_count++]=f;
+			c->ctor=c->ctors[0];   /* Legacy alias. */
 			continue;
 		}
 
