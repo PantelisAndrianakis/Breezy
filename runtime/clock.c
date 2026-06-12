@@ -179,13 +179,6 @@ static int64_t local_offset(time_t secs)
 	return off;
 }
 
-/* Exposed to Breezy (DateTime): the local UTC offset, in seconds, for the given
-   epoch-seconds value. local = utc + offset. */
-int64_t bzy_local_offset_secs(int64_t secs)
-{
-	return local_offset((time_t)secs);
-}
-
 /* Format millis (epoch ms) in local time using a Java-style pattern. Tokens:
    yyyy yy MM dd HH hh mm ss SSS a; any other character is copied literally. */
 static void *format_date(int64_t millis, const char *f, int fl)

@@ -5,6 +5,7 @@
 #include "codegen.h"
 #include "prelude.h"
 #include "overload.h"
+#include "grow.h"
 #include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
 #define MAX_U 64
@@ -1013,6 +1014,20 @@ static void test_overload_set_ambiguous(void)
 	ASSERT_INT(overload_set_is_ambiguous(ok, 2), 0);
 }
 
+static void test_grow_ensure(void)
+{
+	int *a = NULL, cap = 0, n = 0;
+	for (int i = 0; i < 100; i++)
+	{
+		a = grow_ensure(a, n, &cap, sizeof(int));
+		a[n++] = i * 7;
+	}
+	ASSERT_INT(n, 100);
+	ASSERT_INT(cap >= 100, 1);
+	ASSERT_INT(a[0], 0);
+	ASSERT_INT(a[99], 693);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1065,6 +1080,7 @@ int main(void)
 	RUN(test_overload_select_exact_beats_widening);
 	RUN(test_overload_select_null_ambiguous);
 	RUN(test_overload_set_ambiguous);
+	RUN(test_grow_ensure);
 	SUMMARY();
 	return 0;
 }
