@@ -182,6 +182,14 @@ typedef struct
 	int       cc_n;
 	int       cc_off[8];
 	long long cc_val[8];
+	/* Function-level constant locals: a local every assignment to which is the
+	   same integer literal. Reads of kl_off[i] lower to IR_CONST kl_val[i], so the
+	   value folds to an immediate and never occupies a register or an inner-loop
+	   reload. Scanned over the whole function (a region's invariants are assigned in
+	   the enclosing emitter prologue, outside the region subtree). */
+	int       kl_n;
+	int       kl_off[64];
+	long long kl_val[64];
 } Low;
 
 /* A fresh block stamped with loop-nesting depth d. */
@@ -287,8 +295,23 @@ static int expr_eq(const Expr *a, const Expr *b)
 
 static IRReg low_expr(Low *L, const Expr *e);
 
-/* The compile-time value of e, if it is an integer literal or an unrolled
-   loop's induction constant. */
+/* The value of frame local `off` if it is a function-level constant local. */
+static int kl_const(Low *L, int off, long long *out)
+{
+	for (int i = 0; i < L->kl_n; i++)
+	{
+		if (L->kl_off[i] == off)
+		{
+			*out = L->kl_val[i];
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* The compile-time value of e, if it is an integer literal, an unrolled loop's
+   induction constant, or a function-level constant local. */
 static int low_const(Low *L, const Expr *e, long long *out)
 {
 	if (e->kind == EX_INT)
@@ -306,6 +329,11 @@ static int low_const(Low *L, const Expr *e, long long *out)
 				*out = L->cc_val[i];
 				return 1;
 			}
+		}
+
+		if (kl_const(L, e->anno_int, out))
+		{
+			return 1;
 		}
 	}
 
@@ -379,6 +407,18 @@ static IRReg low_expr(Low *L, const Expr *e)
 				kc->line = e->line;
 				return cr;
 			}
+		}
+
+		/* A function-level constant local reads as that constant (no frame load). */
+		long long kv;
+		if (kl_const(L, e->anno_int, &kv))
+		{
+			IRReg cr = ir_reg(L->f);
+			IRInstr *kc = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
+			kc->dst = cr;
+			kc->imm = kv;
+			kc->line = e->line;
+			return cr;
 		}
 
 		/* A local/param read: load from its frame slot at -anno_int. */
@@ -1100,6 +1140,153 @@ static void low_block(Low *L, const Block *b)
 	}
 }
 
+/* Scan the whole function for constant locals: a local every assignment to which
+   is the same integer literal. Tracked per offset (state 0 unknown / 1 const C /
+   2 varies); the const ones are copied into L->kl_. INCDEC and foreach bindings
+   count as non-constant writes. */
+typedef struct
+{
+	int       n;
+	int       off[64];
+	char      st[64];        /* 0 unknown, 1 const C, 2 varies. */
+	char      decl[64];      /* 1 if introduced by an ST_VARDECL (a genuine local, not a param). */
+	long long val[64];
+} ClcState;
+
+/* Find or create the entry for frame offset `off`; returns its index, or -1 if the
+   table is full or off is the no-slot sentinel 0. */
+static int clc_touch(ClcState *c, int off)
+{
+	if (off == 0)
+	{
+		return -1;
+	}
+
+	for (int i = 0; i < c->n; i++)
+	{
+		if (c->off[i] == off)
+		{
+			return i;
+		}
+	}
+
+	if (c->n >= 64)
+	{
+		return -1;
+	}
+
+	int idx = c->n++;
+	c->off[idx] = off;
+	c->st[idx] = 0;
+	c->decl[idx] = 0;
+	return idx;
+}
+
+static void clc_note(ClcState *c, int off, const Expr *e)
+{
+	int idx = clc_touch(c, off);
+	if (idx < 0 || c->st[idx] == 2)
+	{
+		return;
+	}
+
+	long long v;
+	if (e && const_int(e, &v))
+	{
+		if (c->st[idx] == 0)
+		{
+			c->st[idx] = 1;
+			c->val[idx] = v;
+		}
+		else if (c->val[idx] != v)
+		{
+			c->st[idx] = 2;
+		}
+	}
+	else
+	{
+		c->st[idx] = 2;   /* A non-literal (or unknown) store: the local varies. */
+	}
+}
+
+static void clc_block(ClcState *c, const Block *b);
+
+static void clc_stmt(ClcState *c, const Stmt *s)
+{
+	if (!s)
+	{
+		return;
+	}
+
+	if (s->kind == ST_VARDECL)
+	{
+		int idx = clc_touch(c, s->decl_offset);
+		if (idx >= 0)
+		{
+			c->decl[idx] = 1;   /* A genuine local declaration (excludes params). */
+		}
+
+		if (s->decl_init)
+		{
+			clc_note(c, s->decl_offset, s->decl_init);
+		}
+	}
+	else if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT)
+	{
+		clc_note(c, s->target->anno_int, s->value);
+	}
+	else if (s->kind == ST_FOREACH)
+	{
+		clc_note(c, s->decl_offset, NULL);
+		clc_note(c, s->fe_val_offset, NULL);
+	}
+	else if (s->kind == ST_EXPR && s->expr && s->expr->kind == EX_INCDEC
+			 && s->expr->lhs && s->expr->lhs->kind == EX_IDENT)
+	{
+		clc_note(c, s->expr->lhs->anno_int, NULL);
+	}
+
+	clc_stmt(c, s->for_init);
+	clc_stmt(c, s->for_post);
+	clc_block(c, s->then_blk);
+	clc_block(c, s->else_blk);
+}
+
+static void clc_block(ClcState *c, const Block *b)
+{
+	if (!b)
+	{
+		return;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		clc_stmt(c, b->stmts[i]);
+	}
+}
+
+static void collect_const_locals(const Func *f, Low *L)
+{
+	L->kl_n = 0;
+	if (!f || !f->body)
+	{
+		return;
+	}
+
+	ClcState c;
+	c.n = 0;
+	clc_block(&c, f->body);
+	for (int i = 0; i < c.n && L->kl_n < 64; i++)
+	{
+		if (c.st[i] == 1 && c.decl[i])
+		{
+			L->kl_off[L->kl_n] = c.off[i];
+			L->kl_val[L->kl_n] = c.val[i];
+			L->kl_n++;
+		}
+	}
+}
+
 IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 {
 	(void)tt;
@@ -1118,6 +1305,7 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 	L.ok = 1;
 	L.depth = 0;
 	L.cc_n = 0;
+	collect_const_locals(f, &L);
 	low_block(&L, f->body);
 	if (!L.ok)
 	{
@@ -1238,6 +1426,7 @@ IRFunc *ir_lower_region(const Func *f, const Stmt *s)
 	L.ok = 1;
 	L.depth = 0;
 	L.cc_n = 0;
+	collect_const_locals(f, &L);
 	low_stmt(&L, s);
 	if (!L.ok)
 	{
