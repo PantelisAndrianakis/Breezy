@@ -185,19 +185,206 @@ const int   BZY_PRELUDE_COUNT = 8;
 
 /* The C entry points implemented in runtime/desktop.c. Marshalled to the GTK
    thread; marked `blocking` so the calling breeze parks instead of stalling a
-   scheduler core while the GTK thread services the request. */
-static const char DESKTOP_EXTERNS[] =
-	"extern blocking bool bzy_desktop_is_enabled();\n";
+   scheduler core while the GTK thread services the request. Names match the C
+   symbols (bzy_desktop_*); Breezy `long` carries handles, `int`/`bool` are
+   32-bit, `string` marshals to char*. */
+/* Split across units of <=8 functions each (the per-unit top-level function
+   cap), since each prelude string is parsed as one unit. */
+static const char DESKTOP_EXTERNS_A[] =
+	"extern blocking bool bzy_desktop_is_enabled();\n"
+	"extern blocking long bzy_desktop_frame_new();\n"
+	"extern blocking long bzy_desktop_frame_content(long frame);\n"
+	"extern blocking void bzy_desktop_frame_set_title(long frame, string title);\n"
+	"extern blocking long bzy_desktop_panel_new();\n"
+	"extern blocking long bzy_desktop_button_new();\n"
+	"extern blocking void bzy_desktop_button_set_text(long btn, string text);\n"
+	"extern blocking long bzy_desktop_label_new();\n";
 
-/* Desktop: the entry point and (later) the event-dispatch loop. */
+static const char DESKTOP_EXTERNS_B[] =
+	"extern blocking void bzy_desktop_label_set_text(long lbl, string text);\n"
+	"extern blocking void bzy_desktop_container_add(long parent, long child);\n"
+	"extern blocking void bzy_desktop_border_add(long border, long child, int region);\n"
+	"extern blocking void bzy_desktop_set_visible(long widget, bool visible);\n"
+	"extern blocking void bzy_desktop_set_enabled(long widget, bool enabled);\n"
+	"extern blocking void bzy_desktop_window_set_size(long window, int w, int h);\n"
+	"extern blocking void bzy_desktop_window_show(long window);\n"
+	"extern blocking void bzy_desktop_window_dispose(long window);\n";
+
+static const char DESKTOP_EXTERNS_C[] =
+	"extern blocking void bzy_desktop_listen_action(long widget, int regIndex);\n"
+	"extern blocking void bzy_desktop_listen_window_close(long window, int regIndex);\n"
+	"extern blocking int bzy_desktop_next_event();\n"
+	"extern blocking int bzy_desktop_event_kind();\n";
+
+static const char DESKTOP_LISTENERS[] =
+	"interface ActionListener\n"
+	"{\n"
+	"	void actionPerformed(ActionEvent e);\n"
+	"}\n"
+	"interface WindowListener\n"
+	"{\n"
+	"	void windowClosing(WindowEvent e);\n"
+	"}\n";
+
+static const char DESKTOP_EVENTS[] =
+	"class ActionEvent\n"
+	"{\n"
+	"	Component source;\n"
+	"	ActionEvent(Component source) { this.source = source; }\n"
+	"}\n"
+	"class WindowEvent\n"
+	"{\n"
+	"	Component source;\n"
+	"	WindowEvent(Component source) { this.source = source; }\n"
+	"}\n";
+
+static const char DESKTOP_BORDERLAYOUT[] =
+	"static class BorderLayout\n"
+	"{\n"
+	"	static int NORTH = 0;\n"
+	"	static int SOUTH = 1;\n"
+	"	static int WEST = 2;\n"
+	"	static int EAST = 3;\n"
+	"	static int CENTER = 4;\n"
+	"}\n";
+
+static const char DESKTOP_COMPONENT[] =
+	"class Component\n"
+	"{\n"
+	"	long handle;\n"
+	"	int regIndex;\n"
+	"	void setVisible(bool v) { bzy_desktop_set_visible(this.handle, v); }\n"
+	"	void setEnabled(bool v) { bzy_desktop_set_enabled(this.handle, v); }\n"
+	"	void dispatch(int kind) { }\n"
+	"}\n";
+
+static const char DESKTOP_CONTAINER[] =
+	"class Container extends Component\n"
+	"{\n"
+	"	void add(Component c) { bzy_desktop_container_add(this.handle, c.handle); }\n"
+	"}\n";
+
+static const char DESKTOP_WINDOW[] =
+	"class Window extends Container\n"
+	"{\n"
+	"	void setSize(int w, int h) { bzy_desktop_window_set_size(this.handle, w, h); }\n"
+	"	void show() { bzy_desktop_window_show(this.handle); }\n"
+	"	void dispose() { bzy_desktop_window_dispose(this.handle); }\n"
+	"}\n";
+
+static const char DESKTOP_FRAME[] =
+	"class Frame extends Window\n"
+	"{\n"
+	"	long content;\n"
+	"	WindowListener winListener;\n"
+	"	Frame()\n"
+	"	{\n"
+	"		this.handle = bzy_desktop_frame_new();\n"
+	"		this.content = bzy_desktop_frame_content(this.handle);\n"
+	"		this.regIndex = Desktop.register(this);\n"
+	"		bzy_desktop_listen_window_close(this.handle, this.regIndex);\n"
+	"	}\n"
+	"	void setTitle(string t) { bzy_desktop_frame_set_title(this.handle, t); }\n"
+	"	void add(Component c) { bzy_desktop_border_add(this.content, c.handle, 4); }\n"
+	"	void addRegion(Component c, int region) { bzy_desktop_border_add(this.content, c.handle, region); }\n"
+	"	void addWindowListener(WindowListener l) { this.winListener = l; }\n"
+	"	void dispatch(int kind)\n"
+	"	{\n"
+	"		if (kind == 1)\n"
+	"		{\n"
+	"			if (this.winListener != null)\n"
+	"			{\n"
+	"				WindowEvent e = new WindowEvent(this);\n"
+	"				this.winListener.windowClosing(e);\n"
+	"			}\n"
+	"		}\n"
+	"	}\n"
+	"}\n";
+
+static const char DESKTOP_PANEL[] =
+	"class Panel extends Container\n"
+	"{\n"
+	"	Panel() { this.handle = bzy_desktop_panel_new(); }\n"
+	"}\n";
+
+static const char DESKTOP_LABEL[] =
+	"class Label extends Component\n"
+	"{\n"
+	"	Label() { this.handle = bzy_desktop_label_new(); }\n"
+	"	void setText(string t) { bzy_desktop_label_set_text(this.handle, t); }\n"
+	"}\n";
+
+static const char DESKTOP_BUTTON[] =
+	"class Button extends Component\n"
+	"{\n"
+	"	ActionListener listener;\n"
+	"	Button()\n"
+	"	{\n"
+	"		this.handle = bzy_desktop_button_new();\n"
+	"		this.regIndex = Desktop.register(this);\n"
+	"	}\n"
+	"	void setText(string t) { bzy_desktop_button_set_text(this.handle, t); }\n"
+	"	void addActionListener(ActionListener l)\n"
+	"	{\n"
+	"		this.listener = l;\n"
+	"		bzy_desktop_listen_action(this.handle, this.regIndex);\n"
+	"	}\n"
+	"	void dispatch(int kind)\n"
+	"	{\n"
+	"		if (this.listener != null)\n"
+	"		{\n"
+	"			ActionEvent e = new ActionEvent(this);\n"
+	"			this.listener.actionPerformed(e);\n"
+	"		}\n"
+	"	}\n"
+	"}\n";
+
+/* Desktop: the entry point, the registration table mapping event reg-indices
+   back to widget objects, and the run-loop that pulls events and dispatches to
+   listeners in Breezy (C never calls back in). */
 static const char DESKTOP_CORE[] =
 	"static class Desktop\n"
 	"{\n"
+	"	static Component[] reg = new Component[4096];\n"
+	"	static int regCount = 0;\n"
 	"	static bool isEnabled()\n"
 	"	{\n"
 	"		return bzy_desktop_is_enabled();\n"
 	"	}\n"
+	"	static int register(Component c)\n"
+	"	{\n"
+	"		int i = Desktop.regCount;\n"
+	"		Desktop.reg[i] = c;\n"
+	"		Desktop.regCount = i + 1;\n"
+	"		return i;\n"
+	"	}\n"
+	"	static void run()\n"
+	"	{\n"
+	"		while (true)\n"
+	"		{\n"
+	"			int idx = bzy_desktop_next_event();\n"
+	"			if (idx < 0) { return; }\n"
+	"			int kind = bzy_desktop_event_kind();\n"
+	"			Component c = Desktop.reg[idx];\n"
+	"			c.dispatch(kind);\n"
+	"		}\n"
+	"	}\n"
 	"}\n";
 
-const char *BZY_DESKTOP_PRELUDE[] = { DESKTOP_EXTERNS, DESKTOP_CORE };
-const int   BZY_DESKTOP_PRELUDE_COUNT = 2;
+const char *BZY_DESKTOP_PRELUDE[] = {
+	DESKTOP_EXTERNS_A,
+	DESKTOP_EXTERNS_B,
+	DESKTOP_EXTERNS_C,
+	DESKTOP_LISTENERS,
+	DESKTOP_EVENTS,
+	DESKTOP_BORDERLAYOUT,
+	DESKTOP_COMPONENT,
+	DESKTOP_CONTAINER,
+	DESKTOP_WINDOW,
+	DESKTOP_FRAME,
+	DESKTOP_PANEL,
+	DESKTOP_LABEL,
+	DESKTOP_BUTTON,
+	DESKTOP_CORE
+};
+const int BZY_DESKTOP_PRELUDE_COUNT = 14;

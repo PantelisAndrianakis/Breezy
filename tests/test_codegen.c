@@ -124,6 +124,23 @@ static void test_desktop_is_enabled_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_desktop_is_enabled") != NULL, 1);
 }
 
+static void test_desktop_button_listener_lowers(void)
+{
+	emit_desktop(
+		"class L implements ActionListener { void actionPerformed(ActionEvent e) { print(1); } }"
+		" void main() {"
+		"   Frame f; f = new Frame(); f.setTitle(\"Hi\");"
+		"   Button b; b = new Button(); b.setText(\"Go\");"
+		"   b.addActionListener(new L());"
+		"   f.add(b); f.setSize(200, 100); f.show();"
+		" }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_desktop_frame_new") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_desktop_button_new") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_desktop_listen_action") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_desktop_border_add") != NULL, 1);
+}
+
 static void test_linux_arg_regs(void)
 {
 	/* add(a,b) called as add(2,3): on SysV the two int args load into rdi/rsi. */
@@ -980,6 +997,7 @@ int main(void)
 	RUN(test_unroll_constant_index_direct_disp);
 	RUN(test_unrolled_mac_memory_operand_imul);
 	RUN(test_desktop_is_enabled_lowers);
+	RUN(test_desktop_button_listener_lowers);
 	SUMMARY();
 	return 0;
 }
