@@ -1,8 +1,7 @@
 #include "promote.h"
+#include "grow.h"
+#include <stdlib.h>
 
-#define MAX_CAND 256
-#define MAX_LOOP 256
-#define MAX_CTICK 512   /* Float promotion: cap on recorded call-bearing statement ticks. */
 #define NREGS    4      /* r12..r15: the ABI-symmetric callee-saved integer registers. */
 #define NFREGS   4      /* xmm2..xmm5: caller-saved on BOTH Win64 and SysV, never used as codegen scratch. */
 
@@ -28,15 +27,18 @@ typedef struct
 
 typedef struct
 {
-	Cand cand[MAX_CAND];
+	Cand *cand;             /* Integer promotion candidates; grown dynamically. */
 	int  ncand;
-	Cand fcand[MAX_CAND];   /* Double-local candidates for XMM promotion (parallel machinery). */
+	int  cand_cap;
+	Cand *fcand;            /* Double-local candidates for XMM promotion (parallel machinery). */
 	int  nfcand;
-	int  ctick[MAX_CTICK];  /* Statement ticks whose direct expressions emit a call (xmm2..5 clobber). */
+	int  fcand_cap;
+	int  *ctick;            /* Statement ticks whose direct expressions emit a call (xmm2..5 clobber). */
 	int  nctick;
-	int  ctick_of;          /* Set if call ticks overflowed MAX_CTICK: disables float promotion. */
-	Span loop[MAX_LOOP];
+	int  ctick_cap;
+	Span *loop;
 	int  nloop;
+	int  loop_cap;
 	int  tick;
 } Ctx;
 
@@ -159,7 +161,7 @@ static void scan_block(Block *b, int depth, Ctx *c);
 /* Record one loop-weighted use of the local at slot offset `off` at the current
    tick. Each loop level multiplies the weight by ten, so loop-carried locals
    dominate selection; the tick widens the candidate's live interval. */
-static void bump_into(Cand *arr, int *n, int off, int depth, int tick)
+static void bump_into(Cand **arr, int *n, int *cap, int off, int depth, int tick)
 {
 	long w = 1;
 	for (int i = 0; i < depth; i++)
@@ -169,43 +171,41 @@ static void bump_into(Cand *arr, int *n, int off, int depth, int tick)
 
 	for (int i = 0; i < *n; i++)
 	{
-		if (arr[i].off == off)
+		if ((*arr)[i].off == off)
 		{
-			arr[i].weight += w;
-			if (tick < arr[i].lo)
+			(*arr)[i].weight += w;
+			if (tick < (*arr)[i].lo)
 			{
-				arr[i].lo = tick;
+				(*arr)[i].lo = tick;
 			}
 
-			if (tick > arr[i].hi)
+			if (tick > (*arr)[i].hi)
 			{
-				arr[i].hi = tick;
+				(*arr)[i].hi = tick;
 			}
 
 			return;
 		}
 	}
 
-	if (*n < MAX_CAND)
-	{
-		arr[*n].off = off;
-		arr[*n].weight = w;
-		arr[*n].lo = tick;
-		arr[*n].hi = tick;
-		(*n)++;
-	}
+	*arr = grow_ensure(*arr, *n, cap, sizeof(**arr));
+	(*arr)[*n].off = off;
+	(*arr)[*n].weight = w;
+	(*arr)[*n].lo = tick;
+	(*arr)[*n].hi = tick;
+	(*n)++;
 }
 
 static void bump(int off, int depth, Ctx *c)
 {
-	bump_into(c->cand, &c->ncand, off, depth, c->tick);
+	bump_into(&c->cand, &c->ncand, &c->cand_cap, off, depth, c->tick);
 }
 
 /* Float (double) promotion candidate: same loop-weighted interval machinery as the
    integer path, kept in a parallel array. */
 static void fbump(int off, int depth, Ctx *c)
 {
-	bump_into(c->fcand, &c->nfcand, off, depth, c->tick);
+	bump_into(&c->fcand, &c->nfcand, &c->fcand_cap, off, depth, c->tick);
 }
 
 static void scan_expr(Expr *e, int depth, Ctx *c)
@@ -266,14 +266,8 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 	if (expr_has_call(s->cond) || expr_has_call(s->decl_init) || expr_has_call(s->value)
 		|| expr_has_call(s->target) || expr_has_call(s->ret_val) || expr_has_call(s->expr))
 	{
-		if (c->nctick < MAX_CTICK)
-		{
-			c->ctick[c->nctick++] = my;
-		}
-		else
-		{
-			c->ctick_of = 1;
-		}
+		c->ctick = grow_ensure(c->ctick, c->nctick, &c->ctick_cap, sizeof(*c->ctick));
+		c->ctick[c->nctick++] = my;
 	}
 
 	/* A scalar var-decl is itself a candidate even if only its register-home
@@ -301,8 +295,9 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 	scan_block(s->then_blk, inner, c);
 	scan_block(s->else_blk, depth, c);
 
-	if (is_loop && c->nloop < MAX_LOOP)
+	if (is_loop)
 	{
+		c->loop = grow_ensure(c->loop, c->nloop, &c->loop_cap, sizeof(*c->loop));
 		c->loop[c->nloop].lo = my;
 		c->loop[c->nloop].hi = c->tick;   /* Last tick emitted while scanning the body. */
 		c->nloop++;
@@ -344,11 +339,11 @@ void promote_annotate(Func *f)
 		             normal ret-based register restore, so never promote here. */
 	}
 
-	static Ctx c;   /* Large; one function at a time, so a single static instance is fine. */
+	static Ctx c;   /* One function at a time: a single static instance whose grown
+	                   buffers are reused (counts reset; caps/pointers persist). */
 	c.ncand = 0;
 	c.nfcand = 0;
 	c.nctick = 0;
-	c.ctick_of = 0;
 	c.nloop = 0;
 	c.tick = 0;
 	scan_block(f->body, 0, &c);
@@ -404,7 +399,7 @@ void promote_annotate(Func *f)
 	   register held by no overlapping already-assigned local. When all four are
 	   taken by overlapping locals, this one stays on the stack. Selection-sort the
 	   processing order by weight (ncand is small; clarity over speed). */
-	int order[MAX_CAND];
+	int *order = malloc((size_t)(c.ncand > 0 ? c.ncand : 1) * sizeof(int));
 	for (int i = 0; i < c.ncand; i++)
 	{
 		order[i] = i;
@@ -469,11 +464,6 @@ void promote_annotate(Func *f)
 	   across a call (a callee may clobber the register). We therefore promote only
 	   double locals whose widened live interval contains no call tick, and never a
 	   parameter (no prologue seeds the incoming xmm arg into our register). */
-	if (c.ctick_of)
-	{
-		return;   /* Too many call sites to track precisely; skip float promotion. */
-	}
-
 	/* Snapshot each double's TRUE live interval before widening: the call-free test
 	   below uses it, not the widened span. A value dead before a call is safe in a
 	   caller-saved register even when loop-widening later stretches its interval
@@ -514,7 +504,8 @@ void promote_annotate(Func *f)
 	}
 
 	/* Eligibility: a non-parameter double whose interval crosses no call tick. */
-	int forder[MAX_CAND], nford = 0;
+	int *forder = malloc((size_t)(c.nfcand > 0 ? c.nfcand : 1) * sizeof(int));
+	int nford = 0;
 	for (int i = 0; i < c.nfcand; i++)
 	{
 		if (c.fcand[i].off <= param_region_end)
