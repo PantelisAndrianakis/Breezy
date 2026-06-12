@@ -1,4 +1,5 @@
 #include "config.h"
+#include "grow.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,10 +34,10 @@ int bzy_ir_regions_enabled(void)
 	return cached && bzy_ir_enabled();
 }
 
-/* Append each double-quoted token in `val` to the string table at `base`
-   (each slot `width` bytes, `cap` slots), bumping *count. Tokens longer than
-   the slot are truncated. */
-static void parse_string_array(const char *val, char *base, int width, int cap, int *count)
+/* Append each double-quoted token in `val` to the grown string array `*arr`
+   (each entry allocated `width` bytes), bumping *count and growing *cap. Tokens
+   longer than the entry are truncated. */
+static void parse_string_array(const char *val, char ***arr, int width, int *count, int *cap)
 {
 	const char *p = val;
 	while (*p)
@@ -50,9 +51,9 @@ static void parse_string_array(const char *val, char *base, int width, int cap, 
 			}
 
 			int len = (int)(p - start);
-			if (*count < cap)
 			{
-				char *slot = base + (*count) * width;
+				*arr = grow_ensure(*arr, *count, cap, sizeof(**arr));
+				char *slot = malloc(width);
 				if (len >= width)
 				{
 					len = width - 1;
@@ -60,7 +61,7 @@ static void parse_string_array(const char *val, char *base, int width, int cap, 
 
 				memcpy(slot, start, len);
 				slot[len] = '\0';
-				(*count)++;
+				(*arr)[(*count)++] = slot;
 			}
 
 			if (*p == '"')
@@ -134,11 +135,11 @@ void config_parse_links(const char *text, LinkConfig *cfg)
 		const char *val = eq + 1;
 		if (strcmp(s, "libs") == 0)
 		{
-			parse_string_array(val, (char *)cfg->libs, CFG_LIB_LEN, CFG_MAX_LIBS, &cfg->nlibs);
+			parse_string_array(val, &cfg->libs, CFG_LIB_LEN, &cfg->nlibs, &cfg->libs_cap);
 		}
 		else if (strcmp(s, "lib_paths") == 0)
 		{
-			parse_string_array(val, (char *)cfg->lib_paths, CFG_PATH_LEN, CFG_MAX_PATHS, &cfg->nlib_paths);
+			parse_string_array(val, &cfg->lib_paths, CFG_PATH_LEN, &cfg->nlib_paths, &cfg->lib_paths_cap);
 		}
 	}
 }

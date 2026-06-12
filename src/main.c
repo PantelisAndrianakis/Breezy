@@ -93,10 +93,10 @@ int main(int argc, char *argv[])
 	{
 		if (strcmp(argv[i],"--link")==0 && i+1 < argc)
 		{
-			if (cfg.nlibs < CFG_MAX_LIBS)
-			{
-				snprintf(cfg.libs[cfg.nlibs++],CFG_LIB_LEN,"%s",argv[++i]);
-			}
+			cfg.libs = grow_ensure(cfg.libs, cfg.nlibs, &cfg.libs_cap, sizeof(*cfg.libs));
+			cfg.libs[cfg.nlibs] = malloc(CFG_LIB_LEN);
+			snprintf(cfg.libs[cfg.nlibs], CFG_LIB_LEN, "%s", argv[++i]);
+			cfg.nlibs++;
 		}
 		else if (strcmp(argv[i],"--target")==0 && i+1 < argc)
 		{

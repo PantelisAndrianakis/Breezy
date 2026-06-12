@@ -1,17 +1,17 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define CFG_MAX_LIBS   64
 #define CFG_LIB_LEN    64
-#define CFG_MAX_PATHS  32
 #define CFG_PATH_LEN   256
 
 typedef struct
 {
-	char libs[CFG_MAX_LIBS][CFG_LIB_LEN];
-	int  nlibs;
-	char lib_paths[CFG_MAX_PATHS][CFG_PATH_LEN];
-	int  nlib_paths;
+	char **libs;       /* Each entry up to CFG_LIB_LEN bytes; grown dynamically. */
+	int    nlibs;
+	int    libs_cap;
+	char **lib_paths;  /* Each entry up to CFG_PATH_LEN bytes. */
+	int    nlib_paths;
+	int    lib_paths_cap;
 } LinkConfig;
 
 /* Parse the [link] section of a breezy.toml-style document held in `text`,
