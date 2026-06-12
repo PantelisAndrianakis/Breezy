@@ -1,0 +1,67 @@
+// Adversarial anchor for the IR backend's 32-bit-native integer model: a narrow
+// `int` register is correct only in its low 32 bits, re-extended to 64 only where
+// a consumer observes the high bits. Each case below builds a DIRTY int (one whose
+// 64-bit value differs from the 32-bit-wrapped value) inside a counted loop (so the
+// IR loop-region path compiles it), then feeds it into a high-32-observing
+// consumer that must see the WRAPPED 32-bit value, not the raw 64-bit one. A
+// dropped re-extension at any of these sites changes the printed output.
+void main()
+{
+	int i;
+	i = 0;
+
+	// Case 1: overflowing ADD accumulator, then an arithmetic right shift. The
+	// shift must operate on the 32-bit-wrapped value (sar pulls high bits down).
+	int s1;
+	s1 = 0;
+	for (i = 0; i < 100; i = i + 1)
+	{
+		s1 = s1 + 100000000;     // 100 * 1e8 = 1e10, wraps in 32 bits.
+	}
+	print(s1);                   // wrapped low-32.
+	print(s1 >> 4);              // 32-bit arithmetic shift of the wrapped value.
+
+	// Case 2: overflowing MUL/ADD accumulator, then a widening cast to long. The
+	// widen must extend the 32-bit-wrapped value, not copy a stale 64-bit product.
+	int s2;
+	s2 = 1;
+	for (i = 0; i < 5; i = i + 1)
+	{
+		s2 = s2 * 100000 + 7;
+	}
+	long w2;
+	w2 = (long)s2;
+	print(w2);
+
+	// Case 3: accumulate into the 32-bit-negative range, then a signed compare.
+	// 3 * 8e8 = 2.4e9 > 2^31, so the wrapped int is negative; the 64-bit sum is not.
+	int s3;
+	s3 = 0;
+	for (i = 0; i < 3; i = i + 1)
+	{
+		s3 = s3 + 800000000;
+	}
+	if (s3 < 0) { print(1); } else { print(0); }
+	print(s3);
+
+	// Case 4: FNV-1a-style mul^xor chain (dirty flows through the bitwise xor), then
+	// mask to a valid index. The terminal `& 255` is indexed, so it must clean up.
+	int[] tab;
+	tab = new int[256];
+	for (i = 0; i < 256; i = i + 1)
+	{
+		tab[i] = i * 3;
+	}
+
+	int h;
+	h = -2128831035;
+	for (i = 0; i < 64; i = i + 1)
+	{
+		h = h ^ (i & 255);
+		h = h * 16777619;        // overflowing multiply on the carried hash.
+	}
+	int idx;
+	idx = h & 255;
+	print(h);                    // wrapped 32-bit hash.
+	print(tab[idx]);             // index by the masked-clean value.
+}

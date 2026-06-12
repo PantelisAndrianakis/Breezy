@@ -57,6 +57,7 @@ check int_defer   tests/samples/pass/basics/int_defer.bzy $'-1000000000\n-200000
 check region_liveout_shift tests/samples/pass/basics/region_liveout_shift.bzy $'12773843\n303\n707\n1111\n1515\n1919\n2323\n2727'
 check unroll_fold tests/samples/pass/basics/unroll_fold.bzy "216"
 check int_div     tests/samples/pass/basics/int_div.bzy $'-33\n-1\n33\n33\n-1\n306783378'
+check int_dirty   tests/samples/pass/basics/int_dirty.bzy $'1410065408\n88129088\n-851744153\n1\n-1894967296\n1832519941\n15'
 check if_else     tests/samples/pass/control-flow/if_else.bzy    "1"
 check while       tests/samples/pass/control-flow/while.bzy      "10"
 check multi_fn    tests/samples/pass/basics/multi_fn.bzy   "42"

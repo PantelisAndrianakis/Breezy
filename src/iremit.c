@@ -31,6 +31,8 @@ typedef struct
 	long long *cval;              /* [vreg_count] that constant's value. */
 	char      *cdead;            /* [vreg_count] 1 if the const folds into every use (skip emit). */
 	char      *nn;               /* [vreg_count] 1 if the vreg's value is provably >= 0. */
+	char      *mclean;          /* [vreg_count] 1 if some use observes the value's high 32
+	                               bits, so a narrow-int result must be re-extended (clean). */
 	/* Cold bounds-failure stubs, buffered so the hot path is a single not-taken
 	   jae: each records the label and the registers holding base/index at the
 	   check (still live at the stub - the jump leaves them untouched). */
@@ -557,21 +559,43 @@ static int const_imm32(Emit *e, IRReg v, long long *out)
 	return 0;
 }
 
-/* Narrow ints wrap at their declared width each step (the language semantics
-   the emitter's defer machinery preserves), but the IR computes in 64-bit
-   registers: re-extend the result of any op that can carry into the high bits
-   (add/sub/imul/shl/neg). Clean operands keep div/mod/sar/and/or/xor clean
-   (bitwise ops on sign-extended values leave the high bits copies of bit 31),
-   so those need no fixup. */
-static int op_wraps_narrow(const IRInstr *in)
+/* 32-bit-native integer model: an `int` value is correct only in its low 32 bits;
+   the high 32 are don't-care unless a consumer observes them (see compute_must_clean
+   and `e->mclean`). Re-extend a narrow-int arithmetic/bitwise result with `movsxd`
+   ONLY when some use observes its high bits. This drops the per-op re-extension on
+   loop-carried chains (e.g. the packet FNV `imul`/`xor` hash) while keeping it at the
+   indexing/shift/compare/widen sites that need a clean 64-bit register.
+
+   add/sub/mul/shl/neg always carry into the high bits, so they re-extend whenever the
+   result is observed. and/or/xor leave the high bits a combination of their operands'
+   high bits (possibly dirty under this model), so they too re-extend when observed -
+   sound, at worst a redundant movsxd on a clean-input bitwise result that is indexed. */
+static int needs_reext(Emit *e, const IRInstr *in)
 {
 	if (!ty_is_int(in->type) || ty_bits(in->type) >= 64)
 	{
 		return 0;
 	}
 
-	return in->op == IR_ADD || in->op == IR_SUB || in->op == IR_MUL
-		   || in->op == IR_SHL || in->op == IR_NEG;
+	if (in->dst < 0 || in->dst >= e->a->vreg_count || !e->mclean[in->dst])
+	{
+		return 0;
+	}
+
+	switch (in->op)
+	{
+	case IR_ADD:
+	case IR_SUB:
+	case IR_MUL:
+	case IR_SHL:
+	case IR_NEG:
+	case IR_AND:
+	case IR_OR:
+	case IR_XOR:
+		return 1;
+	default:
+		return 0;
+	}
 }
 
 /* dst = a <op> b, register-direct, honoring x86's two-operand form and aliasing. */
@@ -610,7 +634,7 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 			cg_emit(cg, "    %s %s, %lld", opc, Rd, imm);
 		}
 
-		if (op_wraps_narrow(in))
+		if (needs_reext(e, in))
 		{
 			norm_reg(cg, Rd, Rd, in->type);
 		}
@@ -647,7 +671,7 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 		cg_emit(cg, "    %s %s, %s", opc, Rd, Rb);
 	}
 
-	if (op_wraps_narrow(in))
+	if (needs_reext(e, in))
 	{
 		norm_reg(cg, Rd, Rd, in->type);
 	}
@@ -914,7 +938,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		if (in->op == IR_SHL)
 		{
 			cg_emit(cg, "    shl %s, cl", Rd);
-			if (op_wraps_narrow(in))
+			if (needs_reext(e, in))
 			{
 				norm_reg(cg, Rd, Rd, in->type);
 			}
@@ -937,7 +961,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		}
 
 		cg_emit(cg, "    neg %s", Rd);
-		if (op_wraps_narrow(in))
+		if (needs_reext(e, in))
 		{
 			norm_reg(cg, Rd, Rd, in->type);
 		}
@@ -1054,6 +1078,199 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 }
 
+/* Mark vreg v as observed at its high 32 bits (must be a clean sign-extended 64). */
+static void mc_mark(char *mc, int nv, IRReg v)
+{
+	if (v >= 0 && v < nv)
+	{
+		mc[v] = 1;
+	}
+}
+
+/* The local index (into a->local_disp) for frame offset `disp`, or -1. */
+static int local_of_disp(IRAlloc *a, long long disp)
+{
+	for (int k = 0; k < a->nlocal; k++)
+	{
+		if (a->local_disp[k] == disp)
+		{
+			return k;
+		}
+	}
+
+	return -1;
+}
+
+/* Compute `must_clean[v]`: a narrow-int result is re-extended only when some use
+   observes its high 32 bits. Three passes (32-bit-native model):
+
+   A. Mark the operands of every instruction that reads the full 64-bit register
+      (array index, right shift, div/mod, compare/select/brcond, widen-to-long cast,
+      8-byte store value, move/ret). NOT marked: add/sub/mul/and/or/xor/neg operands
+      and shift counts - those are correct from the low 32 bits alone.
+   B. A frame local needs clean stores iff it has a high-32-observed LOAD inside this
+      IR body, or (in a region) it is memory-resident: the region exit store-back
+      re-extends register-allocated narrow-int locals, but a spilled local has no such
+      fixup, so its stores must already be clean for the emitter that reads it.
+   C. Mark a frame-store's value operand clean iff its target local needs clean stores.
+      A local whose loads are all low-32-safe (e.g. the FNV hash, read only by xor/imul
+      and a final masking AND) carries dirty intermediate values - no re-extension. */
+static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
+{
+	/* Pass A: direct high-32 observers. */
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			switch (in->op)
+			{
+			case IR_LOAD:
+				if (!in->is_frame)
+				{
+					mc_mark(mc, nv, in->a);                 /* Array base pointer. */
+					if (in->scale)
+					{
+						mc_mark(mc, nv, in->b);             /* Index (full 64-bit reg). */
+					}
+				}
+
+				break;
+			case IR_STORE:
+				if (!in->is_frame)
+				{
+					mc_mark(mc, nv, in->a);
+					if (in->scale)
+					{
+						mc_mark(mc, nv, in->b);             /* Index. */
+					}
+
+					if ((in->scale ? in->scale : 8) == 8)
+					{
+						mc_mark(mc, nv, in->c);             /* 8-byte store writes the full reg. */
+					}
+				}
+
+				break;                                      /* Frame-store value handled in Pass C. */
+			case IR_SHR:
+				mc_mark(mc, nv, in->a);                     /* Right shift pulls high bits down. */
+				break;
+			case IR_DIV:
+			case IR_MOD:
+				mc_mark(mc, nv, in->a);                     /* Pow2 path uses the sign bit. */
+				mc_mark(mc, nv, in->b);
+				break;
+			case IR_CMP:
+				mc_mark(mc, nv, in->a);                     /* 64-bit cmp. */
+				mc_mark(mc, nv, in->b);
+				break;
+			case IR_SEL:
+				mc_mark(mc, nv, in->a);
+				mc_mark(mc, nv, in->b);
+				mc_mark(mc, nv, in->c);
+				mc_mark(mc, nv, in->d);
+				break;
+			case IR_BRCOND:
+				mc_mark(mc, nv, in->a);                     /* cmp a, 0 (full reg). */
+				break;
+			case IR_CAST:
+				if (ty_bits(in->to_kind) >= 64 || ty_bits(in->to_kind) == 0)
+				{
+					mc_mark(mc, nv, in->a);                 /* Widen to long is a full-reg mov. */
+				}
+
+				break;
+			case IR_MOVE:
+			case IR_RET:
+				mc_mark(mc, nv, in->a);                     /* Copies/returns the full register. */
+				break;
+			default:
+				break;                                      /* add/sub/mul/and/or/xor/shl/neg/const: low-32 safe. */
+			}
+		}
+	}
+
+	/* Pass B: per-local "stores must be clean". */
+	char *lnc = calloc((size_t)(a->nlocal > 0 ? a->nlocal : 1), 1);
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			if (in->op == IR_LOAD && in->is_frame && in->dst >= 0 && in->dst < nv && mc[in->dst])
+			{
+				int k = local_of_disp(a, in->disp);
+				if (k >= 0)
+				{
+					lnc[k] = 1;                             /* High-32-observed load of this local. */
+				}
+			}
+		}
+	}
+
+	if (f->is_region)
+	{
+		for (int k = 0; k < a->nlocal; k++)
+		{
+			if (ra_local_reg(a, a->local_disp[k]) < 0)
+			{
+				lnc[k] = 1;                                 /* Memory-resident: no exit re-extension. */
+			}
+		}
+	}
+
+	/* Pass C: a frame-store to a needs-clean local forces its value clean. */
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			if (in->op == IR_STORE && in->is_frame)
+			{
+				int k = local_of_disp(a, in->disp);
+				if (k >= 0 && lnc[k])
+				{
+					mc_mark(mc, nv, in->c);
+				}
+			}
+		}
+	}
+
+	free(lnc);
+}
+
+/* The narrow-int TypeKind a frame local is accessed as (≤32-bit int), or TY_VOID if it
+   is not a narrow int. A register-resident narrow-int local may be dirty at a region
+   exit (the 32-bit-native model leaves its intra-region results un-extended), so it
+   must be re-normalized to its declared width before the emitter reads its home slot.
+   Returns the access kind so unsigned narrow locals zero-extend and signed sign-extend,
+   matching the emitter's own load convention. */
+static TypeKind local_narrow_int_kind(IRFunc *f, long long disp)
+{
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			if ((in->op == IR_LOAD || in->op == IR_STORE) && in->is_frame && in->disp == disp)
+			{
+				if (ty_is_int(in->type) && ty_bits(in->type) <= 32)
+				{
+					return in->type;
+				}
+
+				return TY_VOID;
+			}
+		}
+	}
+
+	return TY_VOID;
+}
+
 /* Allocate and fill the per-emission tables shared by the whole-function and
    region paths: block labels, the constant/dead-constant tables, and the
    non-negativity facts. e->cg and e->a must be set. */
@@ -1143,6 +1360,9 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 
 	e->nn = calloc((size_t)nv, 1);
 	compute_nonneg(f, a, e->nn);
+
+	e->mclean = calloc((size_t)nv, 1);
+	compute_must_clean(f, a, e->mclean, nv);
 }
 
 static void emit_tables_free(Emit *e)
@@ -1152,6 +1372,7 @@ static void emit_tables_free(Emit *e)
 	free(e->cval);
 	free(e->cdead);
 	free(e->nn);
+	free(e->mclean);
 }
 
 /* The per-block emission loop with the mod/cmp/branch fusion windows. Shared by
@@ -1375,12 +1596,21 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base)
 	emit_blocks(&e, f);
 
 	/* Exit (the final lowered block is empty and falls through here): store the
-	   register-allocated locals back to their home slots, restore callee-saved. */
+	   register-allocated locals back to their home slots, restore callee-saved. A
+	   register-resident narrow-int local may hold a dirty value under the 32-bit-native
+	   model (its intra-region stores were not forced clean); re-extend it once here so
+	   the emitter that reads its home slot sees a sign-extended int. */
 	for (int k = 0; k < a->nlocal; k++)
 	{
 		int r = ra_local_reg(a, a->local_disp[k]);
 		if (r >= 0)
 		{
+			TypeKind lk = local_narrow_int_kind(f, a->local_disp[k]);
+			if (lk != TY_VOID)
+			{
+				norm_reg(cg, ra_reg_name(r), ra_reg_name(r), lk);
+			}
+
 			cg_emit(cg, "    mov [rbp - %lld], %s", a->local_disp[k], ra_reg_name(r));
 		}
 	}
