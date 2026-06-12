@@ -1,7 +1,6 @@
 #ifndef SYMTABLE_H
 #define SYMTABLE_H
 #include "ast.h"
-#define MAX_SYMS 256
 
 typedef struct
 {
@@ -11,8 +10,9 @@ typedef struct
 } Symbol;
 typedef struct
 {
-	Symbol syms[MAX_SYMS];
+	Symbol *syms;     /* Grown via grow_ensure; count live, cap allocated. */
 	int count;
+	int cap;
 	int next_offset;
 } SymTable;
 

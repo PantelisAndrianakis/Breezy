@@ -1,6 +1,7 @@
 #include "overload.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* A single, unique code per scalar TypeKind; composite kinds recurse. The map
    is total and injective over TypeKind so two different parameter lists can
@@ -163,8 +164,10 @@ int overload_rank_arg(const TypeRef *param, const TypeRef *arg)
 	return -1;
 }
 
-/* Rank every argument of one candidate; fill ranks[], return 1 if viable. */
-static int rank_candidate(const OverloadCand *c, const TypeRef *args, int argc, int *ranks)
+/* 1 if a call of argc args is viable for candidate c (admissible arity and every
+   argument assignable). Ranks are recomputed on demand rather than stored, so
+   neither the candidate count nor the argument count is bounded. */
+static int candidate_viable(const OverloadCand *c, const TypeRef *args, int argc)
 {
 	if (argc < c->min_args || argc > c->param_count)
 	{
@@ -173,13 +176,10 @@ static int rank_candidate(const OverloadCand *c, const TypeRef *args, int argc, 
 
 	for (int i = 0; i < argc; i++)
 	{
-		int r = overload_rank_arg(&c->param_types[i], &args[i]);
-		if (r < 0)
+		if (overload_rank_arg(&c->param_types[i], &args[i]) < 0)
 		{
 			return 0;
 		}
-
-		ranks[i] = r;
 	}
 
 	return 1;
@@ -187,11 +187,11 @@ static int rank_candidate(const OverloadCand *c, const TypeRef *args, int argc, 
 
 int overload_select(const OverloadCand *cands, int ncand, const TypeRef *args, int argc)
 {
-	int viable[64], nv = 0;
-	int ranks[64][8];
-	for (int c = 0; c < ncand && c < 64; c++)
+	int *viable = malloc(sizeof(int) * (ncand > 0 ? ncand : 1));
+	int nv = 0;
+	for (int c = 0; c < ncand; c++)
 	{
-		if (rank_candidate(&cands[c], args, argc, ranks[nv]))
+		if (candidate_viable(&cands[c], args, argc))
 		{
 			viable[nv++] = c;
 		}
@@ -199,17 +199,21 @@ int overload_select(const OverloadCand *cands, int ncand, const TypeRef *args, i
 
 	if (nv == 0)
 	{
+		free(viable);
 		return OVL_NONE;
 	}
 
 	if (nv == 1)
 	{
-		return viable[0];
+		int r = viable[0];
+		free(viable);
+		return r;
 	}
 
 	/* Best = dominates every other: no worse on all args, strictly better on at
-	   least one. Lower rank is better. */
-	for (int a = 0; a < nv; a++)
+	   least one. Lower rank is better. Ranks are recomputed here. */
+	int result = OVL_AMBIG;
+	for (int a = 0; a < nv && result == OVL_AMBIG; a++)
 	{
 		int dominates_all = 1;
 		for (int b = 0; b < nv && dominates_all; b++)
@@ -222,12 +226,14 @@ int overload_select(const OverloadCand *cands, int ncand, const TypeRef *args, i
 			int no_worse = 1, strictly_better = 0;
 			for (int i = 0; i < argc; i++)
 			{
-				if (ranks[a][i] > ranks[b][i])
+				int ra = overload_rank_arg(&cands[viable[a]].param_types[i], &args[i]);
+				int rb = overload_rank_arg(&cands[viable[b]].param_types[i], &args[i]);
+				if (ra > rb)
 				{
 					no_worse = 0;
 				}
 
-				if (ranks[a][i] < ranks[b][i])
+				if (ra < rb)
 				{
 					strictly_better = 1;
 				}
@@ -241,11 +247,12 @@ int overload_select(const OverloadCand *cands, int ncand, const TypeRef *args, i
 
 		if (dominates_all)
 		{
-			return viable[a];
+			result = viable[a];
 		}
 	}
 
-	return OVL_AMBIG;
+	free(viable);
+	return result;
 }
 
 int overload_min_args(const Func *f)

@@ -830,6 +830,18 @@ static void resolve_random(Expr *e)
 
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
 
+/* A malloc'd array of the call's resolved argument types, for overload_select.
+   Leaked deliberately (the compiler is short-lived); avoids a fixed arg cap. */
+static TypeRef *arg_types_of(Expr *e)
+{
+	TypeRef *a = malloc(sizeof(TypeRef) * (e->arg_count > 0 ? e->arg_count : 1));
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		a[i] = e->args[i]->type;
+	}
+	return a;
+}
+
 /* Append cloned default-value arguments for omitted trailing parameters of a call
    whose target's AST is `ast` (NULL for builtins — a no-op). Stops at the first
    missing parameter that has no default, leaving the caller's existing arg-count
@@ -841,7 +853,7 @@ static void fill_default_args(SymTable *st, Expr *e, Func *ast, const char *tc)
 		return;
 	}
 
-	while (e->arg_count < ast->param_count && e->arg_count < 8)
+	while (e->arg_count < ast->param_count)
 	{
 		Expr *d = ast->params[e->arg_count].def;
 		if (!d)
@@ -1138,11 +1150,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				cands[ci].min_args=overload_min_args(nc->ctors[ci].ast);
 			}
 
-			TypeRef argtypes[8];
-			for (int i=0; i<e->arg_count && i<8; i++)
-			{
-				argtypes[i]=e->args[i]->type;
-			}
+			TypeRef *argtypes=arg_types_of(e);
 
 			int sel=overload_select(cands,nc->ctor_count,argtypes,e->arg_count);
 			if (sel==OVL_NONE)
@@ -1530,11 +1538,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					cands[oi].min_args=mi->ast ? overload_min_args(mi->ast) : mi->param_count;
 				}
 
-				TypeRef argtypes[8];
-				for (int i=0; i<e->arg_count && i<8; i++)
-				{
-					argtypes[i]=e->args[i]->type;
-				}
+				TypeRef *argtypes=arg_types_of(e);
 
 				int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
 				if (sel==OVL_NONE)
@@ -2407,11 +2411,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			cands[oi].min_args=mi->ast ? overload_min_args(mi->ast) : mi->param_count;
 		}
 
-		TypeRef argtypes[8];
-		for (int i=0; i<e->arg_count && i<8; i++)
-		{
-			argtypes[i]=e->args[i]->type;
-		}
+		TypeRef *argtypes=arg_types_of(e);
 
 		int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
 		if (sel==OVL_NONE)
@@ -2563,11 +2563,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				cands[oi].min_args=fo->ast ? overload_min_args(fo->ast) : fo->param_count;
 			}
 
-			TypeRef argtypes[8];
-			for (int i=0; i<e->arg_count && i<8; i++)
-			{
-				argtypes[i]=e->args[i]->type;
-			}
+			TypeRef *argtypes=arg_types_of(e);
 
 			int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
 			if (sel==OVL_NONE)

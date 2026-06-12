@@ -1,22 +1,20 @@
 #include "symtable.h"
+#include "grow.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 void sym_init(SymTable *st)
 {
+	st->syms=NULL;
 	st->count=0;
+	st->cap=0;
 	st->next_offset=0;
 }
 
 Symbol *sym_add(SymTable *st, const char *name, TypeRef type)
 {
-	if (st->count>=MAX_SYMS)
-	{
-		fprintf(stderr,"Too many locals.\n");
-		exit(1);
-	}
-
+	st->syms=grow_ensure(st->syms,st->count,&st->cap,sizeof(Symbol));
 	Symbol *s=&st->syms[st->count++];
 	strncpy(s->name,name,sizeof(s->name)-1);
 	s->name[sizeof(s->name)-1]='\0';
