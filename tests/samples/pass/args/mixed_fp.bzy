@@ -1,0 +1,9 @@
+double m(int a, int b, int c, int d, double e, double f)
+{
+	return (double)(a + b + c + d) + e + f;
+}
+
+void main()
+{
+	print(m(1, 2, 3, 4, 1.5, 2.5));   // 14
+}

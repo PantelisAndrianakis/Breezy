@@ -2677,17 +2677,102 @@ static void cg_branch_if(Codegen *cg, TypeTable *tt, Expr *cond, int label)
    stack block (so nested calls compose), then loaded into their registers. The
    integer-or-float routing follows the *parameter* type, so an int passed to a
    double parameter is promoted with cvtsi2sd. */
+/* Move `total` arguments, already spilled to scratch slots (arg s at
+   [rbp-(b-s*8)] with kind slot_kind[s]), into their ABI homes for a call.
+   Registers up to the ABI count take args by class; the rest spill to the
+   outgoing stack region. Stack args go FIRST (rax/xmm0 scratch) so they never
+   clobber an argument register placed in the second pass. Win64: positions 0-3
+   in regs, stack at [rsp+32+k*8] (after the 32-byte shadow); System V: 6 int +
+   8 fp regs, stack at [rsp+k*8]. The frame reserves this region (outarg_base). */
+static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int b, int marshal_cstr)
+{
+	int win = (cg->target != TARGET_LINUX);
+
+	int int_idx=0, fp_idx=0, stk=0;
+	for (int s=0; s<total; s++)
+	{
+		int is_float=(slot_kind[s]==TY_FLOAT), is_double=(slot_kind[s]==TY_DOUBLE);
+		int on_stack;
+		if (win)
+		{
+			on_stack=(s>=4);
+		}
+		else if (is_float||is_double)
+		{
+			on_stack=(fp_idx>=8);
+			if (!on_stack) { fp_idx++; }
+		}
+		else
+		{
+			on_stack=(int_idx>=6);
+			if (!on_stack) { int_idx++; }
+		}
+
+		if (!on_stack)
+		{
+			continue;
+		}
+
+		int dst = win ? (32+stk*8) : (stk*8);
+		stk++;
+		int src=b-s*8;
+		if (is_float)
+		{
+			cg_emit(cg,"    movss xmm0, dword [rbp - %d]",src);
+			cg_emit(cg,"    movss dword [rsp + %d], xmm0",dst);
+		}
+		else if (is_double)
+		{
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]",src);
+			cg_emit(cg,"    movsd qword [rsp + %d], xmm0",dst);
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]",src);
+			if (marshal_cstr && slot_kind[s]==TY_STRING) { cg_emit(cg,"    add rax, 32"); }
+			cg_emit(cg,"    mov [rsp + %d], rax",dst);
+		}
+	}
+
+	int_idx=0; fp_idx=0;
+	for (int s=0; s<total; s++)
+	{
+		int is_float=(slot_kind[s]==TY_FLOAT), is_double=(slot_kind[s]==TY_DOUBLE);
+		int src=b-s*8;
+		if (win)
+		{
+			if (s>=4) { continue; }
+			if (is_float) { cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",s,src); }
+			else if (is_double) { cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",s,src); }
+			else
+			{
+				cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,s),src);
+				if (marshal_cstr && slot_kind[s]==TY_STRING) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,s)); }
+			}
+		}
+		else if (is_float||is_double)
+		{
+			if (fp_idx>=8) { continue; }
+			int xi=fp_idx++;
+			if (is_float) { cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",xi,src); }
+			else { cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",xi,src); }
+		}
+		else
+		{
+			if (int_idx>=6) { continue; }
+			int ii=int_idx++;
+			cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,ii),src);
+			if (marshal_cstr && slot_kind[s]==TY_STRING) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,ii)); }
+		}
+	}
+}
+
 static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 							  Expr *self, Expr **args, int argc, int indirect,
 							  int result_is_object, int result_is_fp,
 							  const TypeRef *params, int param_count, int marshal_cstr)
 {
 	int total = (self?1:0) + argc;
-	if (total > 4)
-	{
-		fprintf(stderr,"Codegen: >4 args unsupported\n");
-		exit(1);
-	}
 
 	/* Result preservation across owned-temp releases keys off result_is_fp alone
 	   (rax holds every non-fp result); result_is_object is kept as caller intent. */
@@ -2739,8 +2824,8 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	int block = ((total*8 + 15)/16)*16;   /* 16-aligned scratch for spilled args. */
 	int b = block ? cg_scratch_alloc(cg, block) : 0;   /* Arena block; a former [rsp+k] becomes [rbp-(b-k)]. */
 
-	TypeKind slot_kind[4];
-	int owned_tmp[4];
+	TypeKind slot_kind[total > 0 ? total : 1];   /* C99 VLA: one entry per argument (incl. `this`). */
+	int owned_tmp[total > 0 ? total : 1];
 	int owned_n = 0;
 	int slot = 0;
 
@@ -2780,31 +2865,7 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		slot++;
 	}
 
-	int int_idx = 0, fp_idx = 0;
-	for (int s=0; s<total; s++)
-	{
-		/* Win64 numbers both classes by argument position (xi==ii==s); System V
-		   numbers integer and FP registers independently. */
-		if (slot_kind[s]==TY_FLOAT)
-		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : s;
-			cg_emit(cg,"    movss xmm%d, dword [rbp - %d]", xi, b - s*8);
-		}
-		else if (slot_kind[s]==TY_DOUBLE)
-		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : s;
-			cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]", xi, b - s*8);
-		}
-		else
-		{
-			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : s;
-			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, ii), b - s*8);
-			if (marshal_cstr && slot_kind[s]==TY_STRING)
-			{
-				cg_emit(cg,"    add %s, 32", cg_iarg(cg, ii));   /* string object -> char* data (NUL-terminated). */
-			}
-		}
-	}
+	cg_place_args(cg, slot_kind, total, b, marshal_cstr);
 
 	if (indirect)
 	{
@@ -3796,18 +3857,13 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 						 Expr **args, int argc, const TypeRef *params, int param_count)
 {
 	int total = 1 + argc;
-	if (total > 4)
-	{
-		fprintf(stderr,"Codegen: constructor with more than 3 arguments unsupported\n");
-		exit(1);
-	}
 
 	int block = ((total*8 + 15)/16)*16;
 	int b = cg_scratch_alloc(cg, block);
 	cg_emit(cg,"    mov [rbp - %d], rax", b);     /* this (borrowed). */
 
-	TypeKind slot_kind[4];
-	int owned_tmp[4];
+	TypeKind slot_kind[total];   /* C99 VLA: `this` + ctor args. */
+	int owned_tmp[total];
 	int owned_n = 0;
 	slot_kind[0] = TY_OBJECT;
 	int slot = 1;
@@ -3834,25 +3890,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 		slot++;
 	}
 
-	int int_idx = 0, fp_idx = 0;
-	for (int s=0; s<total; s++)
-	{
-		if (slot_kind[s]==TY_FLOAT)
-		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : s;
-			cg_emit(cg,"    movss xmm%d, dword [rbp - %d]", xi, b - s*8);
-		}
-		else if (slot_kind[s]==TY_DOUBLE)
-		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : s;
-			cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]", xi, b - s*8);
-		}
-		else
-		{
-			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : s;
-			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, ii), b - s*8);
-		}
-	}
+	cg_place_args(cg, slot_kind, total, b, 0);
 
 	cg_emit(cg,"    call %s", label);
 
@@ -8603,11 +8641,14 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 
 	/* Spill incoming args: this at [rbp-8], then params at [rbp-16], [rbp-24], and so on.
 	   Win64 numbers both register classes by argument position; System V numbers
-	   integer and FP registers independently (int_idx / fp_idx). */
-	int int_idx = 0, fp_idx = 0;
+	   integer and FP registers independently. Arguments beyond the ABI's register
+	   count arrive on the caller's stack and are read back from [rbp+off]: Win64 at
+	   48 + k*8 (8 ret + 8 saved rbp + 32 shadow), System V at 16 + k*8. */
+	int win = (cg->target != TARGET_LINUX);
+	int int_idx = 0, fp_idx = 0, stk = 0;
 	if (this_class)
 	{
-		cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg, int_idx));
+		cg_emit(cg,"    mov [rbp - 8], %s", cg_iarg(cg, 0));
 		int_idx++;
 	}
 
@@ -8616,19 +8657,54 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		int slot = this_class ? (16 + i*8) : (8 + i*8);
 		int pos = (this_class ? 1 : 0) + i;   /* Win64 by-position index. */
 		TypeKind pk = f->params[i].type.kind;
-		if (pk==TY_FLOAT)
+		int is_float=(pk==TY_FLOAT), is_double=(pk==TY_DOUBLE);
+
+		int on_stack;
+		if (win) { on_stack = (pos >= 4); }
+		else if (is_float||is_double) { on_stack = (fp_idx >= 8); }
+		else { on_stack = (int_idx >= 6); }
+
+		if (on_stack)
 		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : pos;
+			int off = win ? (48 + stk*8) : (16 + stk*8);
+			stk++;
+			const char *pr = cg_local_reg(cg, slot);
+			if (is_float)
+			{
+				cg_emit(cg,"    movss xmm0, dword [rbp + %d]", off);
+				cg_emit(cg,"    movss dword [rbp - %d], xmm0", slot);
+			}
+			else if (is_double)
+			{
+				cg_emit(cg,"    movsd xmm0, qword [rbp + %d]", off);
+				cg_emit(cg,"    movsd qword [rbp - %d], xmm0", slot);
+			}
+			else if (pr)
+			{
+				cg_emit(cg,"    mov %s, [rbp + %d]", pr, off);
+				if (pk == TY_INT) { cg_emit(cg,"    movsxd %s, %sd", pr, pr); }
+			}
+			else
+			{
+				cg_emit(cg,"    mov rax, [rbp + %d]", off);
+				cg_emit(cg,"    mov [rbp - %d], rax", slot);
+			}
+			continue;
+		}
+
+		if (is_float)
+		{
+			int xi = win ? pos : fp_idx++;
 			cg_emit(cg,"    movss dword [rbp - %d], xmm%d", slot, xi);
 		}
-		else if (pk==TY_DOUBLE)
+		else if (is_double)
 		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : pos;
+			int xi = win ? pos : fp_idx++;
 			cg_emit(cg,"    movsd qword [rbp - %d], xmm%d", slot, xi);
 		}
 		else
 		{
-			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : pos;
+			int ii = win ? pos : int_idx++;
 			const char *pr = cg_local_reg(cg, slot);
 			if (pr)
 			{

@@ -1014,6 +1014,18 @@ static void test_overload_set_ambiguous(void)
 	ASSERT_INT(overload_set_is_ambiguous(ok, 2), 0);
 }
 
+static void test_stack_args_caller(void)
+{
+	emit("int f(int a,int b,int c,int d,int e){return a+b+c+d+e;} void main(){ print(f(1,2,3,4,5)); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "[rsp + 32]") != NULL, 1);   /* 5th int arg spilled above the Win64 shadow. */
+}
+
+static void test_stack_args_callee(void)
+{
+	emit("int f(int a,int b,int c,int d,int e){return e;} void main(){ print(f(1,2,3,4,5)); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "[rbp + 48]") != NULL, 1);   /* 5th arg read from the caller frame. */
+}
+
 static void test_grow_ensure(void)
 {
 	int *a = NULL, cap = 0, n = 0;
@@ -1081,6 +1093,8 @@ int main(void)
 	RUN(test_overload_select_null_ambiguous);
 	RUN(test_overload_set_ambiguous);
 	RUN(test_grow_ensure);
+	RUN(test_stack_args_caller);
+	RUN(test_stack_args_callee);
 	SUMMARY();
 	return 0;
 }

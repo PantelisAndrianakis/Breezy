@@ -69,6 +69,9 @@ check ctor        tests/samples/pass/oop/proj_ctor      $'3
 check bare_field     tests/samples/pass/oop/bare_field.bzy     $'2\n1\n3'
 check default_args   tests/samples/pass/basics/proj_default_args  $'15\n6\n1\n2\n7\n2'
 check args_clone_params tests/samples/pass/args/clone_params.bzy  $'7\n9'
+check args_five_int     tests/samples/pass/args/five_int.bzy     "15"
+check args_eight_method tests/samples/pass/args/eight_method.bzy "28"
+check args_mixed_fp     tests/samples/pass/args/mixed_fp.bzy     "14"
 check overload_ctor      tests/samples/pass/overload/ctor.bzy      $'7\n14'
 check_fail overload_ctor_dup tests/samples/fail/overload/ctor_dup.bzy
 check overload_method    tests/samples/pass/overload/method.bzy    $'5\n9\n3.5'
