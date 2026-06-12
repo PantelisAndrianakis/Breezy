@@ -4,7 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_INSTANCES 256
+/* Runaway-recursion backstop (NOT a capacity wall): a well-formed program has a
+   finite, statically-knowable set of instantiations, but an ill-formed
+   self-nesting generic (e.g. Loop<Loop<T>>) would instantiate forever. Abort
+   well before exhausting memory. The instance table itself grows dynamically. */
+#define GENERIC_INSTANCE_LIMIT 100000000
 
 /* The built-in template names (Box/List/... from Parts 4e/4f) are handled by
    inline specialization, not lowering. A user generic may not shadow them. This
@@ -17,10 +21,12 @@ static int is_builtin_template(const char *name)
 }
 
 /* ---- template + instance registries (file-static; one expand() per run) ---- */
-static ClassDecl *g_templates[64];
+static ClassDecl **g_templates;
 static int        g_template_count;
-static char       g_instances[MAX_INSTANCES][128];
+static int        g_template_cap;
+static char     **g_instances;
 static int        g_instance_count;
+static int        g_instance_cap;
 static Unit    ***g_units;   /* Handle to main's units pointer so appends can realloc it. */
 static int       *g_total;
 static int       *g_cap;
@@ -327,7 +333,7 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 		check_bound(t,i,targs[i],line);
 	}
 
-	if (g_instance_count>=MAX_INSTANCES)
+	if (g_instance_count>=GENERIC_INSTANCE_LIMIT)
 	{
 		fprintf(stderr,"Generics: too many instantiations (possible infinitely recursive generic).\n");
 		exit(1);
@@ -352,7 +358,10 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 
 	Unit *u=unit_new();
 	unit_add_class(u,c);
-	strcpy(g_instances[g_instance_count++],out);
+	g_instances = grow_ensure(g_instances, g_instance_count, &g_instance_cap, sizeof(*g_instances));
+	g_instances[g_instance_count] = malloc(128);
+	strcpy(g_instances[g_instance_count], out);
+	g_instance_count++;
 	*g_units = grow_ensure(*g_units, *g_total, g_cap, sizeof(**g_units));
 	(*g_units)[(*g_total)++]=u;
 	g_changed=1;   /* New unit must be walked for further applications. */
@@ -553,6 +562,7 @@ void generics_expand(Unit ***units, int *total, int *cap)
 					exit(1);
 				}
 
+				g_templates = grow_ensure(g_templates, g_template_count, &g_template_cap, sizeof(*g_templates));
 				g_templates[g_template_count++]=k;
 			}
 		}
