@@ -190,22 +190,261 @@ int bzy_desktop_is_enabled(void)
 #endif
 }
 
-/* ---- Stubs filled in by Task 3 (widgets) and Task 5 (events). ---- */
-int64_t bzy_desktop_frame_new(void) { return 0; }
-int64_t bzy_desktop_frame_content(int64_t frame) { return frame; }
-void bzy_desktop_frame_set_title(int64_t frame, const char *title) { (void)frame; (void)title; }
-int64_t bzy_desktop_panel_new(void) { return 0; }
-int64_t bzy_desktop_button_new(void) { return 0; }
-void bzy_desktop_button_set_text(int64_t b, const char *t) { (void)b; (void)t; }
-int64_t bzy_desktop_label_new(void) { return 0; }
-void bzy_desktop_label_set_text(int64_t l, const char *t) { (void)l; (void)t; }
-void bzy_desktop_container_add(int64_t p, int64_t c) { (void)p; (void)c; }
-void bzy_desktop_border_add(int64_t b, int64_t c, int r) { (void)b; (void)c; (void)r; }
-void bzy_desktop_set_visible(int64_t w, int v) { (void)w; (void)v; }
-void bzy_desktop_set_enabled(int64_t w, int e) { (void)w; (void)e; }
-void bzy_desktop_window_set_size(int64_t w, int a, int b) { (void)w; (void)a; (void)b; }
-void bzy_desktop_window_show(int64_t w) { (void)w; }
-void bzy_desktop_window_dispose(int64_t w) { (void)w; }
+/* ---- GTK thread + command marshalling. ---- */
+
+#if defined(_WIN32)
+#include <process.h>
+typedef CRITICAL_SECTION mtx_t_compat;
+typedef CONDITION_VARIABLE cnd_t_compat;
+#define MTX_INIT(m)   InitializeCriticalSection(m)
+#define MTX_LOCK(m)   EnterCriticalSection(m)
+#define MTX_UNLOCK(m) LeaveCriticalSection(m)
+#define CND_INIT(c)   InitializeConditionVariable(c)
+#define CND_WAIT(c,m) SleepConditionVariableCS(c, m, INFINITE)
+#define CND_SIGNAL(c) WakeConditionVariable(c)
+#else
+#include <pthread.h>
+typedef pthread_mutex_t mtx_t_compat;
+typedef pthread_cond_t  cnd_t_compat;
+#define MTX_INIT(m)   pthread_mutex_init(m, NULL)
+#define MTX_LOCK(m)   pthread_mutex_lock(m)
+#define MTX_UNLOCK(m) pthread_mutex_unlock(m)
+#define CND_INIT(c)   pthread_cond_init(c, NULL)
+#define CND_WAIT(c,m) pthread_cond_wait(c, m)
+#define CND_SIGNAL(c) pthread_cond_signal(c)
+#endif
+
+/* A single command marshalled onto the GTK thread. The op code selects the
+   action; a/b/c are integer/pointer args; s is an optional string; `result`
+   receives a returned handle. Completion is signalled via done. */
+enum { OP_FRAME_NEW = 1, OP_FRAME_TITLE, OP_PANEL_NEW,
+       OP_BUTTON_NEW, OP_BUTTON_TEXT, OP_LABEL_NEW, OP_LABEL_TEXT,
+       OP_CONTAINER_ADD, OP_BORDER_ADD, OP_SET_VISIBLE, OP_SET_ENABLED,
+       OP_WIN_SIZE, OP_WIN_SHOW, OP_WIN_DISPOSE, OP_LISTEN_ACTION,
+       OP_LISTEN_CLOSE };
+
+struct cmd
+{
+	int op;
+	int64_t a, b, c;
+	const char *s;
+	int64_t result;
+	int done;
+	mtx_t_compat m;
+	cnd_t_compat cv;
+};
+
+static int gtk_thread_started = 0;
+static mtx_t_compat start_mtx;
+static int start_mtx_init = 0;
+
+/* Border container layout: a vertical box holding [north, center-row, south]
+   where the center-row is a horizontal box [west, center(expand), east]. The
+   table is keyed by the WINDOW handle (which Breezy also uses as the content
+   handle, since Frame.content == Frame.handle), so border adds resolve from the
+   frame handle directly. Phase 1 supports a bounded number of frames. */
+struct border
+{
+	void *window;       /* The GtkWindow handle == Breezy frame/content handle. */
+	void *vbox;         /* North/South packing. */
+	void *center_row;   /* West/East packing. */
+	void *center;       /* Center packing (expands). */
+};
+#define MAX_BORDERS 256
+static struct border borders[MAX_BORDERS];
+static int border_count = 0;
+
+static struct border *border_find(void *window)
+{
+	for (int i = 0; i < border_count; i++)
+	{
+		if (borders[i].window == window) { return &borders[i]; }
+	}
+	return NULL;
+}
+
+static int open_windows = 0;
+
+/* Forward decl: the actual GTK work, executed on the GTK thread. */
+static void cmd_execute(struct cmd *c);
+
+/* The idle callback that runs on the GTK thread: execute the command, signal. */
+static int gtk_dispatch_idle(void *data)
+{
+	struct cmd *c = (struct cmd *)data;
+	cmd_execute(c);
+	MTX_LOCK(&c->m);
+	c->done = 1;
+	CND_SIGNAL(&c->cv);
+	MTX_UNLOCK(&c->m);
+	return 0;   /* G_SOURCE_REMOVE. */
+}
+
+#if defined(_WIN32)
+static unsigned __stdcall gtk_thread_main(void *arg)
+#else
+static void *gtk_thread_main(void *arg)
+#endif
+{
+	(void)arg;
+	int argc = 0;
+	char **argv = NULL;
+	G.init_check(&argc, &argv);   /* Safe to fail; isEnabled already gated entry. */
+	G.main();                     /* Runs until gtk_main_quit. */
+#if defined(_WIN32)
+	return 0;
+#else
+	return NULL;
+#endif
+}
+
+static void ensure_gtk_thread(void)
+{
+	if (!start_mtx_init) { MTX_INIT(&start_mtx); start_mtx_init = 1; }
+	MTX_LOCK(&start_mtx);
+	if (!gtk_thread_started)
+	{
+		gtk_thread_started = 1;
+#if defined(_WIN32)
+		_beginthreadex(NULL, 0, gtk_thread_main, NULL, 0, NULL);
+#else
+		pthread_t t;
+		pthread_create(&t, NULL, gtk_thread_main, NULL);
+		pthread_detach(t);
+#endif
+	}
+	MTX_UNLOCK(&start_mtx);
+}
+
+/* Run one command on the GTK thread and block until it completes. Returns the
+   command's result handle. */
+static int64_t gtk_call(int op, int64_t a, int64_t b, int64_t c, const char *s)
+{
+	if (!desktop_load()) { return 0; }
+	ensure_gtk_thread();
+
+	struct cmd cmd;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.op = op; cmd.a = a; cmd.b = b; cmd.c = c; cmd.s = s; cmd.done = 0;
+	MTX_INIT(&cmd.m);
+	CND_INIT(&cmd.cv);
+
+	G.idle_add(gtk_dispatch_idle, &cmd);
+
+	MTX_LOCK(&cmd.m);
+	while (!cmd.done) { CND_WAIT(&cmd.cv, &cmd.m); }
+	MTX_UNLOCK(&cmd.m);
+	return cmd.result;
+}
+
+/* GTK constants we need (their numeric values are ABI-stable). */
+#define GTK_WINDOW_TOPLEVEL 0
+#define GTK_ORIENTATION_HORIZONTAL 0
+#define GTK_ORIENTATION_VERTICAL 1
+
+static void cmd_execute(struct cmd *c)
+{
+	switch (c->op)
+	{
+		case OP_FRAME_NEW:
+		{
+			void *win = G.window_new(GTK_WINDOW_TOPLEVEL);
+			void *vbox = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
+			void *crow = G.box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+			void *center = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
+			/* center-row: west | center(expand) | east, packed as widgets add. */
+			G.box_pack_start(crow, center, 1, 1, 0);
+			G.box_pack_start(vbox, crow, 1, 1, 0);
+			G.container_add(win, vbox);
+			if (border_count < MAX_BORDERS)
+			{
+				borders[border_count].window = win;
+				borders[border_count].vbox = vbox;
+				borders[border_count].center_row = crow;
+				borders[border_count].center = center;
+				border_count++;
+			}
+			/* Frame handle == content handle == the window; border adds resolve
+			   the slot boxes via the borders table keyed by this window. */
+			c->result = (int64_t)(intptr_t)win;
+			break;
+		}
+		case OP_FRAME_TITLE:
+			G.window_set_title((void *)(intptr_t)c->a, c->s);
+			break;
+		case OP_PANEL_NEW:
+			c->result = (int64_t)(intptr_t)G.box_new(GTK_ORIENTATION_VERTICAL, 0);
+			break;
+		case OP_BUTTON_NEW:
+			c->result = (int64_t)(intptr_t)G.button_new();
+			break;
+		case OP_BUTTON_TEXT:
+			G.button_set_label((void *)(intptr_t)c->a, c->s);
+			break;
+		case OP_LABEL_NEW:
+			c->result = (int64_t)(intptr_t)G.label_new(c->s ? c->s : "");
+			break;
+		case OP_LABEL_TEXT:
+			G.label_set_text((void *)(intptr_t)c->a, c->s);
+			break;
+		case OP_CONTAINER_ADD:
+			G.box_pack_start((void *)(intptr_t)c->a, (void *)(intptr_t)c->b, 0, 0, 0);
+			break;
+		case OP_BORDER_ADD:
+		{
+			struct border *bd = border_find((void *)(intptr_t)c->a);
+			void *child = (void *)(intptr_t)c->b;
+			if (!bd) { break; }
+			switch ((int)c->c)
+			{
+				case 0: G.box_pack_start(bd->vbox, child, 0, 0, 0); break;         /* North. */
+				case 1: G.box_pack_start(bd->vbox, child, 0, 0, 0); break;         /* South (Phase 1: appended). */
+				case 2: G.box_pack_start(bd->center_row, child, 0, 0, 0); break;   /* West. */
+				case 3: G.box_pack_start(bd->center_row, child, 0, 0, 0); break;   /* East. */
+				default: G.box_pack_start(bd->center, child, 1, 1, 0); break;      /* Center. */
+			}
+			break;
+		}
+		case OP_SET_VISIBLE:
+			G.widget_set_visible((void *)(intptr_t)c->a, (int)c->b);
+			break;
+		case OP_SET_ENABLED:
+			G.widget_set_sensitive((void *)(intptr_t)c->a, (int)c->b);
+			break;
+		case OP_WIN_SIZE:
+			G.window_set_default_size((void *)(intptr_t)c->a, (int)c->b, (int)c->c);
+			break;
+		case OP_WIN_SHOW:
+			G.widget_show_all((void *)(intptr_t)c->a);
+			open_windows++;
+			break;
+		case OP_WIN_DISPOSE:
+			G.widget_destroy((void *)(intptr_t)c->a);
+			break;
+		case OP_LISTEN_ACTION:   /* Connected in Task 5. */
+		case OP_LISTEN_CLOSE:    /* Connected in Task 5. */
+			break;
+	}
+}
+
+/* ---- Widget entry points (marshalled onto the GTK thread). ---- */
+int64_t bzy_desktop_frame_new(void)            { return gtk_call(OP_FRAME_NEW, 0, 0, 0, NULL); }
+int64_t bzy_desktop_frame_content(int64_t f)   { return f; }
+void bzy_desktop_frame_set_title(int64_t f, const char *t) { gtk_call(OP_FRAME_TITLE, f, 0, 0, t); }
+int64_t bzy_desktop_panel_new(void)            { return gtk_call(OP_PANEL_NEW, 0, 0, 0, NULL); }
+int64_t bzy_desktop_button_new(void)           { return gtk_call(OP_BUTTON_NEW, 0, 0, 0, NULL); }
+void bzy_desktop_button_set_text(int64_t b, const char *t) { gtk_call(OP_BUTTON_TEXT, b, 0, 0, t); }
+int64_t bzy_desktop_label_new(void)            { return gtk_call(OP_LABEL_NEW, 0, 0, 0, NULL); }
+void bzy_desktop_label_set_text(int64_t l, const char *t) { gtk_call(OP_LABEL_TEXT, l, 0, 0, t); }
+void bzy_desktop_container_add(int64_t p, int64_t ch) { gtk_call(OP_CONTAINER_ADD, p, ch, 0, NULL); }
+void bzy_desktop_border_add(int64_t bd, int64_t ch, int r) { gtk_call(OP_BORDER_ADD, bd, ch, r, NULL); }
+void bzy_desktop_set_visible(int64_t w, int v) { gtk_call(OP_SET_VISIBLE, w, v, 0, NULL); }
+void bzy_desktop_set_enabled(int64_t w, int e) { gtk_call(OP_SET_ENABLED, w, e, 0, NULL); }
+void bzy_desktop_window_set_size(int64_t w, int a, int b) { gtk_call(OP_WIN_SIZE, w, a, b, NULL); }
+void bzy_desktop_window_show(int64_t w) { gtk_call(OP_WIN_SHOW, w, 0, 0, NULL); }
+void bzy_desktop_window_dispose(int64_t w) { gtk_call(OP_WIN_DISPOSE, w, 0, 0, NULL); }
+
+/* ---- Event entry points: stubs filled in by Task 5. ---- */
 void bzy_desktop_listen_action(int64_t w, int i) { (void)w; (void)i; }
 void bzy_desktop_listen_window_close(int64_t w, int i) { (void)w; (void)i; }
 int bzy_desktop_next_event(void) { return -1; }
