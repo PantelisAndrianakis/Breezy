@@ -17,7 +17,7 @@ typedef struct
 /* Lower every EnumDecl: synthesize the base class (+ per-constant subclasses for
    override bodies), append them as Units, clear Unit.enums, and record an
    EnumInfo per enum. Run BEFORE generics_expand. Grows *total in place. */
-void enums_expand(Unit **units, int *total, int max);
+void enums_expand(Unit ***units, int *total, int *cap);
 
 /* Registry queries (valid after enums_expand). */
 int          enum_is(const char *name);                   /* 1 if name is an enum type. */

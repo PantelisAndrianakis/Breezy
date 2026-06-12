@@ -8,6 +8,6 @@
    rewrites all application references to plain object refs + EX_NEW, and clears
    each template Unit's klass so it is not registered/emitted. After this pass no
    TY_GENERIC (user) nodes and no generic-class templates remain. */
-void generics_expand(Unit **units, int *total, int max);
+void generics_expand(Unit ***units, int *total, int *cap);
 
 #endif

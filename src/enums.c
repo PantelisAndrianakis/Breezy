@@ -1,4 +1,5 @@
 #include "enums.h"
+#include "grow.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,7 +92,7 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 	return c;
 }
 
-static void lower_one(const EnumDecl *e, Unit **units, int *total, int max)
+static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 {
 	if (g_enum_count>=32)
 	{
@@ -112,14 +113,10 @@ static void lower_one(const EnumDecl *e, Unit **units, int *total, int max)
 	info->constant_count=e->constant_count;
 
 	/* Base class first (a parent must register before its subclasses). */
-	if (*total>=max)
-	{
-		fprintf(stderr,"Too many units (enum lowering).\n");
-		exit(1);
-	}
+	*units = grow_ensure(*units, *total, cap, sizeof(**units));
 	Unit *bu=unit_new();
 	unit_add_class(bu, make_base_class(e));
-	units[(*total)++]=bu;
+	(*units)[(*total)++]=bu;
 
 	for (int i=0; i<e->constant_count; i++)
 	{
@@ -152,14 +149,10 @@ static void lower_one(const EnumDecl *e, Unit **units, int *total, int max)
 			char mangled[128];
 			snprintf(mangled,sizeof(mangled),"%s$%s",e->name,k->name);
 			strcpy(info->const_class[i],mangled);
-			if (*total>=max)
-			{
-				fprintf(stderr,"Too many units (enum lowering).\n");
-				exit(1);
-			}
+			*units = grow_ensure(*units, *total, cap, sizeof(**units));
 			Unit *su=unit_new();
 			unit_add_class(su, make_constant_subclass(e,k,mangled));
-			units[(*total)++]=su;
+			(*units)[(*total)++]=su;
 		}
 		else
 		{
@@ -168,18 +161,18 @@ static void lower_one(const EnumDecl *e, Unit **units, int *total, int max)
 	}
 }
 
-void enums_expand(Unit **units, int *total, int max)
+void enums_expand(Unit ***units, int *total, int *cap)
 {
 	g_enum_count=0;
 	int n=*total;
 	for (int i=0; i<n; i++)
 	{
-		for (int j=0; j<units[i]->enum_count; j++)
+		for (int j=0; j<(*units)[i]->enum_count; j++)
 		{
-			lower_one(units[i]->enums[j],units,total,max);
+			lower_one((*units)[i]->enums[j],units,total,cap);
 		}
 
-		units[i]->enum_count=0;   /* Consumed: downstream sees only the synthesized classes. */
+		(*units)[i]->enum_count=0;   /* Consumed: downstream sees only the synthesized classes. */
 	}
 }
 

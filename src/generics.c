@@ -1,4 +1,5 @@
 #include "generics.h"
+#include "grow.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,9 +21,9 @@ static ClassDecl *g_templates[64];
 static int        g_template_count;
 static char       g_instances[MAX_INSTANCES][128];
 static int        g_instance_count;
-static Unit     **g_units;
+static Unit    ***g_units;   /* Handle to main's units pointer so appends can realloc it. */
 static int       *g_total;
-static int        g_max;
+static int       *g_cap;
 static int        g_changed;
 
 static ClassDecl *find_template(const char *name)
@@ -56,11 +57,11 @@ static ClassDecl *find_classdecl(const char *name)
 {
 	for (int i=0; i<*g_total; i++)
 	{
-		for (int ci=0; ci<g_units[i]->class_count; ci++)
+		for (int ci=0; ci<(*g_units)[i]->class_count; ci++)
 		{
-			if (strcmp(g_units[i]->klasses[ci]->name,name)==0)
+			if (strcmp((*g_units)[i]->klasses[ci]->name,name)==0)
 			{
-				return g_units[i]->klasses[ci];
+				return (*g_units)[i]->klasses[ci];
 			}
 		}
 	}
@@ -326,7 +327,7 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 		check_bound(t,i,targs[i],line);
 	}
 
-	if (g_instance_count>=MAX_INSTANCES || *g_total>=g_max)
+	if (g_instance_count>=MAX_INSTANCES)
 	{
 		fprintf(stderr,"Generics: too many instantiations (possible infinitely recursive generic).\n");
 		exit(1);
@@ -352,7 +353,8 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 	Unit *u=unit_new();
 	unit_add_class(u,c);
 	strcpy(g_instances[g_instance_count++],out);
-	g_units[(*g_total)++]=u;
+	*g_units = grow_ensure(*g_units, *g_total, g_cap, sizeof(**g_units));
+	(*g_units)[(*g_total)++]=u;
 	g_changed=1;   /* New unit must be walked for further applications. */
 }
 
@@ -530,19 +532,19 @@ static void rewrite_unit(Unit *u)
 	}
 }
 
-void generics_expand(Unit **units, int *total, int max)
+void generics_expand(Unit ***units, int *total, int *cap)
 {
 	g_units=units;
 	g_total=total;
-	g_max=max;
+	g_cap=cap;
 	g_template_count=0;
 	g_instance_count=0;
 
 	for (int i=0; i<*total; i++)
 	{
-		for (int ci=0; ci<units[i]->class_count; ci++)
+		for (int ci=0; ci<(*units)[i]->class_count; ci++)
 		{
-			ClassDecl *k=units[i]->klasses[ci];
+			ClassDecl *k=(*units)[i]->klasses[ci];
 			if (k->type_param_count>0)
 			{
 				if (is_builtin_template(k->name))
@@ -564,7 +566,7 @@ void generics_expand(Unit **units, int *total, int max)
 		int n=*total;   /* Snapshot; newly appended units are picked up next round. */
 		for (int i=0; i<n; i++)
 		{
-			rewrite_unit(units[i]);
+			rewrite_unit((*units)[i]);
 		}
 	}
 	while (g_changed);
@@ -574,7 +576,7 @@ void generics_expand(Unit **units, int *total, int max)
 	{
 		for (int u=0; u<*total; u++)
 		{
-			Unit *un=units[u];
+			Unit *un=(*units)[u];
 			for (int ci=0; ci<un->class_count; ci++)
 			{
 				if (un->klasses[ci]==g_templates[i])

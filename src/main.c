@@ -12,6 +12,7 @@
 #include "codegen.h"
 #include "prelude.h"
 #include "config.h"
+#include "grow.h"
 
 static char *read_file(const char *path)
 {
@@ -40,15 +41,20 @@ static int has_suffix(const char *s, const char *suf)
 	return ls>=lf && strcmp(s+ls-lf,suf)==0;
 }
 
-#define MAX_FILES 128
-static int collect_files(const char *path, char paths[][512])
+/* Collect .bzy file paths under `path` into a freshly grown array of strings,
+   returned through `out_paths`; returns the count. No fixed file cap. */
+static int collect_files(const char *path, char ***out_paths)
 {
-	int n=0;
+	int n=0, cap=0;
+	char **paths=NULL;
 	DIR *d=opendir(path);
 	if (!d)
 	{
+		paths=grow_ensure(paths,0,&cap,sizeof(*paths));
+		paths[0]=malloc(512);
 		strncpy(paths[0],path,511);
 		paths[0][511]='\0';
+		*out_paths=paths;
 		return 1;
 	}
 	struct dirent *e;
@@ -56,16 +62,14 @@ static int collect_files(const char *path, char paths[][512])
 	{
 		if (has_suffix(e->d_name,".bzy"))
 		{
-			if (n>=MAX_FILES)
-			{
-				fprintf(stderr,"Too many files.\n");
-				exit(1);
-			}
+			paths=grow_ensure(paths,n,&cap,sizeof(*paths));
+			paths[n]=malloc(512);
 			snprintf(paths[n],512,"%s/%s",path,e->d_name);
 			n++;
 		}
 	}
 	closedir(d);
+	*out_paths=paths;
 	if (n==0)
 	{
 		fprintf(stderr,"No .bzy files in %s\n",path);
@@ -132,17 +136,14 @@ int main(int argc, char *argv[])
 	}
 
 	config_load(src_arg, &cfg);   /* Merge libs/lib_paths from <project>/breezy.toml. */
-	static char paths[MAX_FILES][512];
-	int nfiles=collect_files(src_arg,paths);
-
-	static Parser parsers[MAX_FILES];
-	static Unit *units[MAX_FILES];
+	char **paths=NULL;
+	int nfiles=collect_files(src_arg,&paths);
 
 	/* Read user sources up front so we can decide whether the Desktop GUI
 	   prelude needs injecting before any parsing happens. The Desktop prelude
 	   is added only when a user source references the `Desktop` identifier, so
 	   non-GUI programs reserve none of its names and pull no GTK runtime. */
-	static char *srcs[MAX_FILES];
+	char **srcs=malloc((size_t)nfiles*sizeof(*srcs));
 	int uses_desktop=0;
 	for (int i=0; i<nfiles; i++)
 	{
@@ -171,11 +172,9 @@ int main(int argc, char *argv[])
 	int np=BZY_PRELUDE_COUNT;
 	int ndesk=uses_desktop?BZY_DESKTOP_PRELUDE_COUNT:0;
 	int total=np+ndesk+nfiles;
-	if (total>MAX_FILES)
-	{
-		fprintf(stderr,"Too many files (prelude + sources).\n");
-		exit(1);
-	}
+	Parser *parsers=malloc((size_t)total*sizeof(*parsers));
+	int units_cap=0;
+	Unit **units=grow_reserve(NULL, total, &units_cap, sizeof(*units));
 
 	for (int i=0; i<np; i++)
 	{
@@ -195,11 +194,11 @@ int main(int argc, char *argv[])
 
 	/* Lower enums to synthesized classes (base + per-constant subclasses) before
 	   generics, so enum field/arg types that use generics still get instantiated. */
-	enums_expand(units,&total,MAX_FILES);
+	enums_expand(&units,&total,&units_cap);
 
 	/* Lower user generics: synthesize one ordinary class per (template, type-args)
 	   tuple, rewrite applications, and drop templates. Grows `total` in place. */
-	generics_expand(units,&total,MAX_FILES);
+	generics_expand(&units,&total,&units_cap);
 
 	/* Lower instance-field initializers into constructor-body assignments
 	   (synthesizing zero-arg constructors where needed). Must run before the
