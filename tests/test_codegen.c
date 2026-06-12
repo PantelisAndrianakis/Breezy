@@ -9,7 +9,11 @@
 #include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
 #define MAX_U 64
-static char g_asm[1 << 16];
+/* Holds the full emitted program: the always-on prelude (vectors + DateTime's
+   civil-date math) already exceeds 100 KB of asm, and the desktop tests add the
+   GUI prelude on top, so this must stay well clear of that total or trailing
+   output (e.g. vtables emitted after the prelude) gets silently truncated. */
+static char g_asm[1 << 20];
 
 /* Compile `nsrc` source strings for `target` (prelude first, then all srcs)
    and load the emitted asm into g_asm. */
@@ -72,6 +76,34 @@ static void emit(const char *src, Target target)
 {
 	const char *srcs[1] = { src };
 	emit_n(srcs, 1, target);
+}
+
+/* Scope a g_asm search to one emitted function's body. The user units' free
+   functions are emitted before the always-on prelude classes, and each function
+   is followed by its __exception metadata block, so the slice from `label` up to
+   the next "__exception" is exactly that function's instructions. This excludes
+   prelude code (e.g. the idiv / sar rdx, 63 that DateTime's civil-date math
+   emits) that would otherwise pollute a whole-program substring search. The
+   snippets scoped this way contain no try/catch, so their bodies never mention
+   an __exception label themselves. Returns a pointer into a static buffer. */
+static const char *fn_body(const char *label)
+{
+	static char buf[1 << 14];
+	buf[0] = '\0';
+	const char *s = strstr(g_asm, label);
+	if (!s)
+	{
+		return buf;
+	}
+	const char *e = strstr(s, "__exception");
+	size_t len = e ? (size_t)(e - s) : strlen(s);
+	if (len >= sizeof(buf))
+	{
+		len = sizeof(buf) - 1;
+	}
+	memcpy(buf, s, len);
+	buf[len] = '\0';
+	return buf;
 }
 
 /* Compile prelude + desktop-prelude + the user source, exactly as the driver
@@ -501,17 +533,17 @@ static void test_div_strength_reduction(void)
 {
 	/* '/' by a power-of-two literal becomes an (arithmetic) shift, not idiv. */
 	emit("void main() { int n; n = 100; int a; a = n / 2; }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
 	ASSERT_INT(strstr(g_asm, "sar rax, 1") != NULL, 1);
 
 	/* '%' by a power-of-two literal becomes a mask, not idiv. */
 	emit("void main() { int n; n = 100; int a; a = n % 2; }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
 	ASSERT_INT(strstr(g_asm, "and rax, 1") != NULL, 1);
 
 	/* Unsigned divide uses a logical shift (no sign bias). */
 	emit("void main() { uint n; n = 100u; uint a; a = n / 4; }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
 	ASSERT_INT(strstr(g_asm, "shr rax, 2") != NULL, 1);
 
 	/* A non-power-of-two constant divisor still uses idiv (general path). */
@@ -671,7 +703,8 @@ static void test_unroll_kill_not_resurrected_by_inner_exit(void)
 		 "	print(\"\" + total);\n"
 		 "}\n", TARGET_WINDOWS);
 	int sars = 0;
-	for (const char *p = strstr(g_asm, "sar "); p; p = strstr(p + 1, "sar "))
+	const char *body = fn_body("bzy_user_main:");
+	for (const char *p = strstr(body, "sar "); p; p = strstr(p + 1, "sar "))
 	{
 		sars++;
 	}
@@ -685,7 +718,7 @@ static void test_divisibility_test(void)
 	   no idiv, no signed-remainder reconstruction. == 0 inverts to jne, != 0 to je. */
 	emit("void main() { int n; n = 5; if (n % 2 == 0) { print(1); } }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "and rax, 1\n    jne") != NULL, 1);
-	ASSERT_INT(strstr(g_asm, "idiv") == NULL, 1);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
 
 	emit("void main() { int n; n = 5; if (n % 8 != 0) { print(1); } }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "and rax, 7\n    je") != NULL, 1);
@@ -849,12 +882,12 @@ static void test_nonneg_division_drops_sign_bias(void)
 		"	return acc;\n"
 		"}\n"
 		"void main() { print(f(10)); }\n", TARGET_WINDOWS);
-	ASSERT_INT(strstr(g_asm, "sar rdx, 63") == NULL, 1);   /* bias dropped under the guard. */
+	ASSERT_INT(strstr(fn_body("bzy_f:"), "sar rdx, 63") == NULL, 1);   /* bias dropped under the guard. */
 
 	emit(
 		"long g(long n) { return n / 2; }\n"
 		"void main() { print(g(10)); }\n", TARGET_WINDOWS);
-	ASSERT_INT(strstr(g_asm, "sar rdx, 63") != NULL, 1);   /* unguarded signed /2 keeps the bias. */
+	ASSERT_INT(strstr(fn_body("bzy_g:"), "sar rdx, 63") != NULL, 1);   /* unguarded signed /2 keeps the bias. */
 }
 
 static void test_loop_rotation_bottom_test(void)
@@ -873,7 +906,7 @@ static void test_loop_rotation_bottom_test(void)
 		"}\n"
 		"void main() { print(f(5)); }\n", TARGET_WINDOWS);
 	int count = 0;
-	const char *p = g_asm;
+	const char *p = fn_body("bzy_f:");
 	while ((p = strstr(p, "cmp r12, 1")) != NULL)
 	{
 		count++;
