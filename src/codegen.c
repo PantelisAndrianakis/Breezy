@@ -5624,6 +5624,110 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 	}
 }
 
+/* Structural AST equality (mirrors irlower.c's expr_eq), for the indexed-RMW fuse. */
+static int cg_expr_eq(const Expr *a, const Expr *b)
+{
+	if (!a || !b)
+	{
+		return a == b;
+	}
+
+	if (a->kind != b->kind || a->type.kind != b->type.kind)
+	{
+		return 0;
+	}
+
+	switch (a->kind)
+	{
+	case EX_INT:
+	case EX_BOOL:
+		return a->int_val == b->int_val;
+	case EX_IDENT:
+		return a->anno_int == b->anno_int;
+	case EX_CAST:
+		return cg_expr_eq(a->lhs, b->lhs);
+	case EX_UNARY:
+		return a->op == b->op && cg_expr_eq(a->lhs, b->lhs);
+	case EX_BINARY:
+		return a->op == b->op && cg_expr_eq(a->lhs, b->lhs) && cg_expr_eq(a->rhs, b->rhs);
+	case EX_INDEX:
+		return cg_expr_eq(a->lhs, b->lhs) && cg_expr_eq(a->rhs, b->rhs);
+	case EX_FIELD:
+		return strcmp(a->name, b->name) == 0 && cg_expr_eq(a->lhs, b->lhs);
+	default:
+		return 0;
+	}
+}
+
+/* The two-operand instruction for an in-place arithmetic op, or NULL. */
+static const char *cg_inplace_mnem(int op)
+{
+	switch (op)
+	{
+	case TOKEN_PLUS:  return "add";
+	case TOKEN_MINUS: return "sub";
+	case TOKEN_STAR:  return "imul";
+	case TOKEN_AMP:   return "and";
+	case TOKEN_PIPE:  return "or";
+	case TOKEN_CARET: return "xor";
+	default:          return NULL;
+	}
+}
+
+/* Fuse `arr[X] = arr[X] op V` (or `V op arr[X]` for a commutative op) into a single
+   indexed address with ONE bounds check, then load/op/store - instead of computing
+   the index and bounds-checking twice (once for the element read inside the value,
+   once for the store). Integer elements only; returns 1 if it emitted the store.
+   Mirrors the IR backend's RMW lowering so the emitter path (e.g. a loop with calls,
+   which is not IR-region-eligible) gets the same fusion. */
+static int cg_try_rmw_index(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
+{
+	if (target->kind != EX_INDEX || value->kind != EX_BINARY)
+	{
+		return 0;
+	}
+
+	TypeKind k = target->type.kind;
+	if (ty_is_managed(k) || ty_is_float(k) || value->type.kind != k)
+	{
+		return 0;   /* Integer elements, no width coercion between the op and the store. */
+	}
+
+	const char *mnem = cg_inplace_mnem(value->op);
+	if (!mnem)
+	{
+		return 0;
+	}
+
+	const Expr *inner = NULL;
+	if (cg_expr_eq(value->lhs, target))
+	{
+		inner = value->lhs;                          /* arr[X] op V (any of the six ops). */
+	}
+	else if ((value->op == TOKEN_PLUS || value->op == TOKEN_STAR || value->op == TOKEN_AMP
+			  || value->op == TOKEN_PIPE || value->op == TOKEN_CARET)
+			 && cg_expr_eq(value->rhs, target))
+	{
+		inner = value->rhs;                          /* V op arr[X], commutative -> arr[X] op V. */
+	}
+
+	if (!inner)
+	{
+		return 0;
+	}
+
+	Expr *other = (inner == value->lhs) ? value->rhs : value->lhs;
+	cg_expr(cg, tt, other);                  /* rax = V (the non-element operand). */
+	cg_temp_push(cg);                        /* Save V across the address computation. */
+	cg_index_addr(cg, tt, target);           /* rbx = &elem; ONE bounds check. */
+	cg_temp_pop_reg(cg, "rcx");              /* rcx = V. */
+	cg_load_scalar(cg, k, "[rbx]");          /* rax = elem (width-correct). */
+	cg_emit(cg, "    %s rax, rcx", mnem);    /* rax = elem op V. */
+	cg_extend_reg(cg, k);                    /* Re-narrow to the element width. */
+	cg_store_scalar(cg, k, "[rbx]");
+	return 1;
+}
+
 /* Store a +1 object into an object-typed target, releasing the previous occupant
    and any owned receiver temporary. */
 static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
@@ -7624,6 +7728,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 				 && cg_fp_load_into_home(cg, s->target->anno_int, s->target->type.kind, s->value))
 		{
 			/* Element loaded straight into the target's XMM home. */
+		}
+		else if (cg_try_rmw_index(cg,tt,s->target,s->value))
+		{
+			/* arr[X] = arr[X] op V fused: one indexed address, one bounds check. */
 		}
 		else
 		{
