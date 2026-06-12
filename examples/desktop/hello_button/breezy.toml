@@ -1,0 +1,7 @@
+# GTK is loaded dynamically by the Breezy runtime, so no [link] entries are
+# needed here. The only requirement is that the GTK3 runtime libraries are
+# installed and discoverable at run time:
+#   Linux (KDE/GNOME): libgtk-3-0 (usually already present).
+#   Windows: an MSYS2 GTK3 runtime on PATH (libgtk-3-0.dll and its deps).
+[link]
+libs = []

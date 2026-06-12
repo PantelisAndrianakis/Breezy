@@ -1,0 +1,39 @@
+// Hello-button: a titled window with one button. Each click prints to the
+// console via a Breezy ActionListener dispatched by Desktop.run(). Closing the
+// window ends run(). Run on Windows and Linux KDE (GTK3 runtime must be present
+// at run time; it is loaded dynamically).
+
+class ClickPrinter implements ActionListener
+{
+	int count;
+
+	void actionPerformed(ActionEvent e)
+	{
+		this.count = this.count + 1;
+		print("Clicked ");
+		print(this.count);
+	}
+}
+
+void main()
+{
+	if (not Desktop.isEnabled())
+	{
+		print("No desktop available (headless).");
+		return;
+	}
+
+	Frame frame = new Frame();
+	frame.setTitle("Breezy Desktop — Hello");
+	frame.setSize(320, 160);
+
+	Button button = new Button();
+	button.setText("Click me");
+	button.addActionListener(new ClickPrinter());
+
+	frame.add(button);          // BorderLayout center.
+	frame.show();
+
+	Desktop.run();              // Parks here, dispatching clicks until the window closes.
+	print("Window closed. Bye.");
+}

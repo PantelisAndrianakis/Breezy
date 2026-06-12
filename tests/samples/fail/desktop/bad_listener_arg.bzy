@@ -1,0 +1,9 @@
+// Passing a non-listener to addActionListener must be rejected. References
+// Desktop so the prelude is injected (otherwise Button would be unknown for a
+// different reason). The integer argument is the intended error.
+void main()
+{
+	bool e = Desktop.isEnabled();
+	Button b = new Button();
+	b.addActionListener(42);   // int is not an ActionListener -> compile error.
+}
