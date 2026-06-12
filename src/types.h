@@ -69,12 +69,15 @@ typedef struct
 } FuncInfo;
 typedef struct
 {
-	ClassInfo classes[MAX_CLASSES];
+	ClassInfo **classes;           /* Stable heap objects: the pointer array grows, the objects never move. */
 	int class_count;
-	FuncInfo  funcs[MAX_FUNCS];
+	int classes_cap;
+	FuncInfo  **funcs;
 	int func_count;
-	InterfaceInfo interfaces[64];
+	int funcs_cap;
+	InterfaceInfo **interfaces;
 	int interface_count;
+	int interfaces_cap;
 	int iface_slots;               /* K: total interface methods = reserved vtable slots [0..K). */
 	TypeRef shared_containers[256];   /* Builtin container types (array/map/List/...) that may cross cores. */
 	int     shared_container_count;

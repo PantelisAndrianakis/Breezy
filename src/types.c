@@ -14,16 +14,49 @@ static void add_param_type(TypeRef **arr, int *cap, int idx, TypeRef t)
 
 void types_init(TypeTable *tt)
 {
+	tt->classes = NULL;
 	tt->class_count = 0;
+	tt->classes_cap = 0;
+	tt->funcs = NULL;
 	tt->func_count = 0;
+	tt->funcs_cap = 0;
+	tt->interfaces = NULL;
 	tt->interface_count = 0;
+	tt->interfaces_cap = 0;
 	tt->iface_slots = 0;
 	tt->shared_container_count = 0;
 }
 
+/* Append a freshly-allocated, zeroed entry to a stable-object table: the pointer
+   array grows (may realloc), but the returned object never moves, so pointers
+   held elsewhere (e.g. ClassInfo.parent) stay valid. */
+static ClassInfo *tt_add_class(TypeTable *tt)
+{
+	tt->classes = grow_ensure(tt->classes, tt->class_count, &tt->classes_cap, sizeof(ClassInfo *));
+	ClassInfo *c = calloc(1, sizeof(ClassInfo));
+	tt->classes[tt->class_count++] = c;
+	return c;
+}
+
+static FuncInfo *tt_add_func(TypeTable *tt)
+{
+	tt->funcs = grow_ensure(tt->funcs, tt->func_count, &tt->funcs_cap, sizeof(FuncInfo *));
+	FuncInfo *f = calloc(1, sizeof(FuncInfo));
+	tt->funcs[tt->func_count++] = f;
+	return f;
+}
+
+static InterfaceInfo *tt_add_interface(TypeTable *tt)
+{
+	tt->interfaces = grow_ensure(tt->interfaces, tt->interface_count, &tt->interfaces_cap, sizeof(InterfaceInfo *));
+	InterfaceInfo *it = calloc(1, sizeof(InterfaceInfo));
+	tt->interfaces[tt->interface_count++] = it;
+	return it;
+}
+
 void types_register_builtins(TypeTable *tt)
 {
-	ClassInfo *c = &tt->classes[tt->class_count++];
+	ClassInfo *c = tt_add_class(tt);
 	memset(c, 0, sizeof(*c));
 	strcpy(c->name, "Exception");
 	c->parent = NULL;
@@ -35,7 +68,7 @@ void types_register_builtins(TypeTable *tt)
 	c->vtable_size = 0;
 	c->method_count = 0;
 
-	ClassInfo *o = &tt->classes[tt->class_count++];
+	ClassInfo *o = tt_add_class(tt);
 	memset(o, 0, sizeof(*o));
 	strcpy(o->name, "IndexOutOfBounds");
 	o->parent = c;                       /* `c` is the Exception entry above. */
@@ -47,7 +80,7 @@ void types_register_builtins(TypeTable *tt)
 	o->vtable_size = 0;
 	o->method_count = 0;
 
-	ClassInfo *io = &tt->classes[tt->class_count++];
+	ClassInfo *io = tt_add_class(tt);
 	memset(io, 0, sizeof(*io));
 	strcpy(io->name, "IOException");
 	io->parent = c;                      /* Subclass of Exception. */
@@ -59,7 +92,7 @@ void types_register_builtins(TypeTable *tt)
 	io->vtable_size = 0;
 	io->method_count = 0;
 
-	ClassInfo *nf = &tt->classes[tt->class_count++];
+	ClassInfo *nf = tt_add_class(tt);
 	memset(nf, 0, sizeof(*nf));
 	strcpy(nf->name, "NumberFormatException");
 	nf->parent = c;                      /* Subclass of Exception. */
@@ -76,9 +109,9 @@ ClassInfo *types_find_class(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->class_count; i++)
 	{
-		if (strcmp(tt->classes[i].name,name)==0)
+		if (strcmp(tt->classes[i]->name,name)==0)
 		{
-			return &tt->classes[i];
+			return tt->classes[i];
 		}
 	}
 
@@ -243,7 +276,7 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 	   every breeze with no handoff point); spawned functions' parameter types. */
 	for (int ci=0; ci<tt->class_count; ci++)
 	{
-		ClassInfo *c=&tt->classes[ci];
+		ClassInfo *c=tt->classes[ci];
 		for (int fi=0; fi<c->field_count; fi++)
 		{
 			seed_shared_from_typeref(tt,&c->fields[fi].type);
@@ -274,7 +307,7 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 
 	for (int fi=0; fi<tt->func_count; fi++)
 	{
-		FuncInfo *f=&tt->funcs[fi];
+		FuncInfo *f=tt->funcs[fi];
 		seed_shared_from_typeref(tt,&f->ret_type);
 		for (int pi=0; pi<f->param_count; pi++)
 		{
@@ -314,7 +347,7 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 		g_shared_changed=0;
 		for (int ci=0; ci<tt->class_count; ci++)
 		{
-			ClassInfo *c=&tt->classes[ci];
+			ClassInfo *c=tt->classes[ci];
 			if (!c->is_shared)
 			{
 				continue;
@@ -357,9 +390,9 @@ FuncInfo *types_find_func(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->func_count; i++)
 	{
-		if (strcmp(tt->funcs[i].name,name)==0)
+		if (strcmp(tt->funcs[i]->name,name)==0)
 		{
-			return &tt->funcs[i];
+			return tt->funcs[i];
 		}
 	}
 
@@ -371,7 +404,7 @@ int types_func_overload_count(TypeTable *tt, const char *name)
 	int n=0;
 	for (int i=0; i<tt->func_count; i++)
 	{
-		if (strcmp(tt->funcs[i].name,name)==0)
+		if (strcmp(tt->funcs[i]->name,name)==0)
 		{
 			n++;
 		}
@@ -385,11 +418,11 @@ FuncInfo *types_find_func_idx(TypeTable *tt, const char *name, int idx)
 	int n=0;
 	for (int i=0; i<tt->func_count; i++)
 	{
-		if (strcmp(tt->funcs[i].name,name)==0)
+		if (strcmp(tt->funcs[i]->name,name)==0)
 		{
 			if (n==idx)
 			{
-				return &tt->funcs[i];
+				return tt->funcs[i];
 			}
 
 			n++;
@@ -468,26 +501,14 @@ void types_register_unit_names(TypeTable *tt, Unit *u)
 			exit(1);
 		}
 
-		if (tt->class_count>=MAX_CLASSES)
-		{
-			fprintf(stderr,"Too many classes.\n");
-			exit(1);
-		}
-
-		ClassInfo *c=&tt->classes[tt->class_count++];
+		ClassInfo *c=tt_add_class(tt);
 		memset(c,0,sizeof(*c));
 		strcpy(c->name,u->klasses[ci]->name);
 	}
 
 	for (int i=0; i<u->func_count; i++)
 	{
-		if (tt->func_count>=MAX_FUNCS)
-		{
-			fprintf(stderr,"Too many funcs.\n");
-			exit(1);
-		}
-
-		FuncInfo *fi=&tt->funcs[tt->func_count++];
+		FuncInfo *fi=tt_add_func(tt);
 		memset(fi,0,sizeof(*fi));
 		strcpy(fi->name,u->funcs[i]->name);
 	}
@@ -497,9 +518,9 @@ InterfaceInfo *types_find_interface(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->interface_count; i++)
 	{
-		if (strcmp(tt->interfaces[i].name,name)==0)
+		if (strcmp(tt->interfaces[i]->name,name)==0)
 		{
-			return &tt->interfaces[i];
+			return tt->interfaces[i];
 		}
 	}
 
@@ -517,7 +538,7 @@ int types_is_interface(TypeTable *tt, const char *name)
    offsets for key_kind==3 keys. Must run once, before types_register_interfaces. */
 void types_reserve_hashable(TypeTable *tt)
 {
-	InterfaceInfo *itf=&tt->interfaces[tt->interface_count++];
+	InterfaceInfo *itf=tt_add_interface(tt);
 	memset(itf,0,sizeof(*itf));
 	strcpy(itf->name,"__Hashable");
 	itf->method_count=2;
@@ -539,13 +560,7 @@ void types_register_interfaces(TypeTable *tt, Unit *u)
 	for (int i=0; i<u->interface_count; i++)
 	{
 		InterfaceDecl *d=u->interfaces[i];
-		if (tt->interface_count>=64)
-		{
-			fprintf(stderr,"Too many interfaces.\n");
-			exit(1);
-		}
-
-		InterfaceInfo *itf=&tt->interfaces[tt->interface_count++];
+		InterfaceInfo *itf=tt_add_interface(tt);
 		memset(itf,0,sizeof(*itf));
 		strcpy(itf->name,d->name);
 		itf->method_count=d->method_count;
@@ -609,9 +624,9 @@ static FuncInfo *find_unfilled_func(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->func_count; i++)
 	{
-		if (strcmp(tt->funcs[i].name,name)==0 && tt->funcs[i].ast==NULL)
+		if (strcmp(tt->funcs[i]->name,name)==0 && tt->funcs[i]->ast==NULL)
 		{
-			return &tt->funcs[i];
+			return tt->funcs[i];
 		}
 	}
 
@@ -669,11 +684,11 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 	   not be overloaded. Each name is processed once, at its first occurrence. */
 	for (int i=0; i<tt->func_count; i++)
 	{
-		const char *nm=tt->funcs[i].name;
+		const char *nm=tt->funcs[i]->name;
 		int seen_earlier=0;
 		for (int j=0; j<i; j++)
 		{
-			if (strcmp(tt->funcs[j].name,nm)==0)
+			if (strcmp(tt->funcs[j]->name,nm)==0)
 			{
 				seen_earlier=1;
 				break;
@@ -746,7 +761,7 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 	/* Everything starts done (builtins, enum classes); user-declared classes pend. */
 	for (int ci=0; ci<tt->class_count; ci++)
 	{
-		tt->classes[ci].members_done=1;
+		tt->classes[ci]->members_done=1;
 	}
 
 	int pending=0;

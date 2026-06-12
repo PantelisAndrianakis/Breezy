@@ -2938,7 +2938,7 @@ static int method_is_monomorphic(TypeTable *tt, const char *class_name, const ch
 
 	for (int i = 0; i < tt->class_count; i++)
 	{
-		ClassInfo *d = &tt->classes[i];
+		ClassInfo *d = tt->classes[i];
 		if (d == base)
 		{
 			continue;
@@ -9080,9 +9080,9 @@ static int cg_tt_has_statics(TypeTable *tt)
 {
 	for (int i=0; i<tt->class_count; i++)
 	{
-		for (int k=0; k<tt->classes[i].field_count; k++)
+		for (int k=0; k<tt->classes[i]->field_count; k++)
 		{
-			if (tt->classes[i].fields[k].is_static)
+			if (tt->classes[i]->fields[k].is_static)
 			{
 				return 1;
 			}
@@ -9462,9 +9462,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 				FuncInfo *fi=NULL;
 				for (int q=0; q<tt->func_count; q++)
 				{
-					if (tt->funcs[q].ast==f)   /* Match this exact overload by AST identity. */
+					if (tt->funcs[q]->ast==f)   /* Match this exact overload by AST identity. */
 					{
-						fi=&tt->funcs[q];
+						fi=tt->funcs[q];
 						break;
 					}
 				}
@@ -9527,13 +9527,13 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"section .data");
 	for (int i=0; i<tt->class_count; i++)
 	{
-		cg_emit_vtable(cg,&tt->classes[i]);
+		cg_emit_vtable(cg,tt->classes[i]);
 	}
 
 	cg_emit(cg,"__bzy_vtable_parents:");           /* (child vtable, parent vtable) pairs for is-a. */
 	for (int i=0; i<tt->class_count; i++)
 	{
-		ClassInfo *c = &tt->classes[i];
+		ClassInfo *c = tt->classes[i];
 		cg_emit(cg,"    dq __vtable_%s", c->name);
 		if (c->parent)
 		{
