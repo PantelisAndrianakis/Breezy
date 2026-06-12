@@ -268,12 +268,15 @@ typedef struct
 	char type_params[MAX_TYPE_PARAMS][64];        /* Generic class: parameter names, e.g. "T". */
 	char type_param_bounds[MAX_TYPE_PARAMS][64];  /* Interface bound per param, or "" if none. */
 	int  type_param_count;                        /* 0 = ordinary (non-generic) class. */
-	Field fields[32];
+	Field *fields;            /* Grown via class_add_field. */
 	int field_count;
-	Func *methods[32];
+	int fields_cap;
+	Func **methods;           /* Grown via class_add_method. */
 	int method_count;
-	Func *ctors[8];           /* Overloaded constructors, declaration order; ret_type is TY_VOID. */
+	int methods_cap;
+	Func **ctors;             /* Overloaded constructors, declaration order; ret_type is TY_VOID. */
 	int ctor_count;
+	int ctors_cap;
 	Func *ctor;               /* Legacy alias = ctors[0] when ctor_count >= 1, else NULL. */
 } ClassDecl;
 
@@ -328,6 +331,9 @@ Block *block_new(void);
 void   block_push(Block *b, Stmt *s);
 Param *func_add_param(Func *f);          /* Grow f->params by one; returns the zeroed new slot. */
 void   expr_add_arg(Expr *e, Expr *a);   /* Append a to e->args, growing as needed. */
+Field *class_add_field(ClassDecl *c);    /* Grow c->fields by one; returns the zeroed new slot. */
+void   class_add_method(ClassDecl *c, Func *m);
+void   class_add_ctor(ClassDecl *c, Func *f);
 Func  *func_new(void);
 ClassDecl *class_new(void);
 InterfaceDecl *interface_new(void);

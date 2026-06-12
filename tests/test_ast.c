@@ -25,7 +25,7 @@ static void test_class_holds_methods(void)
 {
 	ClassDecl *c = class_new();
 	strcpy(c->name, "Dog");
-	c->methods[c->method_count++] = func_new();
+	class_add_method(c, func_new());
 	strcpy(c->methods[0]->name, "speak");
 	ASSERT_STR(c->name, "Dog");
 	ASSERT_STR(c->methods[0]->name, "speak");

@@ -1529,7 +1529,7 @@ static ClassDecl *parse_class(Parser *p)
 				fprintf(stderr,"Too many constructors.\n");
 				exit(1);
 			}
-			c->ctors[c->ctor_count++]=f;
+			class_add_ctor(c,f);
 			c->ctor=c->ctors[0];   /* Legacy alias. */
 			continue;
 		}
@@ -1559,12 +1559,7 @@ static ClassDecl *parse_class(Parser *p)
 			expect(p,TOKEN_RPAREN);
 			f->body=parse_block(p);
 			f->is_static=member_static;
-			if (c->method_count>=32)
-			{
-				fprintf(stderr,"Too many methods.\n");
-				exit(1);
-			}
-			c->methods[c->method_count++]=f;
+			class_add_method(c,f);
 		}
 		else
 		{
@@ -1575,16 +1570,11 @@ static ClassDecl *parse_class(Parser *p)
 			}
 
 			expect(p,TOKEN_SEMICOLON);
-			if (c->field_count>=32)
-			{
-				fprintf(stderr,"Too many fields.\n");
-				exit(1);
-			}
-			c->fields[c->field_count].type=ty;
-			strcpy(c->fields[c->field_count].name,mname.text);
-			c->fields[c->field_count].is_static=member_static;
-			c->fields[c->field_count].init=init;
-			c->field_count++;
+			Field *fl=class_add_field(c);
+			fl->type=ty;
+			strcpy(fl->name,mname.text);
+			fl->is_static=member_static;
+			fl->init=init;
 		}
 	}
 	expect(p,TOKEN_RBRACE);

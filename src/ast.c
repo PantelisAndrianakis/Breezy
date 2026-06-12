@@ -217,22 +217,53 @@ Func *func_clone(const Func *f)
 	return n;
 }
 
+Field *class_add_field(ClassDecl *c)
+{
+	c->fields=grow_ensure(c->fields,c->field_count,&c->fields_cap,sizeof(Field));
+	Field *f=&c->fields[c->field_count++];
+	memset(f,0,sizeof(*f));
+	return f;
+}
+
+void class_add_method(ClassDecl *c, Func *m)
+{
+	c->methods=grow_ensure(c->methods,c->method_count,&c->methods_cap,sizeof(Func *));
+	c->methods[c->method_count++]=m;
+}
+
+void class_add_ctor(ClassDecl *c, Func *f)
+{
+	c->ctors=grow_ensure(c->ctors,c->ctor_count,&c->ctors_cap,sizeof(Func *));
+	c->ctors[c->ctor_count++]=f;
+}
+
 ClassDecl *classdecl_clone(const ClassDecl *c)
 {
 	ClassDecl *n=class_new();
-	*n=*c;
+	*n=*c;                                   /* Aliases fields/methods/ctors pointers until reset below. */
+	n->fields=NULL;
+	n->field_count=0;
+	n->fields_cap=0;
+	n->methods=NULL;
+	n->method_count=0;
+	n->methods_cap=0;
+	n->ctors=NULL;
+	n->ctor_count=0;
+	n->ctors_cap=0;
 	for (int i=0; i<c->field_count; i++)
 	{
-		n->fields[i].type=typeref_deepcopy(&c->fields[i].type);
+		Field *fl=class_add_field(n);
+		*fl=c->fields[i];
+		fl->type=typeref_deepcopy(&c->fields[i].type);
 	}
 	for (int i=0; i<c->method_count; i++)
 	{
-		n->methods[i]=func_clone(c->methods[i]);
+		class_add_method(n,func_clone(c->methods[i]));
 	}
 	for (int i=0; i<c->ctor_count; i++)
 	{
-		n->ctors[i]=func_clone(c->ctors[i]);
+		class_add_ctor(n,func_clone(c->ctors[i]));
 	}
-	n->ctor = c->ctor_count ? n->ctors[0] : NULL;
+	n->ctor = n->ctor_count ? n->ctors[0] : NULL;
 	return n;
 }

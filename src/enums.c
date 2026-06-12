@@ -24,11 +24,12 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 		strcpy(c->implements[i],e->implements[i]);
 	}
 
-	c->fields[0].type.kind=TY_INT;
-	strcpy(c->fields[0].name,"__ordinal");
-	c->fields[1].type.kind=TY_STRING;
-	strcpy(c->fields[1].name,"__name");
-	c->field_count=2;
+	Field *fo=class_add_field(c);
+	fo->type.kind=TY_INT;
+	strcpy(fo->name,"__ordinal");
+	Field *fnm=class_add_field(c);
+	fnm->type.kind=TY_STRING;
+	strcpy(fnm->name,"__name");
 	for (int i=0; i<e->field_count; i++)
 	{
 		if (strcmp(e->fields[i].name,"__ordinal")==0 || strcmp(e->fields[i].name,"__name")==0)
@@ -37,7 +38,8 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 			exit(1);
 		}
 
-		c->fields[c->field_count++]=e->fields[i];
+		Field *ff=class_add_field(c);
+		*ff=e->fields[i];
 	}
 
 	for (int i=0; i<e->method_count; i++)
@@ -49,12 +51,12 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 			exit(1);
 		}
 
-		c->methods[c->method_count++]=func_clone(e->methods[i]);
+		class_add_method(c,func_clone(e->methods[i]));
 	}
 
 	if (e->ctor)
 	{
-		c->ctors[c->ctor_count++]=func_clone(e->ctor);
+		class_add_ctor(c,func_clone(e->ctor));
 		c->ctor=c->ctors[0];
 	}
 	return c;
@@ -78,12 +80,12 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 			exit(1);
 		}
 
-		c->methods[c->method_count++]=func_clone(k->overrides[i]);
+		class_add_method(c,func_clone(k->overrides[i]));
 	}
 
 	if (e->ctor)
 	{
-		c->ctors[c->ctor_count++]=func_clone(e->ctor);
+		class_add_ctor(c,func_clone(e->ctor));
 		c->ctor=c->ctors[0];
 	}
 	return c;

@@ -87,7 +87,7 @@ static void lower_class(Unit **units, int total, ClassDecl *c)
 		f->ret_type.kind=TY_VOID;
 		strcpy(f->name,c->name);
 		f->body=block_new();
-		c->ctors[c->ctor_count++]=f;
+		class_add_ctor(c,f);
 		c->ctor=c->ctors[0];
 	}
 
