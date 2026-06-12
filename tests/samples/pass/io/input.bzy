@@ -1,0 +1,11 @@
+// input() reads one line from stdin as a string; toInt() parses a numeric line.
+void main()
+{
+	string name = input();
+	int n = input().toInt();
+	string rest = input();
+
+	print("Hi " + name);
+	print(n * 2);
+	print("[" + rest + "]");
+}

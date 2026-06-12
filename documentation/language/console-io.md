@@ -1,6 +1,6 @@
 # Console I/O
 
-Reading from and writing to the console needs **no imports and no ceremony**. `print`, `input`, and `inputInt` are built into the language - call them anywhere.
+Reading from and writing to the console needs **no imports and no ceremony**. `print` and `input` are built into the language - call them anywhere.
 
 ← [Back to the guide](../guide.md)
 
@@ -49,33 +49,29 @@ void main()
 }
 ```
 
----
-
-## inputInt - read a number
-
-`inputInt()` reads a line and returns it as an `int`, saving you a manual parse:
+To read a number, parse the line with a string method such as `toInt()`:
 
 ```breezy
 void main()
 {
 	print("Enter a number:");
 
-	int n = inputInt();                  // Reads an integer.
+	int n = input().toInt();             // Reads a line, then parses it.
 
 	print(n + n);                    // Prints double the number.
 }
 ```
 
-If you need to parse text you already have (rather than read a fresh line), use the string parsing methods such as `toInt()` - see [Strings](../types/strings.md).
+`toInt()` throws a catchable `NumberFormatException` on malformed input; see [Strings](../types/strings.md) for the full set (`toLong`, `toDouble`, …).
 
 ---
 
 ## Rules & gotchas
 
-- **No imports needed** - `print`, `input`, and `inputInt` are part of the language.
+- **No imports needed** - `print` and `input` are part of the language.
 - **`print` adds a newline** automatically.
 - **Build composite output with `+`**: when one side is a string, a number or bool on the other side is converted to text, so `"x = " + x` produces a `string`.
-- **`input` returns a `string`; `inputInt` returns an `int`.** To read other numeric types, read a line with `input()` and parse it with the appropriate [string method](../types/strings.md).
+- **`input` returns a `string`** (the line, without its trailing newline), and returns an empty string at end of input. To read a number, parse it with the appropriate [string method](../types/strings.md) such as `toInt()`.
 
 ---
 

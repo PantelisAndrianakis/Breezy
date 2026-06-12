@@ -27,6 +27,16 @@ check() {
     if [ "$got" == "$expected" ]; then echo "  $name: OK"
     else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
 }
+check_in() {
+    # Like check, but feeds $3 to the program's stdin (for input()).
+    local name="$1" target="$2" stdin="$3" expected="$4"
+    bzy_build "$target"
+    if [ $? -ne 0 ]; then echo "  $name: COMPILE FAILED"; fail=1; return; fi
+    local got; got="$(printf '%s' "$stdin" | ./out.exe)"
+    got="${got//$'\r'/}"   # Normalize Windows CRLF line endings to LF.
+    if [ "$got" == "$expected" ]; then echo "  $name: OK"
+    else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
+}
 check_fail() {
     local name="$1" target="$2"
     ./breezy "$target" >/dev/null 2>&1
@@ -88,6 +98,7 @@ check datetime_before tests/samples/pass/datetime/epoch_before.bzy  $'1960\n3\n1
 check datetime_roundtrip tests/samples/pass/datetime/roundtrip.bzy  $'2024\n2\n29\n23\n59\n59\n31\n7'
 check datetime_mutate tests/samples/pass/datetime/mutate.bzy        $'2027\n1\n2\n1\n3\n0\n2\n28\n2025\n2\n28\n2\n2'
 check datetime_cmpfmt tests/samples/pass/datetime/compare_format.bzy $'true\ntrue\ntrue\nfalse\n2026-06-12 14:30:09\n2026/06/12 14:30'
+check_in io_input tests/samples/pass/io/input.bzy $'Breezy\n21\nlast line\n' $'Hi Breezy\n42\n[last line]'
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
 check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check_fail desktop_bad_listener tests/samples/fail/desktop/bad_listener_arg.bzy

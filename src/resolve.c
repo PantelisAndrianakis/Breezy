@@ -2513,6 +2513,17 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (strcmp(e->name,"input")==0)
+		{
+			if (e->arg_count!=0)
+			{
+				die(e->line,"Input takes no arguments.",NULL);
+			}
+
+			e->type.kind=TY_STRING;
+			break;
+		}
+
 		if (strcmp(e->name,"length")==0)
 		{
 			if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)

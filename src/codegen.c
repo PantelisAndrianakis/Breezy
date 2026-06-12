@@ -5512,6 +5512,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_print(cg,tt,e);
 		}
+		else if (strcmp(e->name,"input")==0)
+		{
+			cg_aligned_call(cg,"bzy_input_line");   /* Owned (+1) string in rax. */
+		}
 		else if (strcmp(e->name,"liveCount")==0)
 		{
 			cg_emit(cg,"    call bzy_live_count");
@@ -9321,6 +9325,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_from_f64");
 	cg_emit(cg,"extern bzy_str_len");
 	cg_emit(cg,"extern bzy_print_str");
+	cg_emit(cg,"extern bzy_input_line");
 	cg_emit(cg,"extern bzy_sb_new");
 	cg_emit(cg,"extern bzy_sb_append");
 	cg_emit(cg,"extern bzy_sb_to_string");
