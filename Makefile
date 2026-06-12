@@ -80,8 +80,8 @@ release: src/main.c $(OBJS) $(LIB)
 $(OBJDIR)/test_lexer: tests/test_lexer.c src/lexer.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_lexer.c src/lexer.c
 
-$(OBJDIR)/test_ast: tests/test_ast.c src/ast.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -o $@ tests/test_ast.c src/ast.c
+$(OBJDIR)/test_ast: tests/test_ast.c src/ast.c src/grow.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_ast.c src/ast.c src/grow.c
 
 $(OBJDIR)/test_config: tests/test_config.c src/config.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_config.c src/config.c

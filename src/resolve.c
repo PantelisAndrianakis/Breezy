@@ -851,7 +851,7 @@ static void fill_default_args(SymTable *st, Expr *e, Func *ast, const char *tc)
 
 		Expr *copy = expr_clone(d);
 		resolve_expr(st, copy, tc);
-		e->args[e->arg_count++] = copy;
+		expr_add_arg(e, copy);
 	}
 }
 

@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "grow.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -117,6 +118,20 @@ TypeRef typeref_deepcopy(const TypeRef *t)
 	return r;
 }
 
+Param *func_add_param(Func *f)
+{
+	f->params=grow_ensure(f->params,f->param_count,&f->param_cap,sizeof(Param));
+	Param *p=&f->params[f->param_count++];
+	memset(p,0,sizeof(*p));
+	return p;
+}
+
+void expr_add_arg(Expr *e, Expr *a)
+{
+	e->args=grow_ensure(e->args,e->arg_count,&e->arg_cap,sizeof(Expr *));
+	e->args[e->arg_count++]=a;
+}
+
 Expr *expr_clone(const Expr *e)
 {
 	if (!e)
@@ -125,13 +140,16 @@ Expr *expr_clone(const Expr *e)
 	}
 
 	Expr *n=expr_new(e->kind,e->line);
-	*n=*e;                                   /* Shallow copy scalars + arrays. */
+	*n=*e;                                   /* Shallow copy scalars; args pointer aliases e until reset. */
+	n->args=NULL;                            /* Own buffer: rebuild rather than alias e->args. */
+	n->arg_count=0;
+	n->arg_cap=0;
 	n->type=typeref_deepcopy(&e->type);
 	n->lhs=expr_clone(e->lhs);
 	n->rhs=expr_clone(e->rhs);
 	for (int i=0; i<e->arg_count; i++)
 	{
-		n->args[i]=expr_clone(e->args[i]);
+		expr_add_arg(n,expr_clone(e->args[i]));
 	}
 	return n;
 }
@@ -184,11 +202,16 @@ Func *func_clone(const Func *f)
 
 	Func *n=func_new();
 	*n=*f;
+	n->params=NULL;                          /* Own buffer: rebuild rather than alias f->params. */
+	n->param_count=0;
+	n->param_cap=0;
 	n->ret_type=typeref_deepcopy(&f->ret_type);
 	for (int i=0; i<f->param_count; i++)
 	{
-		n->params[i].type=typeref_deepcopy(&f->params[i].type);
-		n->params[i].def=expr_clone(f->params[i].def);
+		Param *p=func_add_param(n);
+		*p=f->params[i];                     /* Name + scalars. */
+		p->type=typeref_deepcopy(&f->params[i].type);
+		p->def=expr_clone(f->params[i].def);
 	}
 	n->body=block_clone(f->body);
 	return n;

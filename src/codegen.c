@@ -9030,10 +9030,9 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 			strcpy(tmp.name,e->const_class[k]);
 			tmp.type.kind=TY_OBJECT;
 			strcpy(tmp.type.class_name,e->const_class[k]);
-			tmp.arg_count=e->const_argc[k];
 			for (int a=0; a<e->const_argc[k]; a++)
 			{
-				tmp.args[a]=e->const_args[k][a];
+				expr_add_arg(&tmp, e->const_args[k][a]);
 			}
 
 			cg_new(cg,tt,&tmp);                                /* Owned object -> rax. */

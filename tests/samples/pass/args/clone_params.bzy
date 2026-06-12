@@ -1,0 +1,20 @@
+// A generic class instantiated twice exercises the Func/Expr clone deep-copy:
+// each monomorphization clones the methods, so the cloned set/get must own their
+// params buffers rather than alias the template's.
+
+class Wrap<T>
+{
+	T v;
+	void set(T x) { this.v = x; }
+	T get() { return this.v; }
+}
+
+void main()
+{
+	Wrap<int> a = new Wrap<int>();
+	a.set(7);
+	Wrap<long> b = new Wrap<long>();
+	b.set(9L);
+	print(a.get());   // 7
+	print(b.get());   // 9
+}

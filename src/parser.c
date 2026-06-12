@@ -48,7 +48,7 @@ static Token expect(Parser *p, TokenType tt)
 	if (p->cur.type != tt)
 	{
 		fprintf(stderr, "line %d: Expected '%s', got '%s'\n",
-				p->cur.line, token_type_name(tt), token_type_name(p->cur.type));
+		        p->cur.line, token_type_name(tt), token_type_name(p->cur.type));
 		exit(1);
 	}
 	Token t = p->cur;
@@ -77,7 +77,7 @@ static Expr *parse_multiplicative(Parser *p);
 static Expr *parse_unary(Parser *p);
 static Expr *parse_postfix(Parser *p);
 static Expr *parse_primary(Parser *p);
-static int   parse_args(Parser *p, Expr **out);
+static int   parse_args(Parser *p, Expr *e);
 static int   parse_type(Parser *p, TypeRef *out);
 static int   parse_base_type(Parser *p, TypeRef *out);
 static int   scalar_type_kind(TokenType t, TypeKind *out);
@@ -355,7 +355,7 @@ static Expr *parse_postfix(Parser *p)
 			Expr *call = expr_new(EX_METHOD_CALL, line);
 			strcpy(call->name, name.text);
 			call->lhs = e;
-			call->arg_count = parse_args(p, call->args);
+			call->arg_count = parse_args(p, call);
 			expect(p, TOKEN_RPAREN);
 			e = call;
 		}
@@ -379,24 +379,18 @@ static Expr *parse_postfix(Parser *p)
 	return e;
 }
 
-static int parse_args(Parser *p, Expr **out)
+static int parse_args(Parser *p, Expr *e)
 {
-	int n = 0;
 	if (check(p,TOKEN_RPAREN))
 	{
 		return 0;
 	}
 	do
 	{
-		if (n >= 8)
-		{
-			fprintf(stderr,"line %d: Too many args.\n",p->cur.line);
-			exit(1);
-		}
-		out[n++] = parse_expr(p);
+		expr_add_arg(e, parse_expr(p));
 	}
 	while (match(p,TOKEN_COMMA));
-	return n;
+	return e->arg_count;
 }
 
 /* The fixed set of compiler-known static namespaces. 5c/5d extend this. */
@@ -467,7 +461,7 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_LPAREN);
 			Expr *e=expr_new(EX_NEWCHANNEL,line);
 			e->type=et;                       /* Carries elem (T). */
-			e->args[e->arg_count++]=parse_expr(p);   /* Capacity. */
+			expr_add_arg(e, parse_expr(p));   /* Capacity. */
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
@@ -480,12 +474,7 @@ static Expr *parse_primary(Parser *p)
 			{
 				do
 				{
-					if (e->arg_count>=8)
-					{
-						fprintf(stderr,"line %d: Too many constructor arguments.\n",line);
-						exit(1);
-					}
-					e->args[e->arg_count++]=parse_expr(p);
+					expr_add_arg(e, parse_expr(p));
 				}
 				while (match(p,TOKEN_COMMA));
 			}
@@ -509,7 +498,7 @@ static Expr *parse_primary(Parser *p)
 		strcpy(e->name,et.class_name);        /* Object: et is an IDENT class. */
 		if (!check(p,TOKEN_RPAREN))
 		{
-			e->arg_count=parse_args(p,e->args);   /* Constructor arguments. */
+			e->arg_count=parse_args(p,e);   /* Constructor arguments. */
 		}
 
 		expect(p,TOKEN_RPAREN);
@@ -527,7 +516,7 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_LPAREN);
 			Expr *e=expr_new(EX_CALL,line);
 			snprintf(e->name,sizeof e->name,"%.31s.%.31s",ns,m.text);   /* Bounded to fit name[64] (ns/method are short). */
-			e->arg_count=parse_args(p,e->args);
+			e->arg_count=parse_args(p,e);
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
@@ -550,7 +539,7 @@ static Expr *parse_primary(Parser *p)
 			advance(p);
 			Expr *e=expr_new(EX_CALL,line);
 			strcpy(e->name,id.text);
-			e->arg_count=parse_args(p,e->args);
+			e->arg_count=parse_args(p,e);
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
@@ -622,12 +611,12 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 static int is_generic_template(const char *name)
 {
 	return strcmp(name,"Box")==0
-		   || strcmp(name,"List")==0
-		   || strcmp(name,"Stack")==0
-		   || strcmp(name,"Queue")==0
-		   || strcmp(name,"Deque")==0
-		   || strcmp(name,"ArrayDeque")==0
-		   || strcmp(name,"Set")==0;
+	       || strcmp(name,"List")==0
+	       || strcmp(name,"Stack")==0
+	       || strcmp(name,"Queue")==0
+	       || strcmp(name,"Deque")==0
+	       || strcmp(name,"ArrayDeque")==0
+	       || strcmp(name,"Set")==0;
 }
 
 /* Consume the single '>' that closes a generic type. Nested generics such as
@@ -1386,12 +1375,7 @@ static Func *parse_extern(Parser *p)
 	{
 		do
 		{
-			if (f->param_count>=8)
-			{
-				fprintf(stderr,"Too many params.\n");
-				exit(1);
-			}
-			Param *pm=&f->params[f->param_count++];
+			Param *pm=func_add_param(f);
 			parse_one_param(p,pm);
 		}
 		while (match(p,TOKEN_COMMA));
@@ -1413,12 +1397,7 @@ static Func *parse_function(Parser *p)
 	{
 		do
 		{
-			if (f->param_count>=8)
-			{
-				fprintf(stderr,"Too many params.\n");
-				exit(1);
-			}
-			Param *pm=&f->params[f->param_count++];
+			Param *pm=func_add_param(f);
 			parse_one_param(p,pm);
 		}
 		while (match(p,TOKEN_COMMA));
@@ -1446,13 +1425,8 @@ static InterfaceDecl *parse_interface(Parser *p)
 		{
 			do
 			{
-				if (m->param_count>=8)
-				{
-					fprintf(stderr,"Too many params.\n");
-					exit(1);
-				}
 
-				Param *pm=&m->params[m->param_count++];
+				Param *pm=func_add_param(m);
 				parse_one_param(p,pm);
 			}
 			while (match(p,TOKEN_COMMA));
@@ -1542,12 +1516,7 @@ static ClassDecl *parse_class(Parser *p)
 			{
 				do
 				{
-					if (f->param_count>=8)
-					{
-						fprintf(stderr,"Too many params.\n");
-						exit(1);
-					}
-					Param *pm=&f->params[f->param_count++];
+					Param *pm=func_add_param(f);
 					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
@@ -1582,12 +1551,7 @@ static ClassDecl *parse_class(Parser *p)
 			{
 				do
 				{
-					if (f->param_count>=8)
-					{
-						fprintf(stderr,"Too many params.\n");
-						exit(1);
-					}
-					Param *pm=&f->params[f->param_count++];
+					Param *pm=func_add_param(f);
 					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
@@ -1710,12 +1674,7 @@ static EnumDecl *parse_enum(Parser *p)
 					{
 						do
 						{
-							if (f->param_count>=8)
-							{
-								fprintf(stderr,"Too many params.\n");
-								exit(1);
-							}
-							Param *pm=&f->params[f->param_count++];
+							Param *pm=func_add_param(f);
 							parse_one_param(p,pm);
 						}
 						while (match(p,TOKEN_COMMA));
@@ -1749,12 +1708,7 @@ static EnumDecl *parse_enum(Parser *p)
 			{
 				do
 				{
-					if (f->param_count>=8)
-					{
-						fprintf(stderr,"Too many params.\n");
-						exit(1);
-					}
-					Param *pm=&f->params[f->param_count++];
+					Param *pm=func_add_param(f);
 					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));
@@ -1783,12 +1737,7 @@ static EnumDecl *parse_enum(Parser *p)
 			{
 				do
 				{
-					if (f->param_count>=8)
-					{
-						fprintf(stderr,"Too many params.\n");
-						exit(1);
-					}
-					Param *pm=&f->params[f->param_count++];
+					Param *pm=func_add_param(f);
 					parse_one_param(p,pm);
 				}
 				while (match(p,TOKEN_COMMA));

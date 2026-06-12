@@ -88,7 +88,7 @@ static inline int ty_bits(TypeKind k)
 static inline int ty_is_int(TypeKind k)
 {
 	return k == TY_BYTE || k == TY_SHORT || k == TY_INT || k == TY_LONG
-		   || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
+	       || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
 }
 
 /* True for the signed integer kinds. */
@@ -114,8 +114,8 @@ static inline int ty_is_float(TypeKind k)
 static inline int ty_is_managed(TypeKind k)
 {
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
-		   || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
-		   || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_LOGGER;
+	       || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
+	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_LOGGER;
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
@@ -167,8 +167,9 @@ struct Expr
 	int      op;              /* EX_BINARY/EX_UNARY: a TokenType. */
 	Expr    *lhs;             /* Binary left / unary operand / method-call|field receiver. */
 	Expr    *rhs;             /* Binary right. */
-	Expr    *args[8];         /* Call / method call. */
+	Expr   **args;            /* Call / method call; grown via expr_add_arg. */
 	int      arg_count;
+	int      arg_cap;
 	int      anno_nonneg;     /* Non-neg pass: 1 if this /,% node's dividend is provably >= 0. */
 	int      anno_index_safe; /* BCE pass: 1 if this EX_INDEX's index is provably in [0, length). */
 	int      anno_shared_gate;/* Resolver: EX_INDEX on a managed element of a maybe-shared array -> SHARED-bit gated access (owned result). */
@@ -224,8 +225,9 @@ typedef struct
 {
 	TypeRef ret_type;
 	char name[64];
-	Param   params[8];
+	Param  *params;           /* Grown via func_add_param; param_count live, param_cap allocated. */
 	int param_count;
+	int param_cap;
 	Block  *body;
 	int     is_extern;        /* FFI: declared with `extern`, no body; asm_label is the raw C symbol. */
 	int     is_blocking;      /* FFI: `extern blocking` — dispatch via the offload pool. */
@@ -324,6 +326,8 @@ TypeRef *typeref_box(TypeRef t);
 Stmt  *stmt_new(StmtKind kind, int line);
 Block *block_new(void);
 void   block_push(Block *b, Stmt *s);
+Param *func_add_param(Func *f);          /* Grow f->params by one; returns the zeroed new slot. */
+void   expr_add_arg(Expr *e, Expr *a);   /* Append a to e->args, growing as needed. */
 Func  *func_new(void);
 ClassDecl *class_new(void);
 InterfaceDecl *interface_new(void);
