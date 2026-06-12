@@ -3958,7 +3958,8 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (c->has_ctor)
 	{
-		cg_ctor_call(cg,tt,c->ctor_asm_label,e->args,e->arg_count,c->ctor_param_types,c->ctor_param_count);
+		MethodInfo *ct=&c->ctors[e->anno_overload];
+		cg_ctor_call(cg,tt,ct->asm_label,e->args,e->arg_count,ct->param_types,ct->param_count);
 	}
 }
 
@@ -9466,9 +9467,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 				cg_emit_func(cg,tt,mi->asm_label,m, mi->is_static ? NULL : c->name);   /* Static: no `this`. */
 			}
 
-			if (d->ctor)
+			for (int k=0; k<d->ctor_count; k++)
 			{
-				cg_emit_func(cg,tt,c->ctor_asm_label,d->ctor,c->name);
+				cg_emit_func(cg,tt,c->ctors[k].asm_label,d->ctors[k],c->name);
 			}
 
 			if (c->is_record)

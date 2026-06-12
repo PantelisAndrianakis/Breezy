@@ -98,8 +98,8 @@ $(OBJDIR)/test_reactor: tests/test_reactor.c runtime/pollstate.c runtime/pollsta
 $(OBJDIR)/test_parser: tests/test_parser.c src/lexer.c src/ast.c src/parser.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_parser.c src/lexer.c src/ast.c src/parser.c
 
-$(OBJDIR)/test_types: tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -o $@ tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c
+$(OBJDIR)/test_types: tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c src/overload.c | $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ tests/test_types.c src/lexer.c src/ast.c src/parser.c src/types.c src/overload.c
 
 $(OBJDIR)/test_resolve: tests/test_resolve.c $(OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ tests/test_resolve.c $(OBJS)

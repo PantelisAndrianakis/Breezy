@@ -80,45 +80,51 @@ static void lower_class(Unit **units, int total, ClassDecl *c)
 		return;
 	}
 
-	/* Only this class's own constructor runs at `new`, so it must exist. */
-	if (!c->ctor)
+	/* Only this class's own constructors run at `new`, so one must exist. */
+	if (c->ctor_count==0)
 	{
 		Func *f=func_new();
 		f->ret_type.kind=TY_VOID;
 		strcpy(f->name,c->name);
 		f->body=block_new();
-		c->ctor=f;
+		c->ctors[c->ctor_count++]=f;
+		c->ctor=c->ctors[0];
 	}
 
-	/* Rebuild the body: initializer assignments (ancestor-first, declaration
-	   order), then the original constructor statements. */
-	Block *nb=block_new();
-	for (int i=depth-1; i>=0; i--)
+	/* Rebuild EVERY constructor's body: initializer assignments (ancestor-first,
+	   declaration order), then that constructor's original statements. Each gets
+	   its own cloned initializers (make_init_assign deep-copies). */
+	for (int ctor_i=0; ctor_i<c->ctor_count; ctor_i++)
 	{
-		ClassDecl *a=chain[i];
-		if (a->is_static)
+		Func *ctor=c->ctors[ctor_i];
+		Block *nb=block_new();
+		for (int i=depth-1; i>=0; i--)
 		{
-			continue;
-		}
-
-		for (int k=0; k<a->field_count; k++)
-		{
-			Field *fl=&a->fields[k];
-			if (fl->is_static || !fl->init)
+			ClassDecl *a=chain[i];
+			if (a->is_static)
 			{
 				continue;
 			}
 
-			block_push(nb,make_init_assign(fl));
+			for (int k=0; k<a->field_count; k++)
+			{
+				Field *fl=&a->fields[k];
+				if (fl->is_static || !fl->init)
+				{
+					continue;
+				}
+
+				block_push(nb,make_init_assign(fl));
+			}
 		}
-	}
 
-	for (int i=0; i<c->ctor->body->count; i++)
-	{
-		block_push(nb,c->ctor->body->stmts[i]);
-	}
+		for (int i=0; i<ctor->body->count; i++)
+		{
+			block_push(nb,ctor->body->stmts[i]);
+		}
 
-	c->ctor->body=nb;
+		ctor->body=nb;
+	}
 }
 
 void fieldinit_expand(Unit **units, int total)

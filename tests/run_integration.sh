@@ -68,6 +68,8 @@ check ctor        tests/samples/pass/oop/proj_ctor      $'3
 7'
 check bare_field     tests/samples/pass/oop/bare_field.bzy     $'2\n1\n3'
 check default_args   tests/samples/pass/basics/proj_default_args  $'15\n6\n1\n2\n7\n2'
+check overload_ctor      tests/samples/pass/overload/ctor.bzy      $'7\n14'
+check_fail overload_ctor_dup tests/samples/fail/overload/ctor_dup.bzy
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
 check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check_fail desktop_bad_listener tests/samples/fail/desktop/bad_listener_arg.bzy

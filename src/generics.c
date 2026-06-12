@@ -344,9 +344,9 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 	{
 		subst_func(c->methods[i],t,targs);
 	}
-	if (c->ctor)
+	for (int i=0; i<c->ctor_count; i++)
 	{
-		subst_func(c->ctor,t,targs);
+		subst_func(c->ctors[i],t,targs);
 	}
 
 	Unit *u=unit_new();
@@ -510,7 +510,10 @@ static void rewrite_unit(Unit *u)
 			rewrite_func(c->methods[i]);
 		}
 
-		rewrite_func(c->ctor);
+		for (int i=0; i<c->ctor_count; i++)
+		{
+			rewrite_func(c->ctors[i]);
+		}
 	}
 
 	for (int i=0; i<u->interface_count; i++)

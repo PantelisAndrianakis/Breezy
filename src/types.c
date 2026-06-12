@@ -1,4 +1,5 @@
 #include "types.h"
+#include "overload.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -254,9 +255,12 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 			}
 		}
 
-		for (int pi=0; pi<c->ctor_param_count; pi++)
+		for (int ci=0; ci<c->ctor_count; ci++)
 		{
-			seed_shared_from_typeref(tt,&c->ctor_param_types[pi]);
+			for (int pi=0; pi<c->ctors[ci].param_count; pi++)
+			{
+				seed_shared_from_typeref(tt,&c->ctors[ci].param_types[pi]);
+			}
 		}
 	}
 
@@ -286,9 +290,9 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 				seed_shared_from_spawns(tt,d->methods[k]->body);
 			}
 
-			if (d->ctor)
+			for (int ci=0; ci<d->ctor_count; ci++)
 			{
-				seed_shared_from_spawns(tt,d->ctor->body);
+				seed_shared_from_spawns(tt,d->ctors[ci]->body);
 			}
 		}
 	}
@@ -791,17 +795,72 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		strcpy(eq->param_types[0].class_name,c->name);
 	}
 
-	if (d->ctor)
+	c->ctor_count=d->ctor_count;
+	c->has_ctor=(d->ctor_count>0);
+	for (int ci=0; ci<d->ctor_count; ci++)
 	{
-		c->has_ctor=1;
-		c->ctor_ast=d->ctor;
-		c->ctor_param_count=d->ctor->param_count;
-		for (int k=0; k<d->ctor->param_count; k++)
+		Func *cf=d->ctors[ci];
+		MethodInfo *mi=&c->ctors[ci];
+		memset(mi,0,sizeof(*mi));
+		strcpy(mi->name,c->name);
+		mi->vtable_slot=-1;              /* Constructors are never virtual. */
+		strcpy(mi->owner_class,c->name);
+		mi->ast=cf;
+		mi->ret_type=(TypeRef){.kind=TY_VOID};
+		mi->param_count=cf->param_count;
+		for (int k=0; k<cf->param_count; k++)
 		{
-			c->ctor_param_types[k]=d->ctor->params[k].type;
+			mi->param_types[k]=cf->params[k].type;
 		}
+	}
 
-		snprintf(c->ctor_asm_label,sizeof(c->ctor_asm_label),"__ctor_%s",c->name);
+	/* Reject identical-signature duplicate constructors. */
+	for (int a=0; a<c->ctor_count; a++)
+	{
+		char sa[160];
+		overload_encode_types(sa,sizeof(sa),c->ctors[a].param_types,c->ctors[a].param_count);
+		for (int b=a+1; b<c->ctor_count; b++)
+		{
+			char sb[160];
+			overload_encode_types(sb,sizeof(sb),c->ctors[b].param_types,c->ctors[b].param_count);
+			if (strcmp(sa,sb)==0)
+			{
+				fprintf(stderr,"Class %s: duplicate constructor signature.\n",c->name);
+				exit(1);
+			}
+		}
+	}
+
+	/* Reject sets that are ambiguous by construction (definition-time). */
+	if (c->ctor_count>1)
+	{
+		OverloadCand cc[8];
+		for (int ci=0; ci<c->ctor_count; ci++)
+		{
+			cc[ci].param_types=c->ctors[ci].param_types;
+			cc[ci].param_count=c->ctors[ci].param_count;
+			cc[ci].min_args=overload_min_args(c->ctors[ci].ast);
+		}
+		if (overload_set_is_ambiguous(cc,c->ctor_count))
+		{
+			fprintf(stderr,"Class %s: ambiguous constructor overload set.\n",c->name);
+			exit(1);
+		}
+	}
+
+	/* Mangle on demand: a lone constructor keeps the legacy label. */
+	for (int ci=0; ci<c->ctor_count; ci++)
+	{
+		if (c->ctor_count==1)
+		{
+			snprintf(c->ctors[ci].asm_label,sizeof(c->ctors[ci].asm_label),"__ctor_%s",c->name);
+		}
+		else
+		{
+			char sig[140];
+			overload_encode_types(sig,sizeof(sig),c->ctors[ci].param_types,c->ctors[ci].param_count);
+			snprintf(c->ctors[ci].asm_label,sizeof(c->ctors[ci].asm_label),"__ctor_%s__%s",c->name,sig);
+		}
 	}
 
 	/* Verify every implemented interface is fully + correctly satisfied. */

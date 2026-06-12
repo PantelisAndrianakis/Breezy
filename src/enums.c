@@ -52,7 +52,11 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 		c->methods[c->method_count++]=func_clone(e->methods[i]);
 	}
 
-	c->ctor=e->ctor ? func_clone(e->ctor) : NULL;
+	if (e->ctor)
+	{
+		c->ctors[c->ctor_count++]=func_clone(e->ctor);
+		c->ctor=c->ctors[0];
+	}
 	return c;
 }
 
@@ -77,7 +81,11 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 		c->methods[c->method_count++]=func_clone(k->overrides[i]);
 	}
 
-	c->ctor=e->ctor ? func_clone(e->ctor) : NULL;
+	if (e->ctor)
+	{
+		c->ctors[c->ctor_count++]=func_clone(e->ctor);
+		c->ctor=c->ctors[0];
+	}
 	return c;
 }
 

@@ -34,11 +34,9 @@ typedef struct ClassInfo
 	int method_count;
 	int vtable_size;
 	int object_size;
-	int has_ctor;                  /* 1 if the class declares a constructor. */
-	Func *ctor_ast;                /* The constructor's AST (params + body). */
-	int ctor_param_count;
-	TypeRef ctor_param_types[8];
-	char ctor_asm_label[160];
+	int has_ctor;                  /* 1 if the class declares >= 1 constructor. */
+	MethodInfo ctors[8];           /* Constructor overload set (ast/param_types/asm_label per entry). */
+	int ctor_count;
 	int is_shared;                 /* 1 if instances may cross a core boundary -> atomic refcounts (6a-3). */
 	char implements[8][64];        /* Interface names this class implements. */
 	int implements_count;

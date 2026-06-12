@@ -206,6 +206,10 @@ ClassDecl *classdecl_clone(const ClassDecl *c)
 	{
 		n->methods[i]=func_clone(c->methods[i]);
 	}
-	n->ctor=func_clone(c->ctor);
+	for (int i=0; i<c->ctor_count; i++)
+	{
+		n->ctors[i]=func_clone(c->ctors[i]);
+	}
+	n->ctor = c->ctor_count ? n->ctors[0] : NULL;
 	return n;
 }

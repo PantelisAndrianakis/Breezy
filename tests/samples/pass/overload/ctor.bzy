@@ -1,0 +1,25 @@
+class Point
+{
+	int x;
+	int y;
+
+	Point(int x, int y)
+	{
+		this.x = x;
+		this.y = y;
+	}
+
+	Point(int v)
+	{
+		this.x = v;
+		this.y = v;
+	}
+}
+
+void main()
+{
+	Point a = new Point(3, 4);
+	Point b = new Point(7);
+	print(a.x + a.y);     // 7
+	print(b.x + b.y);     // 14
+}

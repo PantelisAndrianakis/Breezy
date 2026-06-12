@@ -1,0 +1,11 @@
+class Box
+{
+	int w;
+	Box(int w) { this.w = w; }
+	Box(int w) { this.w = w + 1; }
+}
+
+void main()
+{
+	print(0);
+}

@@ -8,6 +8,7 @@
 #include "bce.h"
 #include "enums.h"
 #include "lexer.h"
+#include "overload.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1129,15 +1130,36 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (nc && nc->has_ctor)
 		{
-			fill_default_args(st, e, nc->ctor_ast, tc);
-			if (e->arg_count != nc->ctor_param_count)
+			OverloadCand cands[8];
+			for (int ci=0; ci<nc->ctor_count; ci++)
 			{
-				die(e->line,"Constructor argument count mismatch.",NULL);
+				cands[ci].param_types=nc->ctors[ci].param_types;
+				cands[ci].param_count=nc->ctors[ci].param_count;
+				cands[ci].min_args=overload_min_args(nc->ctors[ci].ast);
 			}
 
+			TypeRef argtypes[8];
+			for (int i=0; i<e->arg_count && i<8; i++)
+			{
+				argtypes[i]=e->args[i]->type;
+			}
+
+			int sel=overload_select(cands,nc->ctor_count,argtypes,e->arg_count);
+			if (sel==OVL_NONE)
+			{
+				die(e->line,"No constructor matches these arguments: ",e->name);
+			}
+
+			if (sel==OVL_AMBIG)
+			{
+				die(e->line,"Ambiguous constructor call: ",e->name);
+			}
+
+			e->anno_overload=sel;
+			fill_default_args(st, e, nc->ctors[sel].ast, tc);
 			for (int i=0; i<e->arg_count; i++)
 			{
-				if (!assignable(&nc->ctor_param_types[i], &e->args[i]->type))
+				if (!assignable(&nc->ctors[sel].param_types[i], &e->args[i]->type))
 				{
 					die(e->line,"Constructor argument type mismatch; add a cast.",NULL);
 				}
@@ -3381,9 +3403,9 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 				resolve_func(tt,d->methods[k], mstatic ? NULL : d->name);
 			}
 
-			if (d->ctor)
+			for (int ci=0; ci<d->ctor_count; ci++)
 			{
-				resolve_func(tt,d->ctor,d->name);
+				resolve_func(tt,d->ctors[ci],d->name);
 			}
 
 			/* Static field initializers live outside any function body; resolve
