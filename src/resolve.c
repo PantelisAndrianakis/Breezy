@@ -1513,19 +1513,48 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			ClassInfo *sc=types_find_class(g_types,e->lhs->name);
 			if (sc)
 			{
-				MethodInfo *m=types_find_method(sc,e->name);
-				if (!m || !m->is_static)
+				int ocount=types_method_overload_count(sc,e->name);
+				if (ocount==0)
 				{
 					die(e->line,"No such static method: ",e->name);
 				}
 
 				resolve_args(st,e,tc);
-				fill_default_args(st, e, m->ast, tc);
-				if (e->arg_count != m->param_count)
+
+				OverloadCand cands[16];
+				for (int oi=0; oi<ocount && oi<16; oi++)
 				{
-					die(e->line,"Static method argument count mismatch.",NULL);
+					MethodInfo *mi=types_find_method_idx(sc,e->name,oi);
+					cands[oi].param_types=mi->param_types;
+					cands[oi].param_count=mi->param_count;
+					cands[oi].min_args=mi->ast ? overload_min_args(mi->ast) : mi->param_count;
 				}
 
+				TypeRef argtypes[8];
+				for (int i=0; i<e->arg_count && i<8; i++)
+				{
+					argtypes[i]=e->args[i]->type;
+				}
+
+				int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
+				if (sel==OVL_NONE)
+				{
+					die(e->line,"No static method overload matches these arguments: ",e->name);
+				}
+
+				if (sel==OVL_AMBIG)
+				{
+					die(e->line,"Ambiguous static method call: ",e->name);
+				}
+
+				MethodInfo *m=types_find_method_idx(sc,e->name,sel);
+				if (!m->is_static)
+				{
+					die(e->line,"No such static method: ",e->name);
+				}
+
+				e->anno_overload=sel;
+				fill_default_args(st, e, m->ast, tc);
 				for (int i=0; i<e->arg_count; i++)
 				{
 					if (!assignable(&m->param_types[i], &e->args[i]->type))
@@ -2350,8 +2379,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
-		MethodInfo *m=types_find_method(c,e->name);
-		if (!m)
+		int ocount=types_method_overload_count(c,e->name);
+		if (ocount==0)
 		{
 			if (strcmp(e->name,"getClassName")==0)
 			{
@@ -2368,6 +2397,35 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		resolve_args(st,e,tc);
+
+		OverloadCand cands[16];
+		for (int oi=0; oi<ocount && oi<16; oi++)
+		{
+			MethodInfo *mi=types_find_method_idx(c,e->name,oi);
+			cands[oi].param_types=mi->param_types;
+			cands[oi].param_count=mi->param_count;
+			cands[oi].min_args=mi->ast ? overload_min_args(mi->ast) : mi->param_count;
+		}
+
+		TypeRef argtypes[8];
+		for (int i=0; i<e->arg_count && i<8; i++)
+		{
+			argtypes[i]=e->args[i]->type;
+		}
+
+		int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
+		if (sel==OVL_NONE)
+		{
+			die(e->line,"No method overload matches these arguments: ",e->name);
+		}
+
+		if (sel==OVL_AMBIG)
+		{
+			die(e->line,"Ambiguous method call: ",e->name);
+		}
+
+		MethodInfo *m=types_find_method_idx(c,e->name,sel);
+		e->anno_overload=sel;
 		fill_default_args(st, e, m->ast, tc);
 		for (int i=0; i<e->arg_count && i<m->param_count; i++)
 		{

@@ -371,6 +371,39 @@ MethodInfo *types_find_method(ClassInfo *c, const char *name)
 	return NULL;
 }
 
+int types_method_overload_count(ClassInfo *c, const char *name)
+{
+	int n=0;
+	for (int i=0; i<c->method_count; i++)
+	{
+		if (strcmp(c->methods[i].name,name)==0)
+		{
+			n++;
+		}
+	}
+
+	return n;
+}
+
+MethodInfo *types_find_method_idx(ClassInfo *c, const char *name, int idx)
+{
+	int n=0;
+	for (int i=0; i<c->method_count; i++)
+	{
+		if (strcmp(c->methods[i].name,name)==0)
+		{
+			if (n==idx)
+			{
+				return &c->methods[i];
+			}
+
+			n++;
+		}
+	}
+
+	return NULL;
+}
+
 FieldInfo *types_find_field(ClassInfo *c, const char *name)
 {
 	for (int i=0; i<c->field_count; i++)
@@ -725,7 +758,50 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 	{
 		Func *m=d->methods[i];
 		int mstatic = m->is_static || d->is_static;
-		MethodInfo *existing = mstatic ? NULL : types_find_method(c,m->name);   /* Static methods never override. */
+
+		/* Encode this method's parameter signature for override/overload matching. */
+		TypeRef mpts[8];
+		for (int k=0; k<m->param_count && k<8; k++)
+		{
+			mpts[k]=m->params[k].type;
+		}
+
+		char msig[160];
+		overload_encode_types(msig,sizeof(msig),mpts,m->param_count);
+
+		/* An inherited method with the SAME name AND signature is overridden
+		   (reuse its vtable slot). A same name+signature entry already owned by
+		   this class is a true duplicate. A different signature is a new overload
+		   (fresh slot). Static methods never override. */
+		MethodInfo *existing=NULL;
+		for (int q=0; q<c->method_count; q++)
+		{
+			if (strcmp(c->methods[q].name,m->name)!=0)
+			{
+				continue;
+			}
+
+			char qsig[160];
+			overload_encode_types(qsig,sizeof(qsig),c->methods[q].param_types,c->methods[q].param_count);
+			if (strcmp(qsig,msig)!=0)
+			{
+				continue;
+			}
+
+			if (strcmp(c->methods[q].owner_class,c->name)==0)
+			{
+				fprintf(stderr,"Class %s: duplicate method '%s' with the same signature.\n",c->name,m->name);
+				exit(1);
+			}
+
+			if (!mstatic)
+			{
+				existing=&c->methods[q];   /* Override of an inherited method. */
+			}
+
+			break;
+		}
+
 		MethodInfo *mi;
 		if (existing)
 		{
@@ -749,21 +825,90 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 
 		mi->is_static=mstatic;
 		strcpy(mi->owner_class,c->name);
-		if (mstatic)
-		{
-			snprintf(mi->asm_label,sizeof(mi->asm_label),"__static_%s__%s",c->name,m->name);
-		}
-		else
-		{
-			snprintf(mi->asm_label,sizeof(mi->asm_label),"%s__%s",c->name,m->name);
-		}
-
 		mi->ast=m;
 		mi->ret_type=m->ret_type;
 		mi->param_count=m->param_count;
 		for (int k=0; k<m->param_count; k++)
 		{
 			mi->param_types[k]=m->params[k].type;
+		}
+	}
+
+	/* Assign method asm labels on demand: a name with >1 overload in this class
+	   gets a type-signature suffix; a lone name keeps the legacy label. Inherited
+	   (not-overridden) entries keep the parent's label and slot. */
+	for (int i=0; i<c->method_count; i++)
+	{
+		MethodInfo *mi=&c->methods[i];
+		if (strcmp(mi->owner_class,c->name)!=0)
+		{
+			continue;
+		}
+
+		if (types_method_overload_count(c,mi->name)>1)
+		{
+			char sig[140];
+			overload_encode_types(sig,sizeof(sig),mi->param_types,mi->param_count);
+			if (mi->is_static)
+			{
+				snprintf(mi->asm_label,sizeof(mi->asm_label),"__static_%s__%s__%s",c->name,mi->name,sig);
+			}
+			else
+			{
+				snprintf(mi->asm_label,sizeof(mi->asm_label),"%s__%s__%s",c->name,mi->name,sig);
+			}
+		}
+		else if (mi->is_static)
+		{
+			snprintf(mi->asm_label,sizeof(mi->asm_label),"__static_%s__%s",c->name,mi->name);
+		}
+		else
+		{
+			snprintf(mi->asm_label,sizeof(mi->asm_label),"%s__%s",c->name,mi->name);
+		}
+	}
+
+	/* Reject ambiguous method overload sets at declaration time. Check each
+	   own-declared name once, at its first occurrence. */
+	for (int i=0; i<c->method_count; i++)
+	{
+		if (strcmp(c->methods[i].owner_class,c->name)!=0)
+		{
+			continue;
+		}
+
+		const char *nm=c->methods[i].name;
+		int seen_earlier=0;
+		for (int j=0; j<i; j++)
+		{
+			if (strcmp(c->methods[j].name,nm)==0)
+			{
+				seen_earlier=1;
+				break;
+			}
+		}
+
+		if (seen_earlier || types_method_overload_count(c,nm)<=1)
+		{
+			continue;
+		}
+
+		OverloadCand cand[16];
+		int nc=0;
+		int oc=types_method_overload_count(c,nm);
+		for (int oi=0; oi<oc && nc<16; oi++)
+		{
+			MethodInfo *mi=types_find_method_idx(c,nm,oi);
+			cand[nc].param_types=mi->param_types;
+			cand[nc].param_count=mi->param_count;
+			cand[nc].min_args=mi->ast ? overload_min_args(mi->ast) : mi->param_count;
+			nc++;
+		}
+
+		if (overload_set_is_ambiguous(cand,nc))
+		{
+			fprintf(stderr,"Class %s: ambiguous method overload set '%s'.\n",c->name,nm);
+			exit(1);
 		}
 	}
 

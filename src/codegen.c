@@ -2974,7 +2974,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	   resolved implementation and skip the two indirection loads. */
 	if (c)
 	{
-		MethodInfo *m=types_find_method(c,e->name);
+		MethodInfo *m=types_find_method_idx(c,e->name,e->anno_overload);
 		if (m && m->vtable_slot>=0 && method_is_monomorphic(tt,e->anno_str,e->name))
 		{
 			cg_call_with_args(cg,tt,m->asm_label,e->lhs,e->args,e->arg_count,0,
@@ -2991,7 +2991,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	int pcount;
 	if (c)
 	{
-		MethodInfo *m=types_find_method(c,e->name);
+		MethodInfo *m=types_find_method_idx(c,e->name,e->anno_overload);
 		params=m->param_types;
 		pcount=m->param_count;
 	}
@@ -5350,7 +5350,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	case EX_METHOD_CALL:
 		if (e->anno_int==-1)   /* Static method call (C.method(args)): no `this`. */
 		{
-			MethodInfo *sm=types_find_method(types_find_class(tt,e->anno_str),e->name);
+			MethodInfo *sm=types_find_method_idx(types_find_class(tt,e->anno_str),e->name,e->anno_overload);
 			cg_call_with_args(cg,tt,sm->asm_label,NULL,e->args,e->arg_count,0,
 							  ty_is_managed(e->type.kind), ty_is_float(e->type.kind),
 							  sm->param_types, sm->param_count, 0);
@@ -9463,7 +9463,15 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			for (int k=0; k<d->method_count; k++)
 			{
 				Func *m=d->methods[k];
-				MethodInfo *mi=types_find_method(c,m->name);
+				MethodInfo *mi=NULL;
+				for (int q=0; q<c->method_count; q++)
+				{
+					if (c->methods[q].ast==m)   /* Match this exact overload by AST identity. */
+					{
+						mi=&c->methods[q];
+						break;
+					}
+				}
 				cg_emit_func(cg,tt,mi->asm_label,m, mi->is_static ? NULL : c->name);   /* Static: no `this`. */
 			}
 

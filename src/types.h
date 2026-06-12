@@ -91,5 +91,7 @@ int        types_typeref_maybe_shared(TypeTable *tt, TypeRef *t);   /* 1 if a va
 ClassInfo *types_find_class(TypeTable *tt, const char *name);
 FuncInfo  *types_find_func(TypeTable *tt, const char *name);
 MethodInfo*types_find_method(ClassInfo *c, const char *name);
+int        types_method_overload_count(ClassInfo *c, const char *name);   /* Same-name entries (inherited + own). */
+MethodInfo*types_find_method_idx(ClassInfo *c, const char *name, int idx); /* The idx-th same-name overload, declaration order. */
 FieldInfo *types_find_field(ClassInfo *c, const char *name);
 #endif

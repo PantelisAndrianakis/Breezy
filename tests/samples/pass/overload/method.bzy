@@ -1,0 +1,25 @@
+class Adder
+{
+	int add(int a, int b)
+	{
+		return a + b;
+	}
+
+	int add(int a, int b, int c)
+	{
+		return a + b + c;
+	}
+
+	double add(double a, double b)
+	{
+		return a + b;
+	}
+}
+
+void main()
+{
+	Adder x = new Adder();
+	print(x.add(2, 3));        // 5
+	print(x.add(2, 3, 4));     // 9
+	print(x.add(1.5, 2.0));    // 3.5
+}
