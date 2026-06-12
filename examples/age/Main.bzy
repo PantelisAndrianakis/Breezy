@@ -1,0 +1,48 @@
+// Age calculator: reads your date of birth from the console and reports how old
+// you are today, using the DateTime standard-library class.
+// See documentation/stdlib/datetime.md and documentation/language/console-io.md.
+
+class AgeCalculator
+{
+	// Whole years from a birth date to a "today" instant, counting only the most
+	// recent birthday that has already passed. A birthday still ahead of us this
+	// year has not incremented the age yet, so step back one year in that case.
+	int yearsBetween(DateTime birth, DateTime today)
+	{
+		int years = today.getYear() - birth.getYear();
+
+		bool beforeMonth = today.getMonth() < birth.getMonth();
+		bool sameMonthEarlierDay = today.getMonth() == birth.getMonth() and today.getDay() < birth.getDay();
+		if (beforeMonth or sameMonthEarlierDay)
+		{
+			years = years - 1;
+		}
+		return years;
+	}
+}
+
+void main()
+{
+	print("Age calculator. Enter your date of birth.");
+
+	print("Year (e.g. 1990):");
+	int year = input().toInt();
+
+	print("Month (1-12):");
+	int month = input().toInt();
+
+	print("Day (1-31):");
+	int day = input().toInt();
+
+	// The component constructor takes a 1-based month; hour/minute/second
+	// default to midnight, which is all we need for an age in whole years.
+	DateTime birth = new DateTime(year, month, day);
+	DateTime today = new DateTime();
+
+	AgeCalculator calc = new AgeCalculator();
+	int age = calc.yearsBetween(birth, today);
+
+	print("You were born on " + birth.format("yyyy-MM-dd") + ".");
+	print("Today is " + today.format("yyyy-MM-dd") + ".");
+	print("You are " + age + " years old.");
+}

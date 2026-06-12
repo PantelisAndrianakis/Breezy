@@ -1,0 +1,4 @@
+# The age calculator uses only the standard library (DateTime + console I/O),
+# so it compiles to a self-contained native executable with no external libs.
+[link]
+libs = []
