@@ -1,0 +1,27 @@
+class Animal
+{
+	int speak(int n)
+	{
+		return n;
+	}
+
+	int speak(int a, int b)
+	{
+		return a + b;
+	}
+}
+
+class Dog extends Animal
+{
+	int speak(int n)
+	{
+		return n * 10;
+	}
+}
+
+void main()
+{
+	Animal a = new Dog();
+	print(a.speak(5));        // 50  (Dog overrides speak(int))
+	print(a.speak(2, 3));     // 5   (inherited speak(int, int))
+}

@@ -6,6 +6,7 @@
 #include "irlower.h"
 #include "iremit.h"
 #include "regalloc.h"
+#include "overload.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -2918,7 +2919,7 @@ static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
    own override, so every possible runtime type resolves the method to the same
    implementation. The whole program is compiled at once, so the hierarchy is
    complete. Returns 0 for unknown classes, static methods, or builtins. */
-static int method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name)
+static int method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name, int overload_idx)
 {
 	ClassInfo *base = types_find_class(tt, class_name);
 	if (!base)
@@ -2926,11 +2927,14 @@ static int method_is_monomorphic(TypeTable *tt, const char *class_name, const ch
 		return 0;
 	}
 
-	MethodInfo *bm = types_find_method(base, method_name);
+	MethodInfo *bm = types_find_method_idx(base, method_name, overload_idx);
 	if (!bm || bm->vtable_slot < 0)
 	{
 		return 0;   /* Not found, or a static method (already called directly). */
 	}
+
+	char bsig[160];
+	overload_encode_types(bsig, sizeof(bsig), bm->param_types, bm->param_count);
 
 	for (int i = 0; i < tt->class_count; i++)
 	{
@@ -2955,10 +2959,22 @@ static int method_is_monomorphic(TypeTable *tt, const char *class_name, const ch
 			continue;
 		}
 
-		MethodInfo *dm = types_find_method(d, method_name);
-		if (dm && strcmp(dm->owner_class, d->name) == 0)
+		/* A descendant that declares an override of THIS exact overload (same name
+		   and signature) makes the call polymorphic. */
+		for (int mi = 0; mi < d->method_count; mi++)
 		{
-			return 0;   /* A descendant declares its own override -> polymorphic. */
+			if (strcmp(d->methods[mi].name, method_name) != 0
+					|| strcmp(d->methods[mi].owner_class, d->name) != 0)
+			{
+				continue;
+			}
+
+			char dsig[160];
+			overload_encode_types(dsig, sizeof(dsig), d->methods[mi].param_types, d->methods[mi].param_count);
+			if (strcmp(dsig, bsig) == 0)
+			{
+				return 0;
+			}
 		}
 	}
 
@@ -2975,7 +2991,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	if (c)
 	{
 		MethodInfo *m=types_find_method_idx(c,e->name,e->anno_overload);
-		if (m && m->vtable_slot>=0 && method_is_monomorphic(tt,e->anno_str,e->name))
+		if (m && m->vtable_slot>=0 && method_is_monomorphic(tt,e->anno_str,e->name,e->anno_overload))
 		{
 			cg_call_with_args(cg,tt,m->asm_label,e->lhs,e->args,e->arg_count,0,
 							  ty_is_managed(e->type.kind), ty_is_float(e->type.kind),
