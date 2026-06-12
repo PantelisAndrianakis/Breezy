@@ -1,0 +1,7 @@
+extern int puts(string s);
+extern int puts(int n);
+
+void main()
+{
+	print(0);
+}

@@ -1,0 +1,17 @@
+string pick(int n)
+{
+	return "int";
+}
+
+string pick(long n)
+{
+	return "long";
+}
+
+void main()
+{
+	int i = 5;
+	long l = 5L;
+	print(pick(i));     // int  -- exact match beats widening.
+	print(pick(l));     // long
+}

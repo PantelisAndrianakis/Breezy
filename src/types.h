@@ -90,6 +90,8 @@ void       types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 int        types_typeref_maybe_shared(TypeTable *tt, TypeRef *t);   /* 1 if a value of this static type may be SHARED at runtime (codegen gating). */
 ClassInfo *types_find_class(TypeTable *tt, const char *name);
 FuncInfo  *types_find_func(TypeTable *tt, const char *name);
+int        types_func_overload_count(TypeTable *tt, const char *name);     /* Same-name free functions. */
+FuncInfo  *types_find_func_idx(TypeTable *tt, const char *name, int idx);   /* The idx-th same-name overload, declaration order. */
 MethodInfo*types_find_method(ClassInfo *c, const char *name);
 int        types_method_overload_count(ClassInfo *c, const char *name);   /* Same-name entries (inherited + own). */
 MethodInfo*types_find_method_idx(ClassInfo *c, const char *name, int idx); /* The idx-th same-name overload, declaration order. */

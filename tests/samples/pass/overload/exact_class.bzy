@@ -1,0 +1,20 @@
+class Dog { int bark() { return 1; } }
+class Cat { int meow() { return 2; } }
+
+int who(Dog d)
+{
+	return 10;
+}
+
+int who(Cat c)
+{
+	return 20;
+}
+
+void main()
+{
+	Dog d = new Dog();
+	Cat c = new Cat();
+	print(who(d));      // 10  -- exact class beats cross-class permissive.
+	print(who(c));      // 20
+}

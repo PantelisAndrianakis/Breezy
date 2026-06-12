@@ -358,6 +358,39 @@ FuncInfo *types_find_func(TypeTable *tt, const char *name)
 	return NULL;
 }
 
+int types_func_overload_count(TypeTable *tt, const char *name)
+{
+	int n=0;
+	for (int i=0; i<tt->func_count; i++)
+	{
+		if (strcmp(tt->funcs[i].name,name)==0)
+		{
+			n++;
+		}
+	}
+
+	return n;
+}
+
+FuncInfo *types_find_func_idx(TypeTable *tt, const char *name, int idx)
+{
+	int n=0;
+	for (int i=0; i<tt->func_count; i++)
+	{
+		if (strcmp(tt->funcs[i].name,name)==0)
+		{
+			if (n==idx)
+			{
+				return &tt->funcs[i];
+			}
+
+			n++;
+		}
+	}
+
+	return NULL;
+}
+
 MethodInfo *types_find_method(ClassInfo *c, const char *name)
 {
 	for (int i=0; i<c->method_count; i++)
@@ -561,12 +594,28 @@ static void link_parent(TypeTable *tt, ClassInfo *c, ClassDecl *d)
 
 static void link_unit_class(TypeTable *tt, ClassDecl *d);
 
+/* The first same-name FuncInfo not yet bound to an AST. Overloaded functions
+   share a name, so binding by first-match would collapse them; binding to an
+   unfilled slot distributes each declaration to a distinct FuncInfo. */
+static FuncInfo *find_unfilled_func(TypeTable *tt, const char *name)
+{
+	for (int i=0; i<tt->func_count; i++)
+	{
+		if (strcmp(tt->funcs[i].name,name)==0 && tt->funcs[i].ast==NULL)
+		{
+			return &tt->funcs[i];
+		}
+	}
+
+	return NULL;
+}
+
 static void register_unit_funcs(TypeTable *tt, Unit *u)
 {
 	for (int i=0; i<u->func_count; i++)
 	{
 		Func *f=u->funcs[i];
-		FuncInfo *fi=types_find_func(tt,f->name);
+		FuncInfo *fi=find_unfilled_func(tt,f->name);
 		fi->ast=f;
 		fi->ret_type=f->ret_type;
 		fi->param_count=f->param_count;
@@ -604,6 +653,86 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<unit_count; i++)
 	{
 		register_unit_funcs(tt,units[i]);
+	}
+
+	/* Free functions: validate overload sets and mangle on demand. A lone name
+	   keeps its legacy label (bzy_<name> / $<name>); a name with multiple
+	   declarations gains a type-signature suffix. extern functions and main may
+	   not be overloaded. Each name is processed once, at its first occurrence. */
+	for (int i=0; i<tt->func_count; i++)
+	{
+		const char *nm=tt->funcs[i].name;
+		int seen_earlier=0;
+		for (int j=0; j<i; j++)
+		{
+			if (strcmp(tt->funcs[j].name,nm)==0)
+			{
+				seen_earlier=1;
+				break;
+			}
+		}
+
+		if (seen_earlier)
+		{
+			continue;
+		}
+
+		int cnt=types_func_overload_count(tt,nm);
+		if (cnt<=1)
+		{
+			continue;   /* Lone function: keep its legacy label. */
+		}
+
+		if (strcmp(nm,"main")==0)
+		{
+			fprintf(stderr,"main cannot be overloaded.\n");
+			exit(1);
+		}
+
+		OverloadCand cand[16];
+		int nc=0;
+		for (int oi=0; oi<cnt && oi<16; oi++)
+		{
+			FuncInfo *fi=types_find_func_idx(tt,nm,oi);
+			if (fi->is_extern)
+			{
+				fprintf(stderr,"extern function '%s' cannot be overloaded.\n",nm);
+				exit(1);
+			}
+
+			char sa[160];
+			overload_encode_types(sa,sizeof(sa),fi->param_types,fi->param_count);
+			for (int oj=0; oj<oi; oj++)
+			{
+				FuncInfo *fj=types_find_func_idx(tt,nm,oj);
+				char sb[160];
+				overload_encode_types(sb,sizeof(sb),fj->param_types,fj->param_count);
+				if (strcmp(sa,sb)==0)
+				{
+					fprintf(stderr,"Duplicate function signature for '%s'.\n",nm);
+					exit(1);
+				}
+			}
+
+			cand[nc].param_types=fi->param_types;
+			cand[nc].param_count=fi->param_count;
+			cand[nc].min_args=fi->ast ? overload_min_args(fi->ast) : fi->param_count;
+			nc++;
+		}
+
+		if (overload_set_is_ambiguous(cand,nc))
+		{
+			fprintf(stderr,"Ambiguous function overload set '%s'.\n",nm);
+			exit(1);
+		}
+
+		for (int oi=0; oi<cnt; oi++)
+		{
+			FuncInfo *fi=types_find_func_idx(tt,nm,oi);
+			char sig[140];
+			overload_encode_types(sig,sizeof(sig),fi->param_types,fi->param_count);
+			snprintf(fi->asm_label,sizeof(fi->asm_label),"bzy_%s__%s",nm,sig);
+		}
 	}
 
 	/* Everything starts done (builtins, enum classes); user-declared classes pend. */

@@ -1,0 +1,10 @@
+class Dog { int x; }
+class Cat { int y; }
+
+int who(Dog d) { return 1; }
+int who(Cat c) { return 2; }
+
+void main()
+{
+	print(who(null));   // Ambiguous: null matches both reference overloads.
+}

@@ -1,0 +1,12 @@
+class Box
+{
+	int v;
+	Box(int a) { this.v = a; }
+	Box(int a, int b = 0) { this.v = a + b; }
+}
+
+void main()
+{
+	Box x = new Box(1);   // new Box(1) matches both Box(int) and Box(int, int=0).
+	print(x.v);
+}

@@ -1,0 +1,15 @@
+int describe(int n)
+{
+	return n;
+}
+
+int describe(string s)
+{
+	return s.length();
+}
+
+void main()
+{
+	print(describe(42));         // 42
+	print(describe("hello"));    // 5
+}

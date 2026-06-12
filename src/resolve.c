@@ -2548,12 +2548,40 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		{
-			FuncInfo *fi=types_find_func(g_types,e->name);
-			if (!fi)
+			int ocount=types_func_overload_count(g_types,e->name);
+			if (ocount==0)
 			{
 				die(e->line,"Unknown function: ",e->name);
 			}
 
+			OverloadCand cands[16];
+			for (int oi=0; oi<ocount && oi<16; oi++)
+			{
+				FuncInfo *fo=types_find_func_idx(g_types,e->name,oi);
+				cands[oi].param_types=fo->param_types;
+				cands[oi].param_count=fo->param_count;
+				cands[oi].min_args=fo->ast ? overload_min_args(fo->ast) : fo->param_count;
+			}
+
+			TypeRef argtypes[8];
+			for (int i=0; i<e->arg_count && i<8; i++)
+			{
+				argtypes[i]=e->args[i]->type;
+			}
+
+			int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
+			if (sel==OVL_NONE)
+			{
+				die(e->line,"No function overload matches these arguments: ",e->name);
+			}
+
+			if (sel==OVL_AMBIG)
+			{
+				die(e->line,"Ambiguous function call: ",e->name);
+			}
+
+			FuncInfo *fi=types_find_func_idx(g_types,e->name,sel);
+			e->anno_overload=sel;
 			fill_default_args(st, e, fi->ast, tc);
 			for (int i=0; i<e->arg_count && i<fi->param_count; i++)
 			{

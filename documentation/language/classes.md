@@ -167,7 +167,7 @@ Use `this.` to disambiguate when a parameter has the same name as a field, as ab
 
 ## Default parameter values
 
-A parameter of a constructor, method, or function may be given a **default value** with `= <literal>`. When a caller omits that argument, the default is used. This lets one constructor or method serve several call shapes without overloads.
+A parameter of a constructor, method, or function may be given a **default value** with `= <literal>`. When a caller omits that argument, the default is used. This lets one constructor or method serve several call shapes from a single signature; for several *different* signatures under one name, see [Overloading](#overloading) below.
 
 ```breezy
 class Box
@@ -208,6 +208,61 @@ int add(int a, int b = 10)
 - The default must be a **literal constant** (a number, `true`/`false`, or a string).
 - Defaults may only be given to **trailing** parameters - once a parameter has a default, every parameter after it must have one too. So `f(int a, int b = 0)` is valid, but `f(int a = 0, int b)` is not.
 - This is how the [built-in vector types](vector-types.md) support `new Vector2f()` - their components default to `0`.
+
+---
+
+## Overloading
+
+Constructors, methods (instance and static), and free functions may be **overloaded**: several declarations may share a name as long as their **parameter types** differ. There is no special keyword - just declare more than one.
+
+```breezy
+class Point
+{
+	int x;
+	int y;
+
+	Point(int x, int y) { this.x = x; this.y = y; }   // Two coordinates.
+	Point(int v)        { this.x = v; this.y = v; }    // One value for both.
+}
+
+void main()
+{
+	Point a = new Point(3, 4);
+	Point b = new Point(7);
+}
+```
+
+It works the same for methods and free functions:
+
+```breezy
+int describe(int n)    { return n; }
+int describe(string s) { return s.length(); }
+
+// describe(42) is 42; describe("hello") is 5.
+```
+
+### How an overload is chosen
+
+The call's **argument types** select the overload. Each candidate is scored per argument, best (lowest) first:
+
+1. **Exact** - same type (and, for objects, the same class).
+2. **Widening** - an implicit numeric conversion the language already allows: a smaller integer to a wider one of the same signedness, or an integer to `double`.
+3. **Permissive** - any object to a parameter of a different object type, or `null` to any reference parameter.
+
+The compiler picks the one candidate that is no worse than every other on every argument and strictly better on at least one. So `pick(int)` is chosen over `pick(long)` for an `int` argument, and `who(Dog)` over `who(Cat)` for a `Dog`.
+
+If no candidate matches, or two are equally good, it is a **compile error**. A common case: `f(null)` when two overloads each take a different reference type is **ambiguous** - cast the `null` to choose, e.g. `f((Dog) null)`.
+
+### Overriding an overload
+
+A subclass method overrides a base method only when **both the name and the parameter signature match**. A same-named method with a different signature is a *new overload*, not an override - it gets its own slot in the class. Dynamic dispatch then selects the most-derived body of the matching signature.
+
+**Rules & gotchas:**
+
+- **Overloads must differ in parameter types.** Two declarations with identical signatures are a compile error.
+- **Return type is not part of the signature** - overloads cannot differ by return type alone.
+- **Default parameters interact with overloading.** An overload set whose argument-count ranges overlap ambiguously (e.g. `Box(int)` alongside `Box(int, int = 0)`) is rejected at declaration time.
+- **`extern` functions and `main` cannot be overloaded** - an `extern` name binds one-to-one to a C symbol, and `main` is the fixed entry point.
 
 ---
 

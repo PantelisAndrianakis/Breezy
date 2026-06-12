@@ -5543,7 +5543,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 		else
 		{
-			FuncInfo *fi=types_find_func(tt,e->name);
+			FuncInfo *fi=types_find_func_idx(tt,e->name,e->anno_overload);
 			if (fi->is_blocking)
 			{
 				cg_request_blocking_thunk(cg, fi);
@@ -9460,7 +9460,15 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			}
 			else
 			{
-				FuncInfo *fi=types_find_func(tt,f->name);
+				FuncInfo *fi=NULL;
+				for (int q=0; q<tt->func_count; q++)
+				{
+					if (tt->funcs[q].ast==f)   /* Match this exact overload by AST identity. */
+					{
+						fi=&tt->funcs[q];
+						break;
+					}
+				}
 				strcpy(buf,fi->asm_label);
 				label=buf;
 			}

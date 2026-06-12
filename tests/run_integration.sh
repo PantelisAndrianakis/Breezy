@@ -72,6 +72,13 @@ check overload_ctor      tests/samples/pass/overload/ctor.bzy      $'7\n14'
 check_fail overload_ctor_dup tests/samples/fail/overload/ctor_dup.bzy
 check overload_method    tests/samples/pass/overload/method.bzy    $'5\n9\n3.5'
 check overload_override  tests/samples/pass/overload/override.bzy   $'50\n5'
+check overload_freefn    tests/samples/pass/overload/freefn.bzy     $'42\n5'
+check_fail overload_extern_dup tests/samples/fail/overload/extern_dup.bzy
+check_fail overload_main_dup   tests/samples/fail/overload/main_dup.bzy
+check overload_widening   tests/samples/pass/overload/widening.bzy    $'int\nlong'
+check overload_exactclass tests/samples/pass/overload/exact_class.bzy $'10\n20'
+check_fail overload_ambig_null      tests/samples/fail/overload/ambiguous_null.bzy
+check_fail overload_default_overlap tests/samples/fail/overload/default_overlap.bzy
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
 check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check_fail desktop_bad_listener tests/samples/fail/desktop/bad_listener_arg.bzy

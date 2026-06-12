@@ -1,0 +1,9 @@
+void main()
+{
+	print(0);
+}
+
+void main(int n)
+{
+	print(n);
+}
