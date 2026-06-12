@@ -1,0 +1,24 @@
+// The "Hello, Breezy" example from the README. A small object-oriented program
+// that compiles directly to a native executable with no separate runtime.
+
+class Greeter
+{
+	string name;
+
+	void init(string who)
+	{
+		name = who;
+	}
+
+	void greet()
+	{
+		print("Hello, " + name + "!");
+	}
+}
+
+void main()
+{
+	Greeter g = new Greeter();
+	g.init("Breezy");
+	g.greet();              // Prints: Hello, Breezy!
+}

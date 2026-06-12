@@ -1,0 +1,4 @@
+# The hello-world example needs no external libraries — it compiles to a
+# self-contained native executable.
+[link]
+libs = []
