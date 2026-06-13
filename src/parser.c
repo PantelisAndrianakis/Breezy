@@ -1599,11 +1599,7 @@ static EnumDecl *parse_enum(Parser *p)
 	{
 		do
 		{
-			if (e->constant_count>=64)
-			{
-				fprintf(stderr,"Too many enum constants.\n");
-				exit(1);
-			}
+			e->constants=grow_ensure(e->constants,e->constant_count,&e->constants_cap,sizeof(*e->constants));
 			EnumConstant *c=&e->constants[e->constant_count];
 			Token cn=expect(p,TOKEN_IDENT);
 			strcpy(c->name,cn.text);
@@ -1718,21 +1714,13 @@ static EnumDecl *parse_enum(Parser *p)
 
 			expect(p,TOKEN_RPAREN);
 			f->body=parse_block(p);
-			if (e->method_count>=32)
-			{
-				fprintf(stderr,"Too many methods.\n");
-				exit(1);
-			}
+			e->methods=grow_ensure(e->methods,e->method_count,&e->methods_cap,sizeof(*e->methods));
 			e->methods[e->method_count++]=f;
 		}
 		else
 		{
 			expect(p,TOKEN_SEMICOLON);
-			if (e->field_count>=32)
-			{
-				fprintf(stderr,"Too many fields.\n");
-				exit(1);
-			}
+			e->fields=grow_ensure(e->fields,e->field_count,&e->fields_cap,sizeof(*e->fields));
 			e->fields[e->field_count].type=ty;
 			strcpy(e->fields[e->field_count].name,mname.text);
 			e->field_count++;

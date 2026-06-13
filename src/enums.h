@@ -9,10 +9,11 @@ typedef struct
 	int  implements_count;
 	int  implements_cap;
 	int  constant_count;
-	char const_name[64][64];       /* Constant names, ordinal order. */
-	char const_class[64][64];      /* Instantiated class: "Color" or "Color$RED". */
-	Expr *const_args[64][8];       /* Per-constant ctor args (AST pointers, persist in arena). */
-	int  const_argc[64];
+	int  constant_cap;             /* Capacity of the parallel per-constant arrays below. */
+	char (*const_name)[64];        /* Constant names, ordinal order. */
+	char (*const_class)[64];       /* Instantiated class: "Color" or "Color$RED". */
+	Expr *(*const_args)[8];        /* Per-constant ctor args (AST pointers; inner [8] kept). */
+	int  *const_argc;
 } EnumInfo;
 
 /* Lower every EnumDecl: synthesize the base class (+ per-constant subclasses for

@@ -18,7 +18,22 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->out=out;
 	cg->label_count=0;
 	cg->fpk_count=0;
+	cg->fpk=NULL;
+	cg->fpk_cap=0;
 	cg->strk_count=0;
+	cg->strk=NULL;
+	cg->strk_cap=0;
+	cg->uc_off=NULL;
+	cg->uc_val=NULL;
+	cg->uc_cap=0;
+	cg->cur_try_k=NULL;
+	cg->cur_try_c=NULL;
+	cg->cur_try_vt=NULL;
+	cg->cur_try_cap=0;
+	cg->breeze_thunks=NULL;
+	cg->breeze_thunk_cap=0;
+	cg->blocking_thunks=NULL;
+	cg->blocking_thunk_cap=0;
 	cg->cur_break_label=-1;
 	cg->cur_continue_label=-1;
 	cg->hoist_n=0;
@@ -770,6 +785,7 @@ static void cg_extend_reg(Codegen *cg, TypeKind k)
 /* Record a float/double literal in the constant pool; returns its __fpk id. */
 static int cg_fp_const(Codegen *cg, Expr *e)
 {
+	cg->fpk = grow_ensure(cg->fpk, cg->fpk_count, &cg->fpk_cap, sizeof(*cg->fpk));
 	int id = cg->fpk_count++;
 	if (e->type.kind == TY_FLOAT)
 	{
@@ -794,12 +810,18 @@ static int cg_fp_const(Codegen *cg, Expr *e)
 /* Record a string literal in the constant pool; returns its __str id. */
 static int cg_str_const(Codegen *cg, Expr *e)
 {
+	cg->strk = grow_ensure(cg->strk, cg->strk_count, &cg->strk_cap, sizeof(*cg->strk));
 	int id = cg->strk_count++;
 	int n = 0;
-	while (e->str_val[n] && n < 255)
+	while (e->str_val[n])   /* No embedded NUL by construction; no length cap. */
 	{
-		cg->strk[id].bytes[n] = e->str_val[n];
 		n++;
+	}
+
+	cg->strk[id].bytes = malloc((size_t)(n > 0 ? n : 1));
+	for (int i = 0; i < n; i++)
+	{
+		cg->strk[id].bytes[i] = e->str_val[i];
 	}
 
 	cg->strk[id].len = n;
@@ -864,12 +886,16 @@ static void cg_unroll_const_set(Codegen *cg, int off, long long v)
 		}
 	}
 
-	if (cg->uc_n < 16)
+	if (cg->uc_n == cg->uc_cap)
 	{
-		cg->uc_off[cg->uc_n] = off;
-		cg->uc_val[cg->uc_n] = v;
-		cg->uc_n++;
+		cg->uc_cap = cg->uc_cap ? cg->uc_cap * 2 : 8;
+		cg->uc_off = realloc(cg->uc_off, (size_t)cg->uc_cap * sizeof(*cg->uc_off));
+		cg->uc_val = realloc(cg->uc_val, (size_t)cg->uc_cap * sizeof(*cg->uc_val));
 	}
+
+	cg->uc_off[cg->uc_n] = off;
+	cg->uc_val[cg->uc_n] = v;
+	cg->uc_n++;
 }
 
 /* Drop a recorded copy-constant (the local was assigned a non-foldable value).
@@ -7539,13 +7565,18 @@ static void cg_try(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		cg_emit(cg,"    mov [rbp - %d], rax", cl->decl_offset);   /* Bind (transfer owned). */
 		cg_block(cg,tt,f,cl->then_blk,in_main);
 		cg_emit(cg,"    jmp .L%d", after);         /* After the handler, leave the try. */
-		if (cg->cur_try_count < 64)
+		if (cg->cur_try_count == cg->cur_try_cap)
 		{
-			cg->cur_try_k[cg->cur_try_count] = k;
-			cg->cur_try_c[cg->cur_try_count] = c;
-			strcpy(cg->cur_try_vt[cg->cur_try_count], cl->decl_type.class_name);
-			cg->cur_try_count++;
+			cg->cur_try_cap = cg->cur_try_cap ? cg->cur_try_cap * 2 : 8;
+			cg->cur_try_k  = realloc(cg->cur_try_k,  (size_t)cg->cur_try_cap * sizeof(*cg->cur_try_k));
+			cg->cur_try_c  = realloc(cg->cur_try_c,  (size_t)cg->cur_try_cap * sizeof(*cg->cur_try_c));
+			cg->cur_try_vt = realloc(cg->cur_try_vt, (size_t)cg->cur_try_cap * sizeof(*cg->cur_try_vt));
 		}
+
+		cg->cur_try_k[cg->cur_try_count] = k;
+		cg->cur_try_c[cg->cur_try_count] = c;
+		strcpy(cg->cur_try_vt[cg->cur_try_count], cl->decl_type.class_name);
+		cg->cur_try_count++;
 	}
 
 	cg_emit(cg,".L%d:", after);
@@ -7563,10 +7594,8 @@ static void cg_request_breeze_thunk(Codegen *cg, FuncInfo *fi)
 		}
 	}
 
-	if (cg->breeze_thunk_count < 64)
-	{
-		cg->breeze_thunks[cg->breeze_thunk_count++] = fi;
-	}
+	cg->breeze_thunks = grow_ensure(cg->breeze_thunks, cg->breeze_thunk_count, &cg->breeze_thunk_cap, sizeof(*cg->breeze_thunks));
+	cg->breeze_thunks[cg->breeze_thunk_count++] = fi;
 }
 
 /* The per-target spawn thunk: rcx = arg buffer (the breeze's inline argbuf). Loads
@@ -7634,10 +7663,8 @@ static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi)
 		}
 	}
 
-	if (cg->blocking_thunk_count < 64)
-	{
-		cg->blocking_thunks[cg->blocking_thunk_count++] = fi;
-	}
+	cg->blocking_thunks = grow_ensure(cg->blocking_thunks, cg->blocking_thunk_count, &cg->blocking_thunk_cap, sizeof(*cg->blocking_thunks));
+	cg->blocking_thunks[cg->blocking_thunk_count++] = fi;
 }
 
 /* The per-target blocking thunk, run on an offload worker: rcx = ctx blob.

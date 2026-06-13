@@ -4,8 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static EnumInfo g_enums[32];
+static EnumInfo *g_enums;
 static int g_enum_count;
+static int g_enum_cap;
 
 static int is_reserved_method(const char *n)
 {
@@ -95,13 +96,8 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 
 static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 {
-	if (g_enum_count>=32)
-	{
-		fprintf(stderr,"Too many enums.\n");
-		exit(1);
-	}
-
 	int ctor_argc=e->ctor ? e->ctor->param_count : 0;
+	g_enums=grow_ensure(g_enums,g_enum_count,&g_enum_cap,sizeof(*g_enums));
 	EnumInfo *info=&g_enums[g_enum_count++];
 	memset(info,0,sizeof(*info));
 	strcpy(info->name,e->name);
@@ -113,6 +109,14 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 	}
 
 	info->constant_count=e->constant_count;
+	{
+		int cc=e->constant_count;   /* Per-constant parallel arrays, sized exactly. */
+		info->constant_cap=cc;
+		info->const_name  = cc ? calloc((size_t)cc, sizeof(*info->const_name))  : NULL;
+		info->const_class = cc ? calloc((size_t)cc, sizeof(*info->const_class)) : NULL;
+		info->const_args  = cc ? calloc((size_t)cc, sizeof(*info->const_args))  : NULL;
+		info->const_argc  = cc ? calloc((size_t)cc, sizeof(*info->const_argc))  : NULL;
+	}
 
 	/* Base class first (a parent must register before its subclasses). */
 	*units = grow_ensure(*units, *total, cap, sizeof(**units));

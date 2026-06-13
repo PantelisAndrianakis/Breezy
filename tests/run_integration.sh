@@ -104,6 +104,8 @@ check many_instances tests/samples/pass/capacity/many_instances.bzy 300
 check six_type_params tests/samples/pass/capacity/six_type_params.bzy 7
 check wide_interface tests/samples/pass/capacity/wide_interface.bzy $'17\n55'
 check many_interfaces tests/samples/pass/capacity/many_interfaces.bzy $'7\n9'
+check big_enum tests/samples/pass/capacity/big_enum.bzy $'79\nC79\n80'
+check many_strings tests/samples/pass/capacity/many_strings.bzy 1800
 check vector_zero    tests/samples/pass/oop/vector_zero.bzy   $'0\n0\n0\n0\n0\n1\n2'
 check desktop_smoke  tests/samples/pass/desktop/smoke.bzy      "desktop-ok"
 check_fail desktop_bad_listener tests/samples/fail/desktop/bad_listener_arg.bzy

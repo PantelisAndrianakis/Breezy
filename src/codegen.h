@@ -53,38 +53,44 @@ typedef struct
 	int   unroll_iv_off;     /* The INNERMOST unrolled loop's induction variable slot. */
 	long long unroll_iv_val; /* Its constant value for the copy currently being emitted. */
 	int   uc_n;              /* Copy-constant environment: locals whose value is a compile-time constant for the current unrolled copy - the induction variables plus any local assigned a foldable expression of them (cb = u * 8). */
-	int   uc_off[16];        /* Their slot offsets. */
-	long long uc_val[16];    /* Their constant values. */
+	int   *uc_off;           /* Their slot offsets; grown dynamically. */
+	long long *uc_val;       /* Their constant values. */
+	int   uc_cap;
 	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
 	int exception_try_count; /* File-unique try-region label counter (__exceptiontry<k>_*). */
 	int cur_try_count;       /* Try-regions in the function currently being emitted. */
-	int cur_try_k[64];       /* Their label indices. */
-	int cur_try_c[64];       /* Their clause indices (distinct landing pads per try). */
-	char cur_try_vt[64][64]; /* Their catch-type class names (for __vtable_<name>). */
+	int cur_try_cap;
+	int *cur_try_k;          /* Their label indices; grown dynamically. */
+	int *cur_try_c;          /* Their clause indices (distinct landing pads per try). */
+	char (*cur_try_vt)[64];  /* Their catch-type class names (for __vtable_<name>). */
 	const Stmt **region_stmt; /* IR loop regions: the loop statements the pre-scan recorded. Grown dynamically. */
 	IRFunc     **region_irf;  /* Their lowered IR. */
 	IRAlloc    **region_alloc;/* Their register allocations (also sized the shared frame area). */
 	int         region_count; /* Regions recorded for the current function. */
 	int         region_cap;
 	int         region_base;                 /* rbp offset of the shared region spill/callee-save area. */
-	FuncInfo *breeze_thunks[64]; /* spawn-with-args targets needing a __breeze_ thunk (deduped). */
+	FuncInfo **breeze_thunks; /* spawn-with-args targets needing a __breeze_ thunk (deduped). Grown. */
 	int breeze_thunk_count;
-	FuncInfo *blocking_thunks[64]; /* `extern blocking` targets needing a __blocking_ thunk (deduped). */
+	int breeze_thunk_cap;
+	FuncInfo **blocking_thunks; /* `extern blocking` targets needing a __blocking_ thunk (deduped). */
 	int blocking_thunk_count;
-	struct
+	int blocking_thunk_cap;
+	struct fpk_entry
 	{
 		int is_float;             /* 1 for a 32-bit float constant, 0 for 64-bit double. */
 		unsigned long long bits;  /* IEEE-754 bit pattern (low 32 bits used when is_float). */
-	} fpk[256];        /* Floating-point literal pool, emitted in .data as __fpk<id>. */
+	} *fpk;            /* Floating-point literal pool, emitted in .data as __fpk<id>. Grown. */
 	int fpk_count;
-	struct
+	int fpk_cap;
+	struct strk_entry
 	{
-		char bytes[256];          /* Decoded literal bytes (no embedded NUL). */
+		char *bytes;              /* Decoded literal bytes (no embedded NUL); allocated to len. */
 		int  len;
-	} strk[256];       /* String literal pool, emitted in .data as __str<id>. */
+	} *strk;           /* String literal pool, emitted in .data as __str<id>. Grown. */
 	int strk_count;
+	int strk_cap;
 } Codegen;
 
 void cg_init(Codegen *cg, FILE *out);

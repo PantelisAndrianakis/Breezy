@@ -306,12 +306,15 @@ typedef struct
 	char  (*implements)[64];
 	int   implements_count;
 	int   implements_cap;
-	EnumConstant constants[64];
+	EnumConstant *constants;  /* Grown at parse. */
 	int   constant_count;
-	Field fields[32];         /* Shared instance fields (user-declared). */
+	int   constants_cap;
+	Field *fields;            /* Shared instance fields (user-declared). */
 	int   field_count;
-	Func *methods[32];        /* Shared instance methods. */
+	int   fields_cap;
+	Func **methods;           /* Shared instance methods. */
 	int   method_count;
+	int   methods_cap;
 	Func *ctor;               /* The enum constructor (params + body), or NULL. */
 } EnumDecl;
 
