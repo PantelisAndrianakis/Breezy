@@ -622,7 +622,25 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 		const char *Rd = dst_reg(e, in->dst);
 		if (!strcmp(opc, "imul"))
 		{
-			cg_emit(cg, "    imul %s, %s, %lld", Rd, Ra, imm);
+			/* Strength-reduce a small constant multiply to a single LEA: the
+			   address unit computes Ra*{2,3,5,9} as base+index*scale in one
+			   1-cycle op, off the 3-cycle imul latency that would otherwise sit
+			   on a loop-carried chain (e.g. collatz's odd step 3*n+1). LEA's
+			   low-64 result equals imul's (both wrap mod 2^64), so the
+			   32-bit-native re-extension below stays valid. */
+			int sc = (imm == 3) ? 2 : (imm == 5) ? 4 : (imm == 9) ? 8 : 0;
+			if (sc)
+			{
+				cg_emit(cg, "    lea %s, [%s + %s*%d]", Rd, Ra, Ra, sc);
+			}
+			else if (imm == 2)
+			{
+				cg_emit(cg, "    lea %s, [%s + %s]", Rd, Ra, Ra);
+			}
+			else
+			{
+				cg_emit(cg, "    imul %s, %s, %lld", Rd, Ra, imm);
+			}
 		}
 		else
 		{
@@ -1375,6 +1393,22 @@ static void emit_tables_free(Emit *e)
 	free(e->mclean);
 }
 
+/* A block is terminated when its last instruction transfers control explicitly
+   (return or branch). A non-terminated block — including an empty one — falls
+   through to the next block in CREATION order; the region epilogue relies on
+   the final empty block doing exactly this, and empty merge blocks do too. */
+static int blk_is_terminated(const IRFunc *f, int b)
+{
+	const IRBlock *blk = &f->blocks[b];
+	if (blk->count == 0)
+	{
+		return 0;
+	}
+
+	IROp op = blk->instrs[blk->count - 1].op;
+	return op == IR_RET || op == IR_BR || op == IR_BRCOND;
+}
+
 /* The per-block emission loop with the mod/cmp/branch fusion windows. Shared by
    the whole-function and region paths. */
 static void emit_blocks(Emit *e, IRFunc *f)
@@ -1406,15 +1440,89 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			}
 		}
 	}
-	for (int b = 0; b < f->block_count; b++)
+	/* Greedy chain placement over "glue units" to turn taken branches into
+	   fall-throughs. A non-terminated block must stay immediately before its
+	   creation-order successor (its implicit fall-through), so maximal runs of
+	   such blocks form atomic units placed in index order. Units are chained by
+	   following each terminating branch's TRUE target: on a loop header that
+	   keeps the body adjacent (the false/exit arm stays out of line), and on an
+	   in-body if/else it makes the taken arm fall through (e.g. collatz's even
+	   step). A region's final block is empty and falls off into the epilogue, so
+	   when that last block is non-terminated it is pinned last. */
+	int N = f->block_count;
+	int *eord = malloc((size_t)(N > 0 ? N : 1) * sizeof(int));
+	int nord = 0;
+	if (N > 0)
 	{
+		int *unit_head = malloc((size_t)N * sizeof(int));
+		for (int b = 0; b < N; b++)
+		{
+			unit_head[b] = (b == 0 || blk_is_terminated(f, b - 1)) ? b : unit_head[b - 1];
+		}
+
+		char *placed = calloc((size_t)N, 1);
+		/* Pin the final fall-off unit last only when the last block has no
+		   terminator (region epilogue fall-through); whole-function blocks all
+		   end in a terminator, so their last block is placed by the greedy. */
+		int pin_last = !blk_is_terminated(f, N - 1);
+		int last_head = pin_last ? unit_head[N - 1] : -1;
+		for (int seed = 0; seed < N; seed++)
+		{
+			int h = unit_head[seed];
+			if (placed[h] || h == last_head)
+			{
+				continue;
+			}
+			int u = h;
+			while (u >= 0 && !placed[u] && u != last_head)
+			{
+				int bb = u, nxt_head = -1;
+				for (;;)
+				{
+					placed[bb] = 1;
+					eord[nord++] = bb;
+					if (blk_is_terminated(f, bb))
+					{
+						const IRBlock *tb = &f->blocks[bb];
+						const IRInstr *ti = &tb->instrs[tb->count - 1];
+						if (ti->op == IR_BRCOND || ti->op == IR_BR)
+						{
+							nxt_head = unit_head[ti->blk_true];
+						}
+
+						break;
+					}
+
+					bb++;   /* Non-terminated: glue to the next block (same unit). */
+				}
+				u = (nxt_head >= 0 && !placed[nxt_head] && nxt_head != last_head) ? nxt_head : -1;
+			}
+		}
+
+		for (int bb = last_head; bb >= 0 && bb < N && !placed[bb]; bb++)
+		{
+			placed[bb] = 1;
+			eord[nord++] = bb;
+			if (blk_is_terminated(f, bb))
+			{
+				break;
+			}
+		}
+
+		free(placed);
+		free(unit_head);
+	}
+
+	for (int oi = 0; oi < nord; oi++)
+	{
+		int b = eord[oi];
 		if (lhead[b])
 		{
 			cg_emit(cg, "    align 32");
 		}
 		cg_emit(cg, ".L%d:", e->blabel[b]);
 		IRBlock *blk = &f->blocks[b];
-		int next = (b + 1 < f->block_count) ? b + 1 : -1;
+		int next = (oi + 1 < nord) ? eord[oi + 1] : -1;
 		for (int i = 0; i < blk->count; )
 		{
 			IRInstr *in = &blk->instrs[i];
@@ -1455,6 +1563,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			}
 		}
 	}
+	free(eord);
 	free(lhead);
 }
 
