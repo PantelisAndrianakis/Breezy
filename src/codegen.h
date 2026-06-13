@@ -8,8 +8,6 @@
 
 typedef enum { TARGET_WINDOWS, TARGET_LINUX } Target;
 
-/* IR loop regions (Plan 4): max regions recorded per function. */
-#define CG_MAX_REGIONS 64
 
 typedef struct
 {
@@ -65,10 +63,11 @@ typedef struct
 	int cur_try_k[64];       /* Their label indices. */
 	int cur_try_c[64];       /* Their clause indices (distinct landing pads per try). */
 	char cur_try_vt[64][64]; /* Their catch-type class names (for __vtable_<name>). */
-	const Stmt *region_stmt[CG_MAX_REGIONS]; /* IR loop regions: the loop statements the pre-scan recorded. */
-	IRFunc     *region_irf[CG_MAX_REGIONS];  /* Their lowered IR. */
-	IRAlloc    *region_alloc[CG_MAX_REGIONS];/* Their register allocations (also sized the shared frame area). */
-	int         region_count;                /* Regions recorded for the current function. */
+	const Stmt **region_stmt; /* IR loop regions: the loop statements the pre-scan recorded. Grown dynamically. */
+	IRFunc     **region_irf;  /* Their lowered IR. */
+	IRAlloc    **region_alloc;/* Their register allocations (also sized the shared frame area). */
+	int         region_count; /* Regions recorded for the current function. */
+	int         region_cap;
 	int         region_base;                 /* rbp offset of the shared region spill/callee-save area. */
 	FuncInfo *breeze_thunks[64]; /* spawn-with-args targets needing a __breeze_ thunk (deduped). */
 	int breeze_thunk_count;

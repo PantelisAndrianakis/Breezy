@@ -171,11 +171,9 @@ static void add_shared_container(TypeTable *tt, TypeRef *t)
 		}
 	}
 
-	if (tt->shared_container_count<256)
-	{
-		tt->shared_containers[tt->shared_container_count++]=*t;   /* Struct copy; elem pointers stay owned by the AST. */
-		g_shared_changed=1;
-	}
+	tt->shared_containers=grow_ensure(tt->shared_containers,tt->shared_container_count,&tt->shared_container_cap,sizeof(*tt->shared_containers));
+	tt->shared_containers[tt->shared_container_count++]=*t;   /* Struct copy; elem pointers stay owned by the AST. */
+	g_shared_changed=1;
 }
 
 /* Mark one type as maybe-crossing-cores and drag everything a shared value of

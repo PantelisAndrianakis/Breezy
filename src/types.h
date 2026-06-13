@@ -81,8 +81,9 @@ typedef struct
 	int interface_count;
 	int interfaces_cap;
 	int iface_slots;               /* K: total interface methods = reserved vtable slots [0..K). */
-	TypeRef shared_containers[256];   /* Builtin container types (array/map/List/...) that may cross cores. */
+	TypeRef *shared_containers;        /* Builtin container types (array/map/List/...) that may cross cores. */
 	int     shared_container_count;
+	int     shared_container_cap;
 } TypeTable;
 
 void       types_init(TypeTable *tt);

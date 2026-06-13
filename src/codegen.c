@@ -1,4 +1,5 @@
 #include "codegen.h"
+#include "grow.h"
 #include "symtable.h"
 #include "lexer.h"
 #include "enums.h"
@@ -35,6 +36,10 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->breeze_thunk_count=0;
 	cg->blocking_thunk_count=0;
 	cg->region_count=0;
+	cg->region_cap=0;
+	cg->region_stmt=NULL;
+	cg->region_irf=NULL;
+	cg->region_alloc=NULL;
 	cg->region_base=0;
 	cg->target=TARGET_WINDOWS;   /* Driver overrides via --target. */
 }
@@ -1760,6 +1765,12 @@ static void cg_concat_operand(Codegen *cg, TypeTable *tt, Expr *op)
 
 /* The maximum operands a single concat chain flattens into one bzy_str_concat_n
    call. Longer chains (vanishingly rare) fall back to pairwise lowering. */
+/* CONCAT_MAX is a degrade-safe bound, NOT a hard cap: a string-concat chain with
+   more leaves than this lowers via the pairwise fallback below instead of the
+   one-shot n-ary join. It stays fixed because the frame-scratch reservation for
+   the n-ary path is sized to it in resolve.c (frame_node_block); growing it would
+   require coordinated dynamic frame sizing for negligible benefit (>64 '+' in one
+   expression is vanishingly rare). */
 #define CONCAT_MAX 64
 
 /* Collect the leaf operands of a maximal string-concat tree into out[], left to
@@ -6073,9 +6084,7 @@ typedef struct
 	int count;
 } LpCand;
 
-#define LPROMO_MAX_CAND 32
-
-static void cg_lpromo_note(Codegen *cg, int off, LpCand *cand, int *n)
+static void cg_lpromo_note(Codegen *cg, int off, LpCand **cand, int *n, int *cap)
 {
 	if (off <= 0 || cg_local_xmm(cg, off))
 	{
@@ -6084,22 +6093,20 @@ static void cg_lpromo_note(Codegen *cg, int off, LpCand *cand, int *n)
 
 	for (int i = 0; i < *n; i++)
 	{
-		if (cand[i].off == off)
+		if ((*cand)[i].off == off)
 		{
-			cand[i].count++;
+			(*cand)[i].count++;
 			return;
 		}
 	}
 
-	if (*n < LPROMO_MAX_CAND)
-	{
-		cand[*n].off = off;
-		cand[*n].count = 1;
-		(*n)++;
-	}
+	*cand = grow_ensure(*cand, *n, cap, sizeof(**cand));
+	(*cand)[*n].off = off;
+	(*cand)[*n].count = 1;
+	(*n)++;
 }
 
-static void cg_lpromo_uses_expr(Codegen *cg, Expr *e, LpCand *cand, int *n)
+static void cg_lpromo_uses_expr(Codegen *cg, Expr *e, LpCand **cand, int *n, int *cap)
 {
 	if (!e)
 	{
@@ -6108,20 +6115,20 @@ static void cg_lpromo_uses_expr(Codegen *cg, Expr *e, LpCand *cand, int *n)
 
 	if (e->kind == EX_IDENT && e->type.kind == TY_DOUBLE && e->anno_int > 0)
 	{
-		cg_lpromo_note(cg, e->anno_int, cand, n);
+		cg_lpromo_note(cg, e->anno_int, cand, n, cap);
 	}
 
-	cg_lpromo_uses_expr(cg, e->lhs, cand, n);
-	cg_lpromo_uses_expr(cg, e->rhs, cand, n);
+	cg_lpromo_uses_expr(cg, e->lhs, cand, n, cap);
+	cg_lpromo_uses_expr(cg, e->rhs, cand, n, cap);
 	for (int i = 0; i < e->arg_count; i++)
 	{
-		cg_lpromo_uses_expr(cg, e->args[i], cand, n);
+		cg_lpromo_uses_expr(cg, e->args[i], cand, n, cap);
 	}
 }
 
-static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand *cand, int *n);
+static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand **cand, int *n, int *cap);
 
-static void cg_lpromo_uses_stmt(Codegen *cg, Stmt *s, LpCand *cand, int *n)
+static void cg_lpromo_uses_stmt(Codegen *cg, Stmt *s, LpCand **cand, int *n, int *cap)
 {
 	if (!s)
 	{
@@ -6130,21 +6137,21 @@ static void cg_lpromo_uses_stmt(Codegen *cg, Stmt *s, LpCand *cand, int *n)
 
 	if (s->kind == ST_VARDECL && s->decl_type.kind == TY_DOUBLE && s->decl_offset > 0)
 	{
-		cg_lpromo_note(cg, s->decl_offset, cand, n);
+		cg_lpromo_note(cg, s->decl_offset, cand, n, cap);
 	}
 
-	cg_lpromo_uses_expr(cg, s->target, cand, n);
-	cg_lpromo_uses_expr(cg, s->cond, cand, n);
-	cg_lpromo_uses_expr(cg, s->expr, cand, n);
-	cg_lpromo_uses_expr(cg, s->value, cand, n);
-	cg_lpromo_uses_expr(cg, s->decl_init, cand, n);
-	cg_lpromo_uses_stmt(cg, s->for_init, cand, n);
-	cg_lpromo_uses_stmt(cg, s->for_post, cand, n);
-	cg_lpromo_uses_block(cg, s->then_blk, cand, n);
-	cg_lpromo_uses_block(cg, s->else_blk, cand, n);
+	cg_lpromo_uses_expr(cg, s->target, cand, n, cap);
+	cg_lpromo_uses_expr(cg, s->cond, cand, n, cap);
+	cg_lpromo_uses_expr(cg, s->expr, cand, n, cap);
+	cg_lpromo_uses_expr(cg, s->value, cand, n, cap);
+	cg_lpromo_uses_expr(cg, s->decl_init, cand, n, cap);
+	cg_lpromo_uses_stmt(cg, s->for_init, cand, n, cap);
+	cg_lpromo_uses_stmt(cg, s->for_post, cand, n, cap);
+	cg_lpromo_uses_block(cg, s->then_blk, cand, n, cap);
+	cg_lpromo_uses_block(cg, s->else_blk, cand, n, cap);
 }
 
-static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand *cand, int *n)
+static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand **cand, int *n, int *cap)
 {
 	if (!b)
 	{
@@ -6153,7 +6160,7 @@ static void cg_lpromo_uses_block(Codegen *cg, Block *b, LpCand *cand, int *n)
 
 	for (int i = 0; i < b->count; i++)
 	{
-		cg_lpromo_uses_stmt(cg, b->stmts[i], cand, n);
+		cg_lpromo_uses_stmt(cg, b->stmts[i], cand, n, cap);
 	}
 }
 
@@ -6173,11 +6180,12 @@ static void cg_lpromo_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 		return;
 	}
 
-	LpCand cand[LPROMO_MAX_CAND];
+	LpCand *cand = NULL;
 	int nc = 0;
-	cg_lpromo_uses_block(cg, body, cand, &nc);
-	cg_lpromo_uses_expr(cg, loop->cond, cand, &nc);
-	cg_lpromo_uses_stmt(cg, loop->for_post, cand, &nc);
+	int cap = 0;
+	cg_lpromo_uses_block(cg, body, &cand, &nc, &cap);
+	cg_lpromo_uses_expr(cg, loop->cond, &cand, &nc, &cap);
+	cg_lpromo_uses_stmt(cg, loop->for_post, &cand, &nc, &cap);
 
 	while (cg->lpromo_n < LPROMO_NREGS)
 	{
@@ -8397,7 +8405,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
 			const char *verdict = "ineligible";
-			if (cg->region_count < CG_MAX_REGIONS && ir_region_eligible(s)
+			if (ir_region_eligible(s)
 				&& cg_region_line_allowed(s->line))
 			{
 				IRFunc *irf = ir_lower_region(f, s);
@@ -8406,6 +8414,14 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 					IRAlloc *a = ra_run(irf);
 					if (!a->hot_spill || cg_region_hotspill_override())
 					{
+						if (cg->region_count == cg->region_cap)
+						{
+							cg->region_cap = cg->region_cap ? cg->region_cap * 2 : 8;
+							cg->region_stmt  = realloc(cg->region_stmt,  (size_t)cg->region_cap * sizeof(*cg->region_stmt));
+							cg->region_irf   = realloc(cg->region_irf,   (size_t)cg->region_cap * sizeof(*cg->region_irf));
+							cg->region_alloc = realloc(cg->region_alloc, (size_t)cg->region_cap * sizeof(*cg->region_alloc));
+						}
+
 						cg->region_stmt[cg->region_count] = s;
 						cg->region_irf[cg->region_count] = irf;
 						cg->region_alloc[cg->region_count] = a;
