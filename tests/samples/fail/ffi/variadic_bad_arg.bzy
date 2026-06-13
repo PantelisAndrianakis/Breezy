@@ -1,0 +1,9 @@
+// SP3: a non-scalar (array) passed through `...` is rejected at compile time.
+extern int snprintf(byte[] buf, long size, string fmt, ...);
+
+void main()
+{
+	byte[] b = new byte[8];
+	int[] xs = new int[2];
+	snprintf(b, 8, "%d", xs);   // array to a variadic arg -> compile error.
+}

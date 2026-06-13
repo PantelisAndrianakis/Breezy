@@ -1,0 +1,13 @@
+// SP3: a callback whose signature does not match the TY_FUNC param is rejected.
+extern long qsort(long[] base, long n, long size, long(long,long) cmp);
+
+long bad(long a)   // wrong arity: not long(long,long).
+{
+	return a;
+}
+
+void main()
+{
+	long[] xs = new long[1];
+	qsort(xs, 1, 8, bad);
+}

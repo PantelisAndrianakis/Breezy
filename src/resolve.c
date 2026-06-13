@@ -2694,6 +2694,21 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				}
 			}
 
+			/* Variadic (`...`) arguments are C-ABI-native: a scalar/long/double (placed
+			   in GP/xmm) or a string (marshalled to char*). Arrays, objects, and maps
+			   cannot be passed through `...`. */
+			if (fi->is_variadic)
+			{
+				for (int i=fi->param_count; i<e->arg_count; i++)
+				{
+					TypeKind ak = e->args[i]->type.kind;
+					if (!(ty_is_int(ak) || ty_is_float(ak) || ak==TY_BOOL || ak==TY_STRING))
+					{
+						die(e->line,"a variadic argument must be a scalar or string.",NULL);
+					}
+				}
+			}
+
 			e->type=fi->ret_type;
 		}
 		break;

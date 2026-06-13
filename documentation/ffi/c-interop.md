@@ -90,6 +90,51 @@ Together with `fromCBytes` (C pointer -> string) and value-array argument marsha
 
 ---
 
+## Callbacks
+
+A C library can call back into Breezy through a function pointer - a `qsort` comparator, an OpenSSL verify hook, an event handler. Declare the callback parameter with a **C-style function type** `ret(paramtypes)` and pass a matching Breezy function **by name**; the compiler checks the signature and hands C the function's address directly - **no trampoline, no wrapper**, because a Breezy function already uses the platform C ABI.
+
+```breezy
+extern long qsort(long[] base, long n, long size, long(long,long) cmp);
+
+long ascending(long a, long b)
+{
+	return a - b;
+}
+
+void main()
+{
+	long[] xs = new long[5];
+	// ... fill xs ...
+	qsort(xs, xs.length, 8, ascending);   // C calls 'ascending' back, in place.
+}
+```
+
+A callback signature is **C-ABI-native scalars only** (`void`/int-family/`long`/`float`/`double`, and pointers as `long`); a `char*` the C side passes arrives as a `long` and is read inside the callback with `fromCString` / `fromCBytes`. A function whose signature does not match the declared type is a compile-time error.
+
+**A callback runs synchronously inside the C call's stack frame**, so it **must not park or throw**: no blocking I/O, channel operations, `yield()`, or spawning-and-waiting, and no exception that escapes the callback. Doing so would corrupt the C frame, so the runtime **aborts with a clear message** rather than fail silently. Keep callbacks short and pure - compute a result and return it.
+
+---
+
+## Variadic functions
+
+A C function with a variable argument list (the `printf`/`snprintf` family) is declared with a trailing `...`:
+
+```breezy
+extern int snprintf(byte[] buf, long size, string fmt, ...);
+
+void main()
+{
+	byte[] buf = new byte[16];
+	snprintf(buf, 16, "%d-%d", 7, 42);   // -> "7-42"
+	print(fromBytes(buf).substring(0, 4));
+}
+```
+
+The fixed parameters are typed normally; each variadic argument must be a scalar (`long`/`int`/`double`/...) or a `string` (marshalled to `char*`). Arrays, objects, and maps cannot pass through `...`. The compiler places the variadic arguments per the platform ABI automatically.
+
+---
+
 ## blocking - keep the scheduler flowing
 
 A C call that might block (a synchronous query, a slow syscall) should be marked `extern blocking`. The runtime then dispatches it to the [offload pool](../io/native-io.md): the calling breeze **parks** while a worker thread runs the call, so the scheduler core keeps serving other breezes. The marshalling is identical to a plain `extern`; `blocking` changes only **how** the call is dispatched.
@@ -164,6 +209,8 @@ A [non-moving heap](../memory/automatic-memory.md) means an object's address nev
 - **`string` arguments marshal to `char*`** (NUL-terminated); embedded NULs truncate.
 - **Value arrays marshal to a data pointer** (a C buffer); pass `.length` for the size. Object/string arrays are rejected.
 - **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`bool`; a returned `char*` is declared `long` and read with `fromCString` / `fromCBytes`.
+- **Callbacks**: declare the parameter as a function type `ret(types)` and pass a Breezy function by name (scalar-only signature, checked at compile time). A callback runs inside the C frame, so it must not park, yield, or throw - the runtime aborts if it does.
+- **Variadic functions**: a trailing `...` accepts scalar or `string` extra arguments (not arrays/objects); the ABI placement is automatic on both platforms.
 - **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core; an `extern blocking` call takes any number of arguments.
 - **Link with `--link <lib>` or `breezy.toml [link]`** - the two compose.
 - **`breezy.toml [app]`** embeds name/version/author/description in both platforms; `icon` is Windows-only.

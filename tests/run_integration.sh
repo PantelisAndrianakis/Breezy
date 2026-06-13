@@ -303,6 +303,8 @@ check ffi_toml      tests/samples/pass/ffi/proj_ffi_toml       $'5\n7'
 check_fail ffi_toml_badlib tests/samples/fail/ffi/proj_ffi_badlib
 check_fail ffi_obj_array tests/samples/fail/ffi/extern_obj_array.bzy
 check_fail frombytes_wrong_array tests/samples/fail/ffi/frombytes_wrong_array.bzy
+check_fail callback_sig_mismatch tests/samples/fail/ffi/callback_sig_mismatch.bzy
+check_fail variadic_bad_arg tests/samples/fail/ffi/variadic_bad_arg.bzy
 check blocking      tests/samples/pass/concurrency/blocking.bzy       $'5\n7'
 check timer_after tests/samples/pass/concurrency/timer_after.bzy   $'1\n2'
 check timer_order tests/samples/pass/concurrency/timer_order.bzy   $'1\n2\n3'
