@@ -1,0 +1,12 @@
+// SP3: call a variadic C function (snprintf) with two integer varargs and read
+// the formatted result back. Exercises the variadic ABI (SysV AL=0 for integer
+// varargs; Win64 places the varargs in the GP sequence).
+extern int snprintf(byte[] buf, long size, string fmt, ...);
+
+void main()
+{
+	byte[] buf = new byte[16];
+	snprintf(buf, 16, "%d-%d", 7, 42);   // writes "7-42\0" into buf.
+	string s = fromBytes(buf);            // SP2: byte[] -> string (16 bytes, trailing zeros).
+	print(s.substring(0, 4));             // "7-42"
+}

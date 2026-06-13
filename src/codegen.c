@@ -2721,7 +2721,7 @@ static void cg_branch_if(Codegen *cg, TypeTable *tt, Expr *cond, int label)
    clobber an argument register placed in the second pass. Win64: positions 0-3
    in regs, stack at [rsp+32+k*8] (after the 32-byte shadow); System V: 6 int +
    8 fp regs, stack at [rsp+k*8]. The frame reserves this region (outarg_base). */
-static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int b, int marshal_cstr)
+static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int b, int marshal_cstr, int variadic)
 {
 	int win = (cg->target != TARGET_LINUX);
 
@@ -2780,7 +2780,11 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 		{
 			if (s>=4) { continue; }
 			if (is_float) { cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",s,src); }
-			else if (is_double) { cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",s,src); }
+			else if (is_double)
+			{
+				cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",s,src);
+				if (variadic) { cg_emit(cg,"    movq %s, xmm%d",cg_iarg(cg,s),s); }   /* Win64 varargs: FP also in the GP register. */
+			}
 			else
 			{
 				cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,s),src);
@@ -2801,6 +2805,13 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,ii),src);
 			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,ii)); }
 		}
+	}
+
+	if (variadic && !win)
+	{
+		/* SysV variadic ABI: AL = number of vector (xmm) registers used to pass
+		   arguments. fp_idx now holds that count (0 for integer-only varargs). */
+		cg_emit(cg,"    mov al, %d", fp_idx);
 	}
 }
 
@@ -2913,7 +2924,7 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		slot++;
 	}
 
-	cg_place_args(cg, slot_kind, total, b, marshal_cstr);
+	cg_place_args(cg, slot_kind, total, b, marshal_cstr, cg->call_variadic);
 
 	if (indirect)
 	{
@@ -3951,7 +3962,7 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 		slot++;
 	}
 
-	cg_place_args(cg, slot_kind, total, b, 0);
+	cg_place_args(cg, slot_kind, total, b, 0, 0);
 
 	cg_emit(cg,"    call %s", label);
 
@@ -5679,8 +5690,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			}
 			else
 			{
+				cg->call_variadic = fi->is_variadic;
 				cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
 								  ty_is_float(e->type.kind), fi->param_types, fi->param_count, fi->is_extern);
+				cg->call_variadic = 0;
 			}
 		}
 		break;

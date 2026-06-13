@@ -91,6 +91,7 @@ typedef struct
 	} *strk;           /* String literal pool, emitted in .data as __str<id>. Grown. */
 	int strk_count;
 	int strk_cap;
+	int call_variadic;   /* FFI: 1 while lowering a call to a variadic extern (set per call site). */
 } Codegen;
 
 void cg_init(Codegen *cg, FILE *out);

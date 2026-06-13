@@ -1263,10 +1263,20 @@ static void test_ffi_callback_type_lowers(void)
 static void test_ffi_variadic_parses(void)
 {
 	/* SP3: a variadic extern (trailing ...) parses and a call with extra args
-	   beyond the fixed params compiles. ABI placement is asserted in Task 6. */
+	   beyond the fixed params compiles, setting AL=0 for integer-only varargs
+	   (SysV variadic ABI: AL = vector-register count). */
 	emit("extern int snprintf(byte[] buf, long size, string fmt, ...);"
 		 " void main() { byte[] b; b = new byte[8]; snprintf(b, 8, \"%d\", 7); }", TARGET_LINUX);
-	ASSERT_INT(g_asm != NULL && strstr(g_asm, "$snprintf") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "$snprintf") != NULL && strstr(g_asm, "mov al, 0") != NULL, 1);
+}
+
+static void test_ffi_variadic_win64_fpdup(void)
+{
+	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
+	   (movq) alongside the xmm register. */
+	emit("extern int printf(string fmt, ...);"
+		 " void main() { printf(\"%f\", 1.5); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "movq") != NULL, 1);
 }
 
 int main(void)
@@ -1330,6 +1340,7 @@ int main(void)
 	RUN(test_ffi_frombytes_arr_lowers);
 	RUN(test_ffi_callback_type_lowers);
 	RUN(test_ffi_variadic_parses);
+	RUN(test_ffi_variadic_win64_fpdup);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);
