@@ -488,53 +488,63 @@ static void elem_addr(const IRInstr *in, const char *Rbase, const char *Ridx, ch
 }
 
 /* dst = a / 2^k or a % 2^k via shifts/masks, signed-correct (matches idiv's
-   truncate-toward-zero), avoiding the ~20-40 cycle idiv. Stages through rax/rdx. */
+   truncate-toward-zero), avoiding the ~20-40 cycle idiv. The bias-correcting
+   signed cases stage through rax/rdx; the single-op unsigned/non-negative cases
+   work directly on Rd so an in-place x = x / 2^k stays one instruction. */
 static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
 {
 	Codegen *cg = e->cg;
+	int uns = ty_is_unsigned(in->type);
+	int nonneg = (in->a >= 0 && in->a < e->a->vreg_count && e->nn[in->a]);
+	long long mask = (1LL << k) - 1;
+
+	/* No sign bias to correct: a single shift (DIV) or mask (MOD). Emit it on Rd
+	   directly - when the allocator coalesced Rd with the source (x = x / 2^k),
+	   this is one in-place instruction instead of a mov/op/mov round-trip. */
+	if (uns || nonneg)
+	{
+		const char *Ra = vreg_in(e, in->a, "rax");
+		const char *Rd = dst_reg(e, in->dst);
+		if (strcmp(Rd, Ra))
+		{
+			cg_emit(cg, "    mov %s, %s", Rd, Ra);
+		}
+
+		if (in->op == IR_DIV)
+		{
+			cg_emit(cg, uns ? "    shr %s, %d" : "    sar %s, %d", Rd, k);
+		}
+		else
+		{
+			cg_emit(cg, "    and %s, %lld", Rd, mask);
+		}
+
+		finish_dst(e, in->dst);
+		return;
+	}
+
 	const char *Ra = vreg_in(e, in->a, "rax");
 	if (strcmp(Ra, "rax"))
 	{
 		cg_emit(cg, "    mov rax, %s", Ra);
 	}
 
-	int uns = ty_is_unsigned(in->type);
-	int nonneg = (in->a >= 0 && in->a < e->a->vreg_count && e->nn[in->a]);
-	long long mask = (1LL << k) - 1;
 	if (in->op == IR_DIV)
 	{
-		if (uns)
-		{
-			cg_emit(cg, "    shr rax, %d", k);
-		}
-		else if (nonneg)
-		{
-			cg_emit(cg, "    sar rax, %d", k);   /* Dividend proven >= 0: no sign bias. */
-		}
-		else
-		{
-			cg_emit(cg, "    mov rdx, rax");
-			cg_emit(cg, "    sar rdx, 63");
-			cg_emit(cg, "    shr rdx, %d", 64 - k);
-			cg_emit(cg, "    add rax, rdx");
-			cg_emit(cg, "    sar rax, %d", k);
-		}
+		cg_emit(cg, "    mov rdx, rax");
+		cg_emit(cg, "    sar rdx, 63");
+		cg_emit(cg, "    shr rdx, %d", 64 - k);
+		cg_emit(cg, "    add rax, rdx");
+		cg_emit(cg, "    sar rax, %d", k);
 	}
 	else
 	{
-		if (uns || nonneg)
-		{
-			cg_emit(cg, "    and rax, %lld", mask);   /* Non-negative: remainder is the low bits. */
-		}
-		else
-		{
-			cg_emit(cg, "    mov rdx, rax");
-			cg_emit(cg, "    sar rdx, 63");
-			cg_emit(cg, "    shr rdx, %d", 64 - k);
-			cg_emit(cg, "    add rax, rdx");
-			cg_emit(cg, "    and rax, %lld", mask);
-			cg_emit(cg, "    sub rax, rdx");
-		}
+		cg_emit(cg, "    mov rdx, rax");
+		cg_emit(cg, "    sar rdx, 63");
+		cg_emit(cg, "    shr rdx, %d", 64 - k);
+		cg_emit(cg, "    add rax, rdx");
+		cg_emit(cg, "    and rax, %lld", mask);
+		cg_emit(cg, "    sub rax, rdx");
 	}
 
 	const char *Rd = dst_reg(e, in->dst);
