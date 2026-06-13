@@ -1236,6 +1236,13 @@ static void test_ffi_blocking_five_args(void)
 	ASSERT_INT(strstr(g_asm, "__blocking_") != NULL, 1);
 }
 
+static void test_ffi_str_tobytes_lowers(void)
+{
+	/* SP2: string.toBytes() lowers to a bzy_str_to_bytes call (owned byte[]). */
+	emit("void main() { string s; s = \"hi\"; byte[] b; b = s.toBytes(); print(b.length); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_str_to_bytes") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1293,6 +1300,7 @@ int main(void)
 	RUN(test_ffi_frombytes_lowers);
 	RUN(test_ffi_array_arg_marshals_data_ptr);
 	RUN(test_ffi_blocking_five_args);
+	RUN(test_ffi_str_tobytes_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

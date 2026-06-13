@@ -99,6 +99,19 @@ void *bzy_str_from_cbytes(const char *p, int64_t len)
 	return bzy_str_new(p, len);
 }
 
+/* Copy a Breezy string's UTF-8 bytes into a fresh owned byte[] (stride-1 value
+   array). Empty string -> empty array. The result does not alias the string. */
+void *bzy_str_to_bytes(void *s)
+{
+	int64_t n = bzy_str_len(s);
+	void *a = bzy_array_new_sized(n, 1, 0);   /* Unmanaged elements, zeroed. */
+	if (n)
+	{
+		memcpy((char*)a + 32, (char*)s + 32, (size_t)n);
+	}
+	return a;
+}
+
 /* Join n strings into one owned (+1) result with a single allocation: sum the
    lengths, allocate once, then memcpy each piece. Replaces a chain of pairwise
    bzy_str_concat calls (O(n) allocations, O(n^2) copying) with O(n) copying. */

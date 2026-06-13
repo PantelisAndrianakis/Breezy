@@ -413,6 +413,19 @@ static void resolve_string_method(Expr *e)
 		e->type.kind = TY_ARRAY;
 		e->type.elem = typeref_box(elem);
 	}
+	else if (strcmp(nm,"toBytes")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"String.toBytes() takes no arguments.",NULL);
+		}
+
+		TypeRef elem;
+		memset(&elem, 0, sizeof(elem));
+		elem.kind = TY_BYTE;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(elem);
+	}
 	else if (strcmp(nm,"toInt")==0 || strcmp(nm,"toLong")==0 || strcmp(nm,"toByte")==0
 			 || strcmp(nm,"toShort")==0 || strcmp(nm,"toFloat")==0 || strcmp(nm,"toDouble")==0
 			 || strcmp(nm,"toBool")==0)

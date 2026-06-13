@@ -4377,6 +4377,7 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"charAt")==0           ? "bzy_str_char_at" :
 		strcmp(nm,"repeat")==0           ? "bzy_str_repeat" :
 		strcmp(nm,"split")==0            ? "bzy_str_split" :
+		strcmp(nm,"toBytes")==0          ? "bzy_str_to_bytes" :
 		strcmp(nm,"toInt")==0            ? "bzy_str_to_int" :
 		strcmp(nm,"toLong")==0           ? "bzy_str_to_long" :
 		strcmp(nm,"toByte")==0           ? "bzy_str_to_byte" :
@@ -9549,6 +9550,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_len");
 	cg_emit(cg,"extern bzy_str_from_cstring");
 	cg_emit(cg,"extern bzy_str_from_cbytes");
+	cg_emit(cg,"extern bzy_str_to_bytes");
 	cg_emit(cg,"extern bzy_print_str");
 	cg_emit(cg,"extern bzy_input_line");
 	cg_emit(cg,"extern bzy_sb_new");
