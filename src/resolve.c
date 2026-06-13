@@ -2474,12 +2474,35 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			{
 				for (int ai = 0; ai < e->arg_count && ai < callee->param_count; ai++)
 				{
+					TypeRef *pt = &callee->param_types[ai];
 					if (e->args[ai]->kind == EX_IDENT
-						&& (callee->param_types[ai].kind == TY_LONG || callee->param_types[ai].kind == TY_FUNC)
+						&& (pt->kind == TY_LONG || pt->kind == TY_FUNC)
 						&& types_find_func(g_types, e->args[ai]->name))
 					{
+						/* A TY_FUNC param checks the named function's signature exactly:
+						   return type and every parameter type must match (scalar kinds).
+						   A loose `long` param accepts any function address unchecked. */
+						if (pt->kind == TY_FUNC)
+						{
+							FuncInfo *cb = types_find_func(g_types, e->args[ai]->name);
+							int ok = (cb->ret_type.kind == (pt->elem ? pt->elem->kind : TY_VOID))
+									 && cb->param_count == pt->targ_count;
+							for (int k = 0; ok && k < pt->targ_count; k++)
+							{
+								if (cb->param_types[k].kind != pt->targs[k]->kind)
+								{
+									ok = 0;
+								}
+							}
+
+							if (!ok)
+							{
+								die(e->line,"callback argument does not match the declared function signature: ",e->args[ai]->name);
+							}
+						}
+
 						e->args[ai]->is_func_addr = 1;
-						e->args[ai]->type = callee->param_types[ai];   /* Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr. */
+						e->args[ai]->type = *pt;   /* Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr. */
 					}
 				}
 			}
@@ -3506,6 +3529,27 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 			if (pt->kind==TY_ARRAY && (!pt->elem || ty_is_managed(pt->elem->kind)))
 			{
 				die(0,"extern array parameter must be a value array (object/string arrays cannot marshal to a C buffer).",NULL);
+			}
+
+			/* A callback (TY_FUNC) parameter's signature must be C-ABI-native scalars:
+			   no managed types (received as a raw long + fromCString/fromCBytes), no
+			   nested function types. */
+			if (pt->kind==TY_FUNC)
+			{
+				TypeKind rk = pt->elem ? pt->elem->kind : TY_VOID;
+				if (ty_is_managed(rk) || rk==TY_FUNC)
+				{
+					die(0,"callback return type must be a scalar.",NULL);
+				}
+
+				for (int k=0; k<pt->targ_count; k++)
+				{
+					TypeKind ak = pt->targs[k]->kind;
+					if (ty_is_managed(ak) || ak==TY_FUNC)
+					{
+						die(0,"callback parameter type must be a scalar.",NULL);
+					}
+				}
 			}
 		}
 
