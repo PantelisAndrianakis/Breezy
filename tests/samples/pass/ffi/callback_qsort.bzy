@@ -21,7 +21,7 @@ long ascend(long a, long b)
 	return 0;
 }
 
-extern long qsort(long[] base, long n, long size, long cmp);   // cmp passed as a function address.
+extern long qsort(long[] base, long n, long size, long(long,long) cmp);   // typed callback: cmp must be long(long,long).
 
 void main()
 {
