@@ -1,0 +1,6 @@
+// An object/string array cannot marshal to a C buffer: rejected at compile time.
+extern long sink(string[] arr);
+
+void main()
+{
+}

@@ -2766,7 +2766,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 		else
 		{
 			cg_emit(cg,"    mov rax, [rbp - %d]",src);
-			if (marshal_cstr && slot_kind[s]==TY_STRING) { cg_emit(cg,"    add rax, 32"); }
+			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add rax, 32"); }
 			cg_emit(cg,"    mov [rsp + %d], rax",dst);
 		}
 	}
@@ -2784,7 +2784,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			else
 			{
 				cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,s),src);
-				if (marshal_cstr && slot_kind[s]==TY_STRING) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,s)); }
+				if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,s)); }
 			}
 		}
 		else if (is_float||is_double)
@@ -2799,7 +2799,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			if (int_idx>=6) { continue; }
 			int ii=int_idx++;
 			cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,ii),src);
-			if (marshal_cstr && slot_kind[s]==TY_STRING) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,ii)); }
+			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,ii)); }
 		}
 	}
 }
@@ -2833,8 +2833,8 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 		if (total==1 && only && !expr_is_owned(only))
 		{
 			TypeKind pk = self ? TY_OBJECT : ((param_count>0) ? params[0].kind : args[0]->type.kind);
-			int is_cstr = marshal_cstr && !self && args[0]->type.kind==TY_STRING;
-			if (!ty_is_float(pk) && !is_cstr)
+			int is_marshalled = marshal_cstr && !self && (args[0]->type.kind==TY_STRING || args[0]->type.kind==TY_ARRAY);
+			if (!ty_is_float(pk) && !is_marshalled)
 			{
 				cg_expr(cg,tt,only);
 				if (!self)
@@ -7786,9 +7786,9 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : i;
 			const char *r = cg_iarg(cg, ii);
 			cg_emit(cg,"    mov %s, [rax + %d]", r, i*8);
-			if (k==TY_STRING)
+			if (k==TY_STRING || k==TY_ARRAY)
 			{
-				cg_emit(cg,"    add %s, 32", r);   /* string object -> char* data. */
+				cg_emit(cg,"    add %s, 32", r);   /* string/value-array object -> data pointer. */
 			}
 		}
 	}

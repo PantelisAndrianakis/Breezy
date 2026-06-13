@@ -1087,6 +1087,15 @@ static void test_ffi_frombytes_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_str_from_cbytes") != NULL, 1);
 }
 
+static void test_ffi_array_arg_marshals_data_ptr(void)
+{
+	/* A value array passed to an extern marshals its element-data pointer (+32),
+	   exactly like a string. arg0 is rdi on SysV. */
+	emit("extern long sink(byte[] buf, long n);"
+		 " void main() { byte[] b; b = new byte[4]; sink(b, 4); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "add rdi, 32") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1142,6 +1151,7 @@ int main(void)
 	RUN(test_grow_ensure);
 	RUN(test_ffi_fromcstring_lowers);
 	RUN(test_ffi_frombytes_lowers);
+	RUN(test_ffi_array_arg_marshals_data_ptr);
 	RUN(test_stack_args_caller);
 	RUN(test_stack_args_callee);
 	SUMMARY();

@@ -3448,6 +3448,17 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 			die(0,"extern return type must be a scalar or long (string/object returns are not supported yet).",NULL);
 		}
 
+		/* A value array marshals to its element-data pointer (a C buffer). Object and
+		   string arrays hold pointers C cannot use as a flat buffer, so reject them. */
+		for (int i=0; i<f->param_count; i++)
+		{
+			TypeRef *pt = &f->params[i].type;
+			if (pt->kind==TY_ARRAY && (!pt->elem || ty_is_managed(pt->elem->kind)))
+			{
+				die(0,"extern array parameter must be a value array (object/string arrays cannot marshal to a C buffer).",NULL);
+			}
+		}
+
 		return;
 	}
 

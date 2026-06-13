@@ -296,6 +296,7 @@ else
 fi
 check ffi_toml      tests/samples/pass/ffi/proj_ffi_toml       $'5\n7'
 check_fail ffi_toml_badlib tests/samples/fail/ffi/proj_ffi_badlib
+check_fail ffi_obj_array tests/samples/fail/ffi/extern_obj_array.bzy
 check blocking      tests/samples/pass/concurrency/blocking.bzy       $'5\n7'
 check timer_after tests/samples/pass/concurrency/timer_after.bzy   $'1\n2'
 check timer_order tests/samples/pass/concurrency/timer_order.bzy   $'1\n2\n3'
