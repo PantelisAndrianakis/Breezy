@@ -224,6 +224,27 @@ static __thread int           t_requeue;     /* bzy_yield sets this; the schedul
                                                 after the switch, when it is safely off its own CPU. */
 static __thread int           t_is_worker;   /* 1 on a scheduler worker thread (and the main thread acting
                                                 as worker 0); 0 on offload/reactor/foreign threads. */
+static __thread int           t_in_callback; /* FFI: depth of foreign (C) callbacks running on this thread.
+                                                A callback runs synchronously inside a C stack frame, so it
+                                                must not park/yield (would unwind the C frame) or throw across
+                                                the C boundary. Non-zero => park/throw is a fatal misuse. */
+
+/* Bracket a foreign callback: codegen emits enter before, leave after, the extern
+   call that receives a Breezy function pointer. */
+void bzy_callback_enter(void)
+{
+	t_in_callback++;
+}
+
+void bzy_callback_leave(void)
+{
+	t_in_callback--;
+}
+
+int bzy_in_callback(void)
+{
+	return t_in_callback;
+}
 
 int bzy_current_wid(void)
 {
@@ -451,13 +472,26 @@ void *bzy_sched_current(void)      /* Opaque handle to the running breeze (for w
 	return t_running;
 }
 
+/* Abort if called from within a foreign callback: parking/throwing there would
+   corrupt the live C stack frame the callback runs inside. Fail loud, not silent. */
+static void bzy_callback_guard(const char *op)
+{
+	if (t_in_callback)
+	{
+		fprintf(stderr, "A foreign callback may not %s (it runs inside a C stack frame).\n", op);
+		abort();
+	}
+}
+
 void bzy_sched_park(void)          /* Suspend the running breeze; a wake() must re-enqueue it. */
 {
+	bzy_callback_guard("park");
 	bzy_coroutine_switch(t_sched);
 }
 
 void bzy_sched_park_unlock(void *lock)   /* Park, then have the scheduler release the lock after we switch out. */
 {
+	bzy_callback_guard("park");
 	t_park_unlock = lock;           /* bzy_mutex*. Closes the wake-before-park race: the waker cannot take the lock,
 	                                   and so cannot observe us as a waiter, until we are safely off the CPU. */
 	bzy_coroutine_switch(t_sched);
@@ -490,6 +524,7 @@ void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re
 
 void bzy_yield(void)
 {
+	bzy_callback_guard("yield");
 	Breeze *b = t_running;
 	if (!b)
 	{

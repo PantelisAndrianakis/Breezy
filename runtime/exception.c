@@ -106,6 +106,14 @@ static BzyExceptionFunc *exception_find(int64_t pc)
 
 void bzy_throw(void *exc, int64_t pc, int64_t frame)
 {
+	if (bzy_in_callback())
+	{
+		/* bzy_throw matches a caller return address to find the handler; it cannot
+		   unwind the foreign C frame a callback runs inside. Fail loud. */
+		fprintf(stderr, "A foreign callback may not throw across the C boundary.\n");
+		abort();
+	}
+
 	const char *trace[256];
 	int n = 0;
 

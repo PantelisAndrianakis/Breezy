@@ -1,0 +1,21 @@
+// SP3: a foreign callback must not park/yield. It runs synchronously inside the
+// C stack frame, so a coroutine switch would corrupt it -- the runtime guard
+// aborts loudly instead. qsort invokes cmp, which illegally yields, and the
+// process aborts with a clear diagnostic (verified by check_abort).
+extern long qsort(long[] base, long n, long size, long(long,long) cmp);
+
+long cmp(long a, long b)
+{
+	yield();        // Illegal inside a foreign callback -> runtime abort.
+	return a - b;
+}
+
+void main()
+{
+	long[] xs = new long[3];
+	xs[0] = 3;
+	xs[1] = 1;
+	xs[2] = 2;
+	qsort(xs, 3, 8, cmp);
+	print(0);
+}

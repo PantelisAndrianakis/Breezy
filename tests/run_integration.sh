@@ -290,6 +290,7 @@ check ffi_buffer    tests/samples/pass/ffi/ffi_buffer.bzy     $'world\n65\nwor'
 check bytes_string  tests/samples/pass/ffi/bytes_string.bzy   $'5\n5\n1\n0'
 check callback_qsort tests/samples/pass/ffi/callback_qsort.bzy "1"
 check variadic_snprintf tests/samples/pass/ffi/variadic_snprintf.bzy "7-42"
+check_abort callback_no_park tests/samples/pass/ffi/callback_no_park.bzy
 # FFI --link flag: recompile with an extra -l and confirm it still links + runs.
 ./breezy tests/samples/pass/ffi/ffi.bzy --link m >/dev/null 2>&1
 if [ $? -eq 0 ]; then

@@ -5690,10 +5690,41 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			}
 			else
 			{
+				/* If this extern receives a Breezy function pointer, bracket the call
+				   with the in-callback guard: a callback may fire (synchronously, on
+				   this stack) during the C call, and it must not park/throw. */
+				int has_cb = 0;
+				for (int ci = 0; ci < e->arg_count; ci++)
+				{
+					if (e->args[ci]->is_func_addr) { has_cb = 1; break; }
+				}
+
+				if (has_cb)
+				{
+					cg_aligned_call(cg, "bzy_callback_enter");
+				}
+
 				cg->call_variadic = fi->is_variadic;
 				cg_call_with_args(cg,tt,fi->asm_label,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
 								  ty_is_float(e->type.kind), fi->param_types, fi->param_count, fi->is_extern);
 				cg->call_variadic = 0;
+
+				if (has_cb)
+				{
+					/* Preserve the call result across the leave call. */
+					if (ty_is_float(e->type.kind))
+					{
+						cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);
+						cg_aligned_call(cg, "bzy_callback_leave");
+						cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);
+					}
+					else
+					{
+						cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+						cg_aligned_call(cg, "bzy_callback_leave");
+						cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+					}
+				}
 			}
 		}
 		break;
@@ -9615,6 +9646,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_spawn_args_commit");
 	cg_emit(cg,"extern bzy_offload_run");   /* FFI: `extern blocking` dispatch. */
 	cg_emit(cg,"extern bzy_yield");
+	cg_emit(cg,"extern bzy_callback_enter");
+	cg_emit(cg,"extern bzy_callback_leave");
 	cg_emit(cg,"extern bzy_channel_new");
 	cg_emit(cg,"extern bzy_channel_send");
 	cg_emit(cg,"extern bzy_channel_recv");
