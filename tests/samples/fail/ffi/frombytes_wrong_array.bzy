@@ -1,0 +1,7 @@
+// SP2: fromBytes rejects non-byte arrays at compile time (endianness-ambiguous).
+void main()
+{
+	int[] xs = new int[4];
+	string s = fromBytes(xs);   // Compile error: fromBytes expects byte[]/ubyte[].
+	print(s.length());
+}

@@ -1,0 +1,21 @@
+// SP2: byte[] <-> string round-trip. Pure in-language; no FFI call needed.
+void main()
+{
+	string s = "Café";              // 'é' is 2 UTF-8 bytes (0xC3 0xA9) -> exercises >127.
+	byte[] b = s.toBytes();
+	print(b.length);                // 5 bytes: C a f 0xC3 0xA9 (byte[] uses .length field).
+
+	string back = fromBytes(b);
+	print(back.length());           // 5: string byte length (method call).
+	if (back.equals(s))             // byte-for-byte identical round-trip.
+	{
+		print(1);
+	}
+	else
+	{
+		print(0);
+	}
+
+	byte[] empty = new byte[0];
+	print(fromBytes(empty).length()); // 0: empty array -> "".
+}

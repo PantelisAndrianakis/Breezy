@@ -287,6 +287,7 @@ check filewriter    tests/samples/pass/io/filewriter.bzy     $'102'
 check logger        tests/samples/pass/io/logger.bzy         $'200'
 check ffi           tests/samples/pass/ffi/ffi.bzy            $'5\n7'
 check ffi_buffer    tests/samples/pass/ffi/ffi_buffer.bzy     $'world\n65\nwor'
+check bytes_string  tests/samples/pass/ffi/bytes_string.bzy   $'5\n5\n1\n0'
 # FFI --link flag: recompile with an extra -l and confirm it still links + runs.
 ./breezy tests/samples/pass/ffi/ffi.bzy --link m >/dev/null 2>&1
 if [ $? -eq 0 ]; then
@@ -298,6 +299,7 @@ fi
 check ffi_toml      tests/samples/pass/ffi/proj_ffi_toml       $'5\n7'
 check_fail ffi_toml_badlib tests/samples/fail/ffi/proj_ffi_badlib
 check_fail ffi_obj_array tests/samples/fail/ffi/extern_obj_array.bzy
+check_fail frombytes_wrong_array tests/samples/fail/ffi/frombytes_wrong_array.bzy
 check blocking      tests/samples/pass/concurrency/blocking.bzy       $'5\n7'
 check timer_after tests/samples/pass/concurrency/timer_after.bzy   $'1\n2'
 check timer_order tests/samples/pass/concurrency/timer_order.bzy   $'1\n2\n3'
