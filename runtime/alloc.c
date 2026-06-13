@@ -122,6 +122,10 @@ static void (*finalizer_of(void *o))(void *)
    array avoids any concurrent realloc of the array itself (each worker still grows
    its own roots vector single-threaded). */
 #define BZY_CYC_MAX_WORKERS 256
+/* Collect a worker's buffer once it reaches this many candidates. Kept small so a
+   collection is a short bounded slice (pause ~ this many candidate closures), not
+   the old 10k-candidate stop-the-world pass. Also drained at scheduler safepoints. */
+#define CYCLE_SLICE_THRESHOLD 256
 typedef struct { void **roots; int64_t n, cap; } CycBuf;
 static CycBuf g_cyc[BZY_CYC_MAX_WORKERS];   /* Zero-initialized (BSS). */
 
@@ -573,9 +577,9 @@ void bzy_release(void *obj)
 		set_buffered(obj, 1);
 		roots_push_wid(wid, obj);
 
-		/* Reclaim opportunistically once enough candidates accumulate, so
-		   long-running programs bound cycle garbage without explicit calls. */
-		if (g_cyc[wid].n >= 10000)
+		/* Reclaim in a bounded slice once the buffer reaches the threshold, so the
+		   pause stays small even for sequential code that never hits a safepoint. */
+		if (g_cyc[wid].n >= CYCLE_SLICE_THRESHOLD)
 		{
 			int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
 			collect_worker(wid, 0);
@@ -823,6 +827,25 @@ static void collect_worker(int wid, int budget)
 void bzy_collect_cycles(void)
 {
 	int wid = bzy_current_wid();
+	int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
+	collect_worker(wid, 0);
+	if (cycle_timing_on())
+	{
+		fprintf(stderr, "[cycle-pause] %lld us\n", (long long)((bzy_clock_nanos() - t0) / 1000));
+	}
+}
+
+/* Safepoint drain: the scheduler calls this for the running worker when it has no
+   breeze to run, so pending candidates are reclaimed off the allocation path. Safe
+   only from the owning worker at a safepoint (no breeze of this worker is mid-
+   mutation). Bounded: the buffer is kept small by CYCLE_SLICE_THRESHOLD. */
+void bzy_cycle_slice(int wid)
+{
+	if (wid < 0 || wid >= BZY_CYC_MAX_WORKERS || g_cyc[wid].n == 0)
+	{
+		return;
+	}
+
 	int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
 	collect_worker(wid, 0);
 	if (cycle_timing_on())

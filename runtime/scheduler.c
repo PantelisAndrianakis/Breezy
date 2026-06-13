@@ -557,6 +557,8 @@ static void worker_loop(void)
 		Breeze *b = find_work();
 		if (!b)
 		{
+			bzy_cycle_slice(t_wid);   /* Bounded, per-worker; other workers keep running. */
+
 			if (__atomic_load_n(&g_shutdown, __ATOMIC_SEQ_CST))
 			{
 				break;

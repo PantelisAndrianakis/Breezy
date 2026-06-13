@@ -1750,10 +1750,10 @@ static void test_str_idempotent_reuse(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
-static void test_cycle_buffer_grows(void)
+static void test_cycle_buffer_bounded(void)
 {
 	int64_t before = bzy_live_count();
-	enum { N = 4000 };                    /* 2 * N = 8000 buffered roots, < the 10000 auto-collect bar. */
+	enum { N = 4000 };                    /* 2 * N = 8000 cycle nodes, far above the slice threshold. */
 	for (int i = 0; i < N; i++)
 	{
 		void *a = bzy_alloc(32);
@@ -1768,9 +1768,11 @@ static void test_cycle_buffer_grows(void)
 		bzy_release(b);               /* Buffers b. */
 	}
 
-	ASSERT_INT(bzy_live_count(), before + 2 * N);   /* Self-sustaining cycles stay alive. */
+	/* Bounded collection reclaims in slices once the per-worker buffer reaches the
+	   threshold, so the live set never carries all 2*N cycles at once. A final
+	   collect drains any remainder; every 2-node cycle must be reclaimed. */
 	bzy_collect_cycles();
-	ASSERT_INT(bzy_live_count(), before);           /* The growable roots buffer collected them all. */
+	ASSERT_INT(bzy_live_count(), before);
 }
 
 static void test_map_lazy_backing(void)
@@ -1901,7 +1903,7 @@ int main(void)
 	RUN(test_shared_map_ops);
 	RUN(test_map_iter_snapshot);
 	RUN(test_map_compound_ops);
-	RUN(test_cycle_buffer_grows);
+	RUN(test_cycle_buffer_bounded);
 	RUN(test_regex_matches_basic);
 	RUN(test_regex_test_search);
 	RUN(test_str_query);

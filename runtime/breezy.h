@@ -133,6 +133,7 @@ int64_t bzy_vec_contains(void *v, int64_t needle); /* 1 / 0. */
 int64_t bzy_clock_millis(void);   /* Wall-clock milliseconds since the Unix epoch. */
 int     bzy_current_wid(void);    /* Index of the worker running this thread (0 if none). */
 int     bzy_on_worker(void);      /* 1 in a scheduler-worker context, 0 on a foreign thread. */
+void    bzy_cycle_slice(int wid); /* Drain this worker's cycle candidates in a bounded slice (safepoint). */
 int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanoseconds. */
 void   *bzy_clock_date(int64_t millis);                /* "yyyy-MM-dd HH:mm:ss", local time; owned. */
 void   *bzy_clock_date_fmt(int64_t millis, void *fmt); /* Java-style pattern, local time; owned. */
