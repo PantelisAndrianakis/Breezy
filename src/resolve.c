@@ -2559,6 +2559,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (strcmp(e->name,"fromBytes")==0)
+		{
+			if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY
+				|| (e->args[0]->type.elem->kind!=TY_BYTE && e->args[0]->type.elem->kind!=TY_UBYTE))
+			{
+				die(e->line,"fromBytes expects one byte[] or ubyte[] argument.",NULL);
+			}
+
+			e->type.kind=TY_STRING;
+			break;
+		}
+
 		if (strcmp(e->name,"length")==0)
 		{
 			if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)

@@ -37,6 +37,7 @@ void   *bzy_str_new(const char *bytes, int64_t len); /* Owned (+1) immutable str
 void   *bzy_str_from_cstring(const char *p);         /* Copy a NUL-terminated char* into an owned string; NULL -> null. */
 void   *bzy_str_from_cbytes(const char *p, int64_t len); /* Copy len bytes into an owned string; NULL -> null. */
 void   *bzy_str_to_bytes(void *s);                   /* Owned (+1) byte[] copy of the string's UTF-8 bytes. */
+void   *bzy_str_from_bytes(void *arr);               /* Owned (+1) string from a byte[]/ubyte[]; NULL -> null. */
 int64_t bzy_str_len(void *s);                        /* Byte length (excludes the NUL). */
 const char *bzy_str_data(void *s);                   /* Pointer to the inline NUL-terminated bytes. */
 void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */

@@ -112,6 +112,17 @@ void *bzy_str_to_bytes(void *s)
 	return a;
 }
 
+/* Build a fresh owned string from a byte[]/ubyte[]'s raw element bytes (stride 1).
+   NULL array -> the Breezy null string (mirrors bzy_str_from_cbytes). */
+void *bzy_str_from_bytes(void *arr)
+{
+	if (!arr)
+	{
+		return NULL;
+	}
+	return bzy_str_new((const char*)arr + 32, bzy_array_len(arr));
+}
+
 /* Join n strings into one owned (+1) result with a single allocation: sum the
    lengths, allocate once, then memcpy each piece. Replaces a chain of pairwise
    bzy_str_concat calls (O(n) allocations, O(n^2) copying) with O(n) copying. */

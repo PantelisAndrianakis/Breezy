@@ -1243,6 +1243,13 @@ static void test_ffi_str_tobytes_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_str_to_bytes") != NULL, 1);
 }
 
+static void test_ffi_frombytes_arr_lowers(void)
+{
+	/* SP2: fromBytes(byte[]) lowers to a bzy_str_from_bytes call (owned string). */
+	emit("void main() { byte[] b; b = new byte[3]; string s; s = fromBytes(b); print(s); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_str_from_bytes") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1301,6 +1308,7 @@ int main(void)
 	RUN(test_ffi_array_arg_marshals_data_ptr);
 	RUN(test_ffi_blocking_five_args);
 	RUN(test_ffi_str_tobytes_lowers);
+	RUN(test_ffi_frombytes_arr_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

@@ -5611,6 +5611,17 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 							  1 /* result_is_object: owned string */, 0,
 							  ps, e->arg_count, 0 /* marshal_cstr: args are raw scalars */);
 		}
+		else if (strcmp(e->name,"fromBytes")==0)
+		{
+			/* Build an owned string from a byte[]/ubyte[]. The array object pointer is
+			   passed as-is (the helper reads its length+data); the result is an owned
+			   string. No C-string marshalling. */
+			TypeRef ps[1] = {0};
+			ps[0].kind = TY_ARRAY;
+			cg_call_with_args(cg,tt,"bzy_str_from_bytes",NULL,e->args,e->arg_count,0,
+							  1 /* result_is_object: owned string */, 0,
+							  ps, e->arg_count, 0 /* marshal_cstr: pass the object pointer */);
+		}
 		else if (strncmp(e->name,"Math.",5)==0)
 		{
 			cg_math(cg,tt,e);
@@ -9551,6 +9562,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_from_cstring");
 	cg_emit(cg,"extern bzy_str_from_cbytes");
 	cg_emit(cg,"extern bzy_str_to_bytes");
+	cg_emit(cg,"extern bzy_str_from_bytes");
 	cg_emit(cg,"extern bzy_print_str");
 	cg_emit(cg,"extern bzy_input_line");
 	cg_emit(cg,"extern bzy_sb_new");
