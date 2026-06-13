@@ -20,7 +20,7 @@ static int class_index(TypeTable *tt, const char *name)
    `to` may hold any subtype at runtime, and that subtype's fields can close a
    cycle). Interface targets expand to implementers. amb is set when the edge ran
    through an interface or a subtype (owner inference is hardest there). */
-static void add_edge(TypeTable *tt, char *adj, int *amb, int from, const char *to_name)
+static void add_edge(TypeTable *tt, char *adj, int *amb, char *con, int from, const char *to_name, int container)
 {
 	int exact = class_index(tt, to_name);
 	int iface = types_is_interface(tt, to_name);
@@ -43,13 +43,14 @@ static void add_edge(TypeTable *tt, char *adj, int *amb, int from, const char *t
 		if (matches)
 		{
 			adj[from * n + j] = 1;
+			if (container) { con[from * n + j] = 1; }              /* Owning if reached via any container. */
 			if (j != exact || iface) { amb[from * n + j] = 1; }   /* Reached via subtype/interface. */
 		}
 	}
 }
 
 /* Decompose a managed field type into the class edges it implies. */
-static void edges_from_type(TypeTable *tt, char *adj, int *amb, int from, TypeRef *t)
+static void edges_from_type(TypeTable *tt, char *adj, int *amb, char *con, int from, TypeRef *t, int container)
 {
 	if (!t)
 	{
@@ -59,14 +60,14 @@ static void edges_from_type(TypeTable *tt, char *adj, int *amb, int from, TypeRe
 	switch (t->kind)
 	{
 	case TY_OBJECT:
-		add_edge(tt, adj, amb, from, t->class_name);
+		add_edge(tt, adj, amb, con, from, t->class_name, container);
 		break;
 	case TY_ARRAY:
 	case TY_MAP:
 	case TY_GENERIC:
 	case TY_ENTRY:
-		edges_from_type(tt, adj, amb, from, t->elem);
-		edges_from_type(tt, adj, amb, from, t->elem2);
+		edges_from_type(tt, adj, amb, con, from, t->elem, 1);    /* Element of a container: owning edge. */
+		edges_from_type(tt, adj, amb, con, from, t->elem2, 1);
 		break;
 	default:
 		break;   /* Value types and immutable strings cannot root a reclaimable cycle. */
@@ -75,17 +76,19 @@ static void edges_from_type(TypeTable *tt, char *adj, int *amb, int from, TypeRe
 
 /* Build the class-reference adjacency (and a companion "ambiguous edge" matrix).
    Caller frees both with free(). Returns NULL on a zero-class table. */
-static char *build_adjacency(TypeTable *tt, int **amb_out)
+static char *build_adjacency(TypeTable *tt, int **amb_out, char **con_out)
 {
 	int n = tt->class_count;
 	if (n == 0)
 	{
 		*amb_out = NULL;
+		*con_out = NULL;
 		return NULL;
 	}
 
 	char *adj = calloc((size_t)n * n, sizeof(char));
 	int  *amb = calloc((size_t)n * n, sizeof(int));
+	char *con = calloc((size_t)n * n, sizeof(char));   /* 1 = container (owning) edge. */
 	for (int i = 0; i < n; i++)
 	{
 		ClassInfo *c = tt->classes[i];
@@ -95,18 +98,32 @@ static char *build_adjacency(TypeTable *tt, int **amb_out)
 			{
 				continue;   /* Static fields are global slots, not per-object edges. */
 			}
-			edges_from_type(tt, adj, amb, i, &c->fields[f].type);
+			edges_from_type(tt, adj, amb, con, i, &c->fields[f].type, 0);
 		}
 	}
 
 	*amb_out = amb;
+	*con_out = con;
 	return adj;
 }
 
 /* Test hook: expose the static adjacency builder. */
 char *cycleinfo_test_adjacency(TypeTable *tt, int **amb_out)
 {
-	return build_adjacency(tt, amb_out);
+	char *con = NULL;
+	char *adj = build_adjacency(tt, amb_out, &con);
+	free(con);
+	return adj;
+}
+
+char *cycleinfo_test_container(TypeTable *tt)
+{
+	int *amb = NULL;
+	char *con = NULL;
+	char *adj = build_adjacency(tt, &amb, &con);
+	free(adj);
+	free(amb);
+	return con;
 }
 
 typedef struct
@@ -202,7 +219,8 @@ CycleReport cycle_analyze(TypeTable *tt)
 	}
 
 	int *amb = NULL;
-	char *adj = build_adjacency(tt, &amb);
+	char *con = NULL;
+	char *adj = build_adjacency(tt, &amb, &con);
 
 	Scc s;
 	s.adj = adj; s.n = n;
@@ -257,15 +275,40 @@ CycleReport cycle_analyze(TypeTable *tt)
 	r.ambiguous_edges = f.ambiguous;
 	free(f.state);
 
+	/* Structural weak rule: within a non-trivial SCC, a scalar edge C->D (con==0)
+	   whose reverse D->C is a container edge (con==1) is a weakable back-edge -- D
+	   owns C in a collection and C points back via a scalar field, so weakening
+	   C->D is the always-safe direction. An SCC with no such edge has no ownership
+	   signal and stays with the bounded collector. */
+	char *resolvable = calloc((size_t)s.ncomp, sizeof(char));
+	char *nontriv = calloc((size_t)s.ncomp, sizeof(char));
+	for (int id = 0; id < s.ncomp; id++) { if (s.comp_size[id] > 1) { nontriv[id] = 1; } }
+	for (int v = 0; v < n; v++) { if (s.comp_size[s.comp[v]] == 1 && adj[v * n + v]) { nontriv[s.comp[v]] = 1; } }
+	for (int u = 0; u < n; u++)
+	{
+		for (int v = 0; v < n; v++)
+		{
+			if (s.comp[u] != s.comp[v]) { continue; }
+			if (adj[u * n + v] && !con[u * n + v] && adj[v * n + u] && con[v * n + u])
+			{
+				r.weakable_edges++;             /* u->v scalar, v->u container: weaken u->v. */
+				resolvable[s.comp[u]] = 1;
+			}
+		}
+	}
+	for (int id = 0; id < s.ncomp; id++) { if (nontriv[id] && !resolvable[id]) { r.unresolvable_sccs++; } }
+	free(resolvable);
+	free(nontriv);
+
 	free(s.index); free(s.low); free(s.onstack); free(s.stack);
-	free(s.comp); free(s.comp_size); free(adj); free(amb);
+	free(s.comp); free(s.comp_size); free(adj); free(amb); free(con);
 	return r;
 }
 
 void cycle_report_print(const CycleReport *r)
 {
 	fprintf(stderr,
-		"[cycle] classes=%d in_cycles=%d sccs=%d largest=%d weak_candidates=%d ambiguous=%d acyclic=%d\n",
+		"[cycle] classes=%d in_cycles=%d sccs=%d largest=%d weak_candidates=%d ambiguous=%d weakable=%d unresolvable=%d acyclic=%d\n",
 		r->total_classes, r->classes_in_cycles, r->scc_count, r->largest_scc,
-		r->weak_edge_candidates, r->ambiguous_edges, r->acyclic);
+		r->weak_edge_candidates, r->ambiguous_edges, r->weakable_edges, r->unresolvable_sccs, r->acyclic);
 }

@@ -13,6 +13,10 @@ typedef struct
 	int weak_edge_candidates; /* Back-edges that must become weak to break every SCC. */
 	int ambiguous_edges;      /* Weak candidates that fall on an interface/base-typed field
 	                             (owner inference hardest here). */
+	int weakable_edges;       /* Scalar back-edges into a container-owner: the structural rule
+	                             can compile these as zeroing-weak (always-safe direction). */
+	int unresolvable_sccs;    /* Non-trivial SCCs with no weakable edge (symmetric scalar cycle):
+	                             no ownership signal, so they stay with the bounded collector. */
 	int acyclic;              /* 1 if no non-trivial SCC: collector removable with no weak edges. */
 } CycleReport;
 

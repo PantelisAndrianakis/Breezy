@@ -150,15 +150,23 @@ static void civil_from_days(int64_t z, int *year, int *month, int *day)
    Thread-local so concurrent breezes never race on the cache. */
 static int64_t local_offset(time_t secs)
 {
-	static __thread int64_t cache_lo = 0;
-	static __thread int64_t cache_hi = 0;
-	static __thread int64_t cache_off = 0;
-	static __thread int cache_valid = 0;
+	/* One __thread struct so the Windows emutls hot path pays a single
+	   __emutls_get_address per call instead of four (mirrors PoolTLS in
+	   alloc.c). Linux is unaffected: still one fs:-relative resolution. */
+	typedef struct
+	{
+		int64_t lo;
+		int64_t hi;
+		int64_t off;
+		int     valid;
+	} TzCache;
+	static __thread TzCache tz;
+	TzCache *c = &tz;   /* Resolve TLS once; all reads/writes go through c. */
 
 	int64_t s = (int64_t)secs;
-	if (cache_valid && s >= cache_lo && s < cache_hi)
+	if (c->valid && s >= c->lo && s < c->hi)
 	{
-		return cache_off;
+		return c->off;
 	}
 
 	struct tm tmv;
@@ -183,10 +191,10 @@ static int64_t local_offset(time_t secs)
 #endif
 
 	int64_t lo = floordiv(s, 900) * 900;
-	cache_lo = lo;
-	cache_hi = lo + 900;
-	cache_off = off;
-	cache_valid = 1;
+	c->lo = lo;
+	c->hi = lo + 900;
+	c->off = off;
+	c->valid = 1;
 	return off;
 }
 

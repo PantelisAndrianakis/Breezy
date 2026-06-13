@@ -171,6 +171,45 @@ static void test_cycle_weak_candidates(void)
 	ASSERT_INT(r.weak_edge_candidates, 1);
 }
 
+extern char *cycleinfo_test_container(TypeTable *);
+
+static void test_cycle_edge_kind_tree(void)
+{
+	/* Parent owns List<Child> (container edge); Child has a scalar Parent field. */
+	const char *src = "class Parent { List<Child> kids; } class Child { Parent parent; }"
+	                  " void main() { Parent p; p = new Parent(); }";
+	TypeTable *tt = build_tt(&src, 1);
+	char *con = cycleinfo_test_container(tt);
+	int pi = -1, ci = -1;
+	for (int i = 0; i < tt->class_count; i++)
+	{
+		if (strcmp(tt->classes[i]->name, "Parent") == 0) { pi = i; }
+		if (strcmp(tt->classes[i]->name, "Child") == 0) { ci = i; }
+	}
+	ASSERT_INT(con[pi * tt->class_count + ci], 1);   /* Parent->Child via List: container edge. */
+	ASSERT_INT(con[ci * tt->class_count + pi], 0);   /* Child->Parent: scalar edge. */
+	free(con);
+}
+
+static void test_cycle_rule_tree_weakable(void)
+{
+	/* Scalar Child->Parent into the container-owner Parent: the rule resolves it. */
+	const char *src = "class Parent { List<Child> kids; } class Child { Parent parent; }"
+	                  " void main() { Parent p; p = new Parent(); }";
+	CycleReport r = cycle_analyze(build_tt(&src, 1));
+	ASSERT_INT(r.weakable_edges, 1);
+	ASSERT_INT(r.unresolvable_sccs, 0);
+}
+
+static void test_cycle_rule_dll_unresolvable(void)
+{
+	/* Doubly-linked list: symmetric scalar cycle, no container signal. */
+	const char *src = "class Node { Node prev; Node next; } void main() { Node n; n = new Node(); }";
+	CycleReport r = cycle_analyze(build_tt(&src, 1));
+	ASSERT_INT(r.weakable_edges, 0);
+	ASSERT_INT(r.unresolvable_sccs, 1);
+}
+
 /* Scope a g_asm search to one emitted function's body. The user units' free
    functions are emitted before the always-on prelude classes, and each function
    is followed by its __exception metadata block, so the slice from `label` up to
@@ -1260,6 +1299,9 @@ int main(void)
 	RUN(test_cycle_mutual);
 	RUN(test_cycle_via_container);
 	RUN(test_cycle_weak_candidates);
+	RUN(test_cycle_edge_kind_tree);
+	RUN(test_cycle_rule_tree_weakable);
+	RUN(test_cycle_rule_dll_unresolvable);
 	RUN(test_stack_args_caller);
 	RUN(test_stack_args_callee);
 	SUMMARY();
