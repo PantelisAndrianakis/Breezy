@@ -222,6 +222,18 @@ static __thread int           t_wid;         /* This thread's worker index. */
 static __thread void         *t_park_unlock; /* bzy_mutex* the scheduler releases after a parking switch. */
 static __thread int           t_requeue;     /* bzy_yield sets this; the scheduler re-enqueues the breeze
                                                 after the switch, when it is safely off its own CPU. */
+static __thread int           t_is_worker;   /* 1 on a scheduler worker thread (and the main thread acting
+                                                as worker 0); 0 on offload/reactor/foreign threads. */
+
+int bzy_current_wid(void)
+{
+	return t_wid;   /* 0 on the pre-scheduler/single-worker main thread. */
+}
+
+int bzy_on_worker(void)
+{
+	return t_is_worker;   /* Distinguishes a real worker context from a foreign thread. */
+}
 
 /* Wake an idle worker if any is parked on the semaphore. A busy worker finds new
    work by polling/stealing, so a spawn or wake onto a running pool pays no syscall.
@@ -362,6 +374,7 @@ void bzy_sched_init(void)
 {
 	t_sched = bzy_coroutine_thread_enter();
 	t_wid = 0;
+	t_is_worker = 1;   /* The main thread acts as worker 0 before/with the pool. */
 	g_live = 0;
 	g_shutdown = 0;
 	g_nworkers = 0;
@@ -681,6 +694,7 @@ run:
 static void worker_main(int wid)
 {
 	t_wid = wid;
+	t_is_worker = 1;
 	t_sched = bzy_coroutine_thread_enter();   /* This thread becomes its own scheduler coroutine. */
 	worker_loop();
 }

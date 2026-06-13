@@ -139,6 +139,19 @@ static int cycle_timing_on(void)
 	return t;
 }
 
+/* Tripwire (I2c.2b): a confined object must buffer as a cycle candidate only on a
+   worker thread, since the planned per-worker buffers have a single writer each.
+   This must never fire; it is a no-op unless BZY_CYCLE_DEBUG is set. */
+static void assert_on_worker(void)
+{
+	static int dbg = -1;
+	if (dbg < 0) { dbg = getenv("BZY_CYCLE_DEBUG") ? 1 : 0; }
+	if (dbg && !bzy_on_worker())
+	{
+		fprintf(stderr, "[cycle] BUG: confined candidate buffered off-worker (wid=%d)\n", bzy_current_wid());
+	}
+}
+
 static void roots_push(void *o)
 {
 	if (g_roots_n == g_roots_cap)
@@ -561,6 +574,7 @@ void bzy_release(void *obj)
 		set_color(obj, PURPLE);
 		if (!buffered(obj))   /* Re-check under the lock. */
 		{
+			assert_on_worker();
 			set_buffered(obj, 1);
 			roots_push(obj);
 
