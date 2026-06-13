@@ -235,6 +235,7 @@ typedef struct
 	Block  *body;
 	int     is_extern;        /* FFI: declared with `extern`, no body; asm_label is the raw C symbol. */
 	int     is_blocking;      /* FFI: `extern blocking` — dispatch via the offload pool. */
+	int     is_variadic;      /* FFI: trailing `...` — a variadic C function (e.g. printf/snprintf). */
 	int     is_static;        /* Static method: no `this`, called via the class name. */
 	int     frame_size;       /* Resolver. */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */

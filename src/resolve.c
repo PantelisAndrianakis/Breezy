@@ -1160,7 +1160,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (nc && nc->has_ctor)
 		{
-			OverloadCand cands[8];
+			OverloadCand cands[8] = {0};   /* Zero is_variadic for all (only externs are variadic). */
 			for (int ci=0; ci<nc->ctor_count; ci++)
 			{
 				cands[ci].param_types=nc->ctors[ci].param_types;
@@ -1547,7 +1547,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				resolve_args(st,e,tc);
 
-				OverloadCand cands[16];
+				OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
 				for (int oi=0; oi<ocount && oi<16; oi++)
 				{
 					MethodInfo *mi=types_find_method_idx(sc,e->name,oi);
@@ -2420,7 +2420,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		resolve_args(st,e,tc);
 
-		OverloadCand cands[16];
+		OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
 		for (int oi=0; oi<ocount && oi<16; oi++)
 		{
 			MethodInfo *mi=types_find_method_idx(c,e->name,oi);
@@ -2660,13 +2660,14 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Unknown function: ",e->name);
 			}
 
-			OverloadCand cands[16];
+			OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
 			for (int oi=0; oi<ocount && oi<16; oi++)
 			{
 				FuncInfo *fo=types_find_func_idx(g_types,e->name,oi);
 				cands[oi].param_types=fo->param_types;
 				cands[oi].param_count=fo->param_count;
 				cands[oi].min_args=fo->ast ? overload_min_args(fo->ast) : fo->param_count;
+				cands[oi].is_variadic=fo->is_variadic;
 			}
 
 			TypeRef *argtypes=arg_types_of(e);

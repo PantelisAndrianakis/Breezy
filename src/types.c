@@ -681,6 +681,7 @@ static void register_unit_funcs(TypeTable *tt, Unit *u)
 			snprintf(fi->asm_label,sizeof(fi->asm_label),"$%s",f->name);
 			fi->is_extern=1;
 			fi->is_blocking=f->is_blocking;
+			fi->is_variadic=f->is_variadic;
 		}
 		else
 		{

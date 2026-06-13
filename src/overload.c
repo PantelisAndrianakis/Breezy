@@ -169,12 +169,20 @@ int overload_rank_arg(const TypeRef *param, const TypeRef *arg)
    neither the candidate count nor the argument count is bounded. */
 static int candidate_viable(const OverloadCand *c, const TypeRef *args, int argc)
 {
-	if (argc < c->min_args || argc > c->param_count)
+	if (argc < c->min_args)
 	{
 		return 0;
 	}
 
-	for (int i = 0; i < argc; i++)
+	if (argc > c->param_count && !c->is_variadic)
+	{
+		return 0;
+	}
+
+	/* Match the fixed parameters only; a variadic extern's extra args have no
+	   declared type and are accepted (their natural types are placed by codegen). */
+	int fixed = argc < c->param_count ? argc : c->param_count;
+	for (int i = 0; i < fixed; i++)
 	{
 		if (overload_rank_arg(&c->param_types[i], &args[i]) < 0)
 		{

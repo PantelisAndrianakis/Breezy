@@ -1140,7 +1140,7 @@ static void test_overload_select_exact_beats_widening(void)
 {
 	TypeRef pi[1] = { { .kind = TY_INT } };
 	TypeRef pl[1] = { { .kind = TY_LONG } };
-	OverloadCand cands[2] = { { pi, 1, 1 }, { pl, 1, 1 } };
+	OverloadCand cands[2] = { { pi, 1, 1, 0 }, { pl, 1, 1, 0 } };
 
 	TypeRef arg_int[1] = { { .kind = TY_INT } };
 	ASSERT_INT(overload_select(cands, 2, arg_int, 1), 0);   /* int arg -> f(int). */
@@ -1155,7 +1155,7 @@ static void test_overload_select_null_ambiguous(void)
 	TypeRef pb[1] = { { .kind = TY_OBJECT } };
 	strcpy(pa[0].class_name, "Dog");
 	strcpy(pb[0].class_name, "Cat");
-	OverloadCand cands[2] = { { pa, 1, 1 }, { pb, 1, 1 } };
+	OverloadCand cands[2] = { { pa, 1, 1, 0 }, { pb, 1, 1, 0 } };
 
 	TypeRef arg_null[1] = { { .kind = TY_NULL } };
 	ASSERT_INT(overload_select(cands, 2, arg_null, 1), OVL_AMBIG);
@@ -1170,12 +1170,12 @@ static void test_overload_set_ambiguous(void)
 	/* Box(int) [1,1] vs Box(int, int=0) [1,2] collide at arity 1. */
 	TypeRef p1[1] = { { .kind = TY_INT } };
 	TypeRef p2[2] = { { .kind = TY_INT }, { .kind = TY_INT } };
-	OverloadCand amb[2] = { { p1, 1, 1 }, { p2, 2, 1 } };
+	OverloadCand amb[2] = { { p1, 1, 1, 0 }, { p2, 2, 1, 0 } };
 	ASSERT_INT(overload_set_is_ambiguous(amb, 2), 1);
 
 	/* f(int) vs f(string): never collide. */
 	TypeRef ps[1] = { { .kind = TY_STRING } };
-	OverloadCand ok[2] = { { p1, 1, 1 }, { ps, 1, 1 } };
+	OverloadCand ok[2] = { { p1, 1, 1, 0 }, { ps, 1, 1, 0 } };
 	ASSERT_INT(overload_set_is_ambiguous(ok, 2), 0);
 }
 
@@ -1260,6 +1260,15 @@ static void test_ffi_callback_type_lowers(void)
 	ASSERT_INT(strstr(g_asm, "lea rax, [rel bzy_cmp]") != NULL, 1);
 }
 
+static void test_ffi_variadic_parses(void)
+{
+	/* SP3: a variadic extern (trailing ...) parses and a call with extra args
+	   beyond the fixed params compiles. ABI placement is asserted in Task 6. */
+	emit("extern int snprintf(byte[] buf, long size, string fmt, ...);"
+		 " void main() { byte[] b; b = new byte[8]; snprintf(b, 8, \"%d\", 7); }", TARGET_LINUX);
+	ASSERT_INT(g_asm != NULL && strstr(g_asm, "$snprintf") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1320,6 +1329,7 @@ int main(void)
 	RUN(test_ffi_str_tobytes_lowers);
 	RUN(test_ffi_frombytes_arr_lowers);
 	RUN(test_ffi_callback_type_lowers);
+	RUN(test_ffi_variadic_parses);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

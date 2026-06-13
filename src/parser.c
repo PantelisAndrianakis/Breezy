@@ -1400,6 +1400,17 @@ static Func *parse_extern(Parser *p)
 	{
 		do
 		{
+			if (check(p,TOKEN_DOT))
+			{
+				/* Trailing `...` (three TOKEN_DOT): a variadic C function. Only valid
+				   as the final entry in an extern parameter list. */
+				expect(p,TOKEN_DOT);
+				expect(p,TOKEN_DOT);
+				expect(p,TOKEN_DOT);
+				f->is_variadic=1;
+				break;
+			}
+
 			Param *pm=func_add_param(f);
 			parse_one_param(p,pm);
 		}
