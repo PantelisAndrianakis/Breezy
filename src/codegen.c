@@ -7101,6 +7101,39 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	cg->cur_counter_off = saved_counter;
 }
 
+/* Emit the per-iteration tail shared by both arms of an unswitched hoisted-list
+   foreach: store the element (in rax / xmm0) to the loop variable, run the user
+   body (break -> end, continue -> cont), then advance the register cursor and
+   loop. Used for the flat (head==0) and ring (head!=0) loops, which duplicate
+   this tail so the hot flat loop carries no per-element ring test. */
+static void cg_foreach_vec_tail(Codegen *cg, TypeTable *tt, Func *f, Stmt *s,
+                                int in_main, TypeKind et, const char *curreg,
+                                int top, int cont, int end)
+{
+	if (ty_is_float(et))
+	{
+		char mem[32];
+		cg_emit(cg, et==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+		sprintf(mem,"[rbp - %d]", s->decl_offset);
+		cg_store_fp(cg,et,mem);
+	}
+	else
+	{
+		cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
+	}
+
+	int sb = cg->cur_break_label, sc = cg->cur_continue_label;
+	cg->cur_break_label = end;
+	cg->cur_continue_label = cont;
+	cg_block(cg,tt,f,s->then_blk,in_main);
+	cg->cur_break_label = sb;
+	cg->cur_continue_label = sc;
+
+	cg_emit(cg,".L%d:", cont);
+	cg_emit(cg,"    add %s, 1", curreg);
+	cg_emit(cg,"    jmp .L%d", top);
+}
+
 /* foreach over an array (index loop), string (byte loop), or map (control-byte
    slot scan). The loop variable receives each element/key borrowed (no retain);
    continue lands on the cursor advance, break on the end. An owned iterable
@@ -7189,6 +7222,51 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    mov r10, [rdx + 24]");   /* length */
 		cg_emit(cg,"    mov r11, [rdx + 40]");   /* head */
 		cg_emit(cg,"    mov r8, [rdx + 32]");    /* cap */
+	}
+
+	/* Unswitch the hoisted list loop on the loop-invariant head when the cursor
+	   is register-resident: head==0 (any list that never had a front
+	   insertion/removal - the common case) runs a flat loop that indexes the
+	   data array directly, carrying no per-element ring test or wrap, matching a
+	   plain contiguous array sweep. head!=0 runs the ring loop. The body is
+	   duplicated (cheap: hoist_vec requires a call-free, nested-loop-free body),
+	   each arm exits to the shared end. */
+	if (hoist_vec && curreg)
+	{
+		TypeKind et = s->expr->type.elem->kind;
+		int flat_top = cg_label(cg), flat_cont = cg_label(cg);
+		int ring_top = cg_label(cg), ring_cont = cg_label(cg);
+
+		cg_emit(cg,"    test r11, r11");
+		cg_emit(cg,"    jnz .L%d", ring_top);
+
+		/* Flat loop: head == 0, so phys == index; index the data base directly. */
+		cg_emit(cg,".L%d:", flat_top);
+		cg_emit(cg,"    cmp %s, r10", curreg);
+		cg_emit(cg,"    jge .L%d", end);
+		cg_emit(cg,"    mov rax, [r9 + %s*8 + 32]", curreg);
+		cg_foreach_vec_tail(cg,tt,f,s,in_main,et,curreg,flat_top,flat_cont,end);
+
+		/* Ring loop: head != 0, phys = (head + index) & (cap - 1). */
+		cg_emit(cg,".L%d:", ring_top);
+		cg_emit(cg,"    mov rcx, %s", curreg);
+		cg_emit(cg,"    cmp rcx, r10");
+		cg_emit(cg,"    jge .L%d", end);
+		cg_emit(cg,"    add rcx, r11");
+		cg_emit(cg,"    mov rax, r8");
+		cg_emit(cg,"    dec rax");
+		cg_emit(cg,"    and rcx, rax");
+		cg_emit(cg,"    mov rax, [r9 + rcx*8 + 32]");
+		cg_foreach_vec_tail(cg,tt,f,s,in_main,et,curreg,ring_top,ring_cont,end);
+
+		cg_emit(cg,".L%d:", end);
+		if (owned)   /* An owned iterable temporary is released here. */
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), s->fe_coll_offset);
+			cg_release_rcx(cg);
+		}
+
+		return;
 	}
 
 	cg_emit(cg,".L%d:", top);
