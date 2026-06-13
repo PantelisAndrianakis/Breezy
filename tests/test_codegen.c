@@ -6,6 +6,7 @@
 #include "prelude.h"
 #include "overload.h"
 #include "grow.h"
+#include "cycleinfo.h"
 #include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
 #define MAX_U 64
@@ -76,6 +77,47 @@ static void emit(const char *src, Target target)
 {
 	const char *srcs[1] = { src };
 	emit_n(srcs, 1, target);
+}
+
+/* Build a resolved TypeTable from source(s) without emitting, for analyses that
+   consume the type table directly (e.g. the cycle analysis). Mirrors emit_n's
+   table construction. */
+static TypeTable *build_tt(const char **srcs, int nsrc)
+{
+	static Parser parsers[MAX_U];
+	static Unit *units[MAX_U];
+	static TypeTable tt;
+
+	int np = BZY_PRELUDE_COUNT;
+	for (int i = 0; i < np; i++)
+	{
+		parser_init(&parsers[i], BZY_PRELUDE[i]);
+		units[i] = parse_unit(&parsers[i]);
+	}
+	for (int j = 0; j < nsrc; j++)
+	{
+		parser_init(&parsers[np + j], srcs[j]);
+		units[np + j] = parse_unit(&parsers[np + j]);
+	}
+	int total = np + nsrc;
+
+	types_init(&tt);
+	types_register_builtins(&tt);
+	for (int i = 0; i < total; i++) { types_register_unit_names(&tt, units[i]); }
+	types_reserve_hashable(&tt);
+	for (int i = 0; i < total; i++) { types_register_interfaces(&tt, units[i]); }
+	types_register_all_members(&tt, units, total);
+	resolve_program(&tt, units, total);
+	return &tt;
+}
+
+static void test_cycle_acyclic_program(void)
+{
+	const char *src = "class A { int x; } class B { A a; } void main() { B b; b = new B(); }";
+	TypeTable *tt = build_tt(&src, 1);
+	CycleReport r = cycle_analyze(tt);
+	ASSERT_INT(r.acyclic, 1);
+	ASSERT_INT(r.scc_count, 0);
 }
 
 /* Scope a g_asm search to one emitted function's body. The user units' free
@@ -1161,6 +1203,7 @@ int main(void)
 	RUN(test_ffi_frombytes_lowers);
 	RUN(test_ffi_array_arg_marshals_data_ptr);
 	RUN(test_ffi_blocking_five_args);
+	RUN(test_cycle_acyclic_program);
 	RUN(test_stack_args_caller);
 	RUN(test_stack_args_callee);
 	SUMMARY();
