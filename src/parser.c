@@ -1341,6 +1341,32 @@ static Block *parse_block(Parser *p)
 static void parse_one_param(Parser *p, Param *pm)
 {
 	parse_type(p,&pm->type);
+	if (check(p,TOKEN_LPAREN))
+	{
+		/* C function-pointer type: ret(paramtype, ...). parse_type put the return
+		   type in pm->type; wrap it into a TY_FUNC carrying the parameter types.
+		   Unambiguous: a '(' immediately after a base type (before the parameter
+		   name) only occurs for a function type. */
+		TypeRef ret = pm->type;
+		TypeRef fn;
+		memset(&fn,0,sizeof(fn));
+		fn.kind = TY_FUNC;
+		fn.elem = typeref_box(ret);
+		advance(p);   /* '(' */
+		if (!check(p,TOKEN_RPAREN))
+		{
+			do
+			{
+				TypeRef pt;
+				memset(&pt,0,sizeof(pt));
+				parse_type(p,&pt);
+				typeref_add_targ(&fn,pt);
+			}
+			while (match(p,TOKEN_COMMA));
+		}
+		expect(p,TOKEN_RPAREN);
+		pm->type = fn;
+	}
 	Token pn=expect(p,TOKEN_IDENT);
 	strcpy(pm->name,pn.text);
 	if (match(p,TOKEN_ASSIGN))

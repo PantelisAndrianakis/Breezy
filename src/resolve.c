@@ -2475,11 +2475,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				for (int ai = 0; ai < e->arg_count && ai < callee->param_count; ai++)
 				{
 					if (e->args[ai]->kind == EX_IDENT
-						&& callee->param_types[ai].kind == TY_LONG
+						&& (callee->param_types[ai].kind == TY_LONG || callee->param_types[ai].kind == TY_FUNC)
 						&& types_find_func(g_types, e->args[ai]->name))
 					{
 						e->args[ai]->is_func_addr = 1;
-						e->args[ai]->type.kind = TY_LONG;
+						e->args[ai]->type = callee->param_types[ai];   /* Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr. */
 					}
 				}
 			}

@@ -1250,6 +1250,16 @@ static void test_ffi_frombytes_arr_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_str_from_bytes") != NULL, 1);
 }
 
+static void test_ffi_callback_type_lowers(void)
+{
+	/* SP3: a TY_FUNC (long(long,long)) extern param accepts a matching Breezy
+	   function by name and lowers to its address (lea [rel bzy_cmp]). */
+	emit("extern long qsort(long[] base, long n, long sz, long(long,long) cmp);"
+		 " long cmp(long a, long b) { return a - b; }"
+		 " void main() { long[] xs; xs = new long[2]; qsort(xs, 2, 8, cmp); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "lea rax, [rel bzy_cmp]") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1309,6 +1319,7 @@ int main(void)
 	RUN(test_ffi_blocking_five_args);
 	RUN(test_ffi_str_tobytes_lowers);
 	RUN(test_ffi_frombytes_arr_lowers);
+	RUN(test_ffi_callback_type_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

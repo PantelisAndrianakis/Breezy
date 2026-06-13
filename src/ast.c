@@ -42,6 +42,15 @@ TypeRef *typeref_box(TypeRef t)
 	*p = t;
 	return p;
 }
+
+/* Append a parameter type to a TY_FUNC signature (stored in targs, like generic
+   application args). Used to build C function-pointer types at parse. */
+void typeref_add_targ(TypeRef *f, TypeRef t)
+{
+	f->targs = grow_reserve(f->targs, f->targ_count + 1, &f->targ_cap, sizeof(*f->targs));
+	f->targs[f->targ_count++] = typeref_box(t);
+}
+
 Stmt *stmt_new(StmtKind kind, int line)
 {
 	Stmt *s = track(calloc(1,sizeof(Stmt)));

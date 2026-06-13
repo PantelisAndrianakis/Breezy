@@ -23,7 +23,8 @@ typedef enum
 	TY_LOGGER,                                /* Logger: channel-fed buffered log handle. */
 	TY_OBJECT,
 	TY_STRING,  /* Immutable string. */
-	TY_NULL     /* The `null` literal: a bare 0 assignable to any managed reference. */
+	TY_NULL,    /* The `null` literal: a bare 0 assignable to any managed reference. */
+	TY_FUNC     /* FFI: C function-pointer type; elem=return type, targs[0..targ_count)=param types. */
 } TypeKind;
 typedef struct TypeRef
 {
@@ -77,6 +78,7 @@ static inline int ty_bits(TypeKind k)
 	case TY_OBJECT:
 	case TY_STRING:
 	case TY_NULL:
+	case TY_FUNC:
 		return 64;
 	case TY_VOID:
 		return 0;
@@ -338,6 +340,7 @@ typedef struct
 void   ast_free_all(void);
 Expr  *expr_new(ExprKind kind, int line);
 TypeRef *typeref_box(TypeRef t);
+void     typeref_add_targ(TypeRef *f, TypeRef t);   /* Append a param type to a TY_FUNC signature. */
 Stmt  *stmt_new(StmtKind kind, int line);
 Block *block_new(void);
 void   block_push(Block *b, Stmt *s);
