@@ -11,6 +11,7 @@
 #include "resolve.h"
 #include "codegen.h"
 #include "prelude.h"
+#include "cycleinfo.h"
 #include "config.h"
 #include "grow.h"
 
@@ -221,6 +222,14 @@ int main(int argc, char *argv[])
 	}
 	types_register_all_members(&tt,units,total);   /* Classes parent-first: file order is filesystem-dependent. */
 	resolve_program(&tt,units,total);
+
+	/* Measurement only (I2c.1): report the static cycle-analysis coverage when
+	   BZY_CYCLE_REPORT is set. No effect on compilation otherwise. */
+	if (getenv("BZY_CYCLE_REPORT"))
+	{
+		CycleReport cr = cycle_analyze(&tt);
+		cycle_report_print(&cr);
+	}
 
 	FILE *out=fopen("out.asm","w");
 	if (!out)

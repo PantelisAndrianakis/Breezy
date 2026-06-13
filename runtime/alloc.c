@@ -1,6 +1,7 @@
 #include "breezy.h"
 #include "platform.h"  /* bzy_mutex for the cycle-roots lock. */
 #include <stdlib.h>
+#include <stdio.h>     /* fprintf, for BZY_CYCLE_TIMING pause measurement. */
 #include <string.h>
 #include <stddef.h>   /* offsetof, for the inline-allocator layout asserts. */
 #ifdef _WIN32
@@ -127,6 +128,16 @@ static int64_t g_roots_cap = 0;
 static bzy_mutex g_roots_lock = BZY_MUTEX_INIT;
 
 static void collect_cycles_locked(void);
+
+/* Measurement only (I2c.1): when BZY_CYCLE_TIMING is set, each collection prints
+   its wall-clock duration. The env check is cached, so the off-path cost is one
+   integer test and behaviour is unchanged. */
+static int cycle_timing_on(void)
+{
+	static int t = -1;
+	if (t < 0) { t = getenv("BZY_CYCLE_TIMING") ? 1 : 0; }
+	return t;
+}
 
 static void roots_push(void *o)
 {
@@ -557,7 +568,12 @@ void bzy_release(void *obj)
 			   long-running programs bound cycle garbage without explicit calls. */
 			if (g_roots_n >= 10000)
 			{
+				int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
 				collect_cycles_locked();
+				if (cycle_timing_on())
+				{
+					fprintf(stderr, "[cycle-pause] %lld us\n", (long long)((bzy_clock_nanos() - t0) / 1000));
+				}
 			}
 		}
 		bzy_mutex_unlock(&g_roots_lock);
@@ -795,7 +811,12 @@ static void collect_cycles_locked(void)
 
 void bzy_collect_cycles(void)
 {
+	int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
 	bzy_mutex_lock(&g_roots_lock);
 	collect_cycles_locked();
 	bzy_mutex_unlock(&g_roots_lock);
+	if (cycle_timing_on())
+	{
+		fprintf(stderr, "[cycle-pause] %lld us\n", (long long)((bzy_clock_nanos() - t0) / 1000));
+	}
 }
