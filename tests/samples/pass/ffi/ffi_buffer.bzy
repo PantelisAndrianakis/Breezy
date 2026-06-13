@@ -1,0 +1,22 @@
+// Exercise the FFI core end to end against libc:
+//  - fromCString reads a char* (strstr's result, into a kept-alive local).
+//  - fromCBytes reads a length-counted slice of the same char*.
+//  - a byte[] marshals to a C fill buffer (memset).
+//  - a >4-arg blocking extern compiles and runs (memset plus dummy args that
+//    force stack-spilled arguments in the worker thunk on both ABIs).
+// Prints: world / 65 / wor
+extern long strstr(string haystack, string needle);
+extern blocking long memset(byte[] buf, int c, long n, long d1, long d2, long d3, long d4);
+
+void main()
+{
+	string text = "hello world";       // A local keeps the buffer alive across the calls.
+	long p = strstr(text, "world");
+	print(fromCString(p));             // world
+
+	byte[] buf = new byte[4];
+	memset(buf, 65, buf.length, 0, 0, 0, 0);   // 7-arg blocking call fills 4 bytes with 'A'.
+	print(buf[0]);                     // 65
+
+	print(fromCBytes(p, 3));           // wor
+}

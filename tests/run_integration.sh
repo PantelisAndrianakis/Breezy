@@ -286,6 +286,7 @@ check readinto      tests/samples/pass/io/readinto.bzy       $'4 65 68\n4 71 74'
 check filewriter    tests/samples/pass/io/filewriter.bzy     $'102'
 check logger        tests/samples/pass/io/logger.bzy         $'200'
 check ffi           tests/samples/pass/ffi/ffi.bzy            $'5\n7'
+check ffi_buffer    tests/samples/pass/ffi/ffi_buffer.bzy     $'world\n65\nwor'
 # FFI --link flag: recompile with an extra -l and confirm it still links + runs.
 ./breezy tests/samples/pass/ffi/ffi.bzy --link m >/dev/null 2>&1
 if [ $? -eq 0 ]; then
