@@ -36,8 +36,32 @@ How Breezy types map to C:
 | `float` / `double` | C `float` / `double`. |
 | `bool` | C int. |
 | `string` **argument** | NUL-terminated `char*` (the string's data pointer). |
+| value array **argument** (`byte[]`, `int[]`, `double[]`, ...) | pointer to the array's element data - a C buffer the function can read or fill in place. Pass `.length` separately for the size. |
 
-**Returns** are limited to `void`, the int family, `long`, `float`, `double`, and `bool`. A C function that returns `char*` is declared to return `long` and wrapped by hand for now. An embedded NUL in a `string` argument truncates on the C side, since C strings end at the first NUL.
+**Returns** are limited to `void`, the int family, `long`, `float`, `double`, and `bool`. A C function that returns `char*` is declared to return `long` and read back with `fromCString` / `fromCBytes` (below). An embedded NUL in a `string` argument truncates on the C side, since C strings end at the first NUL.
+
+Object and string arrays are **not** valid extern arguments - they hold pointers C cannot use as a flat buffer, and are rejected at compile time. The data pointer is valid for the duration of the call (the heap is non-moving); if C retains it past the call, that is your responsibility, exactly as for a `string` argument.
+
+---
+
+## Reading a C string back
+
+A C function that returns `char*` is declared to return `long`; two builtins copy that pointer's bytes into an owned Breezy `string`:
+
+- `fromCString(ptr)` copies up to the first NUL - for NUL-terminated C strings (error text, environment values, diagnostic strings).
+- `fromCBytes(ptr, len)` copies exactly `len` bytes, embedded NULs preserved - for length-counted data (a binary column read alongside its length).
+
+Both copy into a fresh string independent of the C buffer's lifetime, so there is no aliasing, no leak, and no dangling pointer. A NULL pointer (`0`) yields the `null` reference, so an absent value is distinguishable from an empty string.
+
+```breezy
+extern long getenv(string name);   // char* -> long.
+
+void main()
+{
+	string path = fromCString(getenv("PATH"));
+	print(path.length());
+}
+```
 
 ---
 
@@ -113,8 +137,9 @@ A [non-moving heap](../memory/automatic-memory.md) means an object's address nev
 
 - **Declare each C function with `extern`** and a matching signature.
 - **`string` arguments marshal to `char*`** (NUL-terminated); embedded NULs truncate.
-- **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`bool`; treat returned `char*` as `long`.
-- **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core.
+- **Value arrays marshal to a data pointer** (a C buffer); pass `.length` for the size. Object/string arrays are rejected.
+- **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`bool`; a returned `char*` is declared `long` and read with `fromCString` / `fromCBytes`.
+- **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core; an `extern blocking` call takes any number of arguments.
 - **Link with `--link <lib>` or `breezy.toml [link]`** - the two compose.
 - **`breezy.toml [app]`** embeds name/version/author/description in both platforms; `icon` is Windows-only.
 
