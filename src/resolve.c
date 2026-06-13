@@ -884,6 +884,11 @@ static void resolve_args(SymTable *st, Expr *e, const char *tc)
 {
 	for (int i=0; i<e->arg_count; i++)
 	{
+		if (e->args[i]->is_func_addr)
+		{
+			continue;   /* FFI function-pointer arg: already typed as its address (TY_LONG). */
+		}
+
 		resolve_expr(st,e->args[i],tc);
 	}
 }
@@ -2458,6 +2463,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		{
 			resolve_schedule(st,e,tc);
 			break;
+		}
+
+		/* FFI: a bare function name passed where the callee expects a `long` (a C
+		   function pointer) marshals to the function's address. Mark such args before
+		   resolve_args so it skips them; codegen emits `lea [rel label]`. */
+		{
+			FuncInfo *callee = types_find_func(g_types, e->name);
+			if (callee)
+			{
+				for (int ai = 0; ai < e->arg_count && ai < callee->param_count; ai++)
+				{
+					if (e->args[ai]->kind == EX_IDENT
+						&& callee->param_types[ai].kind == TY_LONG
+						&& types_find_func(g_types, e->args[ai]->name))
+					{
+						e->args[ai]->is_func_addr = 1;
+						e->args[ai]->type.kind = TY_LONG;
+					}
+				}
+			}
 		}
 
 		resolve_args(st,e,tc);

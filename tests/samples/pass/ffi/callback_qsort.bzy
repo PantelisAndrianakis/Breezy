@@ -1,0 +1,44 @@
+// SP3 prove-first: libc qsort calls a Breezy comparator directly (Breezy scalar
+// functions are C-ABI compatible). The comparator can't deref element pointers in
+// pure Breezy, so it proves the callback fires via a static counter: any correct
+// qsort calls the comparator >= n-1 times for n elements.
+class Counter
+{
+	static long calls = 0;
+}
+
+long ascend(long a, long b)
+{
+	Counter.calls = Counter.calls + 1;   // Proves Breezy code ran when C called back.
+	if (a < b)
+	{
+		return 0 - 1;
+	}
+	if (a > b)
+	{
+		return 1;
+	}
+	return 0;
+}
+
+extern long qsort(long[] base, long n, long size, long cmp);   // cmp passed as a function address.
+
+void main()
+{
+	long[] xs = new long[5];
+	long i = 0;
+	while (i < 5)
+	{
+		xs[i] = 5 - i;                    // 5,4,3,2,1 — gives qsort real work.
+		i = i + 1;
+	}
+	qsort(xs, 5, 8, ascend);             // long[] marshals to its element-data pointer (+32).
+	if (Counter.calls >= 4)              // >= n-1: the callback was invoked by C.
+	{
+		print(1);
+	}
+	else
+	{
+		print(0);
+	}
+}

@@ -2830,7 +2830,7 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	   general path below. */
 	{
 		Expr *only = self ? self : (argc==1 ? args[0] : NULL);
-		if (total==1 && only && !expr_is_owned(only))
+		if (total==1 && only && !expr_is_owned(only) && !only->is_func_addr)
 		{
 			TypeKind pk = self ? TY_OBJECT : ((param_count>0) ? params[0].kind : args[0]->type.kind);
 			int is_marshalled = marshal_cstr && !self && (args[0]->type.kind==TY_STRING || args[0]->type.kind==TY_ARRAY);
@@ -2881,6 +2881,17 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 
 	for (int i=0; i<argc; i++)
 	{
+		if (args[i]->is_func_addr)
+		{
+			/* FFI: pass a Breezy function's address as a C function pointer. */
+			FuncInfo *cf = types_find_func(tt, args[i]->name);
+			cg_emit(cg,"    lea rax, [rel %s]", cf->asm_label);
+			slot_kind[slot] = TY_LONG;
+			cg_emit(cg,"    mov [rbp - %d], rax", b - slot*8);
+			slot++;
+			continue;
+		}
+
 		TypeKind pk = (i < param_count) ? params[i].kind : args[i]->type.kind;
 		cg_expr(cg,tt,args[i]);
 		cg_coerce(cg,pk,args[i]->type.kind);   /* Implicit int->double at a double parameter. */

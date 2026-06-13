@@ -288,6 +288,7 @@ check logger        tests/samples/pass/io/logger.bzy         $'200'
 check ffi           tests/samples/pass/ffi/ffi.bzy            $'5\n7'
 check ffi_buffer    tests/samples/pass/ffi/ffi_buffer.bzy     $'world\n65\nwor'
 check bytes_string  tests/samples/pass/ffi/bytes_string.bzy   $'5\n5\n1\n0'
+check callback_qsort tests/samples/pass/ffi/callback_qsort.bzy "1"
 # FFI --link flag: recompile with an extra -l and confirm it still links + runs.
 ./breezy tests/samples/pass/ffi/ffi.bzy --link m >/dev/null 2>&1
 if [ $? -eq 0 ]; then
