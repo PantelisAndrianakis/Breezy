@@ -5584,6 +5584,19 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				cg_temp_pop(cg);
 			}
 		}
+		else if (strcmp(e->name,"fromCString")==0 || strcmp(e->name,"fromCBytes")==0)
+		{
+			/* Copy a C char* into an owned Breezy string. Route through the general
+			   call path: it spills/places the scalar args correctly and preserves the
+			   owned-string result. The args are raw pointers/lengths (no marshalling). */
+			const char *sym = (strcmp(e->name,"fromCBytes")==0) ? "bzy_str_from_cbytes" : "bzy_str_from_cstring";
+			TypeRef ps[2] = {0};                   /* Only .kind is read by cg_call_with_args. */
+			ps[0].kind = TY_LONG;
+			ps[1].kind = TY_LONG;                  /* len widened to 64-bit by cg_coerce. */
+			cg_call_with_args(cg,tt,sym,NULL,e->args,e->arg_count,0,
+							  1 /* result_is_object: owned string */, 0,
+							  ps, e->arg_count, 0 /* marshal_cstr: args are raw scalars */);
+		}
 		else if (strncmp(e->name,"Math.",5)==0)
 		{
 			cg_math(cg,tt,e);
@@ -9445,6 +9458,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_from_bool");
 	cg_emit(cg,"extern bzy_str_from_f64");
 	cg_emit(cg,"extern bzy_str_len");
+	cg_emit(cg,"extern bzy_str_from_cstring");
+	cg_emit(cg,"extern bzy_str_from_cbytes");
 	cg_emit(cg,"extern bzy_print_str");
 	cg_emit(cg,"extern bzy_input_line");
 	cg_emit(cg,"extern bzy_sb_new");

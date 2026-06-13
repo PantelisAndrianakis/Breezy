@@ -69,6 +69,36 @@ void *bzy_str_concat(void *a, void *b)
 	return c;
 }
 
+/* Copy a NUL-terminated C string into a fresh owned Breezy string. A NULL pointer
+   yields the Breezy null reference (so an absent C value is distinguishable from
+   an empty string). The copy is independent of the C buffer's lifetime. */
+void *bzy_str_from_cstring(const char *p)
+{
+	if (!p)
+	{
+		return NULL;
+	}
+
+	return bzy_str_new(p, (int64_t)strlen(p));
+}
+
+/* Copy exactly len bytes (embedded NULs preserved) into a fresh owned Breezy
+   string. A NULL pointer yields the Breezy null reference regardless of len. */
+void *bzy_str_from_cbytes(const char *p, int64_t len)
+{
+	if (!p)
+	{
+		return NULL;
+	}
+
+	if (len < 0)
+	{
+		len = 0;
+	}
+
+	return bzy_str_new(p, len);
+}
+
 /* Join n strings into one owned (+1) result with a single allocation: sum the
    lengths, allocate once, then memcpy each piece. Replaces a chain of pairwise
    bzy_str_concat calls (O(n) allocations, O(n^2) copying) with O(n) copying. */

@@ -1073,6 +1073,20 @@ static void test_grow_ensure(void)
 	ASSERT_INT(a[99], 693);
 }
 
+static void test_ffi_fromcstring_lowers(void)
+{
+	/* fromCString(ptr) lowers to a call into the runtime bridge helper. */
+	emit("extern long getptr(); void main() { string s; s = fromCString(getptr()); print(s); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_str_from_cstring") != NULL, 1);
+}
+
+static void test_ffi_frombytes_lowers(void)
+{
+	/* fromCBytes(ptr, len) lowers to a call into the length-counted bridge helper. */
+	emit("extern long getptr(); void main() { string s; s = fromCBytes(getptr(), 3); print(s); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_str_from_cbytes") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1126,6 +1140,8 @@ int main(void)
 	RUN(test_overload_select_null_ambiguous);
 	RUN(test_overload_set_ambiguous);
 	RUN(test_grow_ensure);
+	RUN(test_ffi_fromcstring_lowers);
+	RUN(test_ffi_frombytes_lowers);
 	RUN(test_stack_args_caller);
 	RUN(test_stack_args_callee);
 	SUMMARY();

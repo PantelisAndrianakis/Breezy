@@ -34,6 +34,8 @@ void    bzy_print_bool(int64_t v); /* Print "true" or "false" followed by a newl
 void    bzy_print_f64(double v);   /* Print a double with %.17g followed by a newline. */
 
 void   *bzy_str_new(const char *bytes, int64_t len); /* Owned (+1) immutable string. */
+void   *bzy_str_from_cstring(const char *p);         /* Copy a NUL-terminated char* into an owned string; NULL -> null. */
+void   *bzy_str_from_cbytes(const char *p, int64_t len); /* Copy len bytes into an owned string; NULL -> null. */
 int64_t bzy_str_len(void *s);                        /* Byte length (excludes the NUL). */
 const char *bzy_str_data(void *s);                   /* Pointer to the inline NUL-terminated bytes. */
 void   *bzy_str_concat(void *a, void *b);            /* Owned (+1) a followed by b. */
