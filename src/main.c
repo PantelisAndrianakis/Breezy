@@ -81,7 +81,9 @@ int main(int argc, char *argv[])
 {
 	/* Collect --link <lib> flags; the first non-flag arg is the source path. */
 	LinkConfig cfg;
+	AppConfig  app_cfg;
 	memset(&cfg, 0, sizeof(cfg));
+	memset(&app_cfg, 0, sizeof(app_cfg));
 	const char *src_arg = NULL;
 	const char *out_arg = NULL;   /* Optional second positional: final executable path. */
 #ifdef _WIN32
@@ -135,7 +137,7 @@ int main(int argc, char *argv[])
 		out_arg = "out.exe";   /* Backward-compatible default. */
 	}
 
-	config_load(src_arg, &cfg);   /* Merge libs/lib_paths from <project>/breezy.toml. */
+	config_load(src_arg, &cfg, &app_cfg);   /* Merge libs/lib_paths and [app] info from <project>/breezy.toml. */
 	char **paths=NULL;
 	int nfiles=collect_files(src_arg,&paths);
 
@@ -231,6 +233,49 @@ int main(int argc, char *argv[])
 	cg.target = target;
 	cg_program(&cg,&tt,units,total);
 	fclose(out);
+
+	/* Append a .bzy_app metadata section if any [app] fields are set.
+	   Strings are emitted as byte sequences to avoid NASM quoting issues. */
+	int has_app_info = app_cfg.name[0] || app_cfg.version[0]
+	                   || app_cfg.description[0] || app_cfg.author[0];
+	if (has_app_info)
+	{
+		FILE *af = fopen("out.asm", "a");
+		if (af)
+		{
+			if (target == TARGET_LINUX)
+			{
+				fprintf(af, "\nsection .bzy_app\n");
+			}
+			else
+			{
+				fprintf(af, "\nsection .bzy_app data\n");
+			}
+
+			const char *fields[4][2] =
+			{
+				{ "bzy_app_name",        app_cfg.name        },
+				{ "bzy_app_version",     app_cfg.version     },
+				{ "bzy_app_author",      app_cfg.author      },
+				{ "bzy_app_description", app_cfg.description },
+			};
+			for (int fi = 0; fi < 4; fi++)
+			{
+				if (!fields[fi][1][0])
+				{
+					continue;
+				}
+				fprintf(af, "global %s\n%s: db ", fields[fi][0], fields[fi][0]);
+				for (const char *cp = fields[fi][1]; *cp; cp++)
+				{
+					fprintf(af, "%d,", (unsigned char)*cp);
+				}
+				fprintf(af, "0\n");
+			}
+			fclose(af);
+		}
+	}
+
 	printf("Wrote out.asm\n");
 
 	const char *nasm_cmd = (target == TARGET_LINUX)
@@ -241,6 +286,98 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"Nasm failed.\n");
 		return 1;
 	}
+
+	/* On Windows: if [app] icon or metadata is set, generate a resource file and
+	   compile it with windres so the icon and VERSIONINFO are embedded in the exe. */
+	int has_rc = (target == TARGET_WINDOWS)
+	             && (app_cfg.icon[0] || app_cfg.name[0] || app_cfg.version[0]
+	                 || app_cfg.description[0] || app_cfg.author[0]);
+	if (has_rc)
+	{
+		FILE *rc = fopen("out.rc", "w");
+		if (rc)
+		{
+			/* Icon resource: resolve relative icon path against the project dir. */
+			if (app_cfg.icon[0])
+			{
+				char icon_path[700];
+				snprintf(icon_path, sizeof(icon_path), "%s/%s",
+				         app_cfg.project_dir[0] ? app_cfg.project_dir : ".",
+				         app_cfg.icon);
+				/* Forward slashes; windres accepts them on Windows. */
+				for (char *cp = icon_path; *cp; cp++)
+				{
+					if (*cp == '\\')
+					{
+						*cp = '/';
+					}
+				}
+				fprintf(rc, "1 ICON \"%s\"\n\n", icon_path);
+			}
+
+			/* VERSIONINFO: parse "major.minor.patch.build" from the version string. */
+			int v0 = 0, v1 = 0, v2 = 0, v3 = 0;
+			if (app_cfg.version[0])
+			{
+				sscanf(app_cfg.version, "%d.%d.%d.%d", &v0, &v1, &v2, &v3);
+			}
+
+			fprintf(rc,
+			        "VS_VERSION_INFO VERSIONINFO\n"
+			        " FILEVERSION %d,%d,%d,%d\n"
+			        " PRODUCTVERSION %d,%d,%d,%d\n"
+			        " FILEFLAGSMASK 0x3fL\n"
+			        " FILEFLAGS 0x0L\n"
+			        " FILEOS 0x40004L\n"
+			        " FILETYPE 0x1L\n"
+			        " FILESUBTYPE 0x0L\n"
+			        "BEGIN\n"
+			        "    BLOCK \"StringFileInfo\"\n"
+			        "    BEGIN\n"
+			        "        BLOCK \"040904b0\"\n"
+			        "        BEGIN\n",
+			        v0, v1, v2, v3, v0, v1, v2, v3);
+
+			if (app_cfg.name[0])
+			{
+				fprintf(rc, "            VALUE \"ProductName\", \"%s\"\n", app_cfg.name);
+			}
+			if (app_cfg.version[0])
+			{
+				fprintf(rc, "            VALUE \"ProductVersion\", \"%s\"\n", app_cfg.version);
+				fprintf(rc, "            VALUE \"FileVersion\", \"%s\"\n", app_cfg.version);
+			}
+			if (app_cfg.description[0])
+			{
+				fprintf(rc, "            VALUE \"FileDescription\", \"%s\"\n", app_cfg.description);
+			}
+			if (app_cfg.author[0])
+			{
+				fprintf(rc, "            VALUE \"LegalCopyright\", \"%s\"\n", app_cfg.author);
+			}
+
+			fprintf(rc,
+			        "        END\n"
+			        "    END\n"
+			        "    BLOCK \"VarFileInfo\"\n"
+			        "    BEGIN\n"
+			        "        VALUE \"Translation\", 0x0409, 1200\n"
+			        "    END\n"
+			        "END\n");
+			fclose(rc);
+
+			if (system("windres out.rc -o out_res.obj") != 0)
+			{
+				fprintf(stderr, "Warning: windres failed; icon and version info will not be embedded.\n");
+				has_rc = 0;
+			}
+		}
+		else
+		{
+			has_rc = 0;
+		}
+	}
+
 	char link_cmd[2048];
 	int off;
 	if (target == TARGET_LINUX)
@@ -251,7 +388,8 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp");
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
+		               has_rc ? " out_res.obj" : "");
 	}
 	for (int i = 0; i < cfg.nlib_paths; i++)
 	{

@@ -1,8 +1,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define CFG_LIB_LEN    64
-#define CFG_PATH_LEN   256
+#define CFG_LIB_LEN      64
+#define CFG_PATH_LEN    256
+#define CFG_APP_STR_LEN 256
 
 typedef struct
 {
@@ -14,14 +15,28 @@ typedef struct
 	int    lib_paths_cap;
 } LinkConfig;
 
+typedef struct
+{
+	char name[CFG_APP_STR_LEN];
+	char version[CFG_APP_STR_LEN];
+	char description[CFG_APP_STR_LEN];
+	char author[CFG_APP_STR_LEN];
+	char icon[CFG_PATH_LEN];        /* .ico path relative to breezy.toml dir. */
+	char project_dir[CFG_PATH_LEN]; /* Resolved dir; used to expand icon to absolute path. */
+} AppConfig;
+
 /* Parse the [link] section of a breezy.toml-style document held in `text`,
    appending any libs/lib_paths to `cfg`. A tolerant mini-reader, not full TOML. */
 void config_parse_links(const char *text, LinkConfig *cfg);
 
+/* Parse the [app] section of a breezy.toml-style document held in `text`,
+   filling `app` with name/version/description/author/icon. */
+void config_parse_app(const char *text, AppConfig *app);
+
 /* Load <project>/breezy.toml (derived from `src_arg`: the directory itself if it
-   is one, else the source file's parent) and parse its [link] section into `cfg`.
-   A missing file is a silent no-op. */
-void config_load(const char *src_arg, LinkConfig *cfg);
+   is one, else the source file's parent) and parse its sections.
+   Either pointer may be NULL to skip that section. A missing file is a silent no-op. */
+void config_load(const char *src_arg, LinkConfig *link, AppConfig *app);
 
 /* 1 if the IR + register-allocator backend is enabled. Read once from the
    environment and cached. Default ON for eligible functions; set BZY_IR=0 to

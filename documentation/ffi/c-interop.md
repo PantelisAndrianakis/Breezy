@@ -65,9 +65,13 @@ extern blocking int mysql_real_query(long conn, string stmt, long len);
 
 ---
 
-## Per-project linking with breezy.toml
+## Per-project configuration with breezy.toml
 
-Instead of repeating `--link` on every build, declare native libraries and search paths in a `breezy.toml` next to your project. The `[link]` section is read at build time:
+Place a `breezy.toml` next to your project to configure linking and application identity. A missing file is a no-op.
+
+### [link] — native library references
+
+Instead of repeating `--link` on every build, declare native libraries and search paths here:
 
 ```toml
 [link]
@@ -75,7 +79,27 @@ libs = ["m", "mysqlclient"]    # Appended as -lm -lmysqlclient.
 lib_paths = ["C:/libs"]         # Appended as -LC:/libs.
 ```
 
-Config `libs` and any `--link` flags **compose** - both reach the linker - and a missing `breezy.toml` is simply a no-op.
+Config `libs` and any `--link` flags **compose** - both reach the linker.
+
+### [app] — application identity and icon
+
+Declare your application's name, version, and other metadata:
+
+```toml
+[app]
+name        = "My App"
+version     = "1.0.0"
+description = "A short description"
+author      = "Your Name"
+icon        = "app.ico"
+```
+
+All fields are optional. What each field does:
+
+- **`name`** / **`version`** / **`description`** / **`author`** — embedded in the binary on both platforms as named symbols (`bzy_app_name`, `bzy_app_version`, `bzy_app_author`, `bzy_app_description`). Readable via `strings myapp` or `readelf -p .bzy_app myapp` on Linux.
+- **`icon`** — path to a `.ico` file, relative to `breezy.toml`. **Windows only.** The icon is compiled into the executable via `windres` and displayed in Explorer, the taskbar, and the Alt-Tab switcher. Also embeds a `VERSIONINFO` resource so the Properties dialog shows your name, version, and description. Silently ignored on Linux.
+
+The `version` field is parsed as `major.minor.patch.build`; missing parts default to `0`.
 
 ---
 
@@ -92,6 +116,7 @@ A [non-moving heap](../memory/automatic-memory.md) means an object's address nev
 - **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`bool`; treat returned `char*` as `long`.
 - **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core.
 - **Link with `--link <lib>` or `breezy.toml [link]`** - the two compose.
+- **`breezy.toml [app]`** embeds name/version/author/description in both platforms; `icon` is Windows-only.
 
 ---
 
