@@ -74,6 +74,8 @@ foreach (string p in parts)
 }
 ```
 
+**Raw bytes:** `s.toBytes()` returns a `byte[]` of the string's UTF-8 bytes, and `fromBytes(byte[])` builds a string back from raw bytes - a verbatim copy both directions (`fromBytes(s.toBytes())` reproduces `s` exactly). This is the serialization bridge for native interop; see [C interop -> byte[] ↔ string](../ffi/c-interop.md).
+
 ---
 
 ## Parsing to numbers

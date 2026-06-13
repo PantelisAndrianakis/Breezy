@@ -65,6 +65,31 @@ void main()
 
 ---
 
+## byte[] ↔ string
+
+Where `fromCString` / `fromCBytes` bridge a *C pointer*, two in-language conversions bridge a Breezy `byte[]` and a Breezy `string` - the buffer/text round-trip a database driver (text protocols, BLOB columns) or a crypto library (hash a string, read result bytes) needs:
+
+- `string.toBytes()` returns a `byte[]` holding the string's raw UTF-8 bytes.
+- `fromBytes(byte[])` builds a string from a `byte[]` or `ubyte[]`'s raw bytes.
+
+A Breezy string *is* byte-counted UTF-8, so the conversion is a verbatim byte copy both directions: `fromBytes(s.toBytes())` reproduces `s` exactly, including bytes above 127. `fromBytes` accepts only `byte[]` / `ubyte[]`; a wider or object array is a compile-time error (the element width and endianness would be ambiguous). `fromBytes(null)` yields the `null` string.
+
+```breezy
+extern blocking long recv(long fd, byte[] buf, long len, int flags);
+
+void main()
+{
+	byte[] buf = new byte[4096];
+	long n = recv(fd, buf, buf.length, 0);   // C fills buf in place.
+	string text = fromBytes(buf);            // raw bytes -> string for parsing.
+	print(text.length());
+}
+```
+
+Together with `fromCBytes` (C pointer -> string) and value-array argument marshalling (`string` / `byte[]` -> C buffer), this completes the byte/text bridge across the FFI boundary.
+
+---
+
 ## blocking - keep the scheduler flowing
 
 A C call that might block (a synchronous query, a slow syscall) should be marked `extern blocking`. The runtime then dispatches it to the [offload pool](../io/native-io.md): the calling breeze **parks** while a worker thread runs the call, so the scheduler core keeps serving other breezes. The marshalling is identical to a plain `extern`; `blocking` changes only **how** the call is dispatched.
