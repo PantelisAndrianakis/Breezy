@@ -112,22 +112,20 @@ static void (*finalizer_of(void *o))(void *)
 		}                                                                      \
 	} while (0)
 
-/* The roots buffer holds objects whose refcount was decremented to a positive
-   value and which could therefore be the root of a dead cycle. It is allocated
-   lazily and grows geometrically, so a program that never buffers a candidate
-   pays nothing and one that buffers many is never silently truncated. */
-static void   **g_roots = NULL;
-static int64_t g_roots_n = 0;
-static int64_t g_roots_cap = 0;
+/* Cycle candidates: objects whose refcount was decremented to a positive value
+   and which could therefore root a dead cycle. Buffered PER WORKER -- a confined
+   object buffers onto its owning worker (bzy_current_wid()), and only that worker
+   reads or collects its buffer, so no lock is needed. Per-worker collection also
+   removes the old cross-thread race between a collection pass and
+   bzy_share_crosscore over the shared gcinfo word: both now run only on the owning
+   worker, sequentially. Workers are hard-capped well under this bound, so a fixed
+   array avoids any concurrent realloc of the array itself (each worker still grows
+   its own roots vector single-threaded). */
+#define BZY_CYC_MAX_WORKERS 256
+typedef struct { void **roots; int64_t n, cap; } CycBuf;
+static CycBuf g_cyc[BZY_CYC_MAX_WORKERS];   /* Zero-initialized (BSS). */
 
-/* Guards g_roots/g_roots_n/g_roots_cap and the whole collection pass. Buffering
-   happens on whichever worker thread runs the release, so the buffer is
-   cross-thread; the same lock also excludes a collection pass while
-   bzy_share_crosscore promotes an object graph (the SHARED OR and the
-   collector's color/crc updates land in the same gcinfo word). */
-static bzy_mutex g_roots_lock = BZY_MUTEX_INIT;
-
-static void collect_cycles_locked(void);
+static void collect_worker(int wid, int budget);
 
 /* Measurement only (I2c.1): when BZY_CYCLE_TIMING is set, each collection prints
    its wall-clock duration. The env check is cached, so the off-path cost is one
@@ -152,22 +150,23 @@ static void assert_on_worker(void)
 	}
 }
 
-static void roots_push(void *o)
+static void roots_push_wid(int wid, void *o)
 {
-	if (g_roots_n == g_roots_cap)
+	CycBuf *cb = &g_cyc[wid];
+	if (cb->n == cb->cap)
 	{
-		int64_t ncap = g_roots_cap ? g_roots_cap * 2 : 1024;
-		void **nb = realloc(g_roots, (size_t)ncap * sizeof(void*));
+		int64_t ncap = cb->cap ? cb->cap * 2 : 1024;
+		void **nb = realloc(cb->roots, (size_t)ncap * sizeof(void*));
 		if (!nb)
 		{
 			return;   /* Out of memory: drop this candidate rather than abort. */
 		}
 
-		g_roots = nb;
-		g_roots_cap = ncap;
+		cb->roots = nb;
+		cb->cap = ncap;
 	}
 
-	g_roots[g_roots_n++] = o;
+	cb->roots[cb->n++] = o;
 }
 
 /* ---- Small-object size-class free lists (per worker thread) -----------------
@@ -433,9 +432,10 @@ void *bzy_alloc(int64_t size)
    share_walk ORs the SHARED bit into EVERY object reachable from the handed-off
    root: at the first cross-core handoff the whole graph is still confined to
    this thread (an unshared object is single-core by invariant), so this thread
-   is its only mutator; holding g_roots_lock additionally excludes a collection
-   pass on another thread from writing the gcinfo color/crc bits of buffered
-   nodes while we OR bit 3. An already-SHARED node terminates recursion (its
+   is its only mutator. Per-worker collection guarantees no other thread writes the
+   gcinfo color/crc bits of these confined nodes while we OR bit 3: only the owning
+   worker collects them, and that is this thread. An already-SHARED node terminates
+   recursion (its
    reachable set is already fully shared), so re-sharing a graph is O(1) at the
    root. The collector drops SHARED candidates untouched, so a previously
    buffered node is simply skipped at the next collection. Idempotent and
@@ -466,9 +466,9 @@ void bzy_share_crosscore(void *o)
 		return;   /* Already shared (idempotent, lock-free fast path). */
 	}
 
-	bzy_mutex_lock(&g_roots_lock);
+	/* Lock-free: under per-worker collection, only this (owning) thread mutates this
+	   confined graph's gcinfo, so no collection pass can race the SHARED OR. */
 	share_walk(o);
-	bzy_mutex_unlock(&g_roots_lock);
 }
 
 void bzy_retain(void *obj)
@@ -561,36 +561,29 @@ void bzy_release(void *obj)
 	{
 		if (buffered(obj))
 		{
-			/* Already a candidate in g_roots: just re-purple. No lock - this is
-			   exactly as racy as the pre-lock code, and it is the hot case (an
-			   object released repeatedly between collections buffers once). If
-			   the flag read races a collection dropping the entry, the object
-			   simply re-buffers on its next release. */
-			set_color(obj, PURPLE);
+			set_color(obj, PURPLE);   /* Already a candidate: just re-purple. */
 			return;
 		}
 
-		bzy_mutex_lock(&g_roots_lock);
+		/* Single-writer per worker: a confined object is released only on its
+		   owning worker, so buffering onto that worker's own buffer needs no lock. */
+		int wid = bzy_current_wid();
+		assert_on_worker();
 		set_color(obj, PURPLE);
-		if (!buffered(obj))   /* Re-check under the lock. */
-		{
-			assert_on_worker();
-			set_buffered(obj, 1);
-			roots_push(obj);
+		set_buffered(obj, 1);
+		roots_push_wid(wid, obj);
 
-			/* Reclaim opportunistically once enough candidates accumulate, so
-			   long-running programs bound cycle garbage without explicit calls. */
-			if (g_roots_n >= 10000)
+		/* Reclaim opportunistically once enough candidates accumulate, so
+		   long-running programs bound cycle garbage without explicit calls. */
+		if (g_cyc[wid].n >= 10000)
+		{
+			int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
+			collect_worker(wid, 0);
+			if (cycle_timing_on())
 			{
-				int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
-				collect_cycles_locked();
-				if (cycle_timing_on())
-				{
-					fprintf(stderr, "[cycle-pause] %lld us\n", (long long)((bzy_clock_nanos() - t0) / 1000));
-				}
+				fprintf(stderr, "[cycle-pause] %lld us\n", (long long)((bzy_clock_nanos() - t0) / 1000));
 			}
 		}
-		bzy_mutex_unlock(&g_roots_lock);
 	}
 }
 
@@ -617,9 +610,8 @@ int64_t bzy_live_count(void)
 
 int64_t bzy_roots_buffered(void)
 {
-	bzy_mutex_lock(&g_roots_lock);
-	int64_t n = g_roots_n;
-	bzy_mutex_unlock(&g_roots_lock);
+	int64_t n = 0;
+	for (int i = 0; i < BZY_CYC_MAX_WORKERS; i++) { n += g_cyc[i].n; }   /* Diagnostic; racy read is fine. */
 	return n;
 }
 
@@ -705,9 +697,11 @@ static void scan(void *s)
 /* Gather the white subgraph into g_white without freeing, recoloring to BLACK so
    each node is collected exactly once and cycles terminate. Freeing is deferred
    to bzy_collect_cycles so no walk dereferences a freed node. */
-static void   **g_white = NULL;
-static int64_t g_white_n = 0;
-static int64_t g_white_cap = 0;
+/* Thread-local: each worker collects on its own thread, so concurrent per-worker
+   collections never share this gather buffer. */
+static __thread void   **g_white = NULL;
+static __thread int64_t g_white_n = 0;
+static __thread int64_t g_white_cap = 0;
 
 static void white_push(void *s)
 {
@@ -745,13 +739,16 @@ static void gather_white(void *s)
 	});
 }
 
-static void collect_cycles_locked(void)
+static void collect_worker(int wid, int budget)
 {
+	(void)budget;   /* Budget enforced in Task 3; Task 2 collects the whole buffer. */
+	CycBuf *cb = &g_cyc[wid];
+
 	/* Mark: gray every still-PURPLE candidate; drop the stale ones. */
 	int64_t kept = 0;
-	for (int64_t i = 0; i < g_roots_n; i++)
+	for (int64_t i = 0; i < cb->n; i++)
 	{
-		void *s = g_roots[i];
+		void *s = cb->roots[i];
 		if (is_shared_obj(s))
 		{
 			/* Promoted to cross-core after being buffered: shared objects are
@@ -771,7 +768,7 @@ static void collect_cycles_locked(void)
 		if (color_of(s) == PURPLE)
 		{
 			mark_gray(s);
-			g_roots[kept++] = s;
+			cb->roots[kept++] = s;
 		}
 		else
 		{
@@ -785,27 +782,27 @@ static void collect_cycles_locked(void)
 		}
 	}
 
-	g_roots_n = kept;
+	cb->n = kept;
 
 	/* Scan: restore externally-reachable subgraphs, whiten the dead ones. */
-	for (int64_t i = 0; i < g_roots_n; i++)
+	for (int64_t i = 0; i < cb->n; i++)
 	{
-		scan(g_roots[i]);
+		scan(cb->roots[i]);
 	}
 
 	/* Clear buffered flags so the white subgraph can be gathered, then gather. */
-	for (int64_t i = 0; i < g_roots_n; i++)
+	for (int64_t i = 0; i < cb->n; i++)
 	{
-		set_buffered(g_roots[i], 0);
+		set_buffered(cb->roots[i], 0);
 	}
 
 	g_white_n = 0;
-	for (int64_t i = 0; i < g_roots_n; i++)
+	for (int64_t i = 0; i < cb->n; i++)
 	{
-		gather_white(g_roots[i]);
+		gather_white(cb->roots[i]);
 	}
 
-	g_roots_n = 0;
+	cb->n = 0;
 
 	/* Free the gathered garbage in a flat pass: no traversal touches it now.
 	   Each node's finalizer runs just before its memory is reclaimed. */
@@ -825,10 +822,9 @@ static void collect_cycles_locked(void)
 
 void bzy_collect_cycles(void)
 {
+	int wid = bzy_current_wid();
 	int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
-	bzy_mutex_lock(&g_roots_lock);
-	collect_cycles_locked();
-	bzy_mutex_unlock(&g_roots_lock);
+	collect_worker(wid, 0);
 	if (cycle_timing_on())
 	{
 		fprintf(stderr, "[cycle-pause] %lld us\n", (long long)((bzy_clock_nanos() - t0) / 1000));
