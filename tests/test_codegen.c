@@ -1096,6 +1096,14 @@ static void test_ffi_array_arg_marshals_data_ptr(void)
 	ASSERT_INT(strstr(g_asm, "add rdi, 32") != NULL, 1);
 }
 
+static void test_ffi_blocking_five_args(void)
+{
+	/* A >4-arg blocking extern compiles (no abort) and emits its worker thunk. */
+	emit("extern blocking long f5(long a, long b, long c, long d, long e);"
+		 " void main() { long r; r = f5(1,2,3,4,5); }", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "__blocking_") != NULL, 1);
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1152,6 +1160,7 @@ int main(void)
 	RUN(test_ffi_fromcstring_lowers);
 	RUN(test_ffi_frombytes_lowers);
 	RUN(test_ffi_array_arg_marshals_data_ptr);
+	RUN(test_ffi_blocking_five_args);
 	RUN(test_stack_args_caller);
 	RUN(test_stack_args_callee);
 	SUMMARY();

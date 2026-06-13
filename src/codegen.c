@@ -2950,23 +2950,35 @@ static void cg_call_with_args(Codegen *cg, TypeTable *tt, const char *target,
 	}
 }
 
+/* Blocking ctx-blob layout: argument i sits at byte offset i*8 from the blob base;
+   the return value occupies the slot after the last argument. For <=4 arguments the
+   result stays at +32 and the blob is 48 bytes, byte-identical to the historical
+   layout, so existing blocking calls compile to unchanged code. */
+static int cg_blocking_result_off(int argc)
+{
+	return (argc <= 4) ? 32 : argc * 8;
+}
+
+static int cg_blocking_ctx_size(int argc)
+{
+	int off = cg_blocking_result_off(argc);
+	int sz = ((off + 8 + 15) / 16) * 16;
+	return sz < 48 ? 48 : sz;
+}
+
 /* Lower a call to an `extern blocking` function: build a ctx blob on the stack,
    marshal the args into it, hand it to the offload pool (the breeze parks while a
    worker runs the C call), then read the result back. Args are stored raw (the
-   string->char* marshalling happens worker-side in the thunk), so the owned-temp
-   release frees the original object. Up to 4 args. */
+   string/array->data marshalling happens worker-side in the thunk), so the
+   owned-temp release frees the original object. Any argument count. */
 static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
 {
-	if (e->arg_count > 4)
-	{
-		fprintf(stderr,"Codegen: >4 args unsupported\n");
-		exit(1);
-	}
-
-	int b = cg_scratch_alloc(cg, 48);              /* ctx blob: 4 arg slots + result, 16-aligned. */
-	int owned_tmp[4];
+	int argc = e->arg_count;
+	int sz = cg_blocking_ctx_size(argc);
+	int b = cg_scratch_alloc(cg, sz);              /* ctx blob: argc slots + result, 16-aligned. */
+	int owned_tmp[argc > 0 ? argc : 1];            /* C99 VLA, mirrors cg_call_with_args. */
 	int owned_n = 0;
-	for (int i=0; i<e->arg_count; i++)
+	for (int i=0; i<argc; i++)
 	{
 		TypeKind pk = (i < fi->param_count) ? fi->param_types[i].kind : e->args[i]->type.kind;
 		cg_expr(cg,tt,e->args[i]);
@@ -2988,7 +3000,7 @@ static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
 
 	cg_emit(cg,"    lea %s, [rel __blocking_%s]", cg_iarg(cg, 0), fi->asm_label);
 	cg_emit(cg,"    lea %s, [rbp - %d]", cg_iarg(cg, 1), b);   /* ctx pointer (base of the blob). */
-	cg_aligned_call(cg,"bzy_offload_run");         /* Parks the breeze; worker fills ctx[32]. */
+	cg_aligned_call(cg,"bzy_offload_run");         /* Parks the breeze; worker fills the result slot. */
 
 	for (int i=0; i<owned_n; i++)
 	{
@@ -2996,20 +3008,21 @@ static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
 		cg_release_rcx(cg);
 	}
 
+	int roff = cg_blocking_result_off(argc);
 	if (fi->ret_type.kind==TY_DOUBLE)
 	{
-		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b - 32);
+		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b - roff);
 	}
 	else if (fi->ret_type.kind==TY_FLOAT)
 	{
-		cg_emit(cg,"    movss xmm0, dword [rbp - %d]", b - 32);
+		cg_emit(cg,"    movss xmm0, dword [rbp - %d]", b - roff);
 	}
 	else if (fi->ret_type.kind!=TY_VOID)
 	{
-		cg_emit(cg,"    mov rax, [rbp - %d]", b - 32);
+		cg_emit(cg,"    mov rax, [rbp - %d]", b - roff);
 	}
 
-	cg_scratch_free(cg, 48);
+	cg_scratch_free(cg, sz);
 }
 
 /* Class-hierarchy analysis: true when a call to `method_name` on static type
@@ -7758,32 +7771,61 @@ static void cg_request_blocking_thunk(Codegen *cg, FuncInfo *fi)
 	cg->blocking_thunks[cg->blocking_thunk_count++] = fi;
 }
 
-/* The per-target blocking thunk, run on an offload worker: rcx = ctx blob.
-   ctx[i*8] holds arg i (raw object pointer for a string); ctx[32] receives the
-   return value. Loads each arg into its Win64 register by position, marshals a
-   string to its char* data (+32), calls the raw C symbol, stores the result. */
+/* The per-target blocking thunk, run on an offload worker: arg0 = ctx blob.
+   ctx[i*8] holds arg i (raw object pointer for a string/array); the result slot
+   (cg_blocking_result_off) receives the return value. Places register arguments,
+   spills any overflow arguments to the outgoing stack area, marshals a string or
+   value array to its data pointer (+32), calls the raw C symbol, stores the result.
+   With no overflow arguments the emitted code is byte-identical to the historical
+   <=4-argument thunk (sub rsp,32 / call / result at +32). */
 static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 {
 	cg->cur_func = NULL;   /* Synthesized frame: promotion helpers must fall back to slots. */
+	int win = (cg->target != TARGET_LINUX);
 	const char *a0 = cg_iarg(cg, 0);   /* The thunk's incoming ctx pointer (arg0). */
 	cg_emit(cg,"__blocking_%s:", fi->asm_label);
 	cg_emit(cg,"    push rbp");
 	cg_emit(cg,"    mov rbp, rsp");
-	cg_emit(cg,"    sub rsp, 48");                 /* 16-aligned: ctx save at [rbp-8] + shadow. */
+	cg_emit(cg,"    sub rsp, 48");                 /* 16-aligned: ctx save at [rbp-8] + scratch. */
 	cg_emit(cg,"    mov [rbp - 8], %s", a0);       /* Save the ctx pointer. */
-	int int_idx = 0, fp_idx = 0;
+
+	/* First pass: place the arguments that fit in registers. */
+	int int_idx = 0, fp_idx = 0, stk = 0;
 	for (int i=0; i<fi->param_count; i++)
 	{
 		TypeKind k = fi->param_types[i].kind;
-		cg_emit(cg,"    mov rax, [rbp - 8]");
-		if (ty_is_float(k))
+		int is_fp = ty_is_float(k);
+		int on_stack;
+		if (win)
 		{
-			int xi = (cg->target==TARGET_LINUX) ? fp_idx++ : i;
+			on_stack = (i >= 4);
+		}
+		else if (is_fp)
+		{
+			on_stack = (fp_idx >= 8);
+			if (!on_stack) { fp_idx++; }
+		}
+		else
+		{
+			on_stack = (int_idx >= 6);
+			if (!on_stack) { int_idx++; }
+		}
+
+		if (on_stack)
+		{
+			stk++;
+			continue;
+		}
+
+		cg_emit(cg,"    mov rax, [rbp - 8]");
+		if (is_fp)
+		{
+			int xi = win ? i : (fp_idx - 1);
 			cg_emit(cg, k==TY_FLOAT ? "    movd xmm%d, [rax + %d]" : "    movq xmm%d, [rax + %d]", xi, i*8);
 		}
 		else
 		{
-			int ii = (cg->target==TARGET_LINUX) ? int_idx++ : i;
+			int ii = win ? i : (int_idx - 1);
 			const char *r = cg_iarg(cg, ii);
 			cg_emit(cg,"    mov %s, [rax + %d]", r, i*8);
 			if (k==TY_STRING || k==TY_ARRAY)
@@ -7793,21 +7835,68 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 		}
 	}
 
-	cg_emit(cg,"    sub rsp, 32");
+	/* Outgoing area: Win64 keeps a 32-byte shadow; both targets append 8 bytes per
+	   stack-spilled argument, 16-aligned. With no stack args this is 32 on both,
+	   preserving the historical sub rsp,32 / add rsp,32. */
+	int outgoing = ((32 + stk*8) + 15) & ~15;
+	cg_emit(cg,"    sub rsp, %d", outgoing);
+
+	/* Second pass: spill overflow arguments to [rsp + dst], via r10 (never an
+	   argument register on either ABI). */
+	int_idx = 0; fp_idx = 0; stk = 0;
+	for (int i=0; i<fi->param_count; i++)
+	{
+		TypeKind k = fi->param_types[i].kind;
+		int is_fp = ty_is_float(k);
+		int on_stack;
+		if (win)
+		{
+			on_stack = (i >= 4);
+		}
+		else if (is_fp)
+		{
+			on_stack = (fp_idx >= 8);
+			if (!on_stack) { fp_idx++; }
+		}
+		else
+		{
+			on_stack = (int_idx >= 6);
+			if (!on_stack) { int_idx++; }
+		}
+
+		if (!on_stack)
+		{
+			continue;
+		}
+
+		int dst = win ? (32 + stk*8) : (stk*8);
+		stk++;
+		cg_emit(cg,"    mov rax, [rbp - 8]");
+		cg_emit(cg,"    mov r10, [rax + %d]", i*8);
+		if (!is_fp && (k==TY_STRING || k==TY_ARRAY))
+		{
+			cg_emit(cg,"    add r10, 32");
+		}
+
+		cg_emit(cg,"    mov [rsp + %d], r10", dst);
+	}
+
 	cg_emit(cg,"    call %s", fi->asm_label);      /* The raw ($-escaped) C symbol. */
-	cg_emit(cg,"    add rsp, 32");
-	cg_emit(cg,"    mov %s, [rbp - 8]", a0);
+	cg_emit(cg,"    add rsp, %d", outgoing);
+	cg_emit(cg,"    mov %s, [rbp - 8]", a0);       /* Reload ctx pointer (a0 was an arg reg). */
+
+	int roff = cg_blocking_result_off(fi->param_count);
 	if (fi->ret_type.kind==TY_DOUBLE)
 	{
-		cg_emit(cg,"    movq [%s + 32], xmm0", a0);
+		cg_emit(cg,"    movq [%s + %d], xmm0", a0, roff);
 	}
 	else if (fi->ret_type.kind==TY_FLOAT)
 	{
-		cg_emit(cg,"    movd [%s + 32], xmm0", a0);
+		cg_emit(cg,"    movd [%s + %d], xmm0", a0, roff);
 	}
 	else if (fi->ret_type.kind!=TY_VOID)
 	{
-		cg_emit(cg,"    mov [%s + 32], rax", a0);
+		cg_emit(cg,"    mov [%s + %d], rax", a0, roff);
 	}
 
 	cg_emit(cg,"    mov rsp, rbp");
