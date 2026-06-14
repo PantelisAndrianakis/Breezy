@@ -86,6 +86,30 @@ int bzy_resolve4(const char *host, int port, struct sockaddr_in *out)
 	return 0;
 }
 
+/* Resolve host:port to a sockaddr_storage (AF_UNSPEC: IPv6 literal, IPv4 literal,
+   or hostname). Returns 0 on success, filling *out/*outlen/*fam. Shared with udp.c. */
+int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
+                    socklen_t *outlen, int *fam)
+{
+	memset(out, 0, sizeof(*out));
+	struct addrinfo hints, *res = NULL;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	char portstr[16];
+	snprintf(portstr, sizeof(portstr), "%d", port);
+	if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res)
+	{
+		return -1;
+	}
+
+	memcpy(out, res->ai_addr, res->ai_addrlen);
+	*outlen = (socklen_t)res->ai_addrlen;
+	*fam = res->ai_family;
+	freeaddrinfo(res);
+	return 0;
+}
+
 /* A timeout arms this: after ms it cancels the pending overlapped op, which then
    completes with ERROR_OPERATION_ABORTED. cc lives on the caller's (breeze) stack,
    stable while parked. */
@@ -266,31 +290,33 @@ static LPFN_CONNECTEX connect_ex(SOCKET s)
 void *bzy_socket_connect(void *host, int64_t port)
 {
 	bzy_iocp_ensure();
-	SOCKET fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+	struct sockaddr_storage dst;
+	socklen_t dstlen;
+	int fam;
+	if (bzy_resolve_any(bzy_str_data(host), (int)port, &dst, &dstlen, &fam) != 0)
+	{
+		return NULL;
+	}
+
+	SOCKET fd = socket(fam, SOCK_STREAM, IPPROTO_TCP);
 	u_long nb = 1;
 	ioctlsocket(fd, FIONBIO, &nb);
 
-	/* ConnectEx requires an explicitly bound socket. */
-	struct sockaddr_in local;
+	/* ConnectEx requires an explicitly bound socket of the same address family. */
+	struct sockaddr_storage local;
 	memset(&local, 0, sizeof(local));
-	local.sin_family = AF_INET;
-	local.sin_addr.s_addr = INADDR_ANY;
-	bind(fd, (struct sockaddr*)&local, sizeof(local));
+	local.ss_family = (ADDRESS_FAMILY)fam;
+	int locallen = (fam == AF_INET6) ? (int)sizeof(struct sockaddr_in6) : (int)sizeof(struct sockaddr_in);
+	bind(fd, (struct sockaddr*)&local, locallen);
 	bzy_iocp_associate((void*)fd);
-
-	struct sockaddr_in dst;
-	if (bzy_resolve4(bzy_str_data(host), (int)port, &dst) != 0)
-	{
-		closesocket(fd);
-		return NULL;
-	}
 
 	char opbuf[BZY_IOCP_OP_SIZE];
 	IocpOp *op = (IocpOp*)opbuf;
 	bzy_iocp_op_reset(op);
 
 	DWORD got = 0;
-	BOOL ok = connect_ex(fd)(fd, (struct sockaddr*)&dst, sizeof(dst), NULL, 0, &got,
+	BOOL ok = connect_ex(fd)(fd, (struct sockaddr*)&dst, dstlen, NULL, 0, &got,
 							 (OVERLAPPED*)bzy_iocp_op_overlapped(op));
 	if (!ok && WSAGetLastError() != WSA_IO_PENDING)
 	{
@@ -621,6 +647,30 @@ int bzy_resolve4(const char *host, int port, struct sockaddr_in *out)
 	return 0;
 }
 
+/* Resolve host:port to a sockaddr_storage (AF_UNSPEC: IPv6 literal, IPv4 literal,
+   or hostname). Returns 0 on success, filling *out/*outlen/*fam. Shared with udp.c. */
+int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
+                    socklen_t *outlen, int *fam)
+{
+	memset(out, 0, sizeof(*out));
+	struct addrinfo hints, *res = NULL;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	char portstr[16];
+	snprintf(portstr, sizeof(portstr), "%d", port);
+	if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res)
+	{
+		return -1;
+	}
+
+	memcpy(out, res->ai_addr, res->ai_addrlen);
+	*outlen = (socklen_t)res->ai_addrlen;
+	*fam = res->ai_family;
+	freeaddrinfo(res);
+	return 0;
+}
+
 void *bzy_listener_new(int64_t port)
 {
 	bzy_reactor_ensure();
@@ -714,20 +764,22 @@ void *bzy_listener_accept_timeout(void *l, int64_t ms)
 void *bzy_socket_connect(void *host, int64_t port)
 {
 	bzy_reactor_ensure();
-	int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+
+	struct sockaddr_storage dst;
+	socklen_t dstlen;
+	int fam;
+	if (bzy_resolve_any(bzy_str_data(host), (int)port, &dst, &dstlen, &fam) != 0)
+	{
+		return NULL;
+	}
+
+	int fd = socket(fam, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (fd < 0)
 	{
 		return NULL;
 	}
 
-	struct sockaddr_in dst;
-	if (bzy_resolve4(bzy_str_data(host), (int)port, &dst) != 0)
-	{
-		close(fd);
-		return NULL;
-	}
-
-	if (connect(fd, (struct sockaddr*)&dst, sizeof(dst)) != 0)
+	if (connect(fd, (struct sockaddr*)&dst, dstlen) != 0)
 	{
 		if (errno != EINPROGRESS)
 		{
