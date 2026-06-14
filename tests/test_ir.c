@@ -1107,6 +1107,39 @@ static void test_region_select_emits_cmov(void)
 	ASSERT(strstr(g_region_asm, "cmov") != NULL);
 }
 
+static void test_lower_folds_unrolled_product(void)
+{
+	/* In an unrolled loop, `u * 8` (u = the unrolled induction constant) folds to
+	   a single immediate: no IR_MUL for the stride/index arithmetic. Without the
+	   constant-product fold the four copies each emit an imul. */
+	const Func *f = parse_one_func(
+		"int f(int h)\n"
+		"{\n"
+		"	for (int u = 0; u < 4; u = u + 1)\n"
+		"	{\n"
+		"		h = h + u * 8;\n"
+		"	}\n"
+		"	return h;\n"
+		"}\n");
+	ASSERT_INT(ir_eligible(f), 1);
+	IRFunc *irf = ir_lower_func(f, 0);
+	ASSERT(irf != NULL);
+	int muls = 0;
+	for (int b = 0; b < irf->block_count; b++)
+	{
+		for (int i = 0; i < irf->blocks[b].count; i++)
+		{
+			if (irf->blocks[b].instrs[i].op == IR_MUL)
+			{
+				muls++;
+			}
+		}
+	}
+
+	ASSERT_INT(muls, 0);
+	ir_func_free(irf);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
@@ -1150,6 +1183,7 @@ int main(void)
 	RUN(test_region_dispatch_in_main_shaped_function);
 	RUN(test_region_fires_inside_plain_emitter_loop);
 	RUN(test_region_skipped_in_function_with_try);
+	RUN(test_lower_folds_unrolled_product);
 	SUMMARY();
 	return 0;
 }

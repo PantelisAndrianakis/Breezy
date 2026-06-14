@@ -337,6 +337,43 @@ static int low_const(Low *L, const Expr *e, long long *out)
 		}
 	}
 
+	/* Constant arithmetic over the above (an unrolled loop's `u * 8`, `u * 8 + k`,
+	   ...): fold to a single compile-time value so an index/address built from an
+	   unrolled induction variable becomes a displacement instead of a materialized
+	   imul/add - matching the emitter's copy-constant unrolling. */
+	if (e->kind == EX_UNARY && e->op == TOKEN_MINUS)
+	{
+		long long v;
+		if (low_const(L, e->lhs, &v))
+		{
+			*out = -v;
+			return 1;
+		}
+	}
+
+	if (e->kind == EX_BINARY)
+	{
+		long long a;
+		long long b;
+		if (low_const(L, e->lhs, &a) && low_const(L, e->rhs, &b))
+		{
+			switch (e->op)
+			{
+			case TOKEN_PLUS:
+				*out = a + b;
+				return 1;
+			case TOKEN_MINUS:
+				*out = a - b;
+				return 1;
+			case TOKEN_STAR:
+				*out = a * b;
+				return 1;
+			default:
+				break;
+			}
+		}
+	}
+
 	return 0;
 }
 
@@ -547,6 +584,20 @@ static IRReg low_expr(Low *L, const Expr *e)
 			in->a = la;
 			in->b = rb;
 			in->cmp_op = e->op;
+			in->line = e->line;
+			return r;
+		}
+
+		/* Constant-foldable arithmetic (an unrolled iv times a stride, etc.) lowers
+		   to a single immediate, eliminating the materialized imul/add the emitter
+		   would otherwise win by folding. */
+		long long kfold;
+		if (low_const(L, e, &kfold))
+		{
+			IRReg r = ir_reg(L->f);
+			IRInstr *in = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
+			in->dst = r;
+			in->imm = kfold;
 			in->line = e->line;
 			return r;
 		}

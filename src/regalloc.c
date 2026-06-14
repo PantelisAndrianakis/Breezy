@@ -700,7 +700,12 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	   simply lives in its home slot, which is no worse than the emitter
 	   fallback's own treatment of locals. The tolerance is empirical: the
 	   packet pipeline's region carries 14 spilled temps and still beats the
-	   emitter 2x, while the codec block sweep carries 559 and loses badly. */
+	   emitter 2x. The bound was 16 when high-spill regions also paid a per-copy
+	   imul tax the emitter folded away; once IR lowering folds that constant
+	   index/stride arithmetic (low_const), the codec block sweep WINS at 108
+	   spilled temps (240 vs 271 ms, both OSes, full-suite A/B), so the bound is
+	   raised to 128. codec is the only region in the suite above 16; the A/B
+	   confirmed no other kernel's routing changes. */
 	a->hot_spill = 0;
 	a->hot_spill_count = 0;
 	if (maxdepth >= 1)
@@ -714,7 +719,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			}
 		}
 
-		a->hot_spill = (a->hot_spill_count > 16);
+		a->hot_spill = (a->hot_spill_count > 128);
 	}
 
 	free(interf);
