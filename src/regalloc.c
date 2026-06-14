@@ -520,14 +520,18 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	char allow[RA_MAXREGS];
-	for (int r = 0; r < RA_MAXREGS; r++)
+	char allow[RA_NALL];
+	for (int r = 0; r < RA_NALL; r++)
 	{
 		allow[r] = (r < RA_NREGS) ? 1 : 0;
 	}
 
 	allow[11] = !has_shift;    /* rcx. */
 	allow[12] = !has_divmod;   /* rdx. */
+	for (int r = RA_XMM0; r < RA_NALL; r++)
+	{
+		allow[r] = 1;          /* xmm2..xmm5 always allocatable (no fixed-scratch role). */
+	}
 
 	int *color = malloc((size_t)nval * sizeof(int));
 	for (int attempt = 0; attempt < 2; attempt++)
@@ -540,7 +544,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		for (int i = 0; i < no; i++)
 		{
 			int r = order[i];
-			char used[RA_MAXREGS];
+			char used[RA_NALL];
 			memset(used, 0, sizeof used);
 			for (int k = 0; k < i; k++)
 			{
@@ -551,7 +555,12 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				}
 			}
 
-			for (int rr = 0; rr < RA_MAXREGS; rr++)
+			/* Restrict the search to the root's register class. A coalesced root's
+			   members are copy-related and so share a class; colour from that
+			   class's contiguous index sub-range. */
+			int lo = (a->val_class[r] == RC_XMM) ? RA_XMM0 : 0;
+			int hi = (a->val_class[r] == RC_XMM) ? RA_NALL : RA_MAXREGS;
+			for (int rr = lo; rr < hi; rr++)
 			{
 				if (allow[rr] && !used[rr])
 				{

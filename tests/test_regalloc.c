@@ -260,6 +260,24 @@ static void test_value_class_from_type(void)
 	ir_func_free(f);
 }
 
+static void test_fp_value_gets_xmm_register(void)
+{
+	/* The double accumulator must be coloured from the xmm pool and the int from
+	   the GP pool; both are simultaneously live and both get a register (disjoint
+	   pools, so no cross-class interference). */
+	IRReg dadd, iload;
+	IRFunc *f = build_fp_func(&dadd, &iload);
+	IRAlloc *a = ra_run(f);
+	int dr = ra_vreg_reg(a, dadd);
+	int ir = ra_vreg_reg(a, iload);
+	ASSERT(dr != RA_SPILLED);
+	ASSERT(ir != RA_SPILLED);
+	ASSERT_INT(ra_reg_is_xmm(dr), 1);   /* double -> xmm. */
+	ASSERT_INT(ra_reg_is_xmm(ir), 0);   /* long -> GP. */
+	ra_free(a);
+	ir_func_free(f);
+}
+
 /* Build the remat scenario: 14 loads of distinct never-stored locals, all
    simultaneously live (loads first, consuming stores after), overflowing the
    register pool so several classes spill - and every spilled class is a load
@@ -388,6 +406,7 @@ int main(void)
 	RUN(test_reg_tables);
 	RUN(test_xmm_reg_tables);
 	RUN(test_value_class_from_type);
+	RUN(test_fp_value_gets_xmm_register);
 	RUN(test_remat_readonly_frame_load);
 	RUN(test_remat_skipped_when_local_stored);
 	RUN(test_no_hot_spill_small_loop);
