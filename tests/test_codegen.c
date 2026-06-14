@@ -3,6 +3,7 @@
 #include "types.h"
 #include "resolve.h"
 #include "codegen.h"
+#include "config.h"   /* bzy_config_reset_cache: toggle BZY_IR for the SIMD case. */
 #include "prelude.h"
 #include "overload.h"
 #include "grow.h"
@@ -1293,6 +1294,50 @@ static void test_ffi_variadic_win64_fpdup(void)
 	ASSERT_INT(strstr(g_asm, "movq") != NULL, 1);
 }
 
+static void test_simd_vectorize_int_add(void)
+{
+	/* The vectorizer lives on the IR region path; main() forces BZY_IR=0 for the
+	   emitter assertions, so enable the IR backend for this case and restore it. */
+	putenv("BZY_IR=1");
+	bzy_config_reset_cache();
+
+	/* A counted, unit-stride int[] element-wise add with BCE-proved indices
+	   lowers to a packed body (movdqu + paddd) on the IR region path. */
+	emit("void main() {"
+		 " int[] a; a = new int[1023];"
+		 " int[] b; b = new int[1023];"
+		 " int[] c; c = new int[1023];"
+		 " for (int i = 0; i < 1023; i = i + 1) { a[i] = i; b[i] = i + 1; }"
+		 " for (int i = 0; i < 1023; i = i + 1) { c[i] = a[i] + b[i]; } }",
+		 TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "paddd") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "movdqu") != NULL, 1);
+
+	/* A carried dependence (c[i] = c[i-1] + a[i]) must NOT vectorize. */
+	emit("void main() {"
+		 " int[] a; a = new int[1023];"
+		 " int[] c; c = new int[1023];"
+		 " for (int i = 0; i < 1023; i = i + 1) { a[i] = i; }"
+		 " c[0] = 0;"
+		 " for (int i = 1; i < 1023; i = i + 1) { c[i] = c[i - 1] + a[i]; } }",
+		 TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "paddd") == NULL, 1);
+
+	/* A long[] (8-byte) element loop must NOT vectorize: the gate is int-only. */
+	emit("void main() {"
+		 " long[] a; a = new long[1023];"
+		 " long[] b; b = new long[1023];"
+		 " long[] c; c = new long[1023];"
+		 " for (int i = 0; i < 1023; i = i + 1) { a[i] = i; b[i] = i + 1; }"
+		 " for (int i = 0; i < 1023; i = i + 1) { c[i] = a[i] + b[i]; } }",
+		 TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "paddd") == NULL, 1);
+
+	/* Restore the emitter-forcing flag for the remaining cases. */
+	putenv("BZY_IR=0");
+	bzy_config_reset_cache();
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1355,6 +1400,7 @@ int main(void)
 	RUN(test_ffi_callback_type_lowers);
 	RUN(test_ffi_variadic_parses);
 	RUN(test_ffi_variadic_win64_fpdup);
+	RUN(test_simd_vectorize_int_add);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_cycle_acyclic_program);

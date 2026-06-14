@@ -5,33 +5,42 @@
 #include <string.h>
 #include <dirent.h>
 
+/* Env-derived flags, read once and cached (-1 = unread). bzy_config_reset_cache
+   forces a re-read, which tests use to flip BZY_IR around a single case. */
+static int g_ir_cached = -1;
+static int g_ir_regions_cached = -1;
+
+void bzy_config_reset_cache(void)
+{
+	g_ir_cached = -1;
+	g_ir_regions_cached = -1;
+}
+
 int bzy_ir_enabled(void)
 {
-	static int cached = -1;
-	if (cached < 0)
+	if (g_ir_cached < 0)
 	{
 		/* Default ON: eligible call-free functions use the IR backend (the hot-spill
 		   safety gate keeps any function the IR would lose on the emitter). Set
 		   BZY_IR=0 to force the emitter everywhere. */
 		const char *v = getenv("BZY_IR");
-		cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
+		g_ir_cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
 
-	return cached;
+	return g_ir_cached;
 }
 
 int bzy_ir_regions_enabled(void)
 {
-	static int cached = -1;
-	if (cached < 0)
+	if (g_ir_regions_cached < 0)
 	{
 		/* Default ON. Set BZY_IR_REGIONS=0 to keep eligible loops on the emitter
 		   while leaving whole-function IR active; BZY_IR=0 disables both. */
 		const char *v = getenv("BZY_IR_REGIONS");
-		cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
+		g_ir_regions_cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
 
-	return cached && bzy_ir_enabled();
+	return g_ir_regions_cached && bzy_ir_enabled();
 }
 
 /* Append each double-quoted token in `val` to the grown string array `*arr`

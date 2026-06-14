@@ -1671,20 +1671,37 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	ra_free(a);
 }
 
-/* ---- Element-wise int[] auto-vectorization (prove-first, narrow) ----
-   Recognize exactly  for (i = 0; i < C; i = i + 1) c[i] = a[i] + b[i];  over
-   int[] with BCE-proved indices, and emit a 4-lane packed body (movdqu/paddd)
-   plus a scalar remainder. This is the simplest profitable shape; the general
-   analysis replaces this recognizer in a later step. Every other loop is left
-   to the scalar block emitter unchanged. */
+/* ---- Element-wise int[] auto-vectorization ----
+   A strict analysis recognizes a counted, unit-stride int[] element-wise loop
+   whose stored value is an op tree over +,-,* of same-index loads, and records
+   that tree; the packed-emission path lowers it to a 4-lane body (movdqu +
+   paddd/psubd/pmulld) plus a scalar remainder. Every other loop is left to the
+   scalar block emitter unchanged, so non-qualifying code is byte-identical. */
+
+typedef enum { VN_LOAD, VN_BINOP } VecNodeKind;
+
+typedef struct VecNode VecNode;
+struct VecNode
+{
+	VecNodeKind kind;
+	int          slot;    /* VN_LOAD: input array frame slot. */
+	int          op;      /* VN_BINOP: TokenType (TOKEN_PLUS/MINUS/STAR). */
+	VecNode     *l, *r;   /* VN_BINOP operands. */
+};
+
+#define VEC_MAX_NODES 32
+
 typedef struct
 {
-	int       slot_i;     /* Induction local frame offset. */
-	int       slot_a;     /* Input array A frame offset. */
-	int       slot_b;     /* Input array B frame offset. */
-	int       slot_c;     /* Output array frame offset. */
-	long long bound;      /* The loop runs i over [0, bound). */
-} VecAdd;
+	int         ok;
+	int         slot_i;     /* Induction local frame offset. */
+	long long   bound;      /* The loop runs i over [0, bound). */
+	int         out_slot;   /* Output array frame offset. */
+	VecNode     pool[VEC_MAX_NODES];
+	int         npool;
+	VecNode    *root;       /* The stored value's op tree (into pool). */
+	const char *reason;     /* Verdict text, for BZY_SIMD_REPORT triage. */
+} VecLoop;
 
 /* arr[i]: an EX_INDEX over an int[] with a BCE-proved induction index. Returns
    the array's frame slot, or -1 if the shape does not match. */
@@ -1708,15 +1725,93 @@ static int vec_idx_slot(const Expr *e, int slot_i)
 	return e->lhs->anno_int;
 }
 
-/* Match the recognized loop against `s`, filling `p`. */
-static int vec_add_match(const Stmt *s, VecAdd *p)
+static VecNode *vec_node(VecLoop *v, VecNodeKind k)
 {
+	if (v->npool >= VEC_MAX_NODES)
+	{
+		return NULL;
+	}
+
+	VecNode *n = &v->pool[v->npool++];
+	n->kind = k;
+	n->slot = -1;
+	n->op = 0;
+	n->l = NULL;
+	n->r = NULL;
+	return n;
+}
+
+/* Build the stored value's op tree: an int leaf is a same-index load arr[i]; an
+   internal node is +,-,* over int subtrees. Anything else (a scalar leaf, a
+   call, a non-int op, a foreign or non-induction index) fails the gate. */
+static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
+{
+	if (!e)
+	{
+		return NULL;
+	}
+
+	int slot = vec_idx_slot(e, slot_i);
+	if (slot >= 0)
+	{
+		VecNode *n = vec_node(v, VN_LOAD);
+		if (n)
+		{
+			n->slot = slot;
+		}
+
+		return n;
+	}
+
+	if (e->kind == EX_BINARY && e->type.kind == TY_INT
+		&& (e->op == TOKEN_PLUS || e->op == TOKEN_MINUS || e->op == TOKEN_STAR))
+	{
+		VecNode *l = vec_build_tree(v, e->lhs, slot_i);
+		VecNode *r = vec_build_tree(v, e->rhs, slot_i);
+		if (!l || !r)
+		{
+			return NULL;
+		}
+
+		VecNode *n = vec_node(v, VN_BINOP);
+		if (n)
+		{
+			n->op = e->op;
+			n->l = l;
+			n->r = r;
+		}
+
+		return n;
+	}
+
+	return NULL;
+}
+
+/* The strict vectorizability gate. Fills `v` and returns v->ok. Pure over the
+   AST. The eight conditions:
+     1. counted loop: single induction i, init 0, step +1, bound i < C;
+     2. unit-stride, induction-only indexing (vec_idx_slot: index vreg == i);
+     3. exactly one store, out[i] (the single body statement);
+     4. no loop-carried dependence (a unit-stride i never revisits an index, and
+        every load is at the current i, so even out[i] = f(out[i], ...) is safe;
+        a prior-iteration index like out[i-1] is rejected by (2));
+     5. the stored value is an op tree over +,-,* of same-index int loads;
+     6. int (4-byte) element kind only (vec_idx_slot / the EX_BINARY type check);
+     7. no control flow, call, or side effect in the body (single assignment);
+     8. indices already BCE-proved in range (anno_index_safe in vec_idx_slot). */
+static int vec_analyze(const Stmt *s, VecLoop *v)
+{
+	v->ok = 0;
+	v->npool = 0;
+	v->root = NULL;
+	v->reason = "shape";
+
 	if (!s || s->kind != ST_FOR || !s->for_init || !s->cond || !s->for_post)
 	{
 		return 0;
 	}
 
-	/* init: int i = 0  (or  i = 0). */
+	/* (1) init: int i = 0  (or  i = 0). */
 	int slot_i;
 	const Stmt *in = s->for_init;
 	if (in->kind == ST_VARDECL && in->decl_init
@@ -1731,48 +1826,60 @@ static int vec_add_match(const Stmt *s, VecAdd *p)
 	}
 	else
 	{
+		v->reason = "init";
 		return 0;
 	}
 
-	/* cond: i < C, a constant upper bound. */
+	/* (1) bound: i < C, a constant upper bound. */
 	const Expr *c = s->cond;
 	if (c->kind != EX_BINARY || c->op != TOKEN_LT
 		|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i
 		|| !c->rhs || c->rhs->kind != EX_INT)
 	{
+		v->reason = "bound";
 		return 0;
 	}
 
 	long long bound = c->rhs->int_val;
 
-	/* post: i = i + 1. */
+	/* (1) step: i = i + 1. */
 	const Stmt *po = s->for_post;
 	if (po->kind != ST_ASSIGN || po->target->kind != EX_IDENT || po->target->anno_int != slot_i
 		|| po->value->kind != EX_BINARY || po->value->op != TOKEN_PLUS
 		|| po->value->lhs->kind != EX_IDENT || po->value->lhs->anno_int != slot_i
 		|| po->value->rhs->kind != EX_INT || po->value->rhs->int_val != 1)
 	{
+		v->reason = "step";
 		return 0;
 	}
 
-	/* body: exactly  c[i] = a[i] + b[i]. */
+	/* (3,7) body: exactly one assignment statement, no control flow or calls. */
 	if (!s->then_blk || s->then_blk->count != 1)
 	{
+		v->reason = "body";
 		return 0;
 	}
 
 	const Stmt *as = s->then_blk->stmts[0];
-	if (as->kind != ST_ASSIGN || !as->value || as->value->kind != EX_BINARY
-		|| as->value->op != TOKEN_PLUS)
+	if (as->kind != ST_ASSIGN)
 	{
+		v->reason = "body-stmt";
 		return 0;
 	}
 
-	int slot_c = vec_idx_slot(as->target, slot_i);
-	int slot_a = vec_idx_slot(as->value->lhs, slot_i);
-	int slot_b = vec_idx_slot(as->value->rhs, slot_i);
-	if (slot_a < 0 || slot_b < 0 || slot_c < 0)
+	/* (2,3,6,8) store target out[i]. */
+	int out_slot = vec_idx_slot(as->target, slot_i);
+	if (out_slot < 0)
 	{
+		v->reason = "store";
+		return 0;
+	}
+
+	/* (5) the stored value's op tree. */
+	VecNode *root = vec_build_tree(v, as->value, slot_i);
+	if (!root)
+	{
+		v->reason = "rhs";
 		return 0;
 	}
 
@@ -1780,14 +1887,16 @@ static int vec_add_match(const Stmt *s, VecAdd *p)
 	   already unrolls well at tiny trip counts. */
 	if (bound < 8)
 	{
+		v->reason = "tiny";
 		return 0;
 	}
 
-	p->slot_i = slot_i;
-	p->slot_a = slot_a;
-	p->slot_b = slot_b;
-	p->slot_c = slot_c;
-	p->bound = bound;
+	v->slot_i = slot_i;
+	v->bound = bound;
+	v->out_slot = out_slot;
+	v->root = root;
+	v->ok = 1;
+	v->reason = "ok";
 	return 1;
 }
 
@@ -1798,16 +1907,34 @@ static int vec_add_match(const Stmt *s, VecAdd *p)
    across the region is clobbered. */
 static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 {
-	VecAdd p;
-	if (!vec_add_match(region, &p))
+	VecLoop v;
+	int ok = vec_analyze(region, &v);
+	if (region && getenv("BZY_SIMD_REPORT"))
+	{
+		fprintf(stderr, "simd: line %d: %s\n", region->line, ok ? "VECTORIZED" : v.reason);
+	}
+
+	if (!ok)
 	{
 		return 0;
 	}
 
-	int ri = ra_local_reg(e->a, p.slot_i);
-	int ra = ra_local_reg(e->a, p.slot_a);
-	int rb = ra_local_reg(e->a, p.slot_b);
-	int rc = ra_local_reg(e->a, p.slot_c);
+	/* This step emits only the single packed add a[i] + b[i]; the general
+	   op-tree lowering lands next. A recognized-but-unemitted tree stays scalar,
+	   which is still correct. */
+	VecNode *t = v.root;
+	if (!(t->kind == VN_BINOP && t->op == TOKEN_PLUS
+		  && t->l->kind == VN_LOAD && t->r->kind == VN_LOAD))
+	{
+		return 0;
+	}
+
+	int slot_a = t->l->slot;
+	int slot_b = t->r->slot;
+	int ri = ra_local_reg(e->a, v.slot_i);
+	int ra = ra_local_reg(e->a, slot_a);
+	int rb = ra_local_reg(e->a, slot_b);
+	int rc = ra_local_reg(e->a, v.out_slot);
 	if (ri < 0 || ra < 0 || rb < 0 || rc < 0)
 	{
 		return 0;
@@ -1818,7 +1945,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 	const char *Ra = ra_reg_name(ra);
 	const char *Rb = ra_reg_name(rb);
 	const char *Rc = ra_reg_name(rc);
-	long long vbound = p.bound & ~3LL;
+	long long vbound = v.bound & ~3LL;
 	int Lvec = cg_label(cg);
 	int Lrem = cg_label(cg);
 	int Ldone = cg_label(cg);
@@ -1835,7 +1962,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 	cg_emit(cg, "    add %s, 4", Ri);
 	cg_emit(cg, "    jmp .L%d", Lvec);
 	cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail [vbound, bound). */
-	cg_emit(cg, "    cmp %s, %lld", Ri, p.bound);
+	cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 	cg_emit(cg, "    jge .L%d", Ldone);
 	cg_emit(cg, "    mov eax, dword [%s + %s*4 + 32]", Ra, Ri);
 	cg_emit(cg, "    add eax, dword [%s + %s*4 + 32]", Rb, Ri);
