@@ -1382,10 +1382,20 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			int okf = cg_label(cg);
 			int pcf = cg_label(cg);
-			cg_emit(cg,"    cmp %s, [%s + 24]", ireg, base);   /* Unsigned: catches negative and >= length. */
+			char lenop[32];
+			if (e->anno_len_const > 0)
+			{
+				snprintf(lenop, sizeof lenop, "%lld", e->anno_len_const);   /* Constant-length array: immediate, no [base+24] load. */
+			}
+			else
+			{
+				snprintf(lenop, sizeof lenop, "[%s + 24]", base);
+			}
+
+			cg_emit(cg,"    cmp %s, %s", ireg, lenop);   /* Unsigned: catches negative and >= length. */
 			cg_emit(cg,"    jb .L%d", okf);
 			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);       /* index. */
-			cg_emit(cg,"    mov %s, [%s + 24]", cg_iarg(cg, 1), base); /* length. */
+			cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), lenop);      /* length. */
 			cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pcf);
 			cg_emit(cg,".L%d:", pcf);
 			cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
@@ -1446,6 +1456,92 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));   /* e->type is the element type. */
+}
+
+/* Fold a register-resident integer array element straight into a memory operand,
+   emitting the bounds check (if any) but NO `lea rbx`. For arr[i] where the base
+   and the bare index i both live in registers - the interpreter/hot-loop shape -
+   the element address is `[base + i*stride + 32]`, which a load or store can name
+   directly; the separate lea-into-rbx the generic path emits is pure overhead Go
+   does not pay (it folds slice addressing into the access). Writes the operand to
+   `buf` and returns 1, or returns 0 (emitting nothing) when the access is not this
+   register-resident bare-index integer shape, leaving the caller on cg_index_addr.
+   The bounds check uses the immediate length when statically known, else [base+24];
+   its bzy_oob path may clobber rcx/rdx/r8/r9 but never returns, and the in-bounds
+   jump skips it, so the base register is intact where the operand is consumed. */
+static int cg_index_checked_opnd(Codegen *cg, TypeTable *tt, Expr *e, char *buf, int bufsz)
+{
+	(void)tt;
+	if (e->kind != EX_INDEX || e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0
+		|| ty_is_float(e->type.kind) || ty_is_managed(e->type.kind))
+	{
+		return 0;
+	}
+
+	/* Only the bounds-checked case. A BCE-proved-safe access keeps the existing
+	   folded-operand / strength-reduction paths (cg_index_opnd, cg_sr_addr inside
+	   cg_index_addr) that the dense-array benchmarks are tuned around - do not
+	   divert it. The win here is the data-dependent index that can never be proved
+	   safe (an interpreter program counter / stack pointer), which previously paid a
+	   lea-into-rbx on every access. */
+	if (e->anno_index_safe)
+	{
+		return 0;
+	}
+
+	/* Bare register-resident index only (REG +/- const keeps the generic path: its
+	   bounds check is on the computed index, not the bare register). */
+	if (e->rhs->kind != EX_IDENT || e->rhs->anno_int <= 0
+		|| (cg->unrolling && cg_is_unroll_const(cg, e->rhs->anno_int)))
+	{
+		return 0;
+	}
+
+	const char *ireg = cg_local_reg(cg, e->rhs->anno_int);
+	if (!ireg)
+	{
+		return 0;
+	}
+
+	const char *br = cg_local_reg(cg, e->lhs->anno_int);
+	if (!br)
+	{
+		br = cg_hoist_reg(cg, e->lhs->anno_int);
+	}
+
+	if (!br)
+	{
+		return 0;
+	}
+
+	int stride = cg_elem_stride(e->type.kind);
+	if (!e->anno_index_safe)
+	{
+		int okf = cg_label(cg);
+		int pcf = cg_label(cg);
+		char lenop[32];
+		if (e->anno_len_const > 0)
+		{
+			snprintf(lenop, sizeof lenop, "%lld", e->anno_len_const);   /* Constant-length array: immediate, no [base+24] load. */
+		}
+		else
+		{
+			snprintf(lenop, sizeof lenop, "[%s + 24]", br);
+		}
+
+		cg_emit(cg,"    cmp %s, %s", ireg, lenop);   /* Unsigned: catches negative and >= length. */
+		cg_emit(cg,"    jb .L%d", okf);
+		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 0), ireg);
+		cg_emit(cg,"    mov %s, %s", cg_iarg(cg, 1), lenop);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pcf);
+		cg_emit(cg,".L%d:", pcf);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+		cg_emit(cg,"    call bzy_oob");
+		cg_emit(cg,".L%d:", okf);
+	}
+
+	snprintf(buf, bufsz, "[%s + %s*%d + 32]", br, ireg, stride);
+	return 1;
 }
 
 /* Like cg_index_addr, but guarantees the array base survives in rax alongside
@@ -5299,6 +5395,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
+		/* Integer element, register-resident base + bare index: emit the bounds
+		   check and fold the address into the load - no lea-into-rbx. */
+		if (!ty_is_float(e->type.kind) && cg_index_checked_opnd(cg, tt, e, imem, sizeof imem))
+		{
+			cg_load_scalar(cg,e->type.kind,imem);
+			break;
+		}
+
 		cg_index_addr(cg,tt,e);
 		if (ty_is_float(e->type.kind))
 		{
@@ -5779,10 +5883,22 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 		}
 		else
 		{
-			cg_temp_push(cg);      /* The integer value. */
-			cg_index_addr(cg,tt,target);
-			cg_temp_pop(cg);
-			cg_store_scalar(cg,target->type.kind,"[rbx]");   /* target->type is the element type. */
+			/* Register-resident base + bare index: emit the bounds check and fold
+			   the address into the store. The value stays in rax (the bounds-check
+			   fast path and its skipped never-return oob stub leave rax untouched),
+			   so no temp-slot round-trip is needed. */
+			char imem[64];
+			if (cg_index_checked_opnd(cg,tt,target,imem,sizeof imem))
+			{
+				cg_store_scalar(cg,target->type.kind,imem);
+			}
+			else
+			{
+				cg_temp_push(cg);      /* The integer value. */
+				cg_index_addr(cg,tt,target);
+				cg_temp_pop(cg);
+				cg_store_scalar(cg,target->type.kind,"[rbx]");   /* target->type is the element type. */
+			}
 		}
 
 		return;

@@ -175,6 +175,7 @@ struct Expr
 	int      arg_cap;
 	int      anno_nonneg;     /* Non-neg pass: 1 if this /,% node's dividend is provably >= 0. */
 	int      anno_index_safe; /* BCE pass: 1 if this EX_INDEX's index is provably in [0, length). */
+	long long anno_len_const; /* BCE pass: this EX_INDEX array's exact length when statically constant (new T[N]); 0 = unknown. A kept bounds check then compares against the immediate, not a memory load of [base+24]. */
 	int      anno_shared_gate;/* Resolver: EX_INDEX on a managed element of a maybe-shared array -> SHARED-bit gated access (owned result). */
 	int      anno_overload;   /* Resolver: index of the selected overload (ctor/method/func) within its set; default 0. */
 	int      is_func_addr;    /* FFI: this arg is a bare function name passed as a C function pointer (its address). */

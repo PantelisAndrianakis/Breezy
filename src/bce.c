@@ -570,6 +570,14 @@ static void mark_indexes(Expr *e, Env *env)
 		Iv len = alen_get(env, e->lhs->anno_int);
 		if (len.known)
 		{
+			/* Exact constant length (a `new T[N]` array, never re-bound to a
+			   different length on this path): a kept bounds check can compare the
+			   index against the immediate N instead of loading [base + 24]. */
+			if (len.lo == len.hi && len.lo > 0)
+			{
+				e->anno_len_const = len.lo;
+			}
+
 			Iv idx = iv_expr(e->rhs, env);
 			if (idx.known && idx.lo >= 0 && idx.hi < len.lo)
 			{
