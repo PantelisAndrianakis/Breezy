@@ -6137,8 +6137,25 @@ static int cg_hoist_stmt_ok(Stmt *s)
 	case ST_BREAK:
 	case ST_CONTINUE:
 		return 1;
+	case ST_SWITCH:
+		/* Dispatch on an integer subject is call-free: it lowers to a jump table or
+		   a compare chain using rax/rcx/rdx scratch, never the r8-r11 hoist cache.
+		   The case bodies live flat in then_blk, so vetting it as a block reaches
+		   them (and the ST_CASE/ST_DEFAULT markers below). String and enum subjects
+		   route through the runtime (string compare; owned-enum release), so restrict
+		   to a non-managed scalar subject. */
+		if (ty_is_managed(s->cond->type.kind))
+		{
+			return 0;
+		}
+
+		return cg_hoist_expr_ok(s->cond) && cg_hoist_block_ok(s->then_blk);
+	case ST_CASE:
+		return cg_hoist_expr_ok(s->value);   /* Marker only; the label value is a compile-time constant. */
+	case ST_DEFAULT:
+		return 1;                            /* Marker only; emits a label. */
 	default:
-		return 0;   /* Return, throw, try, switch, spawn, foreach. */
+		return 0;   /* Return, throw, try, spawn, foreach. */
 	}
 }
 
@@ -7677,7 +7694,11 @@ static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	{
 		int tab = cg_label(cg);
 		cg_emit(cg,"    mov rcx, rax");     /* rcx/rdx: jump-table scratch (no call); same on both ABIs. */
-		cg_emit(cg,"    sub rcx, %lld", lo);
+		if (lo != 0)
+		{
+			cg_emit(cg,"    sub rcx, %lld", lo);   /* Rebase to 0; skipped when the lowest case is already 0. */
+		}
+
 		cg_emit(cg,"    cmp rcx, %lld", range);
 		cg_emit(cg,"    jae .L%d", default_lbl);     /* unsigned: outside [lo,hi] -> default/end */
 		cg_emit(cg,"    lea rdx, [rel .L%d]", tab);
