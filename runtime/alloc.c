@@ -217,6 +217,8 @@ typedef struct
 	int32_t  n[POOL_NCLASS];      /* Current depth per class. */
 	int64_t  live;                /* This thread's contribution to the live-object count. */
 	int      registered;          /* 1 once this shard is linked into g_shards. */
+	char    *slab_cur;            /* Bump cursor for net-new pooled blocks (see slab_carve). */
+	char    *slab_end;            /* End of the current slab; carving past it grabs a new one. */
 } PoolTLS;
 
 #ifndef _WIN32
@@ -379,8 +381,16 @@ static void pool_free(void *o)
 	p->live--;
 
 	int c = (int)((*GI(o) >> 4) & 0xF);
-	if (c && c < POOL_NCLASS && p->n[c] < POOL_CAP)
+	if (c && c < POOL_NCLASS)
 	{
+		/* Pooled blocks are carved from a process-lifetime slab (slab_carve) and can
+		   never be handed back to free() individually, so they always recycle onto the
+		   free list. The old per-class POOL_CAP that returned excess blocks to the OS
+		   no longer applies: slab memory is retained until exit regardless, and list
+		   depth is bounded by the live high-water mark. Only unpooled (c == 0) blocks,
+		   which still come from calloc, reach free(). The inline release fast path in
+		   src/codegen.c keeps recycling its first POOL_CAP blocks itself and defers the
+		   rest here, so the cap still governs that path. */
 		*(void**)o = p->head[c];
 		p->head[c] = o;
 		p->n[c]++;
@@ -388,6 +398,40 @@ static void pool_free(void *o)
 	}
 
 	free(o);
+}
+
+/* Net-new backing store for pooled blocks. One malloc() per object - a header-
+   padded, cache-cold path - dominated the build phase of allocation-heavy programs
+   (it is reached for every object until the free lists fill, so a growing live set
+   never recycles). Instead, carve fresh blocks by bumping a pointer within a large
+   per-thread slab; freed blocks still recycle through the per-class free lists, so
+   the slab only supplies never-before-allocated blocks. Slabs are never returned
+   per-block and live for the whole process: blocks migrate across threads (a block
+   carved on one thread may be recycled on another), so releasing a slab at thread
+   exit could strand a pointer in another thread's free list. Worker threads are
+   hard-capped and long-lived, so holding slab memory until exit matches the pool's
+   existing "returned to the OS only at process exit" contract. Every g_class_size
+   value is a multiple of 16 and malloc returns 16-aligned storage, so bumping by
+   the class size keeps each block 16-byte aligned. */
+#define SLAB_SIZE (1u << 20)   /* 1 MiB per slab; pooled blocks are <= 256 B, so one always fits. */
+
+static void *slab_carve(PoolTLS *p, int64_t size)
+{
+	if (p->slab_cur + size > p->slab_end)
+	{
+		char *slab = (char*)malloc(SLAB_SIZE);
+		if (!slab)
+		{
+			return NULL;   /* bzy_alloc aborts on NULL, exactly as it did for malloc. */
+		}
+
+		p->slab_cur = slab;
+		p->slab_end = slab + SLAB_SIZE;
+	}
+
+	void *o = p->slab_cur;
+	p->slab_cur += size;
+	return o;
 }
 
 void *bzy_alloc(int64_t size)
@@ -407,7 +451,7 @@ void *bzy_alloc(int64_t size)
 		}
 		else
 		{
-			o = malloc((size_t)g_class_size[c]);
+			o = slab_carve(p, g_class_size[c]);
 			if (!o)
 			{
 				abort();
