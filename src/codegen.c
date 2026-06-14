@@ -8790,7 +8790,7 @@ static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
 		}
 	}
 
-	ir_emit_region(cg, cg->region_irf[r], a, cg->region_base);
+	ir_emit_region(cg, cg->region_irf[r], a, cg->region_base, cg->region_stmt[r]);
 
 	for (int i = 0; i < f->promo_count; i++)
 	{

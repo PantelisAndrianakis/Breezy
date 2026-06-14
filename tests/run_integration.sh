@@ -293,6 +293,7 @@ check variadic_snprintf tests/samples/pass/ffi/variadic_snprintf.bzy "7-42"
 check getenv tests/samples/pass/ffi/getenv.bzy "1"
 check await_shutdown tests/samples/pass/ffi/await_shutdown.bzy "shutdown"
 check net_dualstack tests/samples/pass/net/dualstack.bzy "4"
+check simd_vadd_int tests/samples/pass/simd/vadd_int.bzy "2098173"
 check_abort callback_no_park tests/samples/pass/ffi/callback_no_park.bzy
 # FFI --link flag: recompile with an extra -l and confirm it still links + runs.
 ./breezy tests/samples/pass/ffi/ffi.bzy --link m >/dev/null 2>&1

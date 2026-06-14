@@ -1,0 +1,34 @@
+// Element-wise int[] add; the checksum folds the result. The vectorized lowering
+// must equal the scalar lowering bit-for-bit. The compute loop is a counted-for
+// with proved indices (so the element accesses carry no bounds check), and 1023
+// is NOT a multiple of 4 -> it exercises the scalar remainder. A large constant
+// length keeps it a real loop (small trip counts are unrolled by the emitter).
+void main()
+{
+	int[] a;
+	a = new int[1023];
+	int[] b;
+	b = new int[1023];
+	int[] c;
+	c = new int[1023];
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		a[i] = i * 3;
+		b[i] = i + 7;
+	}
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		c[i] = a[i] + b[i];     // The element-wise loop to vectorize.
+	}
+
+	long sum;
+	sum = 0;
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		sum = sum + c[i];
+	}
+
+	print(sum);
+}

@@ -43,6 +43,22 @@ void handle(Socket c)
 
 ---
 
+## IPv6 and dual-stack - automatic
+
+Listeners are **dual-stack**: a single `Network.listen(port)` accepts both IPv6 and IPv4 clients (IPv4 arrives as a v4-mapped address). `Network.connect` accepts an IPv6 literal, an IPv4 literal, or a hostname interchangeably - the address family is resolved for you:
+
+```breezy
+Socket a = Network.connect("::1", port);          // IPv6 literal.
+Socket b = Network.connect("127.0.0.1", port);    // IPv4 literal.
+Socket c = Network.connect("example.com", port);  // Hostname (either family).
+```
+
+There is no IPv4-only or IPv6-only mode and no API change - existing code gains IPv6 for free, on both platforms. UDP (`Network.udp`) is dual-stack the same way.
+
+> **Transport security (TLS):** the `Network.readUrl` HTTP client already does HTTPS natively. For a raw `Socket`, TLS is reachable by binding a native TLS library through the [FFI surface](../ffi/c-interop.md) (blocking mode); first-class asynchronous server-side TLS is a future addition.
+
+---
+
 ## Fetch a URL in one call
 
 `Network.readUrl(url)` is the high-level HTTP client. It fetches an `http://` **or** `https://` URL and returns the response **body** as a string. TLS, redirects, and chunked transfer-encoding are handled natively (WinHTTP on Windows, libcurl on Linux), and the request runs on the offload pool - so the breeze parks while a worker thread does the work and your scheduler core keeps flowing. A transport or URL error (bad URL, DNS failure, TLS error) throws a catchable [`IOException`](../stdlib/file.md).
@@ -61,6 +77,7 @@ print(page.contains("Example Domain"));           // true.
 - **Every I/O call looks blocking but parks the breeze**, not the OS thread.
 - **Network uses the OS completion/readiness mechanism**; files and blocking C calls use the offload pool.
 - **`Network.listen` / `accept` / `readText` / `writeText` / `close`** are the core TCP surface.
+- **Listeners are dual-stack** (accept IPv6 and IPv4); `Network.connect` takes an IPv6 literal, IPv4 literal, or hostname - no API change.
 - **`Network.readUrl` is one-call HTTP/HTTPS GET**, returns the body, and throws `IOException` on failure.
 - **For more than a GET body**, use a raw `Socket`.
 

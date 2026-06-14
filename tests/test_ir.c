@@ -825,7 +825,7 @@ static void emit_region_to_buf(const Func *f, const Stmt *loop, Target target, i
 	Codegen cg;
 	cg_init(&cg, out);
 	cg.target = target;
-	ir_emit_region(&cg, irf, a, spill_base);
+	ir_emit_region(&cg, irf, a, spill_base, NULL);   /* NULL: exercise the scalar block emitter. */
 	fflush(out);
 	rewind(out);
 	size_t n = fread(g_region_asm, 1, sizeof(g_region_asm) - 1, out);

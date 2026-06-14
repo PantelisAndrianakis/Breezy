@@ -17,6 +17,6 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label);
    register-allocated frame locals from their home slots, emits the blocks,
    stores the locals back and restores. Emits no labels other than .L block
    labels, no section directives, no ret. The caller owns `f` and `a`. */
-void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base);
+void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const Stmt *region);
 
 #endif

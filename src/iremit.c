@@ -1671,7 +1671,182 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	ra_free(a);
 }
 
-void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base)
+/* ---- Element-wise int[] auto-vectorization (prove-first, narrow) ----
+   Recognize exactly  for (i = 0; i < C; i = i + 1) c[i] = a[i] + b[i];  over
+   int[] with BCE-proved indices, and emit a 4-lane packed body (movdqu/paddd)
+   plus a scalar remainder. This is the simplest profitable shape; the general
+   analysis replaces this recognizer in a later step. Every other loop is left
+   to the scalar block emitter unchanged. */
+typedef struct
+{
+	int       slot_i;     /* Induction local frame offset. */
+	int       slot_a;     /* Input array A frame offset. */
+	int       slot_b;     /* Input array B frame offset. */
+	int       slot_c;     /* Output array frame offset. */
+	long long bound;      /* The loop runs i over [0, bound). */
+} VecAdd;
+
+/* arr[i]: an EX_INDEX over an int[] with a BCE-proved induction index. Returns
+   the array's frame slot, or -1 if the shape does not match. */
+static int vec_idx_slot(const Expr *e, int slot_i)
+{
+	if (!e || e->kind != EX_INDEX || !e->lhs || !e->rhs)
+	{
+		return -1;
+	}
+
+	if (e->lhs->kind != EX_IDENT || e->rhs->kind != EX_IDENT)
+	{
+		return -1;
+	}
+
+	if (e->rhs->anno_int != slot_i || !e->anno_index_safe || e->type.kind != TY_INT)
+	{
+		return -1;
+	}
+
+	return e->lhs->anno_int;
+}
+
+/* Match the recognized loop against `s`, filling `p`. */
+static int vec_add_match(const Stmt *s, VecAdd *p)
+{
+	if (!s || s->kind != ST_FOR || !s->for_init || !s->cond || !s->for_post)
+	{
+		return 0;
+	}
+
+	/* init: int i = 0  (or  i = 0). */
+	int slot_i;
+	const Stmt *in = s->for_init;
+	if (in->kind == ST_VARDECL && in->decl_init
+		&& in->decl_init->kind == EX_INT && in->decl_init->int_val == 0)
+	{
+		slot_i = in->decl_offset;
+	}
+	else if (in->kind == ST_ASSIGN && in->target->kind == EX_IDENT
+			 && in->value->kind == EX_INT && in->value->int_val == 0)
+	{
+		slot_i = in->target->anno_int;
+	}
+	else
+	{
+		return 0;
+	}
+
+	/* cond: i < C, a constant upper bound. */
+	const Expr *c = s->cond;
+	if (c->kind != EX_BINARY || c->op != TOKEN_LT
+		|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i
+		|| !c->rhs || c->rhs->kind != EX_INT)
+	{
+		return 0;
+	}
+
+	long long bound = c->rhs->int_val;
+
+	/* post: i = i + 1. */
+	const Stmt *po = s->for_post;
+	if (po->kind != ST_ASSIGN || po->target->kind != EX_IDENT || po->target->anno_int != slot_i
+		|| po->value->kind != EX_BINARY || po->value->op != TOKEN_PLUS
+		|| po->value->lhs->kind != EX_IDENT || po->value->lhs->anno_int != slot_i
+		|| po->value->rhs->kind != EX_INT || po->value->rhs->int_val != 1)
+	{
+		return 0;
+	}
+
+	/* body: exactly  c[i] = a[i] + b[i]. */
+	if (!s->then_blk || s->then_blk->count != 1)
+	{
+		return 0;
+	}
+
+	const Stmt *as = s->then_blk->stmts[0];
+	if (as->kind != ST_ASSIGN || !as->value || as->value->kind != EX_BINARY
+		|| as->value->op != TOKEN_PLUS)
+	{
+		return 0;
+	}
+
+	int slot_c = vec_idx_slot(as->target, slot_i);
+	int slot_a = vec_idx_slot(as->value->lhs, slot_i);
+	int slot_b = vec_idx_slot(as->value->rhs, slot_i);
+	if (slot_a < 0 || slot_b < 0 || slot_c < 0)
+	{
+		return 0;
+	}
+
+	/* Need a few full vector iterations to be worth replacing a loop the emitter
+	   already unrolls well at tiny trip counts. */
+	if (bound < 8)
+	{
+		return 0;
+	}
+
+	p->slot_i = slot_i;
+	p->slot_a = slot_a;
+	p->slot_b = slot_b;
+	p->slot_c = slot_c;
+	p->bound = bound;
+	return 1;
+}
+
+/* If the region is exactly the recognized loop and every base/index local is in
+   a register, emit the packed body + scalar remainder and return 1. Otherwise
+   return 0 and let the scalar block emitter run. The packed temporaries use
+   xmm0/xmm1, outside the xmm2-5 range float promotion claims, so nothing live
+   across the region is clobbered. */
+static int ir_try_vectorize_region(Emit *e, const Stmt *region)
+{
+	VecAdd p;
+	if (!vec_add_match(region, &p))
+	{
+		return 0;
+	}
+
+	int ri = ra_local_reg(e->a, p.slot_i);
+	int ra = ra_local_reg(e->a, p.slot_a);
+	int rb = ra_local_reg(e->a, p.slot_b);
+	int rc = ra_local_reg(e->a, p.slot_c);
+	if (ri < 0 || ra < 0 || rb < 0 || rc < 0)
+	{
+		return 0;
+	}
+
+	Codegen *cg = e->cg;
+	const char *Ri = ra_reg_name(ri);
+	const char *Ra = ra_reg_name(ra);
+	const char *Rb = ra_reg_name(rb);
+	const char *Rc = ra_reg_name(rc);
+	long long vbound = p.bound & ~3LL;
+	int Lvec = cg_label(cg);
+	int Lrem = cg_label(cg);
+	int Ldone = cg_label(cg);
+
+	cg_emit(cg, "    ; ir-region vectorized: int4 element-wise add");
+	cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
+	cg_emit(cg, ".L%d:", Lvec);
+	cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
+	cg_emit(cg, "    jge .L%d", Lrem);
+	cg_emit(cg, "    movdqu xmm0, [%s + %s*4 + 32]", Ra, Ri);
+	cg_emit(cg, "    movdqu xmm1, [%s + %s*4 + 32]", Rb, Ri);
+	cg_emit(cg, "    paddd xmm0, xmm1");
+	cg_emit(cg, "    movdqu [%s + %s*4 + 32], xmm0", Rc, Ri);
+	cg_emit(cg, "    add %s, 4", Ri);
+	cg_emit(cg, "    jmp .L%d", Lvec);
+	cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail [vbound, bound). */
+	cg_emit(cg, "    cmp %s, %lld", Ri, p.bound);
+	cg_emit(cg, "    jge .L%d", Ldone);
+	cg_emit(cg, "    mov eax, dword [%s + %s*4 + 32]", Ra, Ri);
+	cg_emit(cg, "    add eax, dword [%s + %s*4 + 32]", Rb, Ri);
+	cg_emit(cg, "    mov dword [%s + %s*4 + 32], eax", Rc, Ri);
+	cg_emit(cg, "    add %s, 1", Ri);
+	cg_emit(cg, "    jmp .L%d", Lrem);
+	cg_emit(cg, ".L%d:", Ldone);
+	return 1;
+}
+
+void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const Stmt *region)
 {
 	int linux_target = (cg->target == TARGET_LINUX);
 	Emit e;
@@ -1712,7 +1887,10 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base)
 		}
 	}
 
-	emit_blocks(&e, f);
+	if (!ir_try_vectorize_region(&e, region))
+	{
+		emit_blocks(&e, f);
+	}
 
 	/* Exit (the final lowered block is empty and falls through here): store the
 	   register-allocated locals back to their home slots, restore callee-saved. A
