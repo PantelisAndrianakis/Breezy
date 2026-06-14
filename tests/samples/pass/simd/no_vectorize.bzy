@@ -1,0 +1,73 @@
+// Loops that must NOT vectorize but must still run correctly: a carried
+// dependence (prefix sum), a foreign-index stencil (reads a[i+1]), and long[]
+// (8-byte) elements outside the int-only gate. The vectorized build (default)
+// must fold the same checksums as the scalar build (BZY_IR=0).
+void main()
+{
+	int[] a;
+	a = new int[1023];
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		a[i] = i + 1;
+	}
+
+	// Carried dependence: c[i] depends on c[i-1].
+	int[] c;
+	c = new int[1023];
+	c[0] = a[0];
+	for (int i = 1; i < 1023; i = i + 1)
+	{
+		c[i] = c[i - 1] + a[i];
+	}
+
+	// Foreign-index stencil: reads a[i+1], not the induction index alone.
+	int[] d;
+	d = new int[1023];
+	for (int i = 0; i < 1022; i = i + 1)
+	{
+		d[i] = a[i] + a[i + 1];
+	}
+
+	// long[] (8-byte) elements: outside the int-only gate.
+	long[] e;
+	e = new long[1023];
+	long[] f;
+	f = new long[1023];
+	long[] g;
+	g = new long[1023];
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		e[i] = i;
+		f[i] = i + 1;
+	}
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		g[i] = e[i] + f[i];
+	}
+
+	long sc;
+	sc = 0;
+	long sd;
+	sd = 0;
+	long sg;
+	sg = 0;
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		sc = sc + c[i];
+	}
+
+	for (int i = 0; i < 1022; i = i + 1)
+	{
+		sd = sd + d[i];
+	}
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		sg = sg + g[i];
+	}
+
+	print(sc);
+	print(sd);
+	print(sg);
+}

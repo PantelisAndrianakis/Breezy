@@ -295,6 +295,7 @@ check await_shutdown tests/samples/pass/ffi/await_shutdown.bzy "shutdown"
 check net_dualstack tests/samples/pass/net/dualstack.bzy "4"
 check simd_vadd_int tests/samples/pass/simd/vadd_int.bzy "2098173"
 check simd_vmul_int tests/samples/pass/simd/vmul_int.bzy $'357388801\n356866048'
+check simd_no_vectorize tests/samples/pass/simd/no_vectorize.bzy $'178956800\n1046528\n1046529'
 check_abort callback_no_park tests/samples/pass/ffi/callback_no_park.bzy
 # FFI --link flag: recompile with an extra -l and confirm it still links + runs.
 ./breezy tests/samples/pass/ffi/ffi.bzy --link m >/dev/null 2>&1

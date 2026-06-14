@@ -1333,6 +1333,37 @@ static void test_simd_vectorize_int_add(void)
 		 TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "paddd") == NULL, 1);
 
+	/* A multiply loop lowers to pmulld (the int-only 32-bit packed multiply). */
+	emit("void main() {"
+		 " int[] a; a = new int[1023];"
+		 " int[] b; b = new int[1023];"
+		 " int[] c; c = new int[1023];"
+		 " for (int i = 0; i < 1023; i = i + 1) { a[i] = i; b[i] = i + 1; }"
+		 " for (int i = 0; i < 1023; i = i + 1) { c[i] = a[i] * b[i]; } }",
+		 TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "pmulld") != NULL, 1);
+
+	/* A foreign-index stencil (reads a[i+1], not the induction index) must NOT
+	   vectorize. */
+	emit("void main() {"
+		 " int[] a; a = new int[1023];"
+		 " int[] d; d = new int[1023];"
+		 " for (int i = 0; i < 1023; i = i + 1) { a[i] = i; }"
+		 " for (int i = 0; i < 1022; i = i + 1) { d[i] = a[i] + a[i + 1]; } }",
+		 TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "paddd") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "movdqu") == NULL, 1);
+
+	/* A non-unit stride (i += 2) must NOT vectorize. */
+	emit("void main() {"
+		 " int[] a; a = new int[1024];"
+		 " int[] b; b = new int[1024];"
+		 " int[] c; c = new int[1024];"
+		 " for (int i = 0; i < 1024; i = i + 1) { a[i] = i; b[i] = i + 1; }"
+		 " for (int i = 0; i < 1024; i = i + 2) { c[i] = a[i] + b[i]; } }",
+		 TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "paddd") == NULL, 1);
+
 	/* Restore the emitter-forcing flag for the remaining cases. */
 	putenv("BZY_IR=0");
 	bzy_config_reset_cache();
