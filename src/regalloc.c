@@ -132,6 +132,11 @@ long long ra_vreg_remat(const IRAlloc *a, IRReg v)
 	return a->val_remat[v];
 }
 
+int ra_vreg_class(const IRAlloc *a, IRReg v)
+{
+	return a->val_class[v];
+}
+
 int ra_local_reg(const IRAlloc *a, long long disp)
 {
 	int k = local_index(a, disp);
@@ -172,6 +177,7 @@ void ra_free(IRAlloc *a)
 	free(a->istart);
 	free(a->iend);
 	free(a->val_remat);
+	free(a->val_class);
 	free(a);
 }
 
@@ -204,6 +210,31 @@ static void collect_locals(IRFunc *f, IRAlloc *a)
 			}
 		}
 	}
+}
+
+/* ---- register class ------------------------------------------------------- */
+
+static int ra_is_float_kind(TypeKind k)
+{
+	return k == TY_DOUBLE || k == TY_FLOAT;
+}
+
+/* The kind of data a value HOLDS (its register-class driver). For most ops that is
+   the instruction's result width; a compare yields an integer 0/1 regardless of its
+   operand width; a cast yields its destination kind. */
+static int ra_result_is_float(const IRInstr *in)
+{
+	if (in->op == IR_CMP)
+	{
+		return 0;
+	}
+
+	if (in->op == IR_CAST)
+	{
+		return ra_is_float_kind(in->to_kind);
+	}
+
+	return ra_is_float_kind(in->type);
 }
 
 /* ---- coalescing graph colouring ------------------------------------------- */
@@ -776,6 +807,45 @@ IRAlloc *ra_run(IRFunc *f)
 		a->istart[v] = 0x7fffffff;
 		a->iend[v] = -1;
 		a->val_remat[v] = -1;
+	}
+
+	/* Register class per value (RC_GP default). A value's class follows the result
+	   kind of its defining instruction; a frame local's class follows the kind of
+	   the loads/stores that touch it. (While float eligibility is off, every value
+	   is integer/RC_GP and the xmm pool is never selected.) */
+	a->val_class = calloc((size_t)nval, sizeof(int));
+	for (int b = 0; b < f->block_count; b++)
+	{
+		IRBlock *blk = &f->blocks[b];
+		for (int i = 0; i < blk->count; i++)
+		{
+			IRInstr *in = &blk->instrs[i];
+			if (in->op == IR_STORE && in->is_frame)
+			{
+				int k = local_index(a, in->disp);
+				if (k >= 0 && ra_is_float_kind(in->type))
+				{
+					a->val_class[a->vreg_count + k] = RC_XMM;
+				}
+			}
+			else if (in->op == IR_LOAD && in->is_frame)
+			{
+				int k = local_index(a, in->disp);
+				if (k >= 0 && ra_is_float_kind(in->type))
+				{
+					a->val_class[a->vreg_count + k] = RC_XMM;
+				}
+
+				if (in->dst >= 0 && ra_is_float_kind(in->type))
+				{
+					a->val_class[in->dst] = RC_XMM;
+				}
+			}
+			else if (in->dst >= 0 && ra_result_is_float(in))
+			{
+				a->val_class[in->dst] = RC_XMM;
+			}
+		}
 	}
 
 	int nb = f->block_count;

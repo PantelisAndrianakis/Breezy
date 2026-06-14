@@ -214,6 +214,52 @@ static void test_hot_spill_detected(void)
 	ir_func_free(f);
 }
 
+/* Two double frame loads added into a double, stored back; plus one int load.
+   Exercises class derivation: the FP values must be RC_XMM, the int RC_GP. */
+static IRFunc *build_fp_func(IRReg *dadd, IRReg *iload)
+{
+	static Func dummy;
+	memset(&dummy, 0, sizeof(dummy));
+	IRFunc *f = ir_func_new(&dummy);
+	int b0 = ir_block_new(f);
+
+	IRReg da = ir_reg(f);
+	IRInstr *la = ir_emit(f, b0, IR_LOAD, TY_DOUBLE);
+	la->dst = da; la->a = IR_NO_REG; la->b = IR_NO_REG; la->is_frame = 1; la->disp = 8;
+
+	IRReg db = ir_reg(f);
+	IRInstr *lb = ir_emit(f, b0, IR_LOAD, TY_DOUBLE);
+	lb->dst = db; lb->a = IR_NO_REG; lb->b = IR_NO_REG; lb->is_frame = 1; lb->disp = 16;
+
+	*dadd = ir_reg(f);
+	IRInstr *ad = ir_emit(f, b0, IR_ADD, TY_DOUBLE);
+	ad->dst = *dadd; ad->a = da; ad->b = db;
+
+	IRInstr *st = ir_emit(f, b0, IR_STORE, TY_DOUBLE);
+	st->a = IR_NO_REG; st->b = IR_NO_REG; st->c = *dadd; st->is_frame = 1; st->disp = 24;
+
+	*iload = ir_reg(f);
+	IRInstr *li = ir_emit(f, b0, IR_LOAD, TY_LONG);
+	li->dst = *iload; li->a = IR_NO_REG; li->b = IR_NO_REG; li->is_frame = 1; li->disp = 32;
+	IRInstr *si = ir_emit(f, b0, IR_STORE, TY_LONG);
+	si->a = IR_NO_REG; si->b = IR_NO_REG; si->c = *iload; si->is_frame = 1; si->disp = 40;
+
+	IRInstr *rt = ir_emit(f, b0, IR_RET, TY_VOID);
+	rt->a = IR_NO_REG;
+	return f;
+}
+
+static void test_value_class_from_type(void)
+{
+	IRReg dadd, iload;
+	IRFunc *f = build_fp_func(&dadd, &iload);
+	IRAlloc *a = ra_run(f);
+	ASSERT_INT(ra_vreg_class(a, dadd), RC_XMM);   /* double add result. */
+	ASSERT_INT(ra_vreg_class(a, iload), RC_GP);   /* long load result. */
+	ra_free(a);
+	ir_func_free(f);
+}
+
 /* Build the remat scenario: 14 loads of distinct never-stored locals, all
    simultaneously live (loads first, consuming stores after), overflowing the
    register pool so several classes spill - and every spilled class is a load
@@ -341,6 +387,7 @@ int main(void)
 {
 	RUN(test_reg_tables);
 	RUN(test_xmm_reg_tables);
+	RUN(test_value_class_from_type);
 	RUN(test_remat_readonly_frame_load);
 	RUN(test_remat_skipped_when_local_stored);
 	RUN(test_no_hot_spill_small_loop);
