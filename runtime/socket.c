@@ -129,17 +129,19 @@ static VOID CALLBACK cancel_cb(PVOID p, BOOLEAN timed_out)
 void *bzy_listener_new(int64_t port)
 {
 	bzy_iocp_ensure();
-	SOCKET fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SOCKET fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 	u_long nb = 1;
 	ioctlsocket(fd, FIONBIO, &nb);   /* Non-blocking: enables the synchronous try-path; harmless to overlapped I/O. */
 	int yes = 1;
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+	int v6only = 0;   /* Dual-stack: accept IPv6 natively + IPv4 as v4-mapped (Windows defaults V6ONLY=1). */
+	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
 
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;
 	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons((unsigned short)port);
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = in6addr_any;
+	addr.sin6_port = htons((unsigned short)port);
 	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
 	listen(fd, SOMAXCONN);
 
@@ -149,14 +151,14 @@ void *bzy_listener_new(int64_t port)
 
 int64_t bzy_listener_port(void *l)
 {
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;   /* Dual-stack listener is AF_INET6 -> sin6_port. */
 	int len = sizeof(addr);
 	if (getsockname(SK_FD(l), (struct sockaddr*)&addr, &len) != 0)
 	{
 		return -1;
 	}
 
-	return (int64_t)ntohs(addr.sin_port);
+	return (int64_t)ntohs(addr.sin6_port);
 }
 
 /* AcceptEx is an extension fn; load its pointer once per process. */
@@ -176,21 +178,21 @@ static LPFN_ACCEPTEX accept_ex(SOCKET s)
 
 void *bzy_listener_accept(void *l)
 {
-	SOCKET acc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SOCKET acc = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 	u_long nb = 1;
 	ioctlsocket(acc, FIONBIO, &nb);
 	bzy_iocp_associate((void*)acc);
 
-	/* AcceptEx writes local+remote addresses into this buffer (16 + sizeof(sockaddr_in)
+	/* AcceptEx writes local+remote addresses into this buffer (16 + sizeof(sockaddr_in6)
 	   each, per MSDN). The bytes-received slot is 0 (we accept without an initial read). */
-	char addrbuf[2 * (sizeof(struct sockaddr_in) + 16)];
+	char addrbuf[2 * (sizeof(struct sockaddr_in6) + 16)];
 	char opbuf[BZY_IOCP_OP_SIZE];
 	IocpOp *op = (IocpOp*)opbuf;
 	bzy_iocp_op_reset(op);
 
 	DWORD got = 0;
 	BOOL ok = accept_ex(SK_FD(l))(SK_FD(l), acc, addrbuf,
-								  0, sizeof(struct sockaddr_in) + 16, sizeof(struct sockaddr_in) + 16,
+								  0, sizeof(struct sockaddr_in6) + 16, sizeof(struct sockaddr_in6) + 16,
 								  &got, (OVERLAPPED*)bzy_iocp_op_overlapped(op));
 	if (!ok && WSAGetLastError() != WSA_IO_PENDING)
 	{
@@ -227,12 +229,12 @@ void *bzy_listener_try_accept(void *l)
 
 void *bzy_listener_accept_timeout(void *l, int64_t ms)
 {
-	SOCKET acc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	SOCKET acc = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 	u_long nb = 1;
 	ioctlsocket(acc, FIONBIO, &nb);
 	bzy_iocp_associate((void*)acc);
 
-	char addrbuf[2 * (sizeof(struct sockaddr_in) + 16)];
+	char addrbuf[2 * (sizeof(struct sockaddr_in6) + 16)];
 	char opbuf[BZY_IOCP_OP_SIZE];
 	IocpOp *op = (IocpOp*)opbuf;
 	bzy_iocp_op_reset(op);
@@ -240,7 +242,7 @@ void *bzy_listener_accept_timeout(void *l, int64_t ms)
 
 	DWORD got = 0;
 	BOOL ok = accept_ex(SK_FD(l))(SK_FD(l), acc, addrbuf,
-								  0, sizeof(struct sockaddr_in) + 16, sizeof(struct sockaddr_in) + 16,
+								  0, sizeof(struct sockaddr_in6) + 16, sizeof(struct sockaddr_in6) + 16,
 								  &got, ov);
 	if (!ok && WSAGetLastError() != WSA_IO_PENDING)
 	{
@@ -674,7 +676,7 @@ int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
 void *bzy_listener_new(int64_t port)
 {
 	bzy_reactor_ensure();
-	int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	int fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (fd < 0)
 	{
 		return NULL;
@@ -682,12 +684,14 @@ void *bzy_listener_new(int64_t port)
 
 	int yes = 1;
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+	int v6only = 0;   /* Dual-stack: accept IPv6 natively + IPv4 as v4-mapped. */
+	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
 
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;
 	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons((unsigned short)port);
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = in6addr_any;
+	addr.sin6_port = htons((unsigned short)port);
 	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0 || listen(fd, SOMAXCONN) != 0)
 	{
 		close(fd);
@@ -699,14 +703,14 @@ void *bzy_listener_new(int64_t port)
 
 int64_t bzy_listener_port(void *l)
 {
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;   /* Dual-stack listener is AF_INET6 -> sin6_port. */
 	socklen_t len = sizeof(addr);
 	if (getsockname((int)SK_FD(l), (struct sockaddr*)&addr, &len) != 0)
 	{
 		return -1;
 	}
 
-	return (int64_t)ntohs(addr.sin_port);
+	return (int64_t)ntohs(addr.sin6_port);
 }
 
 void *bzy_listener_accept(void *l)
