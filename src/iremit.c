@@ -1900,11 +1900,69 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 	return 1;
 }
 
-/* If the region is exactly the recognized loop and every base/index local is in
-   a register, emit the packed body + scalar remainder and return 1. Otherwise
-   return 0 and let the scalar block emitter run. The packed temporaries use
-   xmm0/xmm1, outside the xmm2-5 range float promotion claims, so nothing live
-   across the region is clobbered. */
+/* Packed (4-lane) op for a recorded TokenType. */
+static const char *vec_packed_op(int tok)
+{
+	switch (tok)
+	{
+	case TOKEN_PLUS:  return "paddd";
+	case TOKEN_MINUS: return "psubd";
+	case TOKEN_STAR:  return "pmulld";
+	default:          return NULL;
+	}
+}
+
+/* Scalar (one-lane) op for the remainder; multiply is the two-operand imul. */
+static const char *vec_scalar_op(int tok)
+{
+	switch (tok)
+	{
+	case TOKEN_PLUS:  return "add";
+	case TOKEN_MINUS: return "sub";
+	case TOKEN_STAR:  return "imul";
+	default:          return NULL;
+	}
+}
+
+/* Flatten a left-leaning op tree whose every right operand is a leaf load into an
+   ordered chain: base = slots[0], then result = result <ops[k]> slots[k+1] for k
+   in [0, *nops). Returns 1 on success. Such a chain evaluates in two xmm
+   registers (an accumulator plus one freshly-loaded operand), which keeps the
+   packed body on xmm0/xmm1 - the only registers both caller-saved on the two
+   ABIs and outside the xmm2-5 range float promotion uses. A node whose right
+   child is not a leaf would need a third register, so it fails here and the loop
+   stays scalar (still correct). */
+static int vec_chain(const VecNode *n, int *slots, int *ops, int *nops)
+{
+	if (n->kind == VN_LOAD)
+	{
+		slots[0] = n->slot;
+		*nops = 0;
+		return 1;
+	}
+
+	if (n->kind == VN_BINOP && n->r->kind == VN_LOAD)
+	{
+		if (!vec_chain(n->l, slots, ops, nops))
+		{
+			return 0;
+		}
+
+		ops[*nops] = n->op;
+		slots[*nops + 1] = n->r->slot;
+		(*nops)++;
+		return 1;
+	}
+
+	return 0;
+}
+
+/* If the region is the recognized loop, its op tree flattens to a two-register
+   chain, and every base/index local is register-resident, emit the packed body
+   (movdqu + paddd/psubd/pmulld per the chain) plus a matching scalar remainder
+   and return 1. Otherwise return 0 and let the scalar block emitter run. The
+   packed temporaries use xmm0/xmm1, outside the xmm2-5 range float promotion
+   claims, so nothing live across the region is clobbered. */
 static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 {
 	VecLoop v;
@@ -1919,53 +1977,68 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 		return 0;
 	}
 
-	/* This step emits only the single packed add a[i] + b[i]; the general
-	   op-tree lowering lands next. A recognized-but-unemitted tree stays scalar,
-	   which is still correct. */
-	VecNode *t = v.root;
-	if (!(t->kind == VN_BINOP && t->op == TOKEN_PLUS
-		  && t->l->kind == VN_LOAD && t->r->kind == VN_LOAD))
+	/* Flatten the op tree into a two-register left-leaning chain. */
+	int slots[VEC_MAX_NODES];
+	int ops[VEC_MAX_NODES];
+	int nops = 0;
+	if (!vec_chain(v.root, slots, ops, &nops))
 	{
 		return 0;
 	}
 
-	int slot_a = t->l->slot;
-	int slot_b = t->r->slot;
+	/* The index, the output base, and every input base must be register-resident:
+	   the packed body addresses them directly. */
 	int ri = ra_local_reg(e->a, v.slot_i);
-	int ra = ra_local_reg(e->a, slot_a);
-	int rb = ra_local_reg(e->a, slot_b);
 	int rc = ra_local_reg(e->a, v.out_slot);
-	if (ri < 0 || ra < 0 || rb < 0 || rc < 0)
+	if (ri < 0 || rc < 0)
 	{
 		return 0;
+	}
+
+	const char *base[VEC_MAX_NODES];
+	for (int k = 0; k <= nops; k++)
+	{
+		int rk = ra_local_reg(e->a, slots[k]);
+		if (rk < 0)
+		{
+			return 0;
+		}
+
+		base[k] = ra_reg_name(rk);
 	}
 
 	Codegen *cg = e->cg;
 	const char *Ri = ra_reg_name(ri);
-	const char *Ra = ra_reg_name(ra);
-	const char *Rb = ra_reg_name(rb);
 	const char *Rc = ra_reg_name(rc);
 	long long vbound = v.bound & ~3LL;
 	int Lvec = cg_label(cg);
 	int Lrem = cg_label(cg);
 	int Ldone = cg_label(cg);
 
-	cg_emit(cg, "    ; ir-region vectorized: int4 element-wise add");
+	cg_emit(cg, "    ; ir-region vectorized: int4 element-wise op chain");
 	cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
 	cg_emit(cg, ".L%d:", Lvec);
 	cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
 	cg_emit(cg, "    jge .L%d", Lrem);
-	cg_emit(cg, "    movdqu xmm0, [%s + %s*4 + 32]", Ra, Ri);
-	cg_emit(cg, "    movdqu xmm1, [%s + %s*4 + 32]", Rb, Ri);
-	cg_emit(cg, "    paddd xmm0, xmm1");
+	cg_emit(cg, "    movdqu xmm0, [%s + %s*4 + 32]", base[0], Ri);
+	for (int k = 0; k < nops; k++)
+	{
+		cg_emit(cg, "    movdqu xmm1, [%s + %s*4 + 32]", base[k + 1], Ri);
+		cg_emit(cg, "    %s xmm0, xmm1", vec_packed_op(ops[k]));
+	}
+
 	cg_emit(cg, "    movdqu [%s + %s*4 + 32], xmm0", Rc, Ri);
 	cg_emit(cg, "    add %s, 4", Ri);
 	cg_emit(cg, "    jmp .L%d", Lvec);
 	cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail [vbound, bound). */
 	cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 	cg_emit(cg, "    jge .L%d", Ldone);
-	cg_emit(cg, "    mov eax, dword [%s + %s*4 + 32]", Ra, Ri);
-	cg_emit(cg, "    add eax, dword [%s + %s*4 + 32]", Rb, Ri);
+	cg_emit(cg, "    mov eax, dword [%s + %s*4 + 32]", base[0], Ri);
+	for (int k = 0; k < nops; k++)
+	{
+		cg_emit(cg, "    %s eax, dword [%s + %s*4 + 32]", vec_scalar_op(ops[k]), base[k + 1], Ri);
+	}
+
 	cg_emit(cg, "    mov dword [%s + %s*4 + 32], eax", Rc, Ri);
 	cg_emit(cg, "    add %s, 1", Ri);
 	cg_emit(cg, "    jmp .L%d", Lrem);

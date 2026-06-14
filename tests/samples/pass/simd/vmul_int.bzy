@@ -1,0 +1,48 @@
+// Packed multiply and a fused depth-2 tree (a[i]*b[i]-a[i]), exercising pmulld
+// and psubd plus the chain remainder. The vectorized lowering must equal the
+// scalar lowering bit-for-bit; 1023 is not a multiple of 4, so the scalar tail
+// runs the same op chain.
+void main()
+{
+	int[] a;
+	a = new int[1023];
+	int[] b;
+	b = new int[1023];
+	int[] c;
+	c = new int[1023];
+	int[] d;
+	d = new int[1023];
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		a[i] = i;
+		b[i] = i + 2;
+	}
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		c[i] = a[i] * b[i];             // pmulld.
+	}
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		d[i] = a[i] * b[i] - a[i];      // pmulld then psubd (depth-2 chain).
+	}
+
+	long sc;
+	sc = 0;
+	long sd;
+	sd = 0;
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		sc = sc + c[i];
+	}
+
+	for (int i = 0; i < 1023; i = i + 1)
+	{
+		sd = sd + d[i];
+	}
+
+	print(sc);
+	print(sd);
+}
