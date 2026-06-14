@@ -2,6 +2,22 @@
 #include "network_internal.h"
 #include <string.h>
 
+/* Rewrite an AF_INET sockaddr_storage as a v4-mapped AF_INET6 address in place, so an
+   IPv4 target can be sent on the dual-stack AF_INET6 UDP socket (::ffff:a.b.c.d). */
+static void udp_v4mapped(struct sockaddr_storage *ss, socklen_t *len)
+{
+	struct sockaddr_in s4;
+	memcpy(&s4, ss, sizeof(s4));
+	struct sockaddr_in6 *s6 = (struct sockaddr_in6*)ss;
+	memset(s6, 0, sizeof(*s6));
+	s6->sin6_family = AF_INET6;
+	s6->sin6_port = s4.sin_port;
+	s6->sin6_addr.s6_addr[10] = 0xff;
+	s6->sin6_addr.s6_addr[11] = 0xff;
+	memcpy(&s6->sin6_addr.s6_addr[12], &s4.sin_addr, 4);
+	*len = sizeof(struct sockaddr_in6);
+}
+
 #ifdef _WIN32
 #define U_FD(o)     (*(SOCKET*)((char*)(o) + 24))   /* UdpSocket reuses the socket-handle layout. */
 #define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
@@ -51,15 +67,17 @@ static VOID CALLBACK cancel_cb(PVOID p, BOOLEAN timed_out)
 void *bzy_udp_new(int64_t port)
 {
 	bzy_iocp_ensure();
-	SOCKET fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	SOCKET fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	u_long nb = 1;
 	ioctlsocket(fd, FIONBIO, &nb);   /* Non-blocking: enables the synchronous try-path. */
+	int v6only = 0;   /* Dual-stack: receive from IPv6 and IPv4 (v4-mapped). */
+	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
 
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;
 	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons((unsigned short)port);
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = in6addr_any;
+	addr.sin6_port = htons((unsigned short)port);
 	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
 
 	bzy_iocp_associate((void*)fd);
@@ -68,29 +86,29 @@ void *bzy_udp_new(int64_t port)
 
 int64_t bzy_udp_port(void *u)
 {
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;
 	int len = sizeof(addr);
 	if (getsockname(U_FD(u), (struct sockaddr*)&addr, &len) != 0)
 	{
 		return -1;
 	}
 
-	return (int64_t)ntohs(addr.sin_port);
+	return (int64_t)ntohs(addr.sin6_port);
 }
 
 static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf, int64_t len)
 {
-	struct sockaddr_in dst;
-	memset(&dst, 0, sizeof(dst));
-	dst.sin_family = AF_INET;
-	dst.sin_port = htons((unsigned short)port);
-	dst.sin_addr.s_addr = inet_addr(bzy_str_data(host));   /* IPv4 dotted-quad; getaddrinfo for names. */
-	if (dst.sin_addr.s_addr == INADDR_NONE)
+	struct sockaddr_storage dst;
+	socklen_t dstlen;
+	int fam;
+	if (bzy_resolve_any(bzy_str_data(host), (int)port, &dst, &dstlen, &fam) != 0)   /* IPv4/IPv6 literal or name. */
 	{
-		if (bzy_resolve4(bzy_str_data(host), (int)port, &dst) != 0)
-		{
-			return 0;
-		}
+		return 0;
+	}
+
+	if (fam == AF_INET)
+	{
+		udp_v4mapped(&dst, &dstlen);   /* Dual-stack AF_INET6 socket: IPv4 target must be v4-mapped. */
 	}
 
 	WSABUF wb;
@@ -102,7 +120,7 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 	IocpOp *op = (IocpOp*)opbuf;
 	bzy_iocp_op_reset(op);
 
-	int rc = WSASendTo(U_FD(u), &wb, 1, &got, 0, (struct sockaddr*)&dst, sizeof(dst),
+	int rc = WSASendTo(U_FD(u), &wb, 1, &got, 0, (struct sockaddr*)&dst, dstlen,
 					   (OVERLAPPED*)bzy_iocp_op_overlapped(op), NULL);
 	if (rc != 0 && WSAGetLastError() != WSA_IO_PENDING)
 	{
@@ -132,7 +150,7 @@ int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str)
 
 /* WSARecvFrom into buf. timeout_ms<0 = infinite. Returns bytes, -1 err, -2 timeout. */
 static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms,
-					struct sockaddr_in *from, int *fromlen)
+					struct sockaddr_storage *from, int *fromlen)
 {
 	WSABUF wb;
 	wb.buf = buf;
@@ -179,7 +197,7 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms,
 	return (int)bzy_iocp_op_bytes(op);
 }
 
-static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
+static void *make_dgram(const char *buf, int n, struct sockaddr_storage *from)
 {
 	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
 	if (n > 0)
@@ -187,16 +205,41 @@ static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
 		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
-	char ip[INET_ADDRSTRLEN] = {0};
-	inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+	char ip[INET6_ADDRSTRLEN] = {0};
+	int sport;
+	if (from->ss_family == AF_INET6)
+	{
+		struct sockaddr_in6 *s6 = (struct sockaddr_in6*)from;
+		if (IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr))
+		{
+			/* An IPv4 sender arrives v4-mapped on the dual-stack socket; present it as
+			   plain dotted-quad, not ::ffff:a.b.c.d. */
+			struct in_addr v4;
+			memcpy(&v4, ((const char*)&s6->sin6_addr) + 12, 4);
+			inet_ntop(AF_INET, &v4, ip, sizeof(ip));
+		}
+		else
+		{
+			inet_ntop(AF_INET6, &s6->sin6_addr, ip, sizeof(ip));
+		}
+
+		sport = ntohs(s6->sin6_port);
+	}
+	else
+	{
+		struct sockaddr_in *s4 = (struct sockaddr_in*)from;
+		inet_ntop(AF_INET, &s4->sin_addr, ip, sizeof(ip));
+		sport = ntohs(s4->sin_port);
+	}
+
 	void *host = bzy_str_new(ip, (int64_t)strlen(ip));
-	return dgram_new(arr, host, (int64_t)ntohs(from->sin_port));
+	return dgram_new(arr, host, (int64_t)sport);
 }
 
 void *bzy_udp_receive(void *u)
 {
 	char buf[65536];                  /* Max IPv4 UDP payload. */
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	int fromlen;
 	int n = udp_recv(u, buf, sizeof(buf), -1, &from, &fromlen);
 	return make_dgram(buf, n < 0 ? 0 : n, &from);
@@ -205,7 +248,7 @@ void *bzy_udp_receive(void *u)
 void *bzy_udp_receive_timeout(void *u, int64_t ms)
 {
 	char buf[65536];
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	int fromlen;
 	int n = udp_recv(u, buf, sizeof(buf), ms, &from, &fromlen);
 	if (n == -2)
@@ -219,7 +262,7 @@ void *bzy_udp_receive_timeout(void *u, int64_t ms)
 void *bzy_udp_try_receive(void *u)
 {
 	char buf[65536];
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	int fromlen = sizeof(from);
 	memset(&from, 0, sizeof(from));
 	int n = recvfrom(U_FD(u), buf, sizeof(buf), 0, (struct sockaddr*)&from, &fromlen);
@@ -298,52 +341,55 @@ static void *dgram_new(void *data, void *host, int64_t port)
 void *bzy_udp_new(int64_t port)
 {
 	bzy_reactor_ensure();
-	int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+	int fd = socket(AF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0);
 	if (fd < 0)
 	{
 		return NULL;
 	}
 
-	struct sockaddr_in addr;
+	int v6only = 0;   /* Dual-stack: receive from IPv6 and IPv4 (v4-mapped). */
+	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
+
+	struct sockaddr_in6 addr;
 	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons((unsigned short)port);
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = in6addr_any;
+	addr.sin6_port = htons((unsigned short)port);
 	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
 	return bzy_sock_wrap(fd);
 }
 
 int64_t bzy_udp_port(void *u)
 {
-	struct sockaddr_in addr;
+	struct sockaddr_in6 addr;
 	socklen_t len = sizeof(addr);
 	if (getsockname((int)U_FD(u), (struct sockaddr*)&addr, &len) != 0)
 	{
 		return -1;
 	}
 
-	return (int64_t)ntohs(addr.sin_port);
+	return (int64_t)ntohs(addr.sin6_port);
 }
 
 static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf, int64_t len)
 {
-	struct sockaddr_in dst;
-	memset(&dst, 0, sizeof(dst));
-	dst.sin_family = AF_INET;
-	dst.sin_port = htons((unsigned short)port);
-	dst.sin_addr.s_addr = inet_addr(bzy_str_data(host));   /* IPv4 dotted-quad; getaddrinfo for names. */
-	if (dst.sin_addr.s_addr == INADDR_NONE)
+	struct sockaddr_storage dst;
+	socklen_t dstlen;
+	int fam;
+	if (bzy_resolve_any(bzy_str_data(host), (int)port, &dst, &dstlen, &fam) != 0)   /* IPv4/IPv6 literal or name. */
 	{
-		if (bzy_resolve4(bzy_str_data(host), (int)port, &dst) != 0)
-		{
-			return 0;
-		}
+		return 0;
+	}
+
+	if (fam == AF_INET)
+	{
+		udp_v4mapped(&dst, &dstlen);   /* Dual-stack AF_INET6 socket: IPv4 target must be v4-mapped. */
 	}
 
 	for (;;)
 	{
 		bzy_poll_reset(U_POLL(u), BZY_POLL_WRITE);
-		ssize_t n = sendto((int)U_FD(u), buf, (size_t)len, MSG_NOSIGNAL, (struct sockaddr*)&dst, sizeof(dst));
+		ssize_t n = sendto((int)U_FD(u), buf, (size_t)len, MSG_NOSIGNAL, (struct sockaddr*)&dst, dstlen);
 		if (n >= 0)
 		{
 			return (int64_t)n;
@@ -374,7 +420,7 @@ int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str)
 }
 
 /* One recvfrom, parking on read-readiness. timeout_ms<0 = infinite. bytes, -1 err, -2 timeout. */
-static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sockaddr_in *from)
+static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sockaddr_storage *from)
 {
 	for (;;)
 	{
@@ -405,7 +451,7 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms, struct sock
 	}
 }
 
-static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
+static void *make_dgram(const char *buf, int n, struct sockaddr_storage *from)
 {
 	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
 	if (n > 0)
@@ -413,16 +459,41 @@ static void *make_dgram(const char *buf, int n, struct sockaddr_in *from)
 		memcpy((char*)arr + 32, buf, (size_t)n);
 	}
 
-	char ip[INET_ADDRSTRLEN] = {0};
-	inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+	char ip[INET6_ADDRSTRLEN] = {0};
+	int sport;
+	if (from->ss_family == AF_INET6)
+	{
+		struct sockaddr_in6 *s6 = (struct sockaddr_in6*)from;
+		if (IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr))
+		{
+			/* An IPv4 sender arrives v4-mapped on the dual-stack socket; present it as
+			   plain dotted-quad, not ::ffff:a.b.c.d. */
+			struct in_addr v4;
+			memcpy(&v4, ((const char*)&s6->sin6_addr) + 12, 4);
+			inet_ntop(AF_INET, &v4, ip, sizeof(ip));
+		}
+		else
+		{
+			inet_ntop(AF_INET6, &s6->sin6_addr, ip, sizeof(ip));
+		}
+
+		sport = ntohs(s6->sin6_port);
+	}
+	else
+	{
+		struct sockaddr_in *s4 = (struct sockaddr_in*)from;
+		inet_ntop(AF_INET, &s4->sin_addr, ip, sizeof(ip));
+		sport = ntohs(s4->sin_port);
+	}
+
 	void *host = bzy_str_new(ip, (int64_t)strlen(ip));
-	return dgram_new(arr, host, (int64_t)ntohs(from->sin_port));
+	return dgram_new(arr, host, (int64_t)sport);
 }
 
 void *bzy_udp_receive(void *u)
 {
 	char buf[65536];
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	int n = udp_recv(u, buf, sizeof(buf), -1, &from);
 	return make_dgram(buf, n < 0 ? 0 : n, &from);
 }
@@ -430,7 +501,7 @@ void *bzy_udp_receive(void *u)
 void *bzy_udp_receive_timeout(void *u, int64_t ms)
 {
 	char buf[65536];
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	int n = udp_recv(u, buf, sizeof(buf), ms, &from);
 	if (n == -2)
 	{
@@ -443,7 +514,7 @@ void *bzy_udp_receive_timeout(void *u, int64_t ms)
 void *bzy_udp_try_receive(void *u)
 {
 	char buf[65536];
-	struct sockaddr_in from;
+	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	memset(&from, 0, sizeof(from));
 	ssize_t n = recvfrom((int)U_FD(u), buf, sizeof(buf), 0, (struct sockaddr*)&from, &fromlen);

@@ -63,31 +63,8 @@ void *bzy_sock_wrap(SOCKET fd)
 	return o;
 }
 
-/* Resolve host:port (IPv4) into a sockaddr_in. Returns 0 on success. Shared with udp.c. */
-int bzy_resolve4(const char *host, int port, struct sockaddr_in *out)
-{
-	memset(out, 0, sizeof(*out));
-	out->sin_family = AF_INET;
-	out->sin_port = htons((unsigned short)port);
-
-	struct addrinfo hints, *res = NULL;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	char portstr[16];
-	snprintf(portstr, sizeof(portstr), "%d", port);
-	if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res)
-	{
-		return -1;
-	}
-
-	memcpy(out, res->ai_addr, sizeof(struct sockaddr_in));
-	freeaddrinfo(res);
-	return 0;
-}
-
 /* Resolve host:port to a sockaddr_storage (AF_UNSPEC: IPv6 literal, IPv4 literal,
-   or hostname). Returns 0 on success, filling *out/*outlen/*fam. Shared with udp.c. */
+   or hostname). Returns 0 on success, filling out, outlen, and fam. Shared with udp.c. */
 int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
                     socklen_t *outlen, int *fam)
 {
@@ -627,30 +604,8 @@ void *bzy_sock_wrap(int fd)
 	return o;
 }
 
-int bzy_resolve4(const char *host, int port, struct sockaddr_in *out)
-{
-	memset(out, 0, sizeof(*out));
-	out->sin_family = AF_INET;
-	out->sin_port = htons((unsigned short)port);
-
-	struct addrinfo hints, *res = NULL;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	char portstr[16];
-	snprintf(portstr, sizeof(portstr), "%d", port);
-	if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res)
-	{
-		return -1;
-	}
-
-	memcpy(out, res->ai_addr, sizeof(struct sockaddr_in));
-	freeaddrinfo(res);
-	return 0;
-}
-
 /* Resolve host:port to a sockaddr_storage (AF_UNSPEC: IPv6 literal, IPv4 literal,
-   or hostname). Returns 0 on success, filling *out/*outlen/*fam. Shared with udp.c. */
+   or hostname). Returns 0 on success, filling out, outlen, and fam. Shared with udp.c. */
 int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
                     socklen_t *outlen, int *fam)
 {
