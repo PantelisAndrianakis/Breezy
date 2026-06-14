@@ -6,7 +6,6 @@
 #include "config.h"
 #include "irlower.h"
 #include "iremit.h"
-#include "irsplit.h"
 #include "regalloc.h"
 #include "overload.h"
 #include <stdarg.h>
@@ -8841,11 +8840,6 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 				IRFunc *irf = ir_lower_region(f, s);
 				if (irf)
 				{
-					if (bzy_ir_split_enabled())
-					{
-						ir_split_func(irf);   /* Split before allocation; the gate + emission see the split IR. */
-					}
-
 					IRAlloc *a = ra_run(irf);
 					if (!a->hot_spill || cg_region_hotspill_override())
 					{
@@ -8957,11 +8951,6 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		IRFunc *irf = ir_lower_func(f, tt);
 		if (irf)
 		{
-			if (bzy_ir_split_enabled())
-			{
-				ir_split_func(irf);   /* Split before allocation; the gate + emission see the split IR. */
-			}
-
 			/* Safety gate: if the allocation would spill a value used in the deepest
 			   loop, the emitter's tuned promotion/spill handling tends to do better -
 			   keep this function on the emitter. Otherwise emit from the IR. */

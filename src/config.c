@@ -9,13 +9,11 @@
    forces a re-read, which tests use to flip BZY_IR around a single case. */
 static int g_ir_cached = -1;
 static int g_ir_regions_cached = -1;
-static int g_ir_split_cached = -1;
 
 void bzy_config_reset_cache(void)
 {
 	g_ir_cached = -1;
 	g_ir_regions_cached = -1;
-	g_ir_split_cached = -1;
 }
 
 int bzy_ir_enabled(void)
@@ -43,19 +41,6 @@ int bzy_ir_regions_enabled(void)
 	}
 
 	return g_ir_regions_cached && bzy_ir_enabled();
-}
-
-int bzy_ir_split_enabled(void)
-{
-	if (g_ir_split_cached < 0)
-	{
-		/* Default OFF: the split pre-pass lands dark and is proven a no-op before
-		   the heuristic turns on. Set BZY_IR_SPLIT=1 to enable. */
-		const char *v = getenv("BZY_IR_SPLIT");
-		g_ir_split_cached = (v && v[0] && strcmp(v, "0") != 0) ? 1 : 0;
-	}
-
-	return g_ir_split_cached && bzy_ir_enabled();
 }
 
 /* Append each double-quoted token in `val` to the grown string array `*arr`

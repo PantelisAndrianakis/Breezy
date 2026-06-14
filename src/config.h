@@ -49,11 +49,6 @@ int bzy_ir_enabled(void);
    backend itself is disabled. */
 int bzy_ir_regions_enabled(void);
 
-/* 1 if IR live-range splitting is enabled: a pre-pass splits values that pass
-   through a loop unused so the allocator spills only the cold span. Default OFF
-   (lands dark); set BZY_IR_SPLIT=1 to enable. Always 0 when IR is disabled. */
-int bzy_ir_split_enabled(void);
-
 /* Discard the cached env flags so the next bzy_ir_*_enabled() call re-reads the
    environment. Used by tests to toggle BZY_IR around a single case. */
 void bzy_config_reset_cache(void);

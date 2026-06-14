@@ -293,9 +293,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				}
 			}
 
-			int is_copy = !in->no_coalesce
-						  && ((in->op == IR_MOVE)
-							  || ((in->op == IR_LOAD || in->op == IR_STORE) && in->is_frame));
+			int is_copy = (in->op == IR_MOVE)
+						  || ((in->op == IR_LOAD || in->op == IR_STORE) && in->is_frame);
 			int src = (is_copy && nuse == 1) ? uses[0] : -1;
 
 			if (def >= 0)
