@@ -1,4 +1,4 @@
-// SP4: read an environment variable. PATH is always present on both OSes, so
+// Read an environment variable. PATH is always present on both OSes, so
 // this exercises the value path without needing null-string handling.
 void main()
 {

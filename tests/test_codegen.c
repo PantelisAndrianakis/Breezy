@@ -1277,6 +1277,13 @@ static void test_ffi_getenv_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_sys_getenv") != NULL, 1);
 }
 
+static void test_ffi_await_shutdown_lowers(void)
+{
+	/* SP4: System.awaitShutdown() lowers to a bzy_await_shutdown call. */
+	emit("void main() { System.awaitShutdown(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_await_shutdown") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1349,6 +1356,7 @@ int main(void)
 	RUN(test_ffi_variadic_parses);
 	RUN(test_ffi_variadic_win64_fpdup);
 	RUN(test_ffi_getenv_lowers);
+	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

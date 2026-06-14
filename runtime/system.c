@@ -1,6 +1,8 @@
 #include "breezy.h"
+#include "platform.h"
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -183,4 +185,85 @@ void *bzy_sys_getenv(void *name)
 	}
 
 	return bzy_str_new(v, (int64_t)strlen(v));
+}
+
+/* ---- System.awaitShutdown(): park until a termination signal ---- */
+
+static volatile sig_atomic_t g_shutdown_flag = 0;
+static bzy_sem               g_sig_sem;
+static int                   g_handlers_installed = 0;   /* One-shot via atomic exchange. */
+
+/* Async-signal-safe handler: ONLY set the flag and post the semaphore. No Breezy
+   code, no allocation, no locks run in signal context. */
+static void shutdown_signal_handler(int sig)
+{
+	(void)sig;
+	g_shutdown_flag = 1;
+	bzy_sem_post(&g_sig_sem, 1);   /* sem_post / ReleaseSemaphore is async-signal-safe. */
+}
+
+#ifdef _WIN32
+static BOOL WINAPI console_ctrl_handler(DWORD type)
+{
+	if (type == CTRL_C_EVENT || type == CTRL_CLOSE_EVENT || type == CTRL_BREAK_EVENT)
+	{
+		g_shutdown_flag = 1;
+		bzy_sem_post(&g_sig_sem, 1);   /* Runs on a normal thread; post is fine. */
+		return TRUE;
+	}
+
+	return FALSE;
+}
+#endif
+
+static void install_handlers_once(void)
+{
+	if (__atomic_exchange_n(&g_handlers_installed, 1, __ATOMIC_ACQ_REL))
+	{
+		return;   /* Another caller already installed. */
+	}
+
+	bzy_sem_init(&g_sig_sem);
+
+#ifdef _WIN32
+	SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
+	signal(SIGINT, shutdown_signal_handler);    /* So raise(SIGINT) is caught too (programmatic / test). */
+	signal(SIGTERM, shutdown_signal_handler);
+#else
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = shutdown_signal_handler;
+	sa.sa_flags = SA_RESTART;                   /* Do not disturb other syscalls. */
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
+#endif
+}
+
+static void sig_wait_offload(void *unused)
+{
+	(void)unused;
+	if (!g_shutdown_flag)
+	{
+		bzy_sem_wait(&g_sig_sem);   /* Blocks the offload worker until the handler posts. */
+	}
+}
+
+/* System.awaitShutdown(): park the calling breeze until SIGINT/SIGTERM (Ctrl+C on
+   Windows). The handler only flags + posts; we observe it here, in normal context. */
+void bzy_await_shutdown(void)
+{
+	install_handlers_once();
+	if (g_shutdown_flag)
+	{
+		return;   /* Latch: a signal already arrived -> no lost-signal race. */
+	}
+
+	if (bzy_sched_current())
+	{
+		bzy_offload_run(sig_wait_offload, NULL);   /* Park the breeze; offload worker waits. */
+	}
+	else
+	{
+		sig_wait_offload(NULL);   /* No breeze to park: block this thread directly. */
+	}
 }

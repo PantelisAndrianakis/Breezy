@@ -211,6 +211,7 @@ A [non-moving heap](../memory/automatic-memory.md) means an object's address nev
 - **Returns are limited** to `void`/int-family/`long`/`float`/`double`/`bool`; a returned `char*` is declared `long` and read with `fromCString` / `fromCBytes`.
 - **Callbacks**: declare the parameter as a function type `ret(types)` and pass a Breezy function by name (scalar-only signature, checked at compile time). A callback runs inside the C frame, so it must not park, yield, or throw - the runtime aborts if it does.
 - **Variadic functions**: a trailing `...` accepts scalar or `string` extra arguments (not arrays/objects); the ABI placement is automatic on both platforms.
+- **Process lifecycle**: read the environment with `System.getenv(name)` and wait for a termination signal with `System.awaitShutdown()` - see [System](../stdlib/system.md). (No need to bind raw `getenv`/`signal` yourself.)
 - **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core; an `extern blocking` call takes any number of arguments.
 - **Link with `--link <lib>` or `breezy.toml [link]`** - the two compose.
 - **`breezy.toml [app]`** embeds name/version/author/description in both platforms; `icon` is Windows-only.

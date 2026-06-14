@@ -1,0 +1,15 @@
+// Park until a termination signal, then drain-and-exit in normal context.
+// A timer raises SIGINT 100ms after main has installed the handler and parked.
+extern int raise(int sig);
+
+void raiseSig()
+{
+	raise(2);   // SIGINT.
+}
+
+void main()
+{
+	scheduleAfter(raiseSig, 100);   // Fire after main installs the handler + parks.
+	System.awaitShutdown();          // Installs the handler, parks; the signal wakes us.
+	print("shutdown");
+}

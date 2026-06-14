@@ -535,6 +535,17 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"awaitShutdown")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"System.awaitShutdown() takes no arguments.",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 

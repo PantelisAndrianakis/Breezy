@@ -4850,6 +4850,12 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"awaitShutdown")==0)
+	{
+		cg_aligned_call(cg,"bzy_await_shutdown");   /* Parks the breeze; void result. */
+		return;
+	}
+
 	if (strcmp(m,"shell")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
@@ -9769,6 +9775,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_system_shell");
 	cg_emit(cg,"extern bzy_sys_args");
 	cg_emit(cg,"extern bzy_sys_getenv");
+	cg_emit(cg,"extern bzy_await_shutdown");
 	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");
