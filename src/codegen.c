@@ -4838,6 +4838,18 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"getenv")==0)
+	{
+		/* System.getenv(name) -> owned string (null when unset). Route through the
+		   general call path: releases the owned name temp, preserves the result. */
+		TypeRef ps[1] = {0};
+		ps[0].kind = TY_STRING;
+		cg_call_with_args(cg,tt,"bzy_sys_getenv",NULL,e->args,e->arg_count,0,
+						  1 /* owned string result */, 0,
+						  ps, e->arg_count, 0 /* pass the string object, no marshal */);
+		return;
+	}
+
 	if (strcmp(m,"shell")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
@@ -9756,6 +9768,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_clock_date_fmt");
 	cg_emit(cg,"extern bzy_system_shell");
 	cg_emit(cg,"extern bzy_sys_args");
+	cg_emit(cg,"extern bzy_sys_getenv");
 	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");

@@ -1270,6 +1270,13 @@ static void test_ffi_variadic_parses(void)
 	ASSERT_INT(strstr(g_asm, "$snprintf") != NULL && strstr(g_asm, "mov al, 0") != NULL, 1);
 }
 
+static void test_ffi_getenv_lowers(void)
+{
+	/* SP4: System.getenv(name) lowers to a bzy_sys_getenv call (owned string). */
+	emit("void main() { string p; p = System.getenv(\"PATH\"); print(p); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_sys_getenv") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1341,6 +1348,7 @@ int main(void)
 	RUN(test_ffi_callback_type_lowers);
 	RUN(test_ffi_variadic_parses);
 	RUN(test_ffi_variadic_win64_fpdup);
+	RUN(test_ffi_getenv_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

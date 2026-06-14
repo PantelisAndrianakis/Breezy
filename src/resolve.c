@@ -524,6 +524,17 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"getenv")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		{
+			die(e->line,"System.getenv(name) takes one string argument.",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 

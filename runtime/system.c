@@ -171,3 +171,16 @@ int64_t bzy_system_shell(void *command, int64_t wait)
 
 	return shell_run(cmd, wait);
 }
+
+/* System.getenv(name): the environment value as an owned string, or the null
+   string when unset. Mirrors the fromCString NULL->null convention. */
+void *bzy_sys_getenv(void *name)
+{
+	const char *v = getenv(bzy_str_data(name));
+	if (!v)
+	{
+		return NULL;   /* Unset -> Breezy null string. */
+	}
+
+	return bzy_str_new(v, (int64_t)strlen(v));
+}
