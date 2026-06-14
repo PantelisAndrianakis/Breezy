@@ -36,6 +36,7 @@ typedef struct
 	long long disp;       /* IR_LOAD/IR_STORE displacement; for a frame local, its slot offset. */
 	int      is_frame;    /* IR_LOAD/IR_STORE: base is rbp (a frame local at -disp). */
 	int      checked;     /* Non-frame array IR_LOAD/IR_STORE: emit a bounds check (index not BCE-proved safe). */
+	int      no_coalesce; /* Split copy (IR_MOVE): the allocator must NOT coalesce this away. */
 	int      cmp_op;      /* IR_CMP: a TokenType (TOKEN_LT, ...). */
 	TypeKind to_kind;     /* IR_CAST destination kind. */
 	int      blk_true;    /* IR_BR/IR_BRCOND target block index. */
