@@ -35,6 +35,20 @@ static void test_reg_tables(void)
 	ASSERT_INT(ra_is_callee_saved(1, 1), 0);       /* rsi, System V -> caller-saved. */
 }
 
+static void test_xmm_reg_tables(void)
+{
+	/* xmm pool is appended after the GP pool in the combined index space. */
+	ASSERT_INT(ra_reg_is_xmm(0), 0);              /* rbx is GP. */
+	ASSERT_INT(ra_reg_is_xmm(RA_MAXREGS - 1), 0); /* rdx is GP. */
+	ASSERT_INT(ra_reg_is_xmm(RA_XMM0), 1);        /* first xmm index. */
+	ASSERT_INT(ra_reg_is_xmm(RA_NALL - 1), 1);    /* last xmm index. */
+	ASSERT_STR(ra_reg_name(RA_XMM0), "xmm2");
+	ASSERT_STR(ra_reg_name(RA_NALL - 1), "xmm5");
+	/* xmm2..xmm5 are caller-saved on BOTH ABIs - never reported callee-saved. */
+	ASSERT_INT(ra_is_callee_saved(RA_XMM0, 0), 0);   /* Win64. */
+	ASSERT_INT(ra_is_callee_saved(RA_XMM0, 1), 0);   /* System V. */
+}
+
 static void test_alloc_trivial_in_register(void)
 {
 	const Func *f = parse_one_func("int five() { return 5; }\n");
@@ -142,31 +156,62 @@ static void test_no_hot_spill_small_loop(void)
 	ir_func_free(ir);
 }
 
+/* A single deepest (depth-1) block with `n` temporaries all simultaneously live at
+   a left-leaning summation chain: at the first add, every later temp is still live,
+   so all n overflow the register file at once. None is rematerializable (each is an
+   ADD result, not a read-only frame load), so they count toward the hot-spill gate.
+   Used to drive the count past the gate's tolerance (128). */
+static IRFunc *build_hot_spill_func(int n)
+{
+	static Func dummy;
+	IRReg t[256];
+	memset(&dummy, 0, sizeof(dummy));
+	IRFunc *f = ir_func_new(&dummy);
+	int b0 = ir_block_new(f);
+	f->blocks[b0].depth = 1;   /* Deepest block: the hot-spill gate watches it. */
+
+	/* Base value i, loaded once from a frame local. */
+	IRReg i = ir_reg(f);
+	IRInstr *li = ir_emit(f, b0, IR_LOAD, TY_LONG);
+	li->dst = i; li->a = IR_NO_REG; li->b = IR_NO_REG; li->is_frame = 1; li->disp = 8;
+
+	/* n temporaries, each t_k = i + i; they live until the sum below consumes them. */
+	for (int k = 0; k < n; k++)
+	{
+		t[k] = ir_reg(f);
+		IRInstr *ad = ir_emit(f, b0, IR_ADD, TY_LONG);
+		ad->dst = t[k]; ad->a = i; ad->b = i;
+	}
+
+	/* Left-leaning sum: at the first add, t[2..n-1] are all still live. */
+	IRReg acc = ir_reg(f);
+	IRInstr *a0 = ir_emit(f, b0, IR_ADD, TY_LONG);
+	a0->dst = acc; a0->a = t[0]; a0->b = t[1];
+	for (int k = 2; k < n; k++)
+	{
+		IRReg na = ir_reg(f);
+		IRInstr *ad = ir_emit(f, b0, IR_ADD, TY_LONG);
+		ad->dst = na; ad->a = acc; ad->b = t[k];
+		acc = na;
+	}
+
+	/* Store the result so nothing is dead. */
+	IRInstr *st = ir_emit(f, b0, IR_STORE, TY_LONG);
+	st->a = IR_NO_REG; st->b = IR_NO_REG; st->c = acc; st->is_frame = 1; st->disp = 8;
+
+	IRInstr *rt = ir_emit(f, b0, IR_RET, TY_VOID);
+	rt->a = IR_NO_REG;
+	return f;
+}
+
 static void test_hot_spill_detected(void)
 {
-	/* Many values all live at the inner-loop sum exceed the register file, forcing
-	   a spill of a value used at the deepest depth - the safety gate must see it. */
-	const Func *f = parse_one_func(
-		"long hot(int n)\n"
-		"{\n"
-		"	long s; s = 0;\n"
-		"	for (int i = 1; i < n; i = i + 1)\n"
-		"	{\n"
-		"		long c0; c0 = (long)i * 1;  long c1; c1 = (long)i * 2;\n"
-		"		long c2; c2 = (long)i * 3;  long c3; c3 = (long)i * 4;\n"
-		"		long c4; c4 = (long)i * 5;  long c5; c5 = (long)i * 6;\n"
-		"		long c6; c6 = (long)i * 7;  long c7; c7 = (long)i * 8;\n"
-		"		long c8; c8 = (long)i * 9;  long c9; c9 = (long)i * 10;\n"
-		"		long d0; d0 = (long)i * 11; long d1; d1 = (long)i * 12;\n"
-		"		long d2; d2 = (long)i * 13; long d3; d3 = (long)i * 14;\n"
-		"		long d4; d4 = (long)i * 15; long d5; d5 = (long)i * 16;\n"
-		"		s = s + c0+c1+c2+c3+c4+c5+c6+c7+c8+c9+d0+d1+d2+d3+d4+d5;\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
-	IRFunc *ir = ir_lower_func(f, 0);
-	ASSERT_INT(ra_hot_spill(ir), 1);
-	ir_func_free(ir);
+	/* 160 deep temporaries all live at the summation chain overflow the register
+	   file, producing far more than the gate's tolerance (128) non-rematerializable
+	   deep spills - the safety gate must fire. */
+	IRFunc *f = build_hot_spill_func(160);
+	ASSERT_INT(ra_hot_spill(f), 1);
+	ir_func_free(f);
 }
 
 /* Build the remat scenario: 14 loads of distinct never-stored locals, all
@@ -295,6 +340,7 @@ static void test_remat_skipped_when_local_stored(void)
 int main(void)
 {
 	RUN(test_reg_tables);
+	RUN(test_xmm_reg_tables);
 	RUN(test_remat_readonly_frame_load);
 	RUN(test_remat_skipped_when_local_stored);
 	RUN(test_no_hot_spill_small_loop);

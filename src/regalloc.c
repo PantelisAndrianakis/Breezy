@@ -9,13 +9,33 @@
 static const char *RA_REGS[RA_MAXREGS] =
 	{ "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rcx", "rdx" };
 
+/* Allocatable xmm registers, indexed by (combined index - RA_XMM0). xmm0/xmm1 stay
+   scratch (immediate computation / spill staging); xmm2..xmm5 are caller-saved on
+   both Win64 and System V, matching the legacy emitter's float-promotion pool. */
+static const char *RA_XMM_REGS[RA_NXMM] = { "xmm2", "xmm3", "xmm4", "xmm5" };
+
 const char *ra_reg_name(int i)
 {
+	if (i >= RA_XMM0)
+	{
+		return RA_XMM_REGS[i - RA_XMM0];
+	}
+
 	return RA_REGS[i];
+}
+
+int ra_reg_is_xmm(int i)
+{
+	return i >= RA_XMM0;
 }
 
 int ra_is_callee_saved(int i, int linux_target)
 {
+	if (i >= RA_XMM0)
+	{
+		return 0;   /* xmm2..xmm5 caller-saved on both ABIs. */
+	}
+
 	const char *r = RA_REGS[i];
 	if (!strcmp(r, "rbx") || !strcmp(r, "r12") || !strcmp(r, "r13")
 		|| !strcmp(r, "r14") || !strcmp(r, "r15"))
