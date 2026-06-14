@@ -1,0 +1,48 @@
+// One dual-stack listener accepts connections over BOTH IPv4 (127.0.0.1) and IPv6
+// (::1). Two client breezes connect, one per family, each sending "hi" and reading
+// the echo back. Output is 4 (two echoes of length 2), proving the single
+// AF_INET6 listener serves both address families.
+void serve(Listener l, int n)
+{
+	int i;
+	i = 0;
+	while (i < n)
+	{
+		Socket c;
+		c = l.accept();            // Parks until a client (either family) connects.
+		byte[] buf;
+		buf = c.read(64);
+		c.write(buf);              // Echo.
+		c.close();
+		i = i + 1;
+	}
+
+	l.close();
+}
+
+void client(string host, int port, channel<int> done)
+{
+	Socket s;
+	s = Network.connect(host, port);   // host is "127.0.0.1" or "::1".
+	s.writeText("hi");
+	string back;
+	back = s.readText(64);
+	done.send(back.length());          // 2.
+	s.close();
+}
+
+void main()
+{
+	Listener l;
+	l = Network.listen(0);             // Ephemeral dual-stack port.
+	int port;
+	port = l.port();
+	channel<int> done;
+	done = new channel<int>(2);
+	spawn serve(l, 2);
+	spawn client("127.0.0.1", port, done);   // IPv4.
+	spawn client("::1", port, done);         // IPv6.
+	int total;
+	total = done.recv() + done.recv();
+	print(total);                      // 2 + 2 = 4.
+}
