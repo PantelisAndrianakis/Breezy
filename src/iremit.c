@@ -2063,6 +2063,30 @@ static const char *vec_scalar_op(int tok)
 	}
 }
 
+/* Packed (2-lane) double op for a recorded TokenType. */
+static const char *vec_packed_op_fp(int tok)
+{
+	switch (tok)
+	{
+	case TOKEN_PLUS:  return "addpd";
+	case TOKEN_MINUS: return "subpd";
+	case TOKEN_STAR:  return "mulpd";
+	default:          return NULL;
+	}
+}
+
+/* Scalar (one-lane) double op for the remainder. */
+static const char *vec_scalar_op_fp(int tok)
+{
+	switch (tok)
+	{
+	case TOKEN_PLUS:  return "addsd";
+	case TOKEN_MINUS: return "subsd";
+	case TOKEN_STAR:  return "mulsd";
+	default:          return NULL;
+	}
+}
+
 /* Flatten a left-leaning op tree whose every right operand is a leaf load into an
    ordered chain: base = slots[0], then result = result <ops[k]> slots[k+1] for k
    in [0, *nops). Returns 1 on success. Such a chain evaluates in two xmm
@@ -2116,11 +2140,6 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 		return 0;
 	}
 
-	if (v.elem == TY_DOUBLE)   /* Removed in Task 2 once the double packed emit lands. */
-	{
-		return 0;
-	}
-
 	/* Flatten the op tree into a two-register left-leaning chain. */
 	int slots[VEC_MAX_NODES];
 	int ops[VEC_MAX_NODES];
@@ -2154,11 +2173,45 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 	Codegen *cg = e->cg;
 	const char *Ri = ra_reg_name(ri);
 	const char *Rc = ra_reg_name(rc);
-	long long vbound = v.bound & ~3LL;
 	int Lvec = cg_label(cg);
 	int Lrem = cg_label(cg);
 	int Ldone = cg_label(cg);
 
+	if (v.elem == TY_DOUBLE)
+	{
+		long long vbound = v.bound & ~1LL;   /* 2 lanes. */
+		cg_emit(cg, "    ; ir-region vectorized: double2 element-wise op chain");
+		cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
+		cg_emit(cg, ".L%d:", Lvec);
+		cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
+		cg_emit(cg, "    jge .L%d", Lrem);
+		cg_emit(cg, "    movupd xmm0, [%s + %s*8 + 32]", base[0], Ri);
+		for (int k = 0; k < nops; k++)
+		{
+			cg_emit(cg, "    movupd xmm1, [%s + %s*8 + 32]", base[k + 1], Ri);
+			cg_emit(cg, "    %s xmm0, xmm1", vec_packed_op_fp(ops[k]));
+		}
+
+		cg_emit(cg, "    movupd [%s + %s*8 + 32], xmm0", Rc, Ri);
+		cg_emit(cg, "    add %s, 2", Ri);
+		cg_emit(cg, "    jmp .L%d", Lvec);
+		cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail [vbound, bound). */
+		cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
+		cg_emit(cg, "    jge .L%d", Ldone);
+		cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", base[0], Ri);
+		for (int k = 0; k < nops; k++)
+		{
+			cg_emit(cg, "    %s xmm0, [%s + %s*8 + 32]", vec_scalar_op_fp(ops[k]), base[k + 1], Ri);
+		}
+
+		cg_emit(cg, "    movsd [%s + %s*8 + 32], xmm0", Rc, Ri);
+		cg_emit(cg, "    add %s, 1", Ri);
+		cg_emit(cg, "    jmp .L%d", Lrem);
+		cg_emit(cg, ".L%d:", Ldone);
+		return 1;
+	}
+
+	long long vbound = v.bound & ~3LL;
 	cg_emit(cg, "    ; ir-region vectorized: int4 element-wise op chain");
 	cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
 	cg_emit(cg, ".L%d:", Lvec);
