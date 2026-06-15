@@ -4999,6 +4999,12 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"pollKey")==0)
+	{
+		cg_aligned_call(cg,"bzy_sys_poll_key");   /* Next byte or -1 in rax. */
+		return;
+	}
+
 	if (strcmp(m,"shell")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
@@ -9989,6 +9995,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_await_shutdown");
 	cg_emit(cg,"extern bzy_sys_sleep");
 	cg_emit(cg,"extern bzy_sys_raw_mode");
+	cg_emit(cg,"extern bzy_sys_poll_key");
 	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");

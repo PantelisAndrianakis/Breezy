@@ -7,6 +7,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <conio.h>
 #else
 #include <unistd.h>
 #include <sys/types.h>
@@ -402,4 +403,25 @@ void bzy_sys_raw_mode(int64_t on)
 	{
 		raw_restore();
 	}
+}
+
+/* ---- System.pollKey(): non-blocking next input byte, or -1 ---- */
+
+int64_t bzy_sys_poll_key(void)
+{
+#ifdef _WIN32
+	if (_kbhit())
+	{
+		return (int64_t)(unsigned char)_getch();   /* One byte; multi-byte keys arrive byte-by-byte. */
+	}
+	return -1;
+#else
+	unsigned char c;
+	ssize_t n = read(STDIN_FILENO, &c, 1);   /* VMIN=0/VTIME=0 from raw mode -> non-blocking. */
+	if (n == 1)
+	{
+		return (int64_t)c;
+	}
+	return -1;   /* 0 = nothing pending; -1/EAGAIN = same to the caller. */
+#endif
 }

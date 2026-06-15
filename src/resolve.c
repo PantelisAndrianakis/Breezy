@@ -568,6 +568,17 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"pollKey")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"System.pollKey() takes no arguments.",NULL);
+		}
+
+		e->type.kind = TY_INT;   /* Next input byte (0..255), or -1 when none. */
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 
