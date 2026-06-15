@@ -891,7 +891,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		int sgn = ty_is_signed(in->type);
 		if (bytes == 8)
 		{
-			cg_emit(cg, "    mov %s, %s", Rd, addr);
+			cg_emit(cg, ty_is_float(in->type) ? "    movsd %s, %s" : "    mov %s, %s", Rd, addr);
 		}
 		else if (bytes == 4)
 		{
@@ -930,9 +930,13 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 
 		char addr[64];
 		elem_addr(in, Rbase, Ridx, addr, sizeof addr);
-		const char *Rc = vreg_in(e, in->c, "rdx");
+		const char *Rc = vreg_in(e, in->c, ty_is_float(in->type) ? "xmm0" : "rdx");
 		int bytes = in->scale ? in->scale : 8;
-		if (bytes == 1)
+		if (ty_is_float(in->type))
+		{
+			cg_emit(cg, "    movsd %s, %s", addr, Rc);   /* double element (stride 8). */
+		}
+		else if (bytes == 1)
 		{
 			cg_emit(cg, "    mov byte %s, %s", addr, reg_low(Rc, 1));
 		}
