@@ -478,6 +478,41 @@ static void test_register_index_addr(void)
 	ASSERT_INT(strstr(g_asm, "lea rbx, [r8 + r12*4 + 32]") != NULL, 0); /* No separate lea-into-rbx. */
 }
 
+/* Count `needle` occurrences inside the emitted body of one function, bounded by
+   the function's label and the next top-level `bzy_` function label. */
+static int count_in_func(const char *func_label, const char *needle)
+{
+	const char *s = strstr(g_asm, func_label);
+	if (!s)
+	{
+		return -1;
+	}
+
+	s += strlen(func_label);
+	const char *end = strstr(s, "\nbzy_");
+	int c = 0;
+	const char *p = s;
+	while ((p = strstr(p, needle)) != NULL && (!end || p < end))
+	{
+		c++;
+		p += strlen(needle);
+	}
+
+	return c;
+}
+
+static void test_boundscheck_cse_repeated_index(void)
+{
+	/* a[i] read twice, same array and same index, with no store between: the first
+	   access bounds-checks; the second is provably in range because the first guards
+	   it (an out-of-range index throws at the first, so the second only runs when in
+	   range). Intra-block CSE drops the redundant check, so exactly ONE bzy_oob slow
+	   path is emitted for the pair, not two. i is a parameter (no interval fact), so
+	   without CSE both accesses would each emit a check. */
+	emit("long f(long[] a, int i) { return a[i] + a[i]; } void main() { }", TARGET_LINUX);
+	ASSERT_INT(count_in_func("bzy_f:", "call bzy_oob"), 1);
+}
+
 static void test_foreach_base_hoist(void)
 {
 	/* foreach over a value List with a call-free, nested-loop-free body: the
@@ -1401,6 +1436,7 @@ int main(void)
 	RUN(test_fp_leaf_fusion);
 	RUN(test_inplace_mac);
 	RUN(test_register_index_addr);
+	RUN(test_boundscheck_cse_repeated_index);
 	RUN(test_foreach_base_hoist);
 	RUN(test_map_foreach_snapshot_handle);
 	RUN(test_shared_set_closure);

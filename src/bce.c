@@ -151,6 +151,16 @@ typedef struct
 	int *sb_io;
 	int *sb_arr;
 	int sbcap;
+	/* Intra-block redundant-check memo: (array local, index local) pairs already
+	   bounds-checked earlier in this straight-line run with neither rewritten since.
+	   A repeat access is provably in range - the earlier check throws first on an
+	   out-of-range index, so the repeat only runs when in range. Not copied into a
+	   child scope (env_dup) and cleared at every control-flow boundary, so it only
+	   ever records same-block, all-paths-execute facts. */
+	int ckn;
+	int *ck_arr;
+	int *ck_idx;
+	int ckcap;
 } Env;
 
 /* Deep copy: a child scope must own its interval buffers so narrowing it does
@@ -230,6 +240,72 @@ static int sb_has(Env *e, int io, int arr_off)
 	}
 
 	return 0;
+}
+
+/* Drop the whole redundant-check memo - called at every control-flow boundary,
+   where straight-line dominance no longer holds. */
+static void ck_clear(Env *e)
+{
+	e->ckn = 0;
+}
+
+/* True if (array arr, index idx) was already bounds-checked in this straight-line
+   run with neither rewritten since. */
+static int ck_has(Env *e, int arr, int idx)
+{
+	for (int i = 0; i < e->ckn; i++)
+	{
+		if (e->ck_arr[i] == arr && e->ck_idx[i] == idx)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* Record that (array arr, index idx) has just been bounds-checked. */
+static void ck_add(Env *e, int arr, int idx)
+{
+	if (arr == 0 || idx == 0 || ck_has(e, arr, idx))
+	{
+		return;
+	}
+
+	if (e->ckn == e->ckcap)
+	{
+		e->ckcap = e->ckcap ? e->ckcap * 2 : 8;
+		e->ck_arr = realloc(e->ck_arr, (size_t)e->ckcap * sizeof(*e->ck_arr));
+		e->ck_idx = realloc(e->ck_idx, (size_t)e->ckcap * sizeof(*e->ck_idx));
+	}
+
+	e->ck_arr[e->ckn] = arr;
+	e->ck_idx[e->ckn] = idx;
+	e->ckn++;
+}
+
+/* Invalidate every memo entry whose array or index is local `off` - it was just
+   reassigned, so the earlier check no longer proves the repeat in range. (An
+   element store arr[j] = v does NOT reach here: it cannot change arr's length.) */
+static void ck_kill(Env *e, int off)
+{
+	if (off == 0)
+	{
+		return;
+	}
+
+	int w = 0;
+	for (int i = 0; i < e->ckn; i++)
+	{
+		if (e->ck_arr[i] != off && e->ck_idx[i] != off)
+		{
+			e->ck_arr[w] = e->ck_arr[i];
+			e->ck_idx[w] = e->ck_idx[i];
+			w++;
+		}
+	}
+
+	e->ckn = w;
 }
 
 static Iv env_get(Env *e, int off)
@@ -592,6 +668,23 @@ static void mark_indexes(Expr *e, Env *env)
 		{
 			e->anno_index_safe = 1;
 		}
+
+		/* Intra-block CSE: the same (array local, index local) was already
+		   bounds-checked earlier in this straight-line run with neither rewritten
+		   since, so the earlier check guards this access - drop the redundant one.
+		   Only plain-local base and index qualify; anything else is left checked. */
+		if (!e->anno_index_safe && e->rhs->kind == EX_IDENT
+			&& e->lhs->anno_int != 0 && e->rhs->anno_int != 0)
+		{
+			if (ck_has(env, e->lhs->anno_int, e->rhs->anno_int))
+			{
+				e->anno_index_safe = 1;
+			}
+			else
+			{
+				ck_add(env, e->lhs->anno_int, e->rhs->anno_int);
+			}
+		}
 	}
 }
 
@@ -614,6 +707,22 @@ static void note_array_assign(Env *env, int off, Expr *val)
 /* Analyse a loop. `body`/`post` are widened to the full range up front; if the
    loop is a recognised increasing counted-for, its induction variable instead
    gets its exact iteration range, which is what makes derived indices provable. */
+/* Invalidate memo entries for every local this straight-line statement writes
+   (a reassigned array base or index var). Reuses the modified-set walk, so an
+   `i++` buried in a subexpression is caught too. Only call for straight-line
+   statements - control-flow statements clear the whole memo instead. */
+static void ck_kill_stmt_writes(Env *env, Stmt *st)
+{
+	OffSet wr = { .n = 0 };
+	mod_stmt(st, &wr);
+	for (int i = 0; i < wr.n; i++)
+	{
+		ck_kill(env, wr.off[i]);
+	}
+
+	free(wr.off);
+}
+
 static void bce_loop(Stmt *st, Env *env)
 {
 	OffSet mod = { .n = 0 };
@@ -780,6 +889,8 @@ static void bce_loop(Stmt *st, Env *env)
 		env_set(env, mod.off[i], IV_TOP);
 		alen_set(env, mod.off[i], IV_TOP);
 	}
+
+	ck_clear(env);   /* The loop is a control-flow boundary. */
 }
 
 static void bce_stmt(Stmt *st, Env *env)
@@ -803,6 +914,7 @@ static void bce_stmt(Stmt *st, Env *env)
 					st->decl_init ? iv_expr(st->decl_init, env) : IV_TOP);
 		}
 
+		ck_kill_stmt_writes(env, st);
 		break;
 	case ST_ASSIGN:
 		mark_indexes(st->value, env);
@@ -819,6 +931,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			}
 		}
 
+		ck_kill_stmt_writes(env, st);
 		break;
 	case ST_FOR:
 	case ST_WHILE:
@@ -843,6 +956,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			alen_set(env, mod.off[i], IV_TOP);
 		}
 
+		ck_clear(env);   /* The branch is a control-flow boundary. */
 		break;
 	}
 	case ST_SWITCH:
@@ -867,6 +981,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			alen_set(env, mod.off[i], IV_TOP);
 		}
 
+		ck_clear(env);   /* switch / try is a control-flow boundary. */
 		break;
 	}
 	default:
@@ -875,6 +990,7 @@ static void bce_stmt(Stmt *st, Env *env)
 		mark_indexes(st->expr, env);
 		mark_indexes(st->ret_val, env);
 		mark_indexes(st->decl_init, env);
+		ck_kill_stmt_writes(env, st);
 		break;
 	}
 }
