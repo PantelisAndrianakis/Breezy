@@ -183,6 +183,7 @@ check compound    tests/samples/pass/basics/compound.bzy      $'6\n10\nabc'
 check decl_init   tests/samples/pass/basics/decl_init.bzy     $'7\nhi\nRex\nWoof'
 check fp_scalar   tests/samples/pass/basics/fp_scalar.bzy     "35750"
 check fp_cast     tests/samples/pass/basics/fp_cast.bzy       $'4150\n15'
+check fp_array    tests/samples/pass/basics/fp_array.bzy      $'20\n8'
 check bitwise     tests/samples/pass/operators/bitwise.bzy        $'255\n15\n4\n-1\n10\n16'
 check_fail bitwise_float tests/samples/fail/operators/bitwise_float.bzy
 check equals_words tests/samples/pass/operators/equals_words.bzy $'true\nfalse\nfalse\ntrue'

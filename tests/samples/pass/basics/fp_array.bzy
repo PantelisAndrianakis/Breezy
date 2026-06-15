@@ -1,0 +1,24 @@
+// double[] element load/store through the IR backend (scalar movsd). Output must
+// match the emitter exactly (differential gate).
+double scaleSum(double[] a, int n, double k)
+{
+	double s = 0.0;
+	for (int i = 0; i < n; i = i + 1)
+	{
+		a[i] = a[i] * k;
+		s = s + a[i];
+	}
+	return s;
+}
+
+void main()
+{
+	double[] v = new double[4];
+	for (int i = 0; i < 4; i = i + 1)
+	{
+		v[i] = (double)(i + 1);
+	}
+	double s = scaleSum(v, 4, 2.0);
+	print((long)s);          // (2+4+6+8) = 20
+	print((long)v[3]);       // 8
+}

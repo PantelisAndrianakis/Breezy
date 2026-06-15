@@ -2218,7 +2218,8 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 		int r = ra_local_reg(a, a->local_disp[k]);
 		if (r >= 0)
 		{
-			cg_emit(cg, "    mov %s, [rbp - %lld]", ra_reg_name(r), a->local_disp[k]);
+			cg_emit(cg, ra_reg_is_xmm(r) ? "    movsd %s, [rbp - %lld]" : "    mov %s, [rbp - %lld]",
+				ra_reg_name(r), a->local_disp[k]);
 		}
 	}
 
@@ -2240,10 +2241,11 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 			TypeKind lk = local_narrow_int_kind(f, a->local_disp[k]);
 			if (lk != TY_VOID)
 			{
-				norm_reg(cg, ra_reg_name(r), ra_reg_name(r), lk);
+				norm_reg(cg, ra_reg_name(r), ra_reg_name(r), lk);   /* GP narrow-int only. */
 			}
 
-			cg_emit(cg, "    mov [rbp - %lld], %s", a->local_disp[k], ra_reg_name(r));
+			cg_emit(cg, ra_reg_is_xmm(r) ? "    movsd [rbp - %lld], %s" : "    mov [rbp - %lld], %s",
+				a->local_disp[k], ra_reg_name(r));
 		}
 	}
 

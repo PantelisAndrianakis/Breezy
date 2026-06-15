@@ -14,7 +14,7 @@ static int elig_type(TypeKind k)
    Plan 3 - that is Plan 3b / xmm). */
 static int elig_elem_kind(TypeKind k)
 {
-	return ty_is_int(k) || k == TY_BOOL;
+	return ty_is_int(k) || k == TY_BOOL || k == TY_DOUBLE;
 }
 
 /* A reference to an array of supported elements (e.g. an `int[]` parameter). */

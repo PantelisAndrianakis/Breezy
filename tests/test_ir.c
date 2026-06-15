@@ -110,15 +110,16 @@ static void test_eligible_accepts_int_array(void)
 	ASSERT_INT(ir_eligible(f), 1);
 }
 
-static void test_eligible_rejects_float_array(void)
+static void test_eligible_accepts_double_array(void)
 {
-	/* Float-element arrays are out of scope (Plan 3b / xmm). */
+	/* double[] elements are in scope as of Tier 1/1a Stage 3 (xmm register class):
+	   the element load/store emits movsd and the (int) cast emits cvttsd2si. */
 	const Func *f = parse_one_func(
 		"int firstd(double[] xs)\n"
 		"{\n"
 		"	return (int)xs[0];\n"
 		"}\n");
-	ASSERT_INT(ir_eligible(f), 0);
+	ASSERT_INT(ir_eligible(f), 1);
 }
 
 static void test_eligible_rejects_new_array(void)
@@ -1148,7 +1149,7 @@ int main(void)
 	RUN(test_eligible_rejects_string);
 	RUN(test_eligible_rejects_call);
 	RUN(test_eligible_accepts_int_array);
-	RUN(test_eligible_rejects_float_array);
+	RUN(test_eligible_accepts_double_array);
 	RUN(test_eligible_rejects_new_array);
 	RUN(test_lower_produces_blocks_and_ret);
 	RUN(test_lower_collatz_succeeds);
