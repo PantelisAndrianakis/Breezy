@@ -1,0 +1,15 @@
+// Exercises all five real-time I/O primitives end-to-end. With a non-terminal
+// stdin (as in CI) rawMode/mouseMode are no-ops, both polls drain to -1, and
+// sleep returns at once, so the program deterministically prints -1 then -1.
+void main()
+{
+	System.rawMode(true);
+	System.mouseMode(true);
+	int k = System.pollKey();
+	long m = System.pollMouse();
+	System.mouseMode(false);
+	System.rawMode(false);
+	System.sleep(1);
+	print(k);
+	print(m);
+}
