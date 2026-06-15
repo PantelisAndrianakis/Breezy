@@ -1,0 +1,27 @@
+// Constant-bound, single-store, element-wise double[] loop inside main (which has
+// `new`, so the loop region-extracts and reaches the vectorizer). Output must match
+// the emitter exactly (differential gate for Tier 1 / 1b Stage 1b.1).
+void main()
+{
+	double[] a = new double[16];
+	double[] b = new double[16];
+	double[] c = new double[16];
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		a[i] = (double)(i + 1);
+		b[i] = 2.0;
+	}
+
+	// The 1b.1 target loop: constant bound, single store, same-index leaf loads.
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		c[i] = a[i] * b[i] + a[i];
+	}
+
+	double s = 0.0;
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		s = s + c[i];
+	}
+	print((long)s);   // c[i] = (i+1)*2 + (i+1) = 3(i+1); sum i=0..15 = 3*136 = 408
+}

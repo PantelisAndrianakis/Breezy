@@ -1830,7 +1830,9 @@ typedef struct
 {
 	int         ok;
 	int         slot_i;     /* Induction local frame offset. */
-	long long   bound;      /* The loop runs i over [0, bound). */
+	long long   bound;          /* Constant upper bound (valid when bound_is_const). */
+	int         bound_is_const; /* 1: bound is the constant above; 0: bound_slot is a runtime local. */
+	int         bound_slot;     /* Frame offset of the int local holding the bound (when !bound_is_const). */
 	int         out_slot;   /* Output array frame offset. */
 	TypeKind    elem;       /* Element kind of the vectorized arrays: TY_INT or TY_DOUBLE. */
 	VecNode     pool[VEC_MAX_NODES];
@@ -1968,17 +1970,33 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 		return 0;
 	}
 
-	/* (1) bound: i < C, a constant upper bound. */
+	/* (1) bound: i < C (constant) or i < n (a runtime int local). */
 	const Expr *c = s->cond;
 	if (c->kind != EX_BINARY || c->op != TOKEN_LT
-		|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i
-		|| !c->rhs || c->rhs->kind != EX_INT)
+		|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i || !c->rhs)
 	{
 		v->reason = "bound";
 		return 0;
 	}
 
-	long long bound = c->rhs->int_val;
+	long long bound = 0;
+	int bound_is_const;
+	int bound_slot = -1;
+	if (c->rhs->kind == EX_INT)
+	{
+		bound_is_const = 1;
+		bound = c->rhs->int_val;
+	}
+	else if (c->rhs->kind == EX_IDENT && c->rhs->type.kind == TY_INT)
+	{
+		bound_is_const = 0;
+		bound_slot = c->rhs->anno_int;
+	}
+	else
+	{
+		v->reason = "bound";
+		return 0;
+	}
 
 	/* (1) step: i = i + 1. */
 	const Stmt *po = s->for_post;
@@ -2023,7 +2041,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 
 	/* Need a few full vector iterations to be worth replacing a loop the emitter
 	   already unrolls well at tiny trip counts. */
-	if (bound < 8)
+	if (bound_is_const && bound < 8)
 	{
 		v->reason = "tiny";
 		return 0;
@@ -2031,6 +2049,8 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 
 	v->slot_i = slot_i;
 	v->bound = bound;
+	v->bound_is_const = bound_is_const;
+	v->bound_slot = bound_slot;
 	v->out_slot = out_slot;
 	v->elem = as->target->type.kind;   /* TY_INT or TY_DOUBLE (vec_idx_slot guaranteed). */
 	v->root = root;
@@ -2179,6 +2199,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 
 	if (v.elem == TY_DOUBLE)
 	{
+		if (!v.bound_is_const)   /* Removed in Task 2 once the runtime-bound emit lands. */
+		{
+			return 0;
+		}
+
 		long long vbound = v.bound & ~1LL;   /* 2 lanes. */
 		cg_emit(cg, "    ; ir-region vectorized: double2 element-wise op chain");
 		cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
@@ -2209,6 +2234,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 		cg_emit(cg, "    jmp .L%d", Lrem);
 		cg_emit(cg, ".L%d:", Ldone);
 		return 1;
+	}
+
+	if (!v.bound_is_const)
+	{
+		return 0;   /* Variable bounds: int path stays scalar (Stage 1b.2 is double-only). */
 	}
 
 	long long vbound = v.bound & ~3LL;
