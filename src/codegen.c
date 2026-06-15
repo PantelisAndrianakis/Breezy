@@ -4989,6 +4989,16 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"rawMode")==0)
+	{
+		/* System.rawMode(on) -> bzy_sys_raw_mode(on). Scalar bool, void result. */
+		TypeRef ps[1];
+		ps[0] = e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_sys_raw_mode",NULL,e->args,e->arg_count,0,
+						  0 /* result not owned */, 0, ps, e->arg_count, 0);
+		return;
+	}
+
 	if (strcmp(m,"shell")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
@@ -9978,6 +9988,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_sys_getenv");
 	cg_emit(cg,"extern bzy_await_shutdown");
 	cg_emit(cg,"extern bzy_sys_sleep");
+	cg_emit(cg,"extern bzy_sys_raw_mode");
 	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");

@@ -557,6 +557,17 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"rawMode")==0)
+	{
+		if (e->arg_count != 1 || e->args[0]->type.kind != TY_BOOL)
+		{
+			die(e->line,"System.rawMode(on) takes one bool argument.",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 

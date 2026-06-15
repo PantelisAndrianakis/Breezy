@@ -309,3 +309,97 @@ void bzy_sys_sleep(int64_t ms)
 		sleep_impl(ms);   /* No breeze to park: sleep this thread directly. */
 	}
 }
+
+/* ---- System.rawMode(on): char-at-a-time terminal, auto-restored ---- */
+
+static int g_raw_active = 0;
+static int g_raw_atexit_done = 0;
+
+#ifdef _WIN32
+static HANDLE g_raw_in = NULL;
+static DWORD  g_raw_saved_mode = 0;
+#else
+static struct termios g_raw_saved_termios;
+#endif
+
+static void raw_restore(void)
+{
+	if (!g_raw_active)
+	{
+		return;
+	}
+
+#ifdef _WIN32
+	SetConsoleMode(g_raw_in, g_raw_saved_mode);
+#else
+	tcsetattr(STDIN_FILENO, TCSANOW, &g_raw_saved_termios);
+#endif
+	g_raw_active = 0;
+}
+
+/* Termination-signal handler: restore the terminal, then re-raise with the
+   default disposition so the process dies as it normally would. Decoupled from
+   awaitShutdown; a program that uses both should call rawMode(false) in its
+   drain path (the last-installed handler otherwise wins). */
+static void raw_signal_restore(int sig)
+{
+	raw_restore();
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
+void bzy_sys_raw_mode(int64_t on)
+{
+	if (on)
+	{
+		if (g_raw_active)
+		{
+			return;   /* Idempotent. */
+		}
+
+#ifdef _WIN32
+		g_raw_in = GetStdHandle(STD_INPUT_HANDLE);
+		if (g_raw_in == INVALID_HANDLE_VALUE || g_raw_in == NULL)
+		{
+			return;
+		}
+		if (!GetConsoleMode(g_raw_in, &g_raw_saved_mode))
+		{
+			return;   /* Not a console (piped/redirected): no-op. */
+		}
+
+		/* Clear line-buffering and echo; keep ENABLE_PROCESSED_INPUT so Ctrl+C
+		   still raises (awaitShutdown / raw_signal_restore depend on it). */
+		DWORD raw = g_raw_saved_mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+		SetConsoleMode(g_raw_in, raw);
+#else
+		if (!isatty(STDIN_FILENO))
+		{
+			return;   /* Piped/redirected stdin: no-op. */
+		}
+		if (tcgetattr(STDIN_FILENO, &g_raw_saved_termios) != 0)
+		{
+			return;
+		}
+
+		struct termios raw = g_raw_saved_termios;
+		raw.c_lflag &= ~(ICANON | ECHO);   /* No line buffering, no echo. */
+		raw.c_cc[VMIN]  = 0;                /* read() returns immediately... */
+		raw.c_cc[VTIME] = 0;               /* ...with 0 bytes when nothing is pending. */
+		tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+#endif
+		g_raw_active = 1;
+
+		if (!g_raw_atexit_done)
+		{
+			atexit(raw_restore);
+			signal(SIGINT,  raw_signal_restore);
+			signal(SIGTERM, raw_signal_restore);
+			g_raw_atexit_done = 1;
+		}
+	}
+	else
+	{
+		raw_restore();
+	}
+}

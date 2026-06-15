@@ -1326,6 +1326,10 @@ static void test_system_realtime_io_lowers(void)
 	/* System.sleep(ms) lowers to a bzy_sys_sleep call. */
 	emit("void main() { System.sleep(16); }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "bzy_sys_sleep") != NULL, 1);
+
+	/* System.rawMode(on) lowers to a bzy_sys_raw_mode call. */
+	emit("void main() { System.rawMode(true); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_sys_raw_mode") != NULL, 1);
 }
 
 static void test_ffi_variadic_win64_fpdup(void)
