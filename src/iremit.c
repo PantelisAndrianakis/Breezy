@@ -1,5 +1,6 @@
 #include "iremit.h"
 #include "regalloc.h"
+#include "irlower.h"   /* ir_func_const_local: resolve a constant-local loop bound. */
 #include "lexer.h"   /* Comparison TokenTypes. */
 #include <stdlib.h>
 #include <stdio.h>
@@ -1830,9 +1831,8 @@ typedef struct
 {
 	int         ok;
 	int         slot_i;     /* Induction local frame offset. */
-	long long   bound;          /* Constant upper bound (valid when bound_is_const). */
-	int         bound_is_const; /* 1: bound is the constant above; 0: bound_slot is a runtime local. */
-	int         bound_slot;     /* Frame offset of the int local holding the bound (when !bound_is_const). */
+	long long   bound;          /* Constant upper bound (a literal, or a resolved constant local). */
+	int         bound_from_ident; /* 1 if the bound was an EX_IDENT resolved to a constant local. */
 	int         out_slot;   /* Output array frame offset. */
 	TypeKind    elem;       /* Element kind of the vectorized arrays: TY_INT or TY_DOUBLE. */
 	VecNode     pool[VEC_MAX_NODES];
@@ -1939,7 +1939,7 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
      6. int (4-byte) element kind only (vec_idx_slot / the EX_BINARY type check);
      7. no control flow, call, or side effect in the body (single assignment);
      8. indices already BCE-proved in range (anno_index_safe in vec_idx_slot). */
-static int vec_analyze(const Stmt *s, VecLoop *v)
+static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 {
 	v->ok = 0;
 	v->npool = 0;
@@ -1980,17 +1980,17 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 	}
 
 	long long bound = 0;
-	int bound_is_const;
-	int bound_slot = -1;
+	int bound_from_ident = 0;
 	if (c->rhs->kind == EX_INT)
 	{
-		bound_is_const = 1;
 		bound = c->rhs->int_val;
 	}
-	else if (c->rhs->kind == EX_IDENT && c->rhs->type.kind == TY_INT)
+	else if (c->rhs->kind == EX_IDENT && c->rhs->type.kind == TY_INT
+			 && fn && ir_func_const_local(fn, c->rhs->anno_int, &bound))
 	{
-		bound_is_const = 0;
-		bound_slot = c->rhs->anno_int;
+		/* `i < n` where n is a function-level constant local (e.g. matrix `verts`):
+		   the IR folds it to an immediate, so treat it as a constant bound. */
+		bound_from_ident = 1;
 	}
 	else
 	{
@@ -2041,7 +2041,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 
 	/* Need a few full vector iterations to be worth replacing a loop the emitter
 	   already unrolls well at tiny trip counts. */
-	if (bound_is_const && bound < 8)
+	if (bound < 8)
 	{
 		v->reason = "tiny";
 		return 0;
@@ -2049,8 +2049,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 
 	v->slot_i = slot_i;
 	v->bound = bound;
-	v->bound_is_const = bound_is_const;
-	v->bound_slot = bound_slot;
+	v->bound_from_ident = bound_from_ident;
 	v->out_slot = out_slot;
 	v->elem = as->target->type.kind;   /* TY_INT or TY_DOUBLE (vec_idx_slot guaranteed). */
 	v->root = root;
@@ -2146,10 +2145,10 @@ static int vec_chain(const VecNode *n, int *slots, int *ops, int *nops)
    and return 1. Otherwise return 0 and let the scalar block emitter run. The
    packed temporaries use xmm0/xmm1, outside the xmm2-5 range float promotion
    claims, so nothing live across the region is clobbered. */
-static int ir_try_vectorize_region(Emit *e, const Stmt *region)
+static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 {
 	VecLoop v;
-	int ok = vec_analyze(region, &v);
+	int ok = vec_analyze(region, &v, fn);
 	if (region && getenv("BZY_SIMD_REPORT"))
 	{
 		fprintf(stderr, "simd: line %d: %s\n", region->line, ok ? "VECTORIZED" : v.reason);
@@ -2199,39 +2198,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 
 	if (v.elem == TY_DOUBLE)
 	{
-		/* Resolve the packed-loop bound (rounded to 2 lanes) and the raw remainder
-		   bound as operand strings: immediates for a constant bound, or a runtime
-		   `n & ~1` in rax (free scratch) plus the raw bound register for `i < n`. */
-		char vbuf[32];
-		char rbuf[32];
-		const char *vbound;
-		const char *rbound;
-		if (v.bound_is_const)
-		{
-			snprintf(vbuf, sizeof vbuf, "%lld", v.bound & ~1LL);
-			snprintf(rbuf, sizeof rbuf, "%lld", v.bound);
-			vbound = vbuf;
-			rbound = rbuf;
-		}
-		else
-		{
-			int rn = ra_local_reg(e->a, v.bound_slot);
-			if (rn < 0)
-			{
-				return 0;   /* Bound not register-resident: stay scalar. */
-			}
-
-			snprintf(rbuf, sizeof rbuf, "%s", ra_reg_name(rn));
-			cg_emit(cg, "    mov rax, %s", ra_reg_name(rn));   /* rax = n. */
-			cg_emit(cg, "    and rax, -2");                     /* rax = n & ~1 (vector count). */
-			vbound = "rax";
-			rbound = rbuf;
-		}
-
+		long long vbound = v.bound & ~1LL;   /* 2 lanes. */
 		cg_emit(cg, "    ; ir-region vectorized: double2 element-wise op chain");
 		cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
 		cg_emit(cg, ".L%d:", Lvec);
-		cg_emit(cg, "    cmp %s, %s", Ri, vbound);
+		cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
 		cg_emit(cg, "    jge .L%d", Lrem);
 		cg_emit(cg, "    movupd xmm0, [%s + %s*8 + 32]", base[0], Ri);
 		for (int k = 0; k < nops; k++)
@@ -2244,7 +2215,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 		cg_emit(cg, "    add %s, 2", Ri);
 		cg_emit(cg, "    jmp .L%d", Lvec);
 		cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail. */
-		cg_emit(cg, "    cmp %s, %s", Ri, rbound);
+		cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 		cg_emit(cg, "    jge .L%d", Ldone);
 		cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", base[0], Ri);
 		for (int k = 0; k < nops; k++)
@@ -2259,9 +2230,9 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 		return 1;
 	}
 
-	if (!v.bound_is_const)
+	if (v.bound_from_ident)
 	{
-		return 0;   /* Variable bounds: int path stays scalar (Stage 1b.2 is double-only). */
+		return 0;   /* Int path stays literal-bound-only (byte-identical); ident-resolved bounds are double-only. */
 	}
 
 	long long vbound = v.bound & ~3LL;
@@ -2338,7 +2309,7 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 		}
 	}
 
-	if (!ir_try_vectorize_region(&e, region))
+	if (!ir_try_vectorize_region(&e, region, f->src))
 	{
 		emit_blocks(&e, f);
 	}

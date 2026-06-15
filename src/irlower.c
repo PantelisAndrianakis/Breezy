@@ -1376,6 +1376,13 @@ static void collect_const_locals(const Func *f, Low *L)
 	}
 }
 
+int ir_func_const_local(const Func *f, int slot, long long *out)
+{
+	Low low;
+	collect_const_locals(f, &low);   /* Fills low.kl_*; the rest of Low is unused here. */
+	return kl_const(&low, slot, out);
+}
+
 IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 {
 	(void)tt;

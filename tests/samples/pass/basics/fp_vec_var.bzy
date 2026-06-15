@@ -1,0 +1,28 @@
+// Element-wise double[] loop whose bound is a constant LOCAL (n), not a literal —
+// the IR folds n to a constant (as it does the matrix bound `verts`), and the
+// vectorizer resolves the EX_IDENT bound to that constant. n=15 is odd, exercising
+// the scalar remainder. Output must match the emitter exactly (differential gate).
+void main()
+{
+	int n = 15;
+	double[] a = new double[n];
+	double[] b = new double[n];
+	double[] c = new double[n];
+	for (int i = 0; i < n; i = i + 1)
+	{
+		a[i] = (double)(i + 1);
+		b[i] = 3.0;
+	}
+
+	for (int i = 0; i < n; i = i + 1)     // 1b.2 target: bound is the constant local n
+	{
+		c[i] = a[i] * b[i];
+	}
+
+	double s = 0.0;
+	for (int i = 0; i < n; i = i + 1)
+	{
+		s = s + c[i];
+	}
+	print((long)s);   // sum (i+1)*3 for i=0..14 = 3*120 = 360
+}

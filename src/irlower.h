@@ -28,4 +28,12 @@ int ir_region_eligible(const Stmt *s);
    owns the result and must ir_func_free it. */
 IRFunc *ir_lower_region(const Func *f, const Stmt *s);
 
+/* If `slot` (a frame offset) names a function-level constant local of `f` - one
+   every assignment to which is the same integer literal - store that value in *out
+   and return 1; else 0. Used by the region vectorizer to resolve a loop bound that
+   reads such a local (e.g. `for i < verts` where `verts = 1000000`) to its constant,
+   since the bound is folded to an immediate in the IR but is still an EX_IDENT in
+   the AST the vectorizer analyzes. */
+int ir_func_const_local(const Func *f, int slot, long long *out);
+
 #endif
