@@ -1080,6 +1080,31 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 	case IR_CAST:
 	{
+		int from_fp = ty_is_float(in->type);
+		int to_fp = ty_is_float(in->to_kind);
+		if (from_fp || to_fp)
+		{
+			/* Source staged through its own class's scratch (xmm0 for a double
+			   source, rax for an int source) - never a hardcoded GP register. */
+			const char *Ra = vreg_in(e, in->a, scratch_for(e, in->a));
+			const char *Rd = dst_reg(e, in->dst);
+			if (from_fp && !to_fp)
+			{
+				cg_emit(cg, "    cvttsd2si %s, %s", Rd, Ra);   /* double -> int (truncate). */
+			}
+			else if (!from_fp && to_fp)
+			{
+				cg_emit(cg, "    cvtsi2sd %s, %s", Rd, Ra);     /* int -> double. */
+			}
+			else if (strcmp(Rd, Ra))
+			{
+				cg_emit(cg, "    movaps %s, %s", Rd, Ra);        /* double -> double. */
+			}
+
+			finish_dst(e, in->dst);
+			break;
+		}
+
 		const char *Ra = vreg_in(e, in->a, "rax");
 		const char *Rd = dst_reg(e, in->dst);
 		if (ty_bits(in->to_kind) >= 64 || ty_bits(in->to_kind) == 0)

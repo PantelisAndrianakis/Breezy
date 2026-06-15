@@ -1,0 +1,18 @@
+// int<->double casts through the IR backend (cvtsi2sd / cvttsd2si). Output must
+// match the emitter exactly (differential gate).
+double widen(int n)
+{
+	return (double)n + 0.5;
+}
+
+long truncate(double x)
+{
+	return (long)(x * 2.0);
+}
+
+void main()
+{
+	double w = widen(41);
+	print((long)(w * 100.0));   // 4150
+	print(truncate(7.75));      // 15
+}
