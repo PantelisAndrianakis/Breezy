@@ -1832,6 +1832,7 @@ typedef struct
 	int         slot_i;     /* Induction local frame offset. */
 	long long   bound;      /* The loop runs i over [0, bound). */
 	int         out_slot;   /* Output array frame offset. */
+	TypeKind    elem;       /* Element kind of the vectorized arrays: TY_INT or TY_DOUBLE. */
 	VecNode     pool[VEC_MAX_NODES];
 	int         npool;
 	VecNode    *root;       /* The stored value's op tree (into pool). */
@@ -1852,7 +1853,8 @@ static int vec_idx_slot(const Expr *e, int slot_i)
 		return -1;
 	}
 
-	if (e->rhs->anno_int != slot_i || !e->anno_index_safe || e->type.kind != TY_INT)
+	if (e->rhs->anno_int != slot_i || !e->anno_index_safe
+		|| (e->type.kind != TY_INT && e->type.kind != TY_DOUBLE))
 	{
 		return -1;
 	}
@@ -1898,7 +1900,8 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 		return n;
 	}
 
-	if (e->kind == EX_BINARY && e->type.kind == TY_INT
+	if (e->kind == EX_BINARY
+		&& (e->type.kind == TY_INT || e->type.kind == TY_DOUBLE)
 		&& (e->op == TOKEN_PLUS || e->op == TOKEN_MINUS || e->op == TOKEN_STAR))
 	{
 		VecNode *l = vec_build_tree(v, e->lhs, slot_i);
@@ -2029,6 +2032,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v)
 	v->slot_i = slot_i;
 	v->bound = bound;
 	v->out_slot = out_slot;
+	v->elem = as->target->type.kind;   /* TY_INT or TY_DOUBLE (vec_idx_slot guaranteed). */
 	v->root = root;
 	v->ok = 1;
 	v->reason = "ok";
@@ -2108,6 +2112,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 	}
 
 	if (!ok)
+	{
+		return 0;
+	}
+
+	if (v.elem == TY_DOUBLE)   /* Removed in Task 2 once the double packed emit lands. */
 	{
 		return 0;
 	}
