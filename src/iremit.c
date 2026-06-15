@@ -2174,6 +2174,73 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		return 0;
 	}
 
+	/* 1b.3a: a single scaled load  out[i] = k * a[i]  (k a loop-invariant double
+	   local). Broadcast k into both lanes once, then packed-multiply each pair. Other
+	   VN_SCALAR shapes (a sum of products) are 1b.3b. */
+	if (v.root->kind == VN_BINOP && v.root->op == TOKEN_STAR && v.elem == TY_DOUBLE)
+	{
+		VecNode *ln = v.root->l;
+		VecNode *rn = v.root->r;
+		int k_slot = -1;
+		int ld_slot = -1;
+		if (ln->kind == VN_SCALAR && rn->kind == VN_LOAD)
+		{
+			k_slot = ln->slot;
+			ld_slot = rn->slot;
+		}
+		else if (ln->kind == VN_LOAD && rn->kind == VN_SCALAR)
+		{
+			k_slot = rn->slot;
+			ld_slot = ln->slot;
+		}
+
+		if (k_slot >= 0)
+		{
+			/* Scalar and all bases must be register-resident (the region loaded them
+			   from current home slots at entry; a spilled scalar's slot may be stale). */
+			int rk = ra_local_reg(e->a, k_slot);
+			int rl = ra_local_reg(e->a, ld_slot);
+			int ri2 = ra_local_reg(e->a, v.slot_i);
+			int rc2 = ra_local_reg(e->a, v.out_slot);
+			if (rk < 0 || rl < 0 || ri2 < 0 || rc2 < 0)
+			{
+				return 0;
+			}
+
+			Codegen *cg = e->cg;
+			const char *Ri = ra_reg_name(ri2);
+			const char *Rc = ra_reg_name(rc2);
+			const char *Rl = ra_reg_name(rl);
+			long long vbound = v.bound & ~1LL;
+			int Lvec = cg_label(cg);
+			int Lrem = cg_label(cg);
+			int Ldone = cg_label(cg);
+
+			cg_emit(cg, "    ; ir-region vectorized: double2 scaled-load (k * a[i])");
+			cg_emit(cg, "    movsd xmm1, %s", ra_reg_name(rk));   /* low lane = k. */
+			cg_emit(cg, "    unpcklpd xmm1, xmm1");                /* broadcast k to both lanes (SSE2). */
+			cg_emit(cg, "    xor %s, %s", Ri, Ri);
+			cg_emit(cg, ".L%d:", Lvec);
+			cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
+			cg_emit(cg, "    jge .L%d", Lrem);
+			cg_emit(cg, "    movupd xmm0, [%s + %s*8 + 32]", Rl, Ri);
+			cg_emit(cg, "    mulpd xmm0, xmm1");
+			cg_emit(cg, "    movupd [%s + %s*8 + 32], xmm0", Rc, Ri);
+			cg_emit(cg, "    add %s, 2", Ri);
+			cg_emit(cg, "    jmp .L%d", Lvec);
+			cg_emit(cg, ".L%d:", Lrem);                            /* Scalar tail. */
+			cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
+			cg_emit(cg, "    jge .L%d", Ldone);
+			cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", Rl, Ri);
+			cg_emit(cg, "    mulsd xmm0, xmm1");                   /* xmm1 low lane is k. */
+			cg_emit(cg, "    movsd [%s + %s*8 + 32], xmm0", Rc, Ri);
+			cg_emit(cg, "    add %s, 1", Ri);
+			cg_emit(cg, "    jmp .L%d", Lrem);
+			cg_emit(cg, ".L%d:", Ldone);
+			return 1;
+		}
+	}
+
 	/* Flatten the op tree into a two-register left-leaning chain. */
 	int slots[VEC_MAX_NODES];
 	int ops[VEC_MAX_NODES];
