@@ -429,6 +429,25 @@ static IRReg low_expr(Low *L, const Expr *e)
 		in->line = e->line;
 		return r;
 	}
+	case EX_FLOAT:
+	{
+		if (e->type.kind != TY_DOUBLE)
+		{
+			L->ok = 0;            /* TY_FLOAT (32-bit) literals are Stage 3. */
+			return IR_NO_REG;
+		}
+
+		/* Carry the raw 64-bit double bit pattern in imm; the emitter materializes
+		   it via a GP scratch + movq into xmm. */
+		IRReg r = ir_reg(L->f);
+		IRInstr *in = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
+		in->dst = r;
+		union { double d; long long ll; } u;
+		u.d = e->float_val;
+		in->imm = u.ll;
+		in->line = e->line;
+		return r;
+	}
 	case EX_IDENT:
 	{
 		/* An unrolled loop's induction variable is a compile-time constant for
