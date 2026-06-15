@@ -68,6 +68,7 @@ void    bzy_await_shutdown(void);                     /* Park the breeze until S
 void    bzy_sys_sleep(int64_t ms);                    /* System.sleep(ms): park ~ms milliseconds (offloaded). */
 void    bzy_sys_raw_mode(int64_t on);                 /* System.rawMode(on): raw terminal (char-at-a-time, no echo), auto-restored. */
 int64_t bzy_sys_poll_key(void);                       /* System.pollKey(): next pending input byte (0..255), or -1. */
+void    bzy_sys_mouse_mode(int64_t on);               /* System.mouseMode(on): terminal mouse reporting, auto-restored. */
 int64_t bzy_str_is_empty(void *s);                     /* 1 if length 0. */
 int64_t bzy_str_is_numeric(void *s);                   /* 1 if non-empty and all digits 0-9. */
 int64_t bzy_str_is_alphanumeric(void *s);              /* 1 if non-empty and all letters/digits. */

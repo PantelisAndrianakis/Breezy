@@ -314,7 +314,6 @@ void bzy_sys_sleep(int64_t ms)
 /* ---- System.rawMode(on): char-at-a-time terminal, auto-restored ---- */
 
 static int g_raw_active = 0;
-static int g_raw_atexit_done = 0;
 
 #ifdef _WIN32
 static HANDLE g_raw_in = NULL;
@@ -338,15 +337,61 @@ static void raw_restore(void)
 	g_raw_active = 0;
 }
 
+/* ---- Mouse-reporting state + shared terminal-restore wiring ---- */
+
+static int g_mouse_active = 0;
+#ifdef _WIN32
+static DWORD g_mouse_saved_mode = 0;
+#endif
+
+static void mouse_disable(void)
+{
+	if (!g_mouse_active)
+	{
+		return;
+	}
+
+#ifdef _WIN32
+	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), g_mouse_saved_mode);
+#else
+	const char *off = "\x1b[?1006l\x1b[?1003l";
+	ssize_t w = write(STDOUT_FILENO, off, strlen(off));
+	(void)w;
+#endif
+	g_mouse_active = 0;
+}
+
+/* Restore everything the terminal touched: raw attributes and mouse reporting. */
+static void term_restore_all(void)
+{
+	raw_restore();
+	mouse_disable();
+}
+
 /* Termination-signal handler: restore the terminal, then re-raise with the
    default disposition so the process dies as it normally would. Decoupled from
    awaitShutdown; a program that uses both should call rawMode(false) in its
    drain path (the last-installed handler otherwise wins). */
 static void raw_signal_restore(int sig)
 {
-	raw_restore();
+	term_restore_all();
 	signal(sig, SIG_DFL);
 	raise(sig);
+}
+
+static int g_restore_hook_done = 0;
+
+static void ensure_restore_hook(void)
+{
+	if (g_restore_hook_done)
+	{
+		return;
+	}
+
+	atexit(term_restore_all);
+	signal(SIGINT,  raw_signal_restore);
+	signal(SIGTERM, raw_signal_restore);
+	g_restore_hook_done = 1;
 }
 
 void bzy_sys_raw_mode(int64_t on)
@@ -390,18 +435,58 @@ void bzy_sys_raw_mode(int64_t on)
 		tcsetattr(STDIN_FILENO, TCSANOW, &raw);
 #endif
 		g_raw_active = 1;
-
-		if (!g_raw_atexit_done)
-		{
-			atexit(raw_restore);
-			signal(SIGINT,  raw_signal_restore);
-			signal(SIGTERM, raw_signal_restore);
-			g_raw_atexit_done = 1;
-		}
+		ensure_restore_hook();
 	}
 	else
 	{
 		raw_restore();
+	}
+}
+
+/* ---- System.mouseMode(on): enable/disable terminal mouse reporting ---- */
+
+void bzy_sys_mouse_mode(int64_t on)
+{
+	if (on)
+	{
+		if (g_mouse_active)
+		{
+			return;   /* Idempotent. */
+		}
+
+#ifdef _WIN32
+		HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+		if (h == INVALID_HANDLE_VALUE || h == NULL)
+		{
+			return;
+		}
+		if (!GetConsoleMode(h, &g_mouse_saved_mode))
+		{
+			return;   /* Not a console (piped): no-op. */
+		}
+
+		/* Mouse events on; extended flags required to set it; quick-edit off so
+		   the console does not swallow drags for text selection. */
+		DWORD mode = (g_mouse_saved_mode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS)
+					 & ~ENABLE_QUICK_EDIT_MODE;
+		SetConsoleMode(h, mode);
+#else
+		if (!isatty(STDIN_FILENO))
+		{
+			return;   /* Piped: no-op. */
+		}
+
+		/* xterm: 1003 = any-motion tracking, 1006 = SGR extended coordinates. */
+		const char *onseq = "\x1b[?1003h\x1b[?1006h";
+		ssize_t w = write(STDOUT_FILENO, onseq, strlen(onseq));
+		(void)w;
+#endif
+		g_mouse_active = 1;
+		ensure_restore_hook();
+	}
+	else
+	{
+		mouse_disable();
 	}
 }
 
