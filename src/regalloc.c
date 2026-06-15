@@ -769,16 +769,27 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	a->hot_spill_count = 0;
 	if (maxdepth >= 1)
 	{
+		int xmm_hot = 0;
 		for (int v = 0; v < a->vreg_count; v++)
 		{
 			if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0 && used_deep[v]
 				&& a->val_remat[v] < 0)
 			{
 				a->hot_spill_count++;
+				if (a->val_class[v] == RC_XMM)
+				{
+					xmm_hot++;
+				}
 			}
 		}
 
-		a->hot_spill = (a->hot_spill_count > 128);
+		/* GP spills tolerate a high count (the IR's 11-register pool plus folded
+		   addressing still beats the emitter - e.g. codec at 108). FP is different:
+		   the IR has only 4 allocatable xmm registers (xmm2-5) while the emitter's
+		   float promotion uses xmm2-11, so any xmm spill in the hottest loop means
+		   the emitter wins - fall back. (Until packed vectorization, which is what
+		   actually beats the emitter on FP.) */
+		a->hot_spill = (a->hot_spill_count > 128) || (xmm_hot > 0);
 	}
 
 	free(interf);
