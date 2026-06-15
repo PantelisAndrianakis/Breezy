@@ -188,6 +188,16 @@ static const char *iremit_iarg(Codegen *cg, int i)
 	return (cg->target == TARGET_LINUX) ? sysv[i] : win[i];
 }
 
+/* The xmm register an FP argument arrives in. Valid for pure-double signatures on
+   both ABIs: Win64 passes the i-th arg (any type) by position in xmm(i) for i<4;
+   System V uses a separate FP sequence, which coincides with the position when every
+   parameter is FP. Mixed int/FP signatures are gated out until Stage 3. */
+static const char *iremit_farg(int i)
+{
+	static const char *xr[8] = { "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7" };
+	return xr[i];
+}
+
 static void norm_rax(Codegen *cg, TypeKind to)
 {
 	switch (ty_bits(to))
@@ -1717,13 +1727,27 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	   narrow ints so the high bits are well-defined. */
 	for (int i = 0; i < src->param_count; i++)
 	{
-		cg_emit(cg, "    mov [rbp - %d], %s", 8 + i * 8, iremit_iarg(cg, i));
+		if (ty_is_float(src->params[i].type.kind))
+		{
+			cg_emit(cg, "    movsd [rbp - %d], %s", 8 + i * 8, iremit_farg(i));
+		}
+		else
+		{
+			cg_emit(cg, "    mov [rbp - %d], %s", 8 + i * 8, iremit_iarg(cg, i));
+		}
 	}
 
 	for (int i = 0; i < src->param_count; i++)
 	{
 		int slot = 8 + i * 8;
 		TypeKind pk = src->params[i].type.kind;
+		if (ty_is_float(pk))
+		{
+			cg_emit(cg, "    movsd xmm0, [rbp - %d]", slot);
+			store_local_from(&e, slot, "xmm0", 1);
+			continue;
+		}
+
 		cg_emit(cg, "    mov rax, [rbp - %d]", slot);
 		if (pk == TY_BOOL)
 		{
