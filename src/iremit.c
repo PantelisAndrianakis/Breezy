@@ -2121,6 +2121,64 @@ static const char *vec_scalar_op_fp(int tok)
 	}
 }
 
+/* One product term of a sum-of-products: out[i] += scalar(k_slot) * load(ld_slot). */
+typedef struct { int k_slot; int ld_slot; } VecTerm;
+
+/* A single scalar*load (or load*scalar) product. Returns 1 and fills *t, else 0. */
+static int vec_sop_term(const VecNode *n, VecTerm *t)
+{
+	if (n->kind != VN_BINOP || n->op != TOKEN_STAR)
+	{
+		return 0;
+	}
+
+	if (n->l->kind == VN_SCALAR && n->r->kind == VN_LOAD)
+	{
+		t->k_slot = n->l->slot;
+		t->ld_slot = n->r->slot;
+		return 1;
+	}
+
+	if (n->l->kind == VN_LOAD && n->r->kind == VN_SCALAR)
+	{
+		t->k_slot = n->r->slot;
+		t->ld_slot = n->l->slot;
+		return 1;
+	}
+
+	return 0;
+}
+
+/* Flatten  (s*l) + (s*l) + …  into terms[0..*nt). The root is a left-leaning ADD
+   chain whose every operand is a scalar*load product. Returns 1 on that exact shape
+   (the caller then emits a packed sum-of-products), else 0. */
+static int vec_sop(const VecNode *n, VecTerm *terms, int *nt, int max)
+{
+	if (n->kind == VN_BINOP && n->op == TOKEN_PLUS)
+	{
+		if (!vec_sop(n->l, terms, nt, max))
+		{
+			return 0;
+		}
+
+		if (*nt >= max || !vec_sop_term(n->r, &terms[*nt]))
+		{
+			return 0;
+		}
+
+		(*nt)++;
+		return 1;
+	}
+
+	if (*nt >= max || !vec_sop_term(n, &terms[*nt]))
+	{
+		return 0;
+	}
+
+	(*nt)++;
+	return 1;
+}
+
 /* Flatten a left-leaning op tree whose every right operand is a leaf load into an
    ordered chain: base = slots[0], then result = result <ops[k]> slots[k+1] for k
    in [0, *nops). Returns 1 on success. Such a chain evaluates in two xmm
