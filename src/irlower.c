@@ -7,7 +7,7 @@
    of scope (the naive emitter is integer-only); arrays are handled separately. */
 static int elig_type(TypeKind k)
 {
-	return ty_is_int(k) || k == TY_BOOL || k == TY_VOID;
+	return ty_is_int(k) || k == TY_BOOL || k == TY_VOID || k == TY_DOUBLE;
 }
 
 /* An element kind the array path supports: integer or bool (no float arrays in
@@ -152,6 +152,8 @@ int ir_eligible(const Func *f)
 		return 0;
 	}
 
+	int any_fp = 0;
+	int any_nonfp = 0;
 	for (int i = 0; i < f->param_count; i++)
 	{
 		TypeKind pk = f->params[i].type.kind;
@@ -160,6 +162,23 @@ int ir_eligible(const Func *f)
 		{
 			return 0;
 		}
+
+		if (ty_is_float(pk))
+		{
+			any_fp = 1;
+		}
+		else
+		{
+			any_nonfp = 1;
+		}
+	}
+
+	if (any_fp && any_nonfp)
+	{
+		/* Mixed int/FP params: the arg-register sequence differs on System V (a
+		   separate FP counter) vs Win64 (by position), which the pure-double homing
+		   does not yet model. Deferred to Stage 3. */
+		return 0;
 	}
 
 	return elig_block(f->body);

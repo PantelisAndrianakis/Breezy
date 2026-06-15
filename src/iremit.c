@@ -914,7 +914,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	{
 		if (in->is_frame)
 		{
-			const char *Rc = vreg_in(e, in->c, "rax");
+			const char *Rc = vreg_in(e, in->c, scratch_for(e, in->c));
 			store_local_from(e, in->disp, Rc, vreg_is_fp(e, in->c));
 			break;
 		}

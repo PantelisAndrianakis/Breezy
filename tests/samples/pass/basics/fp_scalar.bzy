@@ -1,0 +1,17 @@
+// Scalar double arithmetic through the IR backend: pure-double params, + - * /,
+// a double literal, and a double return. Output must match the emitter exactly
+// (the differential gate for Tier 1 / 1a Stage 2).
+double mix(double a, double b)
+{
+	double s = a + b;
+	double d = a - b;
+	double p = a * b;
+	double q = a / b;
+	return s + d * 2.0 + p - q;
+}
+
+void main()
+{
+	double r = mix(7.5, 2.5);
+	print((long)(r * 1000.0));   // 35750
+}
