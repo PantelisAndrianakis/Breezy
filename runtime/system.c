@@ -490,23 +490,204 @@ void bzy_sys_mouse_mode(int64_t on)
 	}
 }
 
+/* Shared non-blocking stdin buffer feeding pollKey + pollMouse on POSIX. One
+   drain pulls available bytes; pollMouse consumes SGR mouse escapes, pollKey
+   consumes everything else, so neither steals the other's bytes. */
+#ifndef _WIN32
+#define BZY_IN_CAP 256
+static unsigned char g_in_buf[BZY_IN_CAP];
+static int g_in_head = 0;
+static int g_in_tail = 0;
+
+static void in_drain(void)
+{
+	unsigned char tmp[BZY_IN_CAP];
+	ssize_t n = read(STDIN_FILENO, tmp, sizeof(tmp));
+	for (ssize_t i = 0; i < n; i++)
+	{
+		int next = (g_in_tail + 1) % BZY_IN_CAP;
+		if (next == g_in_head)
+		{
+			break;   /* Full: drop the remainder this tick. */
+		}
+		g_in_buf[g_in_tail] = tmp[i];
+		g_in_tail = next;
+	}
+}
+
+static int  in_count(void)    { return (g_in_tail - g_in_head + BZY_IN_CAP) % BZY_IN_CAP; }
+static int  in_peek(int i)     { return g_in_buf[(g_in_head + i) % BZY_IN_CAP]; }
+static void in_advance(int k)  { g_in_head = (g_in_head + k) % BZY_IN_CAP; }
+#endif
+
+/* Pack a mouse event. Flags: 0 left,1 right,2 middle,3 press,4 release,
+   5 motion,6 wheel-up,7 wheel-down. Always non-negative (low 48 bits). */
+static int64_t mouse_pack(int x, int y, int flags)
+{
+	if (x < 0) { x = 0; }
+	if (y < 0) { y = 0; }
+	return ((int64_t)(x & 0xFFFF) << 32) | ((int64_t)(y & 0xFFFF) << 16) | (int64_t)(flags & 0xFFFF);
+}
+
 /* ---- System.pollKey(): non-blocking next input byte, or -1 ---- */
 
 int64_t bzy_sys_poll_key(void)
 {
 #ifdef _WIN32
-	if (_kbhit())
+	HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+	INPUT_RECORD rec;
+	DWORD navail = 0, nread = 0;
+	for (;;)
 	{
-		return (int64_t)(unsigned char)_getch();   /* One byte; multi-byte keys arrive byte-by-byte. */
+		if (!GetNumberOfConsoleInputEvents(h, &navail) || navail == 0)
+		{
+			return -1;
+		}
+		if (!PeekConsoleInput(h, &rec, 1, &nread) || nread == 0)
+		{
+			return -1;
+		}
+		if (rec.EventType == KEY_EVENT)
+		{
+			if (rec.Event.KeyEvent.bKeyDown && rec.Event.KeyEvent.uChar.AsciiChar)
+			{
+				ReadConsoleInput(h, &rec, 1, &nread);   /* Consume the key. */
+				return (int64_t)(unsigned char)rec.Event.KeyEvent.uChar.AsciiChar;
+			}
+			ReadConsoleInput(h, &rec, 1, &nread);       /* Drop key-up / modifier. */
+			continue;
+		}
+		return -1;   /* Mouse (or other) at head: leave it for pollMouse. */
 	}
-	return -1;
 #else
-	unsigned char c;
-	ssize_t n = read(STDIN_FILENO, &c, 1);   /* VMIN=0/VTIME=0 from raw mode -> non-blocking. */
-	if (n == 1)
+	in_drain();
+	int n = in_count();
+	if (n == 0)
 	{
-		return (int64_t)c;
+		return -1;
 	}
-	return -1;   /* 0 = nothing pending; -1/EAGAIN = same to the caller. */
+
+	/* Defer a mouse sequence (ESC [ <) to pollMouse; wait on an incomplete ESC [. */
+	if (in_peek(0) == 0x1b && n >= 2 && in_peek(1) == '[')
+	{
+		if (n < 3)
+		{
+			return -1;            /* Incomplete: wait one tick for the 3rd byte. */
+		}
+		if (in_peek(2) == '<')
+		{
+			return -1;            /* Mouse sequence: pollMouse owns it. */
+		}
+	}
+
+	int c = in_peek(0);
+	in_advance(1);
+	return (int64_t)c;            /* Plain byte (incl. arrow-key ESC/[/letter, one per call). */
+#endif
+}
+
+/* ---- System.pollMouse(): non-blocking next mouse event, packed, or -1 ---- */
+
+int64_t bzy_sys_poll_mouse(void)
+{
+#ifdef _WIN32
+	HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+	INPUT_RECORD rec;
+	DWORD navail = 0, nread = 0;
+	if (!GetNumberOfConsoleInputEvents(h, &navail) || navail == 0)
+	{
+		return -1;
+	}
+	if (!PeekConsoleInput(h, &rec, 1, &nread) || nread == 0)
+	{
+		return -1;
+	}
+	if (rec.EventType != MOUSE_EVENT)
+	{
+		return -1;   /* Key at head: leave it for pollKey. */
+	}
+	ReadConsoleInput(h, &rec, 1, &nread);
+
+	MOUSE_EVENT_RECORD *me = &rec.Event.MouseEvent;
+	int x = me->dwMousePosition.X;
+	int y = me->dwMousePosition.Y;
+	DWORD bs = me->dwButtonState;
+	DWORD ef = me->dwEventFlags;
+	int flags = 0;
+	if (ef & MOUSE_WHEELED)
+	{
+		flags |= ((int)(short)HIWORD(bs) > 0) ? 64 : 128;
+	}
+	else
+	{
+		if (ef & MOUSE_MOVED)                     { flags |= 32; }
+		if (bs & FROM_LEFT_1ST_BUTTON_PRESSED)    { flags |= 1; }
+		if (bs & RIGHTMOST_BUTTON_PRESSED)        { flags |= 2; }
+		if (bs & FROM_LEFT_2ND_BUTTON_PRESSED)    { flags |= 4; }
+		flags |= bs ? 8 : 16;   /* Any button down = press; none = release. */
+	}
+	return mouse_pack(x, y, flags);
+#else
+	in_drain();
+	int n = in_count();
+	if (n < 3 || !(in_peek(0) == 0x1b && in_peek(1) == '[' && in_peek(2) == '<'))
+	{
+		return -1;   /* No mouse sequence at the head. */
+	}
+
+	/* Parse ESC [ < b ; x ; y (M|m). Collect up to three numbers. */
+	int vals[3] = {0, 0, 0};
+	int vi = 0, num = 0, fin = 0, complete = 0, i = 3;
+	for (; i < n; i++)
+	{
+		int c = in_peek(i);
+		if (c >= '0' && c <= '9')
+		{
+			num = num * 10 + (c - '0');
+		}
+		else if (c == ';')
+		{
+			if (vi < 3) { vals[vi++] = num; }
+			num = 0;
+		}
+		else if (c == 'M' || c == 'm')
+		{
+			if (vi < 3) { vals[vi++] = num; }
+			fin = c;
+			i++;            /* Consume the final byte too. */
+			complete = 1;
+			break;
+		}
+		else
+		{
+			in_advance(1);  /* Malformed: drop the ESC and resync next tick. */
+			return -1;
+		}
+	}
+	if (!complete)
+	{
+		return -1;          /* Incomplete sequence: wait for more bytes. */
+	}
+
+	int b = vals[0];
+	int x = vals[1] - 1;    /* xterm reports 1-based cells. */
+	int y = vals[2] - 1;
+	in_advance(i);          /* Consume the whole sequence. */
+
+	int flags = 0;
+	int btn = b & 3;
+	if (b & 64)
+	{
+		flags |= (btn == 0) ? 64 : 128;   /* Wheel up / down. */
+	}
+	else
+	{
+		if (b & 32)        { flags |= 32; }          /* Motion. */
+		if (btn == 0)      { flags |= 1; }           /* Left. */
+		else if (btn == 2) { flags |= 2; }           /* Right. */
+		else if (btn == 1) { flags |= 4; }           /* Middle. */
+		flags |= (fin == 'M') ? 8 : 16;              /* Press / release. */
+	}
+	return mouse_pack(x, y, flags);
 #endif
 }

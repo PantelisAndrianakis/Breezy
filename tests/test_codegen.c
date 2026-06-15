@@ -1338,6 +1338,10 @@ static void test_system_realtime_io_lowers(void)
 	/* System.mouseMode(on) lowers to a bzy_sys_mouse_mode call. */
 	emit("void main() { System.mouseMode(true); }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "bzy_sys_mouse_mode") != NULL, 1);
+
+	/* System.pollMouse() lowers to a bzy_sys_poll_mouse call. */
+	emit("void main() { long m; m = System.pollMouse(); print(m); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_sys_poll_mouse") != NULL, 1);
 }
 
 static void test_ffi_variadic_win64_fpdup(void)

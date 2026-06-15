@@ -590,6 +590,17 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"pollMouse")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"System.pollMouse() takes no arguments.",NULL);
+		}
+
+		e->type.kind = TY_LONG;   /* Packed event (x/y/flags), or -1 when none. */
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 
