@@ -1,0 +1,31 @@
+// o[i] = m0*A[i] + m1*B[i] + m2*C[i]: a sum of broadcast-scalar products (the matrix
+// transform's per-output shape). Loop in main so it region-extracts. Output must
+// match the emitter exactly (differential gate, Stage 1b.3b).
+void main()
+{
+	double[] A = new double[16];
+	double[] B = new double[16];
+	double[] C = new double[16];
+	double[] o = new double[16];
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		A[i] = (double)(i + 1);
+		B[i] = 2.0;
+		C[i] = 3.0;
+	}
+
+	double m0 = 1.5;
+	double m1 = 0.5;
+	double m2 = 2.0;
+	for (int i = 0; i < 16; i = i + 1)     // 1b.3b target: sum of products
+	{
+		o[i] = m0 * A[i] + m1 * B[i] + m2 * C[i];
+	}
+
+	double s = 0.0;
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		s = s + o[i];
+	}
+	print((long)s);   // 1.5*sum(1..16) + 0.5*2*16 + 2.0*3*16 = 204 + 16 + 96 = 316
+}
