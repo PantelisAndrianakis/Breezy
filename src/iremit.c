@@ -630,6 +630,34 @@ static int needs_reext(Emit *e, const IRInstr *in)
 	}
 }
 
+/* Scalar double: dst = a <op> b (opc = addsd/subsd/mulsd/divsd). Values are
+   xmm-class; spilled operands stage through xmm0/xmm1 (the reserved FP scratch,
+   never allocated). Guards the dst==rhs aliasing hazard: writing a into dst would
+   clobber a still-needed rhs, so preserve rhs in xmm1 first. */
+static void emit_bin_fp(Emit *e, const IRInstr *in, const char *opc)
+{
+	const char *Ra = vreg_in(e, in->a, "xmm0");
+	const char *Rb = vreg_in(e, in->b, "xmm1");
+	const char *Rd = dst_reg(e, in->dst);
+	if (!strcmp(Rd, Rb) && strcmp(Rd, Ra))
+	{
+		if (strcmp(Rb, "xmm1"))
+		{
+			cg_emit(e->cg, "    movaps xmm1, %s", Rb);
+		}
+
+		Rb = "xmm1";
+	}
+
+	if (strcmp(Rd, Ra))
+	{
+		cg_emit(e->cg, "    movaps %s, %s", Rd, Ra);
+	}
+
+	cg_emit(e->cg, "    %s %s, %s", opc, Rd, Rb);
+	finish_dst(e, in->dst);
+}
+
 /* dst = a <op> b, register-direct, honoring x86's two-operand form and aliasing. */
 static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutative)
 {
@@ -790,16 +818,27 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			break;   /* Folds into every use; no register needed. */
 		}
 
+		if (vreg_is_fp(e, in->dst))
+		{
+			/* Materialize the double bit pattern via a GP scratch, then move it
+			   into the xmm dst (SSE2 movq GP->xmm; no data section needed). */
+			const char *Rd = dst_reg(e, in->dst);
+			cg_emit(cg, "    mov rax, %lld", in->imm);
+			cg_emit(cg, "    movq %s, rax", Rd);
+			finish_dst(e, in->dst);
+			break;
+		}
+
 		cg_emit(cg, "    mov %s, %lld", dst_reg(e, in->dst), in->imm);
 		finish_dst(e, in->dst);
 		break;
 	case IR_MOVE:
 	{
-		const char *Ra = vreg_in(e, in->a, "rax");
+		const char *Ra = vreg_in(e, in->a, scratch_for(e, in->a));
 		const char *Rd = dst_reg(e, in->dst);
 		if (strcmp(Rd, Ra))
 		{
-			cg_emit(cg, "    mov %s, %s", Rd, Ra);
+			cg_emit(cg, "    %s %s, %s", mov_for(e, in->dst), Rd, Ra);
 		}
 
 		finish_dst(e, in->dst);
@@ -820,7 +859,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			const char *Rd = dst_reg(e, in->dst);
 			if (strcmp(Rd, Rl))
 			{
-				cg_emit(cg, "    mov %s, %s", Rd, Rl);
+				cg_emit(cg, "    %s %s, %s", mov_for(e, in->dst), Rd, Rl);
 			}
 
 			finish_dst(e, in->dst);
@@ -902,15 +941,25 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 
 		break;
 	}
-	case IR_ADD: emit_bin(e, in, "add", 1);  break;
-	case IR_SUB: emit_bin(e, in, "sub", 0);  break;
-	case IR_MUL: emit_bin(e, in, "imul", 1); break;
+	case IR_ADD:
+		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "addsd"); break; }
+		emit_bin(e, in, "add", 1);
+		break;
+	case IR_SUB:
+		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "subsd"); break; }
+		emit_bin(e, in, "sub", 0);
+		break;
+	case IR_MUL:
+		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "mulsd"); break; }
+		emit_bin(e, in, "imul", 1);
+		break;
 	case IR_AND: emit_bin(e, in, "and", 1);  break;
 	case IR_OR:  emit_bin(e, in, "or", 1);   break;
 	case IR_XOR: emit_bin(e, in, "xor", 1);  break;
 	case IR_DIV:
 	case IR_MOD:
 	{
+		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "divsd"); break; }   /* IR_MOD never float. */
 		int k;
 		if (in->b != IR_NO_REG && in->b < e->a->vreg_count
 			&& e->cis[in->b] && pow2_log(e->cval[in->b], &k))
@@ -1114,10 +1163,21 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	case IR_RET:
 		if (in->a != IR_NO_REG)
 		{
-			const char *Ra = vreg_in(e, in->a, "rax");
-			if (strcmp(Ra, "rax"))
+			if (vreg_is_fp(e, in->a))
 			{
-				cg_emit(cg, "    mov rax, %s", Ra);
+				const char *Ra = vreg_in(e, in->a, "xmm0");
+				if (strcmp(Ra, "xmm0"))
+				{
+					cg_emit(cg, "    movaps xmm0, %s", Ra);
+				}
+			}
+			else
+			{
+				const char *Ra = vreg_in(e, in->a, "rax");
+				if (strcmp(Ra, "rax"))
+				{
+					cg_emit(cg, "    mov rax, %s", Ra);
+				}
 			}
 		}
 
