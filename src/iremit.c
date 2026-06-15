@@ -1833,7 +1833,9 @@ typedef struct
 	int         slot_i;     /* Induction local frame offset. */
 	long long   bound;          /* Constant upper bound (a literal, or a resolved constant local). */
 	int         bound_from_ident; /* 1 if the bound was an EX_IDENT resolved to a constant local. */
-	int         out_slot;   /* Output array frame offset. */
+	int         out_slot;   /* Output array frame offset (store shape); -1 for a reduction. */
+	int         is_reduce;  /* 1 if a loop-carried scalar reduction (acc = acc + sop). */
+	int         reduce_slot; /* Reduction accumulator's frame offset (is_reduce only). */
 	TypeKind    elem;       /* Element kind of the vectorized arrays: TY_INT or TY_DOUBLE. */
 	VecNode     pool[VEC_MAX_NODES];
 	int         npool;
@@ -1942,6 +1944,12 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 	return NULL;
 }
 
+/* One product term of a sum-of-products: scalar(k_slot) * load(ld_slot). Defined
+   here (ahead of vec_analyze, which validates the reduction shape) and used by the
+   flatteners below. */
+typedef struct { int k_slot; int ld_slot; } VecTerm;
+static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *nt, int *nacc, int max);
+
 /* The strict vectorizability gate. Fills `v` and returns v->ok. Pure over the
    AST. The eight conditions:
      1. counted loop: single induction i, init 0, step +1, bound i < C;
@@ -1959,6 +1967,8 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	v->ok = 0;
 	v->npool = 0;
 	v->root = NULL;
+	v->is_reduce = 0;
+	v->reduce_slot = -1;
 	v->reason = "shape";
 
 	if (!s || s->kind != ST_FOR || !s->for_init || !s->cond || !s->for_post)
@@ -2038,19 +2048,61 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* (2,3,6,8) store target out[i]. */
+	/* (2,3,6,8) store target out[i], OR a loop-carried scalar reduction acc = acc + sop. */
 	int out_slot = vec_idx_slot(as->target, slot_i);
-	if (out_slot < 0)
+	int is_reduce = 0;
+	int reduce_slot = -1;
+	VecNode *root = NULL;
+
+	if (out_slot >= 0)
+	{
+		/* (5) the stored value's op tree. */
+		root = vec_build_tree(v, as->value, slot_i);
+		if (!root)
+		{
+			v->reason = "rhs";
+			return 0;
+		}
+	}
+	else if (as->target->kind == EX_IDENT && as->target->type.kind == TY_DOUBLE)
+	{
+		/* Reduction: acc = acc + (sum of broadcast-scalar * unit-stride-load products),
+		   where acc is a scalar double local not indexed by i. The accumulator is a
+		   recognized, legal loop-carried dependence (a commutative running sum); a
+		   2-lane packed accumulator with one horizontal sum at loop exit reassociates
+		   the additions, so the differential samples use exactly-summable values. */
+		int acc_slot = as->target->anno_int;
+		root = vec_build_tree(v, as->value, slot_i);
+		if (!root)
+		{
+			v->reason = "rhs";
+			return 0;
+		}
+
+		VecTerm rterms[16];
+		int rnt = 0;
+		int nacc = 0;
+		if (!vec_sop_reduce(root, acc_slot, rterms, &rnt, &nacc, 16) || nacc != 1 || rnt < 1)
+		{
+			v->reason = "reduce";
+			return 0;
+		}
+
+		for (int t = 0; t < rnt; t++)
+		{
+			if (rterms[t].k_slot == acc_slot)
+			{
+				v->reason = "reduce-dep";   /* acc used as a multiplier - nonlinear, not a sum. */
+				return 0;
+			}
+		}
+
+		is_reduce = 1;
+		reduce_slot = acc_slot;
+	}
+	else
 	{
 		v->reason = "store";
-		return 0;
-	}
-
-	/* (5) the stored value's op tree. */
-	VecNode *root = vec_build_tree(v, as->value, slot_i);
-	if (!root)
-	{
-		v->reason = "rhs";
 		return 0;
 	}
 
@@ -2066,7 +2118,10 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	v->bound = bound;
 	v->bound_from_ident = bound_from_ident;
 	v->out_slot = out_slot;
-	v->elem = as->target->type.kind;   /* TY_INT or TY_DOUBLE (vec_idx_slot guaranteed). */
+	v->is_reduce = is_reduce;
+	v->reduce_slot = reduce_slot;
+	/* A reduction's element kind is the loads' (double); a store's is the target's. */
+	v->elem = is_reduce ? TY_DOUBLE : as->target->type.kind;
 	v->root = root;
 	v->ok = 1;
 	v->reason = "ok";
@@ -2121,10 +2176,8 @@ static const char *vec_scalar_op_fp(int tok)
 	}
 }
 
-/* One product term of a sum-of-products: out[i] += scalar(k_slot) * load(ld_slot). */
-typedef struct { int k_slot; int ld_slot; } VecTerm;
-
-/* A single scalar*load (or load*scalar) product. Returns 1 and fills *t, else 0. */
+/* A single scalar*load (or load*scalar) product. Returns 1 and fills *t, else 0.
+   (VecTerm is declared ahead of vec_analyze, which validates the reduction shape.) */
 static int vec_sop_term(const VecNode *n, VecTerm *t)
 {
 	if (n->kind != VN_BINOP || n->op != TOKEN_STAR)
@@ -2168,6 +2221,35 @@ static int vec_sop(const VecNode *n, VecTerm *terms, int *nt, int max)
 
 		(*nt)++;
 		return 1;
+	}
+
+	if (*nt >= max || !vec_sop_term(n, &terms[*nt]))
+	{
+		return 0;
+	}
+
+	(*nt)++;
+	return 1;
+}
+
+/* Flatten a reduction value tree  acc + p0 + p1 + …  where the accumulator scalar
+   (a VN_SCALAR whose slot is acc_slot) appears as a leaf and every other leaf is a
+   scalar*load product. Recurses both sides of each PLUS so acc may sit anywhere in
+   the chain; counts acc occurrences in *nacc and collects the products in terms.
+   Returns 1 on that exact shape (the caller then requires *nacc == 1, *nt >= 1, and
+   no product scaled by acc itself), else 0. */
+static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *nt, int *nacc, int max)
+{
+	if (n->kind == VN_SCALAR && n->slot == acc_slot)
+	{
+		(*nacc)++;
+		return 1;
+	}
+
+	if (n->kind == VN_BINOP && n->op == TOKEN_PLUS)
+	{
+		return vec_sop_reduce(n->l, acc_slot, terms, nt, nacc, max)
+			&& vec_sop_reduce(n->r, acc_slot, terms, nt, nacc, max);
 	}
 
 	if (*nt >= max || !vec_sop_term(n, &terms[*nt]))
@@ -2230,6 +2312,90 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 	if (!ok)
 	{
 		return 0;
+	}
+
+	/* Stage 4: a loop-carried scalar reduction  acc = acc + m0*A[i] + m1*B[i] + …
+	   (the matrix transform's per-frame fold). The four outputs never reach memory:
+	   each product accumulates straight into a 2-lane packed accumulator, with one
+	   horizontal sum at loop exit. The invariant scalars are broadcast from their
+	   home slots (loaded-but-unmodified across the region, and the float-promotion
+	   flush keeps promoted ones fresh), so an arbitrary count of scalars needs no
+	   register residency - only the array bases and acc's own xmm register do. */
+	if (v.is_reduce)
+	{
+		VecTerm terms[16];
+		int nt = 0;
+		int nacc = 0;
+		if (!vec_sop_reduce(v.root, v.reduce_slot, terms, &nt, &nacc, 16) || nacc != 1 || nt < 1)
+		{
+			return 0;
+		}
+
+		int r_acc = ra_local_reg(e->a, v.reduce_slot);
+		int ri2 = ra_local_reg(e->a, v.slot_i);
+		if (r_acc < 0 || !ra_reg_is_xmm(r_acc) || ri2 < 0)
+		{
+			return 0;   /* acc must hold an xmm register; the index a GP register. */
+		}
+
+		const char *lds[16];
+		for (int t = 0; t < nt; t++)
+		{
+			int rl = ra_local_reg(e->a, terms[t].ld_slot);
+			if (rl < 0)
+			{
+				return 0;   /* an array base spilled: stay scalar. */
+			}
+
+			lds[t] = ra_reg_name(rl);
+		}
+
+		Codegen *cg = e->cg;
+		const char *Racc = ra_reg_name(r_acc);
+		const char *Ri = ra_reg_name(ri2);
+		long long vbound = v.bound & ~1LL;
+		int Lvec = cg_label(cg);
+		int Lhs = cg_label(cg);
+		int Lrem = cg_label(cg);
+		int Ldone = cg_label(cg);
+
+		cg_emit(cg, "    ; ir-region vectorized: double2 reduction sum-of-%d-products", nt);
+		cg_emit(cg, "    xorpd %s, %s", Racc, Racc);   /* packed accumulator = {0.0, 0.0}. */
+		cg_emit(cg, "    xor %s, %s", Ri, Ri);
+		cg_emit(cg, ".L%d:", Lvec);
+		cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
+		cg_emit(cg, "    jge .L%d", Lhs);
+		for (int t = 0; t < nt; t++)
+		{
+			cg_emit(cg, "    movupd xmm0, [%s + %s*8 + 32]", lds[t], Ri);
+			cg_emit(cg, "    movsd xmm1, [rbp - %d]", terms[t].k_slot);   /* broadcast scalar from home. */
+			cg_emit(cg, "    unpcklpd xmm1, xmm1");
+			cg_emit(cg, "    mulpd xmm0, xmm1");
+			cg_emit(cg, "    addpd %s, xmm0", Racc);
+		}
+
+		cg_emit(cg, "    add %s, 2", Ri);
+		cg_emit(cg, "    jmp .L%d", Lvec);
+		cg_emit(cg, ".L%d:", Lhs);                     /* Horizontal sum: low lane = low + high. */
+		cg_emit(cg, "    movapd xmm0, %s", Racc);
+		cg_emit(cg, "    unpckhpd xmm0, xmm0");
+		cg_emit(cg, "    addsd %s, xmm0", Racc);
+		cg_emit(cg, ".L%d:", Lrem);                    /* Scalar remainder, folding into the low lane. */
+		cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
+		cg_emit(cg, "    jge .L%d", Ldone);
+		for (int t = 0; t < nt; t++)
+		{
+			cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", lds[t], Ri);
+			cg_emit(cg, "    movsd xmm1, [rbp - %d]", terms[t].k_slot);
+			cg_emit(cg, "    mulsd xmm0, xmm1");
+			cg_emit(cg, "    addsd %s, xmm0", Racc);
+		}
+
+		cg_emit(cg, "    add %s, 1", Ri);
+		cg_emit(cg, "    jmp .L%d", Lrem);
+		cg_emit(cg, ".L%d:", Ldone);                   /* Fold in the entry accumulator value. */
+		cg_emit(cg, "    addsd %s, [rbp - %d]", Racc, v.reduce_slot);
+		return 1;
 	}
 
 	/* 1b.3a: a single scaled load  out[i] = k * a[i]  (k a loop-invariant double

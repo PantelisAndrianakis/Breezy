@@ -1,0 +1,25 @@
+// acc = acc + k0*A[i] + k1*B[i]: a loop-carried double reduction (the matrix
+// transform's per-frame fold). Loop in main so it region-extracts. The 2-lane
+// packed accumulator reassociates the additions, so the values are chosen to sum
+// EXACTLY in any order (small integer-valued doubles) - then the vectorized result
+// equals the scalar emitter's bit-for-bit and the differential gate holds (Stage 4).
+void main()
+{
+	double[] A = new double[16];
+	double[] B = new double[16];
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		A[i] = (double)(i + 1);   // 1 .. 16
+		B[i] = 1.0;
+	}
+
+	double k0 = 2.0;
+	double k1 = 4.0;
+	double acc = 0.0;
+	for (int i = 0; i < 16; i = i + 1)     // Stage 4 target: reduction sum-of-products.
+	{
+		acc = acc + k0 * A[i] + k1 * B[i];
+	}
+
+	print((long)acc);   // 2*(1+..+16) + 4*16 = 272 + 64 = 336
+}
