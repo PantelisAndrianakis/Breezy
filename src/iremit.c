@@ -2199,16 +2199,39 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 
 	if (v.elem == TY_DOUBLE)
 	{
-		if (!v.bound_is_const)   /* Removed in Task 2 once the runtime-bound emit lands. */
+		/* Resolve the packed-loop bound (rounded to 2 lanes) and the raw remainder
+		   bound as operand strings: immediates for a constant bound, or a runtime
+		   `n & ~1` in rax (free scratch) plus the raw bound register for `i < n`. */
+		char vbuf[32];
+		char rbuf[32];
+		const char *vbound;
+		const char *rbound;
+		if (v.bound_is_const)
 		{
-			return 0;
+			snprintf(vbuf, sizeof vbuf, "%lld", v.bound & ~1LL);
+			snprintf(rbuf, sizeof rbuf, "%lld", v.bound);
+			vbound = vbuf;
+			rbound = rbuf;
+		}
+		else
+		{
+			int rn = ra_local_reg(e->a, v.bound_slot);
+			if (rn < 0)
+			{
+				return 0;   /* Bound not register-resident: stay scalar. */
+			}
+
+			snprintf(rbuf, sizeof rbuf, "%s", ra_reg_name(rn));
+			cg_emit(cg, "    mov rax, %s", ra_reg_name(rn));   /* rax = n. */
+			cg_emit(cg, "    and rax, -2");                     /* rax = n & ~1 (vector count). */
+			vbound = "rax";
+			rbound = rbuf;
 		}
 
-		long long vbound = v.bound & ~1LL;   /* 2 lanes. */
 		cg_emit(cg, "    ; ir-region vectorized: double2 element-wise op chain");
 		cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
 		cg_emit(cg, ".L%d:", Lvec);
-		cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
+		cg_emit(cg, "    cmp %s, %s", Ri, vbound);
 		cg_emit(cg, "    jge .L%d", Lrem);
 		cg_emit(cg, "    movupd xmm0, [%s + %s*8 + 32]", base[0], Ri);
 		for (int k = 0; k < nops; k++)
@@ -2220,8 +2243,8 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region)
 		cg_emit(cg, "    movupd [%s + %s*8 + 32], xmm0", Rc, Ri);
 		cg_emit(cg, "    add %s, 2", Ri);
 		cg_emit(cg, "    jmp .L%d", Lvec);
-		cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail [vbound, bound). */
-		cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
+		cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail. */
+		cg_emit(cg, "    cmp %s, %s", Ri, rbound);
 		cg_emit(cg, "    jge .L%d", Ldone);
 		cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", base[0], Ri);
 		for (int k = 0; k < nops; k++)
