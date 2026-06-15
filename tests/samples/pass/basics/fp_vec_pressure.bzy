@@ -1,0 +1,44 @@
+// The matrix transform's full 16-product fold, single-pass, with the bench's own
+// non-trivial coefficients. Those constants materialize as persistent xmm values
+// (unlike 1.0/2.0, which are cheaply rematerialized), so 16 of them plus acc against
+// 4 allocatable xmm registers trips the xmm hot-spill heuristic. Without the
+// vectorize-aware ordering exemption this region falls back to the emitter; with it
+// the region stays on the IR path and vectorizes, reading the spilled coefficients
+// from their home slots (region debug: "VECTORIZE OVERRIDE").
+//
+// The packed accumulator reassociates the additions, so the full-precision result
+// differs from a strict scalar sum in the low ~1e-9 - but (long)acc truncates at a
+// 0.06/0.94 margin, far above that error, so the vectorized and scalar results print
+// identically (1712) and the differential gate holds. Bit-exactness of the reduction
+// itself is covered separately by fp_vec_reduce (exactly-summable values).
+void main()
+{
+	int n;
+	n = 64;
+	double[] X = new double[n];
+	double[] Y = new double[n];
+	double[] Z = new double[n];
+	double[] W = new double[n];
+	for (int i = 0; i < n; i = i + 1)
+	{
+		X[i] = (double)(i % 7) + 0.5;
+		Y[i] = (double)(i % 5) + 0.25;
+		Z[i] = (double)(i % 3) + 0.125;
+		W[i] = 1.0;
+	}
+
+	double m00 = 1.001; double m01 = 0.002; double m02 = 0.003; double m03 = 5.5;
+	double m10 = 0.004; double m11 = 1.005; double m12 = 0.006; double m13 = 6.25;
+	double m20 = 0.007; double m21 = 0.008; double m22 = 1.009; double m23 = 7.125;
+	double m30 = 0.0;   double m31 = 0.0;   double m32 = 0.0;   double m33 = 1.0;
+	double acc = 0.0;
+	for (int v = 0; v < n; v = v + 1)
+	{
+		acc = acc + m00 * X[v] + m01 * Y[v] + m02 * Z[v] + m03 * W[v]
+		          + m10 * X[v] + m11 * Y[v] + m12 * Z[v] + m13 * W[v]
+		          + m20 * X[v] + m21 * Y[v] + m22 * Z[v] + m23 * W[v]
+		          + m30 * X[v] + m31 * Y[v] + m32 * Z[v] + m33 * W[v];
+	}
+
+	print((long)acc);   // 1712 (stable across packed and scalar summation order).
+}

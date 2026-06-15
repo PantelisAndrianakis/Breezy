@@ -19,4 +19,14 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label);
    labels, no section directives, no ret. The caller owns `f` and `a`. */
 void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const Stmt *region);
 
+/* Whether cg_scan_regions should keep this region on the IR path despite the xmm
+   hot-spill heuristic. True iff the region is a vectorizable reduction whose emit
+   will succeed: the vectorizer reads invariant scalars from their home slots, so
+   high xmm pressure (the matrix's 16 coefficients spilling) does not block it -
+   only acc's xmm register and the array bases / loop index need to be resident,
+   which this checks exactly as ir_emit_region's reduction path does. Other
+   vectorizable shapes are low-pressure and never hot-spill, so they need no
+   exemption and this returns 0 for them. */
+int ir_region_vectorizable(const Func *f, const Stmt *s, IRAlloc *a);
+
 #endif

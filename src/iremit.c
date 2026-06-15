@@ -1825,7 +1825,10 @@ struct VecNode
 	VecNode     *l, *r;   /* VN_BINOP operands. */
 };
 
-#define VEC_MAX_NODES 32
+/* Node pool for one analyzed loop. A reduction tree is the largest shape: the
+   matrix fold is acc + 16 products = 16*(load+scalar+mul) + 15 adds + 1 acc = 64
+   nodes, so the pool is sized well above that. */
+#define VEC_MAX_NODES 128
 
 typedef struct
 {
@@ -2654,6 +2657,43 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 	cg_emit(cg, "    add %s, 1", Ri);
 	cg_emit(cg, "    jmp .L%d", Lrem);
 	cg_emit(cg, ".L%d:", Ldone);
+	return 1;
+}
+
+/* See iremit.h. Restricted to reductions because they are the only vectorizable
+   shape with enough invariant-scalar pressure to trip the hot-spill heuristic;
+   the residency checks below mirror the reduction branch of ir_try_vectorize_region
+   exactly, so a 1 here guarantees that branch will fire (no scalar-IR fallback). */
+int ir_region_vectorizable(const Func *f, const Stmt *s, IRAlloc *a)
+{
+	VecLoop v;
+	if (!vec_analyze(s, &v, f) || !v.is_reduce)
+	{
+		return 0;
+	}
+
+	VecTerm terms[16];
+	int nt = 0;
+	int nacc = 0;
+	if (!vec_sop_reduce(v.root, v.reduce_slot, terms, &nt, &nacc, 16) || nacc != 1 || nt < 1)
+	{
+		return 0;
+	}
+
+	int r_acc = ra_local_reg(a, v.reduce_slot);
+	if (r_acc < 0 || !ra_reg_is_xmm(r_acc) || ra_local_reg(a, v.slot_i) < 0)
+	{
+		return 0;
+	}
+
+	for (int t = 0; t < nt; t++)
+	{
+		if (ra_local_reg(a, terms[t].ld_slot) < 0)
+		{
+			return 0;
+		}
+	}
+
 	return 1;
 }
 

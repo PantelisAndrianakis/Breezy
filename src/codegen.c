@@ -8841,7 +8841,8 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 				if (irf)
 				{
 					IRAlloc *a = ra_run(irf);
-					if (!a->hot_spill || cg_region_hotspill_override())
+					int vec_override = a->hot_spill && ir_region_vectorizable(f, s, a);
+					if (!a->hot_spill || cg_region_hotspill_override() || vec_override)
 					{
 						if (cg->region_count == cg->region_cap)
 						{
@@ -8859,7 +8860,8 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 						{
 							fprintf(stderr, "ir-region: %s line %d: REGION (%d locals, %d spill bytes%s)\n",
 									f->name, s->line, a->nlocal, a->spill_bytes,
-									a->hot_spill ? ", HOT-SPILL OVERRIDE" : "");
+									vec_override ? ", VECTORIZE OVERRIDE"
+									: a->hot_spill ? ", HOT-SPILL OVERRIDE" : "");
 						}
 
 						continue;
