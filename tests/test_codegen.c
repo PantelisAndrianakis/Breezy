@@ -1321,6 +1321,13 @@ static void test_ffi_await_shutdown_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_await_shutdown") != NULL, 1);
 }
 
+static void test_system_realtime_io_lowers(void)
+{
+	/* System.sleep(ms) lowers to a bzy_sys_sleep call. */
+	emit("void main() { System.sleep(16); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_sys_sleep") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1471,6 +1478,7 @@ int main(void)
 	RUN(test_simd_vectorize_int_add);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
+	RUN(test_system_realtime_io_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

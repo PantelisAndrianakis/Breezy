@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
+#include <errno.h>
+#include <termios.h>
 #endif
 
 /* System.shell launches an OS command interpreter: "cmd /c <command>" on Windows
@@ -265,5 +268,44 @@ void bzy_await_shutdown(void)
 	else
 	{
 		sig_wait_offload(NULL);   /* No breeze to park: block this thread directly. */
+	}
+}
+
+/* ---- System.sleep(ms): park the breeze for ~ms, offloaded ---- */
+
+static void sleep_impl(int64_t ms)
+{
+#ifdef _WIN32
+	Sleep((DWORD)ms);
+#else
+	struct timespec ts;
+	ts.tv_sec  = (time_t)(ms / 1000);
+	ts.tv_nsec = (long)((ms % 1000) * 1000000L);
+	while (nanosleep(&ts, &ts) != 0 && errno == EINTR)
+	{
+		/* Interrupted: nanosleep wrote the remaining time back into ts; resume. */
+	}
+#endif
+}
+
+static void sleep_offload(void *p)
+{
+	sleep_impl(*(int64_t*)p);   /* Runs on an offload worker so the breeze's core is free. */
+}
+
+void bzy_sys_sleep(int64_t ms)
+{
+	if (ms <= 0)
+	{
+		return;   /* Non-positive duration: return at once. */
+	}
+
+	if (bzy_sched_current())
+	{
+		bzy_offload_run(sleep_offload, &ms);   /* Park the breeze; worker sleeps. */
+	}
+	else
+	{
+		sleep_impl(ms);   /* No breeze to park: sleep this thread directly. */
 	}
 }

@@ -546,6 +546,17 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"sleep")==0)
+	{
+		if (e->arg_count != 1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"System.sleep(ms) takes one integer argument.",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 
