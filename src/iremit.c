@@ -1031,6 +1031,34 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	case IR_SHL:
 	case IR_SHR:
 	{
+		/* Constant shift count (irlower folded it: b == IR_NO_REG, imm holds the
+		   count): a single immediate-form shift, no cl load. */
+		if (in->b == IR_NO_REG)
+		{
+			const char *Ra = vreg_in(e, in->a, "rax");
+			const char *Rd = dst_reg(e, in->dst);
+			if (strcmp(Rd, Ra))
+			{
+				cg_emit(cg, "    mov %s, %s", Rd, Ra);
+			}
+
+			if (in->op == IR_SHL)
+			{
+				cg_emit(cg, "    shl %s, %lld", Rd, in->imm);
+				if (needs_reext(e, in))
+				{
+					norm_reg(cg, Rd, Rd, in->type);
+				}
+			}
+			else
+			{
+				cg_emit(cg, ty_is_unsigned(in->type) ? "    shr %s, %lld" : "    sar %s, %lld", Rd, in->imm);
+			}
+
+			finish_dst(e, in->dst);
+			break;
+		}
+
 		/* Count into cl FIRST: the count's register may be the same as dst (the
 		   count dies at this instruction, so the allocator may reuse its register
 		   for the result) and writing Rd before reading Rb would clobber it. Rd

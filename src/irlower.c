@@ -648,6 +648,24 @@ static IRReg low_expr(Low *L, const Expr *e)
 			return IR_NO_REG;
 		}
 
+		/* Constant shift count: fold the immediate onto the instruction (b = NO_REG,
+		   imm = count) so emission is a single `shl/shr/sar Rd, imm` -- no count vreg,
+		   no cl load, and one fewer value for the allocator. The hardware masks the
+		   count to 6 bits, so [0, 63] matches the variable form exactly. */
+		if ((op == IR_SHL || op == IR_SHR) && e->rhs->kind == EX_INT
+			&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63)
+		{
+			IRReg la = low_expr(L, e->lhs);
+			IRReg r = ir_reg(L->f);
+			IRInstr *in = ir_emit(L->f, L->cur, op, e->type.kind);
+			in->dst = r;
+			in->a = la;
+			in->b = IR_NO_REG;
+			in->imm = e->rhs->int_val;
+			in->line = e->line;
+			return r;
+		}
+
 		IRReg la = low_expr(L, e->lhs);
 		IRReg rb = low_expr(L, e->rhs);
 		IRReg r = ir_reg(L->f);

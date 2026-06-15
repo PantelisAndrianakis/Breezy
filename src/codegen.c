@@ -2514,6 +2514,33 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		return;
 	}
 
+	/* Immediate-form shift by a constant count (lhs in rax): a single `shl/shr/sar
+	   rax, imm` instead of `mov rbx, CONST` then `mov rcx, rbx` then the cl-shift.
+	   The hardware masks the count to 6 bits exactly as the cl form would, so a count
+	   in [0, 63] is identical to the variable path; out-of-range counts fall through.
+	   The shift kind follows the LEFT operand (sar for signed >>, shr for unsigned),
+	   matching the cl-form case below. */
+	if (!ty_is_float(e->type.kind) && e->rhs->kind==EX_INT
+		&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63
+		&& (e->op==TOKEN_SHL || e->op==TOKEN_SHR))
+	{
+		if (e->op==TOKEN_SHL)
+		{
+			cg_emit(cg,"    shl rax, %lld", e->rhs->int_val);
+		}
+		else if (ty_is_unsigned(e->lhs->type.kind))
+		{
+			cg_emit(cg,"    shr rax, %lld", e->rhs->int_val);
+		}
+		else
+		{
+			cg_emit(cg,"    sar rax, %lld", e->rhs->int_val);
+		}
+
+		cg_extend_int_result(cg, e, want_low32);
+		return;
+	}
+
 	/* lhs is in rax; set up the rhs operand (immediate or rbx) and signedness. */
 	const char *rhsop;
 	char immbuf[24];
