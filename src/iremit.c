@@ -272,6 +272,24 @@ static void emit_two_way(Emit *e, const char *jcc, int cmp_op_for_inv, int uns,
 	}
 }
 
+/* True if a value (vreg id v) lives in the xmm register class. */
+static int vreg_is_fp(Emit *e, IRReg v)
+{
+	return ra_vreg_class(e->a, v) == RC_XMM;
+}
+
+/* Scratch register for a spilled value of v's class: xmm0 for FP, rax for GP. */
+static const char *scratch_for(Emit *e, IRReg v)
+{
+	return vreg_is_fp(e, v) ? "xmm0" : "rax";
+}
+
+/* The move mnemonic for a value of v's class: movsd for FP, mov for GP. */
+static const char *mov_for(Emit *e, IRReg v)
+{
+	return vreg_is_fp(e, v) ? "movsd" : "mov";
+}
+
 /* The operand string for vreg v: its physical register name, or, if spilled, the
    value loaded into `scratch` (returned). Register-resident values are used in
    place, so no value bounces through rax unless it was spilled. */
@@ -295,11 +313,11 @@ static const char *vreg_in(Emit *e, IRReg v, const char *scratch)
 			return ra_reg_name(lr);
 		}
 
-		cg_emit(e->cg, "    mov %s, [rbp - %lld]", scratch, rd);
+		cg_emit(e->cg, "    %s %s, [rbp - %lld]", mov_for(e, v), scratch, rd);
 		return scratch;
 	}
 
-	cg_emit(e->cg, "    mov %s, [rbp - %d]", scratch, e->spill_base + ra_vreg_slot(e->a, v) * 8);
+	cg_emit(e->cg, "    %s %s, [rbp - %d]", mov_for(e, v), scratch, e->spill_base + ra_vreg_slot(e->a, v) * 8);
 	return scratch;
 }
 
@@ -308,15 +326,17 @@ static const char *vreg_in(Emit *e, IRReg v, const char *scratch)
 static const char *dst_reg(Emit *e, IRReg v)
 {
 	int r = ra_vreg_reg(e->a, v);
-	return (r >= 0) ? ra_reg_name(r) : "rax";
+	return (r >= 0) ? ra_reg_name(r) : scratch_for(e, v);
 }
 
-/* After computing into dst_reg(v): store rax to the spill slot if v is spilled. */
+/* After computing into dst_reg(v): store the scratch to the spill slot if v is
+   spilled (xmm0/movsd for an FP value, rax/mov for a GP value). */
 static void finish_dst(Emit *e, IRReg v)
 {
 	if (ra_vreg_reg(e->a, v) < 0)
 	{
-		cg_emit(e->cg, "    mov [rbp - %d], rax", e->spill_base + ra_vreg_slot(e->a, v) * 8);
+		cg_emit(e->cg, "    %s [rbp - %d], %s", mov_for(e, v),
+			e->spill_base + ra_vreg_slot(e->a, v) * 8, scratch_for(e, v));
 	}
 }
 
@@ -333,20 +353,22 @@ static const char *local_in(Emit *e, long long disp, char *buf)
 	return buf;
 }
 
-/* Move the value in `src` into frame local `disp` (its register, or home slot). */
-static void store_local_from(Emit *e, long long disp, const char *src)
+/* Move the value in `src` into frame local `disp` (its register, or home slot).
+   `fp` selects movsd (double) over mov (integer/pointer). */
+static void store_local_from(Emit *e, long long disp, const char *src, int fp)
 {
+	const char *mv = fp ? "movsd" : "mov";
 	int r = ra_local_reg(e->a, disp);
 	if (r >= 0)
 	{
 		if (strcmp(ra_reg_name(r), src))   /* Coalesced: source already in the local's register. */
 		{
-			cg_emit(e->cg, "    mov %s, %s", ra_reg_name(r), src);
+			cg_emit(e->cg, "    %s %s, %s", mv, ra_reg_name(r), src);
 		}
 	}
 	else
 	{
-		cg_emit(e->cg, "    mov [rbp - %lld], %s", disp, src);
+		cg_emit(e->cg, "    %s [rbp - %lld], %s", mv, disp, src);
 	}
 }
 
@@ -844,7 +866,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		if (in->is_frame)
 		{
 			const char *Rc = vreg_in(e, in->c, "rax");
-			store_local_from(e, in->disp, Rc);
+			store_local_from(e, in->disp, Rc, vreg_is_fp(e, in->c));
 			break;
 		}
 
@@ -1652,7 +1674,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 			norm_rax(cg, pk);
 		}
 
-		store_local_from(&e, slot, "rax");
+		store_local_from(&e, slot, "rax", ty_is_float(pk));
 	}
 
 	emit_blocks(&e, f);
