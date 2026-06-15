@@ -1,0 +1,26 @@
+// out[i] = k * a[i]: a single loop-invariant scalar broadcast times an array load.
+// The scale loop is in main (so it region-extracts and reaches the vectorizer); k is
+// a float-promoted scalar, so this also covers the region float-promotion flush.
+// Output must match the emitter exactly (differential gate, Stage 1b.3a).
+void main()
+{
+	double[] a = new double[16];
+	double[] c = new double[16];
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		a[i] = (double)(i + 1);
+	}
+
+	double k = 2.5;
+	for (int i = 0; i < 16; i = i + 1)     // 1b.3a target: c[i] = k * a[i]
+	{
+		c[i] = k * a[i];
+	}
+
+	double s = 0.0;
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		s = s + c[i];
+	}
+	print((long)s);   // k * sum(1..16) = 2.5 * 136 = 340
+}

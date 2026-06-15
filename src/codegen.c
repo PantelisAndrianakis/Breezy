@@ -8927,6 +8927,20 @@ static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
 		}
 	}
 
+	/* Float-promoted locals (xmm2-5) need the same treatment: their home slots are
+	   stale while promoted, and the region reads/writes locals only through home
+	   slots. Without this flush a region reads a stale 0 for a promoted double. */
+	for (int i = 0; i < f->fpromo_count; i++)
+	{
+		for (int k = 0; k < a->nlocal; k++)
+		{
+			if (a->local_disp[k] == f->fpromo_off[i])
+			{
+				cg_emit(cg, "    movsd [rbp - %d], %s", f->fpromo_off[i], CG_FPROMO_REGS[f->fpromo_reg[i]]);
+			}
+		}
+	}
+
 	ir_emit_region(cg, cg->region_irf[r], a, cg->region_base, cg->region_stmt[r]);
 
 	for (int i = 0; i < f->promo_count; i++)
@@ -8936,6 +8950,17 @@ static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
 			if (a->local_disp[k] == f->promo_off[i])
 			{
 				cg_emit(cg, "    mov %s, [rbp - %d]", CG_PROMO_REGS[f->promo_reg[i]], f->promo_off[i]);
+			}
+		}
+	}
+
+	for (int i = 0; i < f->fpromo_count; i++)
+	{
+		for (int k = 0; k < a->nlocal; k++)
+		{
+			if (a->local_disp[k] == f->fpromo_off[i])
+			{
+				cg_emit(cg, "    movsd %s, [rbp - %d]", CG_FPROMO_REGS[f->fpromo_reg[i]], f->fpromo_off[i]);
 			}
 		}
 	}

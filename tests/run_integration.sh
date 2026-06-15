@@ -186,6 +186,7 @@ check fp_cast     tests/samples/pass/basics/fp_cast.bzy       $'4150\n15'
 check fp_array    tests/samples/pass/basics/fp_array.bzy      $'20\n8'
 check fp_vec      tests/samples/pass/basics/fp_vec.bzy        "408"
 check fp_vec_var  tests/samples/pass/basics/fp_vec_var.bzy    "360"
+check fp_vec_scale tests/samples/pass/basics/fp_vec_scale.bzy "340"
 check bitwise     tests/samples/pass/operators/bitwise.bzy        $'255\n15\n4\n-1\n10\n16'
 check_fail bitwise_float tests/samples/fail/operators/bitwise_float.bzy
 check equals_words tests/samples/pass/operators/equals_words.bzy $'true\nfalse\nfalse\ntrue'
