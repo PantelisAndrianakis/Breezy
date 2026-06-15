@@ -1814,7 +1814,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
    paddd/psubd/pmulld) plus a scalar remainder. Every other loop is left to the
    scalar block emitter unchanged, so non-qualifying code is byte-identical. */
 
-typedef enum { VN_LOAD, VN_BINOP } VecNodeKind;
+typedef enum { VN_LOAD, VN_BINOP, VN_SCALAR } VecNodeKind;
 
 typedef struct VecNode VecNode;
 struct VecNode
@@ -1897,6 +1897,21 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 		if (n)
 		{
 			n->slot = slot;
+		}
+
+		return n;
+	}
+
+	/* A loop-invariant scalar double leaf: a plain double local/param read (not the
+	   induction var, which is TY_INT, and not an array, which is TY_ARRAY). The
+	   single-store loop shape guarantees the body writes nothing but out[i], so this
+	   scalar is invariant across the loop and can be broadcast into both lanes. */
+	if (e->kind == EX_IDENT && e->type.kind == TY_DOUBLE)
+	{
+		VecNode *n = vec_node(v, VN_SCALAR);
+		if (n)
+		{
+			n->slot = e->anno_int;
 		}
 
 		return n;
