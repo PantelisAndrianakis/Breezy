@@ -727,6 +727,18 @@ static void resolve_graphics(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"openGL")==0)
+	{
+		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
+			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Graphics.openGL(width, height, title) takes two integers and a string.",NULL);
+		}
+
+		e->type.kind=TY_GLSURFACE;
+		return;
+	}
+
 	die(e->line,"Unknown Graphics method: ",m);
 }
 
@@ -2096,6 +2108,53 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown Surface method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_GLSURFACE)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"pollEvent")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"GlSurface.pollEvent() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"swapBuffers")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"GlSurface.swapBuffers() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"isOpen")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"GlSurface.isOpen() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"GlSurface.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown GlSurface method: ",e->name);
 			}
 
 			break;

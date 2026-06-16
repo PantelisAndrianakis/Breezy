@@ -159,6 +159,50 @@ extern blocking int mysql_real_query(long conn, string stmt, long len);
 
 ---
 
+## dynamic - resolve the address at run time
+
+A plain `extern` is resolved by the **linker** at build time. Some C functions cannot be
+linked that way - they only exist as a pointer you fetch at run time. The headline case is
+modern **OpenGL** and **Vulkan**: past GL 1.1, the entry points come from
+`SDL_GL_GetProcAddress` / `vkGetInstanceProcAddr`, not from any link-time symbol. `extern
+dynamic` is for exactly these.
+
+`extern dynamic` declares a C function whose **signature is checked and marshalled exactly
+like a normal `extern`**, but whose address is looked up at run time through the active
+**resolver**, cached on first call, and called indirectly thereafter:
+
+```breezy
+extern dynamic int abs(int n);
+
+void main()
+{
+	if (Ffi.bind("msvcrt.dll"))      // Register a dlopen+dlsym resolver (msvcrt on Windows,
+	{                                // libc.so.6 on Linux); returns false if the load fails.
+		print(abs(-5));              // First call resolves "abs" + caches it; then 5.
+	}
+}
+```
+
+- **`Ffi.bind(path) -> bool`** opens a native library and registers a `dlsym`/`GetProcAddress`
+  resolver over it. Returns `false` (non-throwing) if the library cannot be loaded.
+- The first call to a `dynamic` extern resolves its symbol through the **active** resolver,
+  caches the pointer, and indirect-calls it. Later calls hit the cache - one extra load over
+  a static extern, no per-call lookup.
+- There is **one active resolver** at a time, but resolution is cached **per extern**, so
+  mixing libraries works as long as the right resolver is active when each extern is *first*
+  called. Set the intended resolver (`Ffi.bind`, or `Surface.glContext` for GL) before that
+  first call.
+- An unresolved symbol (no resolver set, or the symbol is absent) throws a catchable
+  [`IOException`](../stdlib/file.md) - on the **first** call only; the cached fast path
+  cannot fail.
+
+Signatures follow the same C-ABI rules as any extern (scalars, `string`→`char*`,
+`byte[]`→data pointer, pointers as `long`). This is what makes a GPU library reachable: a GL
+context (a future `Surface.glContext`) registers an `SDL_GL_GetProcAddress` resolver, and
+each GL entry point is a plain `extern dynamic` declaration.
+
+---
+
 ## Per-project configuration with breezy.toml
 
 Place a `breezy.toml` next to your project to configure linking and application identity. A missing file is a no-op.
@@ -213,6 +257,7 @@ A [non-moving heap](../memory/automatic-memory.md) means an object's address nev
 - **Variadic functions**: a trailing `...` accepts scalar or `string` extra arguments (not arrays/objects); the ABI placement is automatic on both platforms.
 - **Process lifecycle**: read the environment with `System.getenv(name)` and wait for a termination signal with `System.awaitShutdown()` - see [System](../stdlib/system.md). (No need to bind raw `getenv`/`signal` yourself.)
 - **Mark possibly-slow calls `extern blocking`** so they offload instead of stalling the core; an `extern blocking` call takes any number of arguments.
+- **`extern dynamic`** resolves the address at run time through the active resolver (`Ffi.bind(path)`), cached per extern; for native APIs the linker cannot import (modern GL/Vulkan). An unresolved symbol throws `IOException` on the first call.
 - **Link with `--link <lib>` or `breezy.toml [link]`** - the two compose.
 - **`breezy.toml [app]`** embeds name/version/author/description in both platforms; `icon` is Windows-only.
 
