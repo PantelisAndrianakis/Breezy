@@ -311,6 +311,17 @@ else
     elif echo "$surf_out" | grep -qi "Surface unavailable"; then echo "  surface_smoke: SKIP (SDL2 / display not present)"
     else echo "  surface_smoke: FAIL (got '$surf_out')"; fail=1; fi
 fi
+# GL surface: OK when a real GL context opens + the spinning triangle runs
+# (prints glsurface-ok); SKIP when SDL2/GL/display is absent (the demo catches
+# the IOException and prints glsurface-skip). Proves extern dynamic gl* end to end.
+bzy_build tests/samples/pass/gfx/gl_triangle.bzy
+if [ $? -ne 0 ]; then echo "  gl_triangle: COMPILE FAILED"; fail=1
+else
+    gl_out="$(./out.exe 2>&1)"; gl_out="${gl_out//$'\r'/}"
+    if [ "$gl_out" == "glsurface-ok" ]; then echo "  gl_triangle: OK"
+    elif [ "$gl_out" == "glsurface-skip" ]; then echo "  gl_triangle: SKIP (SDL2 / GL / display not present)"
+    else echo "  gl_triangle: FAIL (got '$gl_out')"; fail=1; fi
+fi
 # Runtime-bound extern: OK when libc binds and abs(-5) prints 5; SKIP when no C
 # runtime binds (prints the dynext-skip marker) -- never a silent pass.
 bzy_build tests/samples/pass/ffi/dynext.bzy
@@ -392,7 +403,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls surface dynsym; do
+    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls surface glsurface dynsym; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"

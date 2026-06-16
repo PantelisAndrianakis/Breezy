@@ -1,0 +1,54 @@
+// Phase C2b: a spinning triangle driven by REAL OpenGL called directly from
+// Breezy via `extern dynamic`. Legacy immediate mode keeps the externs minimal
+// (no shaders/VAO/VBO); core/shader GL works through the identical extern dynamic
+// path. NO await/sleep/spawn-join anywhere between openGL and close -- a yield
+// would migrate this breeze off the GL context's thread (swapBuffers would abort).
+
+extern dynamic void glClear(int mask);
+extern dynamic void glClearColor(float r, float g, float b, float a);
+extern dynamic void glViewport(int x, int y, int w, int h);
+extern dynamic void glMatrixMode(int m);
+extern dynamic void glLoadIdentity();
+extern dynamic void glRotatef(float a, float x, float y, float z);
+extern dynamic void glBegin(int mode);
+extern dynamic void glColor3f(float r, float g, float b);
+extern dynamic void glVertex2f(float x, float y);
+extern dynamic void glEnd();
+
+void main()
+{
+	try
+	{
+		GlSurface gs;
+		gs = Graphics.openGL(640, 480, "Breezy GL");
+		glViewport(0, 0, 640, 480);
+		float angle;
+		angle = 0.0f;
+		for (int frame = 0; frame < 120; frame = frame + 1)
+		{
+			long ev;
+			ev = gs.pollEvent();
+			glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+			glClear(0x4000);            // GL_COLOR_BUFFER_BIT
+			glMatrixMode(0x1701);       // GL_MODELVIEW
+			glLoadIdentity();
+			glRotatef(angle, 0.0f, 0.0f, 1.0f);
+			glBegin(0x0004);            // GL_TRIANGLES
+			glColor3f(1.0f, 0.0f, 0.0f);
+			glVertex2f(0.0f, 0.5f);
+			glColor3f(0.0f, 1.0f, 0.0f);
+			glVertex2f(-0.5f, -0.5f);
+			glColor3f(0.0f, 0.0f, 1.0f);
+			glVertex2f(0.5f, -0.5f);
+			glEnd();
+			gs.swapBuffers();
+			angle = angle + 2.0f;
+		}
+		gs.close();
+		print("glsurface-ok");
+	}
+	catch (IOException e)
+	{
+		print("glsurface-skip");
+	}
+}
