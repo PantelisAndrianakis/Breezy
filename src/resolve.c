@@ -712,6 +712,24 @@ static void resolve_network(Expr *e)
 	die(e->line,"Unknown Network method: ",m);
 }
 
+static void resolve_graphics(Expr *e)
+{
+	const char *m = e->name + 9;   /* After "Graphics.". */
+	if (strcmp(m,"open")==0)
+	{
+		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
+			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Graphics.open(width, height, title) takes two integers and a string.",NULL);
+		}
+
+		e->type.kind=TY_SURFACE;
+		return;
+	}
+
+	die(e->line,"Unknown Graphics method: ",m);
+}
+
 static void resolve_log(Expr *e)
 {
 	const char *m = e->name + 4;   /* After "Log.". */
@@ -2019,6 +2037,53 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_SURFACE)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"present")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY)
+				{
+					die(e->line,"Surface.present(int[]) takes one int[] framebuffer.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"pollEvent")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Surface.pollEvent() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"isOpen")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Surface.isOpen() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Surface.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown Surface method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_UDPSOCKET)
 		{
 			resolve_args(st,e,tc);
@@ -2781,6 +2846,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Network.",8)==0)
 		{
 			resolve_network(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Graphics.",9)==0)
+		{
+			resolve_graphics(e);
 			break;
 		}
 

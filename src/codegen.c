@@ -4612,6 +4612,27 @@ static void cg_timer_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 /* Network.* constructors: listen/connect/udp -> owned handle. No receiver; args
    (port, or host+port) lower through cg_call_with_args (owned host temp released). */
+static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 9;   /* After "Graphics.". */
+	if (strcmp(m,"open")==0)
+	{
+		/* Open a window -> owned Surface handle; fallible (no SDL / no display),
+		   so a post-call bzy_io_check throws IOException with the handle preserved. */
+		TypeRef ps[3];
+		for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+		cg_call_with_args(cg,tt,"bzy_surface_open",NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+}
+
 static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 8;   /* After "Network.". */
@@ -5017,6 +5038,47 @@ static void cg_tls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		}
+	}
+}
+
+/* Surface methods: receiver (e->lhs) in the first arg register. present is fallible
+   (length mismatch / lost device) -> post-call bzy_io_check; pollEvent (long),
+   isOpen (bool), close (void) return directly. */
+static void cg_surface_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	int fallible = 0;
+	if (strcmp(n,"present")==0)
+	{
+		fn = "bzy_surface_present";
+		fallible = 1;
+	}
+	else if (strcmp(n,"pollEvent")==0)
+	{
+		fn = "bzy_surface_poll_event";
+	}
+	else if (strcmp(n,"isOpen")==0)
+	{
+		fn = "bzy_surface_is_open";
+	}
+	else
+	{
+		fn = "bzy_surface_close";
+	}
+
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
+
+	if (fallible)
+	{
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
 	}
 }
 
@@ -5887,6 +5949,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_tls_socket_method(cg,tt,e);
 		}
+		else if (e->lhs->type.kind==TY_SURFACE)
+		{
+			cg_surface_method(cg,tt,e);
+		}
 		else if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
 			cg_filechannel_method(cg,tt,e);
@@ -6029,6 +6095,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Network.",8)==0)
 		{
 			cg_network(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Graphics.",9)==0)
+		{
+			cg_graphics(cg,tt,e);
 		}
 		else if (strncmp(e->name,"Log.",4)==0)
 		{
@@ -10085,6 +10155,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_tls_write");
 	cg_emit(cg,"extern bzy_tls_close");
 	cg_emit(cg,"extern bzy_tls_close_listener");
+	cg_emit(cg,"extern bzy_surface_open");
+	cg_emit(cg,"extern bzy_surface_present");
+	cg_emit(cg,"extern bzy_surface_poll_event");
+	cg_emit(cg,"extern bzy_surface_is_open");
+	cg_emit(cg,"extern bzy_surface_close");
 	cg_emit(cg,"extern bzy_net_read_url");
 	cg_emit(cg,"extern bzy_socket_read");
 	cg_emit(cg,"extern bzy_socket_read_timeout");
