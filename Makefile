@@ -52,9 +52,9 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/fiel
 RT_COMMON = alloc print string strconv array map vector clock random exception regex \
             map_entry channel timer reflect args scheduler pollstate sharelock affinity
 ifeq ($(findstring Linux,$(UNAME)),Linux)
-  RT_NAMES = $(RT_COMMON) coroutine offload system file filechannel logger reactor_epoll socket rawsock tls surface glsurface dynsym udp http desktop
+  RT_NAMES = $(RT_COMMON) coroutine offload system file filechannel mmap logger reactor_epoll socket rawsock tls surface glsurface dynsym udp http desktop
 else
-  RT_NAMES = $(RT_COMMON) coroutine file offload system iocp socket rawsock tls surface glsurface dynsym udp filechannel logger http desktop
+  RT_NAMES = $(RT_COMMON) coroutine file offload system iocp socket rawsock tls surface glsurface dynsym udp filechannel mmap logger http desktop
 endif
 RT_SRC  = $(addprefix runtime/,$(addsuffix .c,$(RT_NAMES)))
 # Objects and the runtime archive live in a per-host build dir (build/win or

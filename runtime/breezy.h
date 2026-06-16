@@ -319,6 +319,17 @@ void  bzy_filechannel_sync(void *ch);                         /* FlushFileBuffer
 void  bzy_filechannel_close(void *ch);
 int64_t bzy_filechannel_lock(void *ch);      /* Exclusive advisory whole-file lock; parks; 1 ok, 0 fail. */
 void    bzy_filechannel_unlock(void *ch);    /* Release the advisory lock (best-effort). */
+void   *bzy_mmap_map(void *fc);              /* Owned MappedFile; throws if empty/unmappable. */
+int64_t bzy_mmap_size(void *m);
+int64_t bzy_mmap_get_byte(void *m, int64_t i);
+int64_t bzy_mmap_get_int(void *m, int64_t i);
+int64_t bzy_mmap_get_long(void *m, int64_t i);
+void    bzy_mmap_put_byte(void *m, int64_t i, int64_t v);
+void    bzy_mmap_put_int(void *m, int64_t i, int64_t v);
+void    bzy_mmap_put_long(void *m, int64_t i, int64_t v);
+void    bzy_mmap_copy_into(void *m, void *dst, int64_t srcOff, int64_t n);
+void    bzy_mmap_flush(void *m);             /* msync/FlushViewOfFile+FlushFileBuffers; parks; throws on error. */
+void    bzy_mmap_close(void *m);             /* Unmap + close mapping; idempotent. */
 
 /* Buffered file writer (6b-3): a managed handle over an open FILE* + a userspace
    buffer. write/writeLine/writeBytes memcpy into the buffer (no syscall); the buffer
