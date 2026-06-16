@@ -1,0 +1,20 @@
+// Opens a 64x64 window, presents one filled frame, polls once, closes. Prints
+// surface-ok on a working SDL2 + display. If SDL2/display is absent the first
+// Graphics call throws IOException -> the program aborts and the runner reports
+// SKIP (never a silent pass).
+void main()
+{
+	Surface s;
+	s = Graphics.open(64, 64, "smoke");
+	int[] fb;
+	fb = new int[64 * 64];
+	for (int i = 0; i < 64 * 64; i = i + 1)
+	{
+		fb[i] = (255 << 24) | 0x202020;   // Opaque dark gray (ARGB; alpha 0xFF built by shift since int is 32-bit signed).
+	}
+	s.present(fb);
+	long e;
+	e = s.pollEvent();             // Drains whatever is queued (likely 0).
+	s.close();
+	print("surface-ok");
+}

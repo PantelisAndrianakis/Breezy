@@ -1387,6 +1387,19 @@ static void test_tls_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_tls_close") != NULL, 1);
 }
 
+static void test_surface_lowers(void)
+{
+	/* Graphics.open lowers to bzy_surface_open guarded by io_check; the Surface
+	   methods lower to their bzy_surface_* calls. */
+	emit("void main() { Surface s; s = Graphics.open(64, 64, \"t\"); int[] fb; fb = new int[64*64]; s.present(fb); long e; e = s.pollEvent(); bool o; o = s.isOpen(); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_surface_open") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_surface_present") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_surface_poll_event") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_surface_is_open") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_surface_close") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1541,6 +1554,7 @@ int main(void)
 	RUN(test_filechannel_lock_lowers);
 	RUN(test_raw_socket_lowers);
 	RUN(test_tls_lowers);
+	RUN(test_surface_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

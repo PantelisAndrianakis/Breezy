@@ -55,6 +55,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | Page | What it covers |
 | --- | --- |
 | [Native I/O](io/native-io.md) | Synchronous-looking, asynchronous-underneath networking; the echo server; `Network.readUrl`. |
+| [Pixel surface](io/graphics.md) | `Graphics.open` - a window you blit an ARGB framebuffer into, with polled input. |
 | [File writing & logging](io/file-writing.md) | Buffered `FileWriter` and the channel-fed `Logger`. |
 
 ## 6. C interoperability

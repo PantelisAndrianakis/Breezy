@@ -300,6 +300,17 @@ else
     elif echo "$tls_out" | grep -qi "TLS unavailable"; then echo "  tls_echo: SKIP (OpenSSL not present)"
     else echo "  tls_echo: FAIL (got '$tls_out')"; fail=1; fi
 fi
+# Pixel surface: OK when it opens+presents+closes (prints surface-ok); SKIP when
+# SDL2/display is absent (the program aborts with the "Surface unavailable"
+# IOException -- not our bug).
+bzy_build tests/samples/pass/gfx/surface_smoke.bzy
+if [ $? -ne 0 ]; then echo "  surface_smoke: COMPILE FAILED"; fail=1
+else
+    surf_out="$(./out.exe 2>&1)"; surf_out="${surf_out//$'\r'/}"
+    if [ "$surf_out" == "surface-ok" ]; then echo "  surface_smoke: OK"
+    elif echo "$surf_out" | grep -qi "Surface unavailable"; then echo "  surface_smoke: SKIP (SDL2 / display not present)"
+    else echo "  surface_smoke: FAIL (got '$surf_out')"; fail=1; fi
+fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
 check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
@@ -371,7 +382,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls; do
+    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls surface; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
