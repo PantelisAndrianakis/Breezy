@@ -4612,6 +4612,47 @@ static void cg_timer_method(Codegen *cg, TypeTable *tt, Expr *e)
 
 /* Network.* constructors: listen/connect/udp -> owned handle. No receiver; args
    (port, or host+port) lower through cg_call_with_args (owned host temp released). */
+static void cg_ffi(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 4;   /* After "Ffi.". */
+	if (strcmp(m,"bind")==0)
+	{
+		/* bzy_ffi_bind(path) -> bool; non-fallible (returns false on load failure). */
+		TypeRef ps[1];
+		ps[0]=e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_ffi_bind",NULL,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
+		return;
+	}
+}
+
+/* A dynamic extern call: resolve the C symbol through the active resolver on the
+   first call (slow path -> bzy_dynsym + io_check), cache it in a per-extern static
+   slot, then marshal args exactly as a normal extern and call indirectly through the
+   slot. The slot/name statics are emitted once in cg_program. Keyed on the bare name
+   (e->name), NOT fi->asm_label -- the latter carries the NASM '$' escape. */
+static void cg_dynamic_extern_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
+{
+	int khave = cg_label(cg);
+	cg_emit(cg,"    cmp qword [rel __dynslot_%s], 0", e->name);
+	cg_emit(cg,"    jne .L%d", khave);
+	cg_emit(cg,"    lea %s, [rel __dynname_%s]", cg_iarg(cg, 0), e->name);
+	cg_aligned_call(cg,"bzy_dynsym");
+	cg_emit(cg,"    mov [rel __dynslot_%s], rax", e->name);
+	int kpc = cg_label(cg);
+	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), kpc);
+	cg_emit(cg,".L%d:", kpc);
+	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+	cg_aligned_call(cg,"bzy_io_check");   /* Throws IOException if unresolved (slow path only). */
+	cg_emit(cg,".L%d:", khave);
+
+	char target[160];
+	snprintf(target, sizeof(target), "qword [rel __dynslot_%s]", e->name);
+	cg->call_variadic = fi->is_variadic;
+	cg_call_with_args(cg,tt,target,NULL,e->args,e->arg_count,0, ty_is_managed(e->type.kind),
+					  ty_is_float(e->type.kind), fi->param_types, fi->param_count, fi->is_extern);
+	cg->call_variadic = 0;
+}
+
 static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 9;   /* After "Graphics.". */
@@ -6100,6 +6141,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_graphics(cg,tt,e);
 		}
+		else if (strncmp(e->name,"Ffi.",4)==0)
+		{
+			cg_ffi(cg,tt,e);
+		}
 		else if (strncmp(e->name,"Log.",4)==0)
 		{
 			cg_log(cg,tt,e);
@@ -6107,7 +6152,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else
 		{
 			FuncInfo *fi=types_find_func_idx(tt,e->name,e->anno_overload);
-			if (fi->is_blocking)
+			if (fi->is_dynamic)
+			{
+				cg_dynamic_extern_call(cg,tt,e,fi);
+			}
+			else if (fi->is_blocking)
 			{
 				cg_request_blocking_thunk(cg, fi);
 				cg_blocking_call(cg,tt,e,fi);
@@ -10160,6 +10209,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_surface_poll_event");
 	cg_emit(cg,"extern bzy_surface_is_open");
 	cg_emit(cg,"extern bzy_surface_close");
+	cg_emit(cg,"extern bzy_dynsym");
+	cg_emit(cg,"extern bzy_ffi_bind");
 	cg_emit(cg,"extern bzy_net_read_url");
 	cg_emit(cg,"extern bzy_socket_read");
 	cg_emit(cg,"extern bzy_socket_read_timeout");
@@ -10466,6 +10517,33 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	}
 
 	cg_emit(cg,"__bzy_exception_func_count: dq %d", cg->exception_fn_count);
+
+	/* Per-extern slot + symbol-name statics for `extern dynamic` (in .data: the slot
+	   is written at the first call). Keyed on the bare name (matches cg_dynamic_extern_call;
+	   fi->asm_label's NASM '$' escape would be an invalid label). Deduped by name. */
+	for (int ui=0; ui<unit_count; ui++)
+	{
+		Unit *u=units[ui];
+		for (int fi2=0; fi2<u->func_count; fi2++)
+		{
+			Func *f=u->funcs[fi2];
+			if (!f->is_extern || !f->is_dynamic) { continue; }
+			int dup=0;
+			for (int uj=0; uj<=ui && !dup; uj++)
+			{
+				Unit *u2=units[uj];
+				int lim=(uj==ui)?fi2:u2->func_count;
+				for (int fj=0; fj<lim; fj++)
+				{
+					Func *g=u2->funcs[fj];
+					if (g->is_extern && g->is_dynamic && strcmp(g->name,f->name)==0) { dup=1; break; }
+				}
+			}
+			if (dup) { continue; }
+			cg_emit(cg,"__dynslot_%s: dq 0", f->name);
+			cg_emit(cg,"__dynname_%s: db \"%s\", 0", f->name, f->name);
+		}
+	}
 
 	cg_emit_enum_data(cg);   /* Enum singleton slots + constant name strings. */
 	cg_emit_static_data(cg,units,unit_count);   /* Static-field global slots. */

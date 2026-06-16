@@ -1400,6 +1400,19 @@ static void test_surface_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_surface_close") != NULL, 1);
 }
 
+static void test_dynamic_extern_lowers(void)
+{
+	/* A dynamic extern call lowers to a bzy_dynsym resolve, a per-extern slot, an
+	   io_check, and an indirect call through the slot; Ffi.bind -> bzy_ffi_bind. */
+	emit("extern dynamic int abs(int n);"
+		 " void main() { Ffi.bind(\"libc.so.6\"); int x; x = abs(-5); print(x); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_dynsym") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "__dynslot_abs") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_ffi_bind") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call qword [rel __dynslot_abs]") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1555,6 +1568,7 @@ int main(void)
 	RUN(test_raw_socket_lowers);
 	RUN(test_tls_lowers);
 	RUN(test_surface_lowers);
+	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

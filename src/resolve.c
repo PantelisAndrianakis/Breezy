@@ -730,6 +730,23 @@ static void resolve_graphics(Expr *e)
 	die(e->line,"Unknown Graphics method: ",m);
 }
 
+static void resolve_ffi(Expr *e)
+{
+	const char *m = e->name + 4;   /* After "Ffi.". */
+	if (strcmp(m,"bind")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Ffi.bind(path) takes one string library path.",NULL);
+		}
+
+		e->type.kind=TY_BOOL;
+		return;
+	}
+
+	die(e->line,"Unknown Ffi method: ",m);
+}
+
 static void resolve_log(Expr *e)
 {
 	const char *m = e->name + 4;   /* After "Log.". */
@@ -2852,6 +2869,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Graphics.",9)==0)
 		{
 			resolve_graphics(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Ffi.",4)==0)
+		{
+			resolve_ffi(e);
 			break;
 		}
 

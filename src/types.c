@@ -682,6 +682,7 @@ static void register_unit_funcs(TypeTable *tt, Unit *u)
 			fi->is_extern=1;
 			fi->is_blocking=f->is_blocking;
 			fi->is_variadic=f->is_variadic;
+			fi->is_dynamic=f->is_dynamic;
 		}
 		else
 		{

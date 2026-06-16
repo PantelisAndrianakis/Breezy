@@ -311,6 +311,16 @@ else
     elif echo "$surf_out" | grep -qi "Surface unavailable"; then echo "  surface_smoke: SKIP (SDL2 / display not present)"
     else echo "  surface_smoke: FAIL (got '$surf_out')"; fail=1; fi
 fi
+# Runtime-bound extern: OK when libc binds and abs(-5) prints 5; SKIP when no C
+# runtime binds (prints the dynext-skip marker) -- never a silent pass.
+bzy_build tests/samples/pass/ffi/dynext.bzy
+if [ $? -ne 0 ]; then echo "  dynext: COMPILE FAILED"; fail=1
+else
+    dyn_out="$(./out.exe 2>&1)"; dyn_out="${dyn_out//$'\r'/}"
+    if [ "$dyn_out" == "5" ]; then echo "  dynext: OK"
+    elif [ "$dyn_out" == "dynext-skip" ]; then echo "  dynext: SKIP (no C runtime bound)"
+    else echo "  dynext: FAIL (got '$dyn_out')"; fail=1; fi
+fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
 check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
@@ -382,7 +392,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls surface; do
+    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls surface dynsym; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"

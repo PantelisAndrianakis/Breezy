@@ -1,0 +1,22 @@
+// Binds the platform C runtime and calls libc's abs() through a runtime-resolved
+// extern. Prints 5 on success. If neither library binds, prints a SKIP marker the
+// runner recognizes (never a silent pass).
+extern dynamic int abs(int n);
+
+void main()
+{
+	bool ok;
+	ok = Ffi.bind("msvcrt.dll");        // Windows C runtime.
+	if (not ok)
+	{
+		ok = Ffi.bind("libc.so.6");     // Linux C runtime.
+	}
+	if (not ok)
+	{
+		print("dynext-skip");
+		return;
+	}
+	int x;
+	x = abs(-5);
+	print(x);                           // 5
+}

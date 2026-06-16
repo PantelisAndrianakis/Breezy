@@ -267,6 +267,9 @@ void    bzy_surface_present(void *s, void *pixels);            /* Blit a w*h ARG
 int64_t bzy_surface_poll_event(void *s);          /* Next packed event, 0 when none. */
 int64_t bzy_surface_is_open(void *s);             /* 0 once the window is closed. */
 void    bzy_surface_close(void *s);               /* Stop + join the render thread; idempotent. */
+void    bzy_dyn_set_resolver(void *(*r)(const char *name)); /* Register the active dynamic-extern resolver. */
+void   *bzy_dynsym(const char *name);             /* Resolve via the active resolver; io_fail + NULL if absent. */
+int64_t bzy_ffi_bind(void *path);                 /* dlopen(path) + register a dlsym resolver; 1 ok / 0 fail. */
 void   *bzy_socket_read(void *s, int64_t maxbytes);    /* Parks; owned byte[] (length 0 = peer closed). */
 void   *bzy_socket_read_timeout(void *s, int64_t maxbytes, int64_t ms);  /* NULL on timeout. */
 void   *bzy_socket_try_read(void *s, int64_t maxbytes); /* NULL if no data ready; len 0 = EOF. */
