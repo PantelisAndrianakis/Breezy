@@ -252,6 +252,7 @@ void   *bzy_listener_try_accept(void *l);     /* NULL if no connection pending; 
 int64_t bzy_listener_port(void *l);           /* The actual bound port (resolves 0 -> assigned). */
 void    bzy_listener_close(void *l);
 void   *bzy_socket_connect(void *host, int64_t port);  /* Parks; owned (+1) connected Socket. */
+void   *bzy_raw_socket(int64_t protocol);   /* Network.rawSocket: owned Socket; throws IOException when denied. */
 void   *bzy_socket_read(void *s, int64_t maxbytes);    /* Parks; owned byte[] (length 0 = peer closed). */
 void   *bzy_socket_read_timeout(void *s, int64_t maxbytes, int64_t ms);  /* NULL on timeout. */
 void   *bzy_socket_try_read(void *s, int64_t maxbytes); /* NULL if no data ready; len 0 = EOF. */

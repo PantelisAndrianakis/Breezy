@@ -4632,6 +4632,23 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"rawSocket")==0)
+	{
+		/* Open a raw socket -> owned Socket handle; fallible (privilege denial),
+		   so a post-call bzy_io_check throws IOException with the handle preserved. */
+		TypeRef psr[1];
+		psr[0]=e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_raw_socket",NULL,e->args,e->arg_count,0, 1, 0, psr, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the handle across io_check. */
+		int kr = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), kr);
+		cg_emit(cg,".L%d:", kr);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
 	const char *fn;
 	if (strcmp(m,"listen")==0)
 	{
@@ -9938,6 +9955,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_listener_port");
 	cg_emit(cg,"extern bzy_listener_close");
 	cg_emit(cg,"extern bzy_socket_connect");
+	cg_emit(cg,"extern bzy_raw_socket");
 	cg_emit(cg,"extern bzy_net_read_url");
 	cg_emit(cg,"extern bzy_socket_read");
 	cg_emit(cg,"extern bzy_socket_read_timeout");

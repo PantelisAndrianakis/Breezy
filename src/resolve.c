@@ -673,6 +673,17 @@ static void resolve_network(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"rawSocket")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"Network.rawSocket(protocol) takes one integer protocol.",NULL);
+		}
+
+		e->type.kind=TY_SOCKET;   /* Reuse the socket handle: read/write/close work as-is. */
+		return;
+	}
+
 	die(e->line,"Unknown Network method: ",m);
 }
 

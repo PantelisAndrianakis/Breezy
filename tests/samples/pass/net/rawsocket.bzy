@@ -1,0 +1,19 @@
+// Privilege-independent, deterministic on any host. Opening a raw socket needs
+// CAP_NET_RAW/root (POSIX) or Administrator (Windows). In CI there is no such
+// privilege, so rawSocket throws a catchable IOException; on a privileged dev
+// box it succeeds and we close it. Either way the program prints exactly:
+//   raw-ok
+// proving rawsock.o linked, the call ran, and the failure path is catchable.
+void main()
+{
+	try
+	{
+		Socket s = Network.rawSocket(255);   // 255 = IPPROTO_RAW-ish; protocol is arbitrary here.
+		s.close();
+		print("raw-ok");
+	}
+	catch (IOException e)
+	{
+		print("raw-ok");                     // Denied without privilege -- expected in CI.
+	}
+}

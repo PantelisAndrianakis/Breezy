@@ -1363,6 +1363,14 @@ static void test_filechannel_lock_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_filechannel_unlock") != NULL, 1);
 }
 
+static void test_raw_socket_lowers(void)
+{
+	/* Network.rawSocket(protocol) lowers to a bzy_raw_socket call guarded by io_check. */
+	emit("void main() { Socket s; s = Network.rawSocket(255); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_raw_socket") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1515,6 +1523,7 @@ int main(void)
 	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_system_realtime_io_lowers);
 	RUN(test_filechannel_lock_lowers);
+	RUN(test_raw_socket_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

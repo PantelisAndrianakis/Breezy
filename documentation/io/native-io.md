@@ -72,6 +72,38 @@ print(page.contains("Example Domain"));           // true.
 
 ---
 
+## Raw sockets
+
+For low-level packet work (custom protocols, probes), open a raw IP socket. This
+is **privilege-gated**: it needs `CAP_NET_RAW`/root on Linux or Administrator on
+Windows, and throws a catchable [`IOException`](../stdlib/file.md) when the OS
+denies it.
+
+```breezy
+try
+{
+	Socket s = Network.rawSocket(255);   // protocol number (e.g. an IPPROTO value).
+	s.write(frame);                      // Send a raw packet (byte[]).
+	byte[] pkt = s.read(2048);           // Receive the next packet, parking the breeze.
+	s.close();
+}
+catch (IOException e)
+{
+	// No privilege -- expected off a root/admin context.
+}
+```
+
+`Network.rawSocket(protocol)` returns an ordinary `Socket` handle, so
+`read`/`write`/`close` work as usual and the handle is reactor-integrated
+(`read` parks the breeze like any socket).
+
+**Caveats.** Raw sockets are OS-restricted. On **Windows** they are
+Administrator-only and **cannot send TCP/UDP** (a Microsoft restriction since XP
+SP2); they remain usable for other protocols and for receiving. On **Linux**
+they need `CAP_NET_RAW` (typically root).
+
+---
+
 ## Rules & gotchas
 
 - **Every I/O call looks blocking but parks the breeze**, not the OS thread.
@@ -80,6 +112,7 @@ print(page.contains("Example Domain"));           // true.
 - **Listeners are dual-stack** (accept IPv6 and IPv4); `Network.connect` takes an IPv6 literal, IPv4 literal, or hostname - no API change.
 - **`Network.readUrl` is one-call HTTP/HTTPS GET**, returns the body, and throws `IOException` on failure.
 - **For more than a GET body**, use a raw `Socket`.
+- **`Network.rawSocket(protocol)` is privilege-gated** - needs `CAP_NET_RAW`/root or Administrator, throws `IOException` when denied, and on Windows cannot send TCP/UDP.
 
 ---
 
