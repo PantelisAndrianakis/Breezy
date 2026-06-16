@@ -267,6 +267,11 @@ void    bzy_surface_present(void *s, void *pixels);            /* Blit a w*h ARG
 int64_t bzy_surface_poll_event(void *s);          /* Next packed event, 0 when none. */
 int64_t bzy_surface_is_open(void *s);             /* 0 once the window is closed. */
 void    bzy_surface_close(void *s);               /* Stop + join the render thread; idempotent. */
+void   *bzy_glsurface_open(int64_t w, int64_t h, void *title); /* Owned GlSurface; throws if SDL2/GL/display absent. */
+int64_t bzy_glsurface_poll(void *s);              /* Next packed event, 0 when none. */
+void    bzy_glsurface_swap(void *s);              /* SDL_GL_SwapWindow; aborts if used off the owning thread. */
+int64_t bzy_glsurface_isopen(void *s);            /* 0 once closed. */
+void    bzy_glsurface_close(void *s);             /* Delete context + window; idempotent. */
 void    bzy_dyn_set_resolver(void *(*r)(const char *name)); /* Register the active dynamic-extern resolver. */
 void   *bzy_dynsym(const char *name);             /* Resolve via the active resolver; io_fail + NULL if absent. */
 int64_t bzy_ffi_bind(void *path);                 /* dlopen(path) + register a dlsym resolver; 1 ok / 0 fail. */

@@ -1,7 +1,7 @@
 /* Runtime-bound extern resolution. Own TU: a program with no `extern dynamic` and
    no Ffi.bind links none of this. The active resolver is a single function pointer;
-   Ffi.bind registers a dlopen+dlsym resolver, and (in C2b) Surface.glContext will
-   register SDL_GL_GetProcAddress through the same bzy_dyn_set_resolver. */
+   Ffi.bind registers a dlopen+dlsym resolver, and Graphics.openGL registers
+   SDL_GL_GetProcAddress through the same bzy_dyn_set_resolver. */
 #include "breezy.h"
 #include <stddef.h>
 #include <stdio.h>
