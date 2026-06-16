@@ -2362,9 +2362,77 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_VOID;
 			}
+			else if (strcmp(e->name,"map")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"FileChannel.map() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_MAPPEDFILE;
+			}
 			else
 			{
 				die(e->line,"Unknown FileChannel method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_MAPPEDFILE)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"size")==0)
+			{
+				if (e->arg_count!=0) { die(e->line,"MappedFile.size() takes no arguments.",NULL); }
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"getByte")==0 || strcmp(e->name,"getInt")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"MappedFile.getByte/getInt(offset) takes one integer.",NULL);
+				}
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"getLong")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"MappedFile.getLong(offset) takes one integer.",NULL);
+				}
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"putByte")==0 || strcmp(e->name,"putInt")==0 || strcmp(e->name,"putLong")==0)
+			{
+				if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || !ty_is_int(e->args[1]->type.kind))
+				{
+					die(e->line,"MappedFile.putByte/putInt/putLong(offset, value) takes two integers.",NULL);
+				}
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"copyInto")==0)
+			{
+				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY
+					|| !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
+				{
+					die(e->line,"MappedFile.copyInto(byte[] dst, srcOffset, len) takes a byte[] and two integers.",NULL);
+				}
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"flush")==0)
+			{
+				if (e->arg_count!=0) { die(e->line,"MappedFile.flush() takes no arguments.",NULL); }
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0) { die(e->line,"MappedFile.close() takes no arguments.",NULL); }
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown MappedFile method: ",e->name);
 			}
 
 			break;
