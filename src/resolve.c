@@ -601,6 +601,28 @@ static void resolve_system(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"cpuCount")==0)
+	{
+		if (e->arg_count != 0)
+		{
+			die(e->line,"System.cpuCount() takes no arguments.",NULL);
+		}
+
+		e->type.kind = TY_INT;
+		return;
+	}
+
+	if (strcmp(m,"affinity")==0)
+	{
+		if (e->arg_count != 1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"System.affinity(mask) takes one integer bitmask argument.",NULL);
+		}
+
+		e->type.kind = TY_BOOL;   /* true on success, false on failure. */
+		return;
+	}
+
 	die(e->line,"Unknown System method: ",m);
 }
 

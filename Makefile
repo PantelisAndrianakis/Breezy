@@ -50,7 +50,7 @@ OBJS    = src/lexer.c src/ast.c src/parser.c src/enums.c src/generics.c src/fiel
 # CreateProcess, Linux uses an epoll reactor + libcurl + fork/exec. The process
 # shell (system.c) now builds on both.
 RT_COMMON = alloc print string strconv array map vector clock random exception regex \
-            map_entry channel timer reflect args scheduler pollstate sharelock
+            map_entry channel timer reflect args scheduler pollstate sharelock affinity
 ifeq ($(findstring Linux,$(UNAME)),Linux)
   RT_NAMES = $(RT_COMMON) coroutine offload system file filechannel logger reactor_epoll socket udp http desktop
 else

@@ -413,6 +413,13 @@ int main(int argc, char *argv[])
 	   embed is the toolchain CRT's own debug sections - ~3x the binary size for
 	   no debugging value. */
 	off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -s");
+	/* BZY_LINK_MAP: emit a linker map (out.map) listing which runtime archive
+	   members were pulled in. Used by the no-bloat regression gate to prove that
+	   an unused feature's object is dropped, never linked. No effect unset. */
+	if (getenv("BZY_LINK_MAP"))
+	{
+		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -Wl,-Map=out.map");
+	}
 	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o %s",out_arg);
 	if (system(link_cmd)!=0)
 	{

@@ -349,4 +349,23 @@ if nasm -hf 2>/dev/null | grep -qi elf64; then
 else
     echo "  elf64_assembles: SKIP (nasm has no elf64 output on this host)"
 fi
+# No-bloat gate: a minimal program must link NONE of the optional runtime
+# subsystems. The runtime is a static archive, so the linker drops any member a
+# program never references -- this proves added features cost a small program
+# zero bytes. If a forbidden object appears in the map, a feature was wired into
+# the always-linked core (entry/scheduler/alloc/print) and must be moved to its
+# own translation unit. BZY_LINK_MAP makes breezy emit out.map.
+BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
+if [ -f out.map ]; then
+    leaked=""
+    for obj in system socket udp http desktop file filechannel regex logger; do
+        if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
+    done
+    if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
+    else echo "  nobloat_minimal: FAIL (optional objects linked:$leaked)"; fail=1; fi
+    rm -f out.map
+else
+    echo "  nobloat_minimal: SKIP (no linker map produced)"
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

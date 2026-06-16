@@ -5021,6 +5021,22 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"cpuCount")==0)
+	{
+		cg_aligned_call(cg,"bzy_sys_cpu_count");   /* Core count in rax. */
+		return;
+	}
+
+	if (strcmp(m,"affinity")==0)
+	{
+		/* System.affinity(mask) -> bzy_sys_affinity(mask). Scalar long, bool result. */
+		TypeRef ps[1];
+		ps[0] = e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_sys_affinity",NULL,e->args,e->arg_count,0,
+						  0 /* result not owned */, 0, ps, e->arg_count, 0);
+		return;
+	}
+
 	if (strcmp(m,"shell")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown System method '%s'\n", m);
@@ -10014,6 +10030,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_sys_poll_key");
 	cg_emit(cg,"extern bzy_sys_mouse_mode");
 	cg_emit(cg,"extern bzy_sys_poll_mouse");
+	cg_emit(cg,"extern bzy_sys_cpu_count");
+	cg_emit(cg,"extern bzy_sys_affinity");
 	cg_emit(cg,"extern bzy_class_name");
 	cg_emit(cg,"extern bzy_rnd_bool");
 	cg_emit(cg,"extern bzy_rnd_int");
