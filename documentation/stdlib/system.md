@@ -133,6 +133,31 @@ System.rawMode(false);                // Restore the terminal.
 
 ---
 
+## CPU affinity
+
+For latency-critical work (e.g. high-frequency trading), pin a worker thread to
+specific cores to cut scheduler-induced tail jitter.
+
+```breezy
+long coreZero = 1;                 // Bit 0 set -> core 0.
+if (System.affinity(coreZero))
+{
+	// This worker thread now runs only on core 0.
+}
+
+int cores = System.cpuCount();     // Build masks portably.
+```
+
+- `System.cpuCount() -> int` - the number of online logical cores.
+- `System.affinity(mask) -> bool` - pin the **current OS thread** to the cores
+  whose bit is set in `mask` (bit *i* = core *i*). Returns `true` on success,
+  `false` on failure (insufficient privilege, an empty mask, or an unsupported
+  host). It pins the worker thread, not the breeze: because a breeze migrates
+  across workers, deterministic pinning means running the critical breeze on a
+  dedicated worker (e.g. `BZY_WORKERS=1`).
+
+---
+
 ## Rules & gotchas
 
 - **`shell(command)` is fire-and-forget** - it returns a process id and does not capture output.
@@ -143,6 +168,7 @@ System.rawMode(false);                // Restore the terminal.
 - **`System.sleep(ms)` parks the breeze** (offloaded); duration is approximate OS granularity, and `ms <= 0` returns immediately.
 - **`System.rawMode(on)` / `System.mouseMode(on)` auto-restore** the terminal at exit and on Ctrl+C, are idempotent, and are no-ops on a non-terminal stdin.
 - **`System.pollKey()` / `System.pollMouse()` never block** - each returns its next event or `-1`; they share one input stream, so drain both each tick until both return `-1`.
+- **`System.affinity(mask)` pins the worker thread, not the breeze** - returns `false` on failure and is a no-op for an empty mask; pair with a dedicated worker for deterministic pinning.
 - **Cross-platform:** Windows launches via `cmd /c` (`CreateProcess`), Linux via `/bin/sh -c` (`fork`/`exec`). The same code runs on both. No output capture, stdin, or timeout yet.
 
 ---

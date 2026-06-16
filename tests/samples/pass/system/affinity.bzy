@@ -1,0 +1,11 @@
+// Exercises cpuCount + affinity deterministically. cpuCount is always positive;
+// affinity(1) (pin to core 0) may succeed or fail depending on the host/cgroup,
+// so the program prints only machine-independent facts: that the core count is
+// positive and that affinity ran without crashing (ok or not ok is always true).
+void main()
+{
+	print(System.cpuCount() > 0);   // Always true.
+
+	bool ok = System.affinity(1);   // Pin to core 0; result is host-dependent.
+	print(ok or not ok);            // Always true -- proves it linked and ran.
+}

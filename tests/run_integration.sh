@@ -63,6 +63,7 @@ echo "Integration tests"
 check minimal     tests/samples/pass/basics/minimal.bzy    "0"
 check arith       tests/samples/pass/basics/arith.bzy      "14"
 check system_rt   tests/samples/pass/system/realtime_io.bzy $'-1\n-1'
+check system_affinity tests/samples/pass/system/affinity.bzy $'true\ntrue'
 check int_semantics tests/samples/pass/basics/int_semantics.bzy $'-294967296\n1410065408\n-4\n-3\n-1\n-123\n2\n4000000000\n48\n255\n240\n-2147483648\n1\n16'
 check int_defer   tests/samples/pass/basics/int_defer.bzy $'-1000000000\n-2000000000\n1294967296\n294967296\n-705032704'
 check region_liveout_shift tests/samples/pass/basics/region_liveout_shift.bzy $'12773843\n303\n707\n1111\n1515\n1919\n2323\n2727'
@@ -358,7 +359,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel regex logger; do
+    for obj in system socket udp http desktop file filechannel regex logger affinity; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
