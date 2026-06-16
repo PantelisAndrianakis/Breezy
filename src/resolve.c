@@ -2362,11 +2362,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_VOID;
 			}
-			else if (strcmp(e->name,"map")==0)
+			else if (strcmp(e->name,"mmap")==0)
 			{
 				if (e->arg_count!=0)
 				{
-					die(e->line,"FileChannel.map() takes no arguments.",NULL);
+					die(e->line,"FileChannel.mmap() takes no arguments.",NULL);
 				}
 
 				e->type.kind=TY_MAPPEDFILE;

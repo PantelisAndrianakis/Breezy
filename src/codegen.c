@@ -4985,6 +4985,10 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 		fn = "bzy_filechannel_unlock";   /* void, best-effort release; not fallible. */
 		fallible = 0;
 	}
+	else if (strcmp(n,"mmap")==0)
+	{
+		fn = "bzy_mmap_map";   /* Fallible (default), returns an owned MappedFile (managed). */
+	}
 	else
 	{
 		fn = "bzy_filechannel_close";
@@ -5016,6 +5020,37 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		}
+	}
+}
+
+static void cg_mappedfile_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	int fallible = 0;
+	if (strcmp(n,"size")==0)            { fn = "bzy_mmap_size"; }
+	else if (strcmp(n,"getByte")==0)    { fn = "bzy_mmap_get_byte"; }
+	else if (strcmp(n,"getInt")==0)     { fn = "bzy_mmap_get_int"; }
+	else if (strcmp(n,"getLong")==0)    { fn = "bzy_mmap_get_long"; }
+	else if (strcmp(n,"putByte")==0)    { fn = "bzy_mmap_put_byte"; }
+	else if (strcmp(n,"putInt")==0)     { fn = "bzy_mmap_put_int"; }
+	else if (strcmp(n,"putLong")==0)    { fn = "bzy_mmap_put_long"; }
+	else if (strcmp(n,"copyInto")==0)   { fn = "bzy_mmap_copy_into"; }
+	else if (strcmp(n,"flush")==0)      { fn = "bzy_mmap_flush"; fallible = 1; }
+	else                                { fn = "bzy_mmap_close"; }
+
+	TypeRef ps[3];
+	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
+
+	if (fallible)
+	{
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
 	}
 }
 
@@ -6046,6 +6081,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
 			cg_filechannel_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_MAPPEDFILE)
+		{
+			cg_mappedfile_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_FILEWRITER)
 		{
@@ -10297,6 +10336,17 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_filechannel_close");
 	cg_emit(cg,"extern bzy_filechannel_lock");
 	cg_emit(cg,"extern bzy_filechannel_unlock");
+	cg_emit(cg,"extern bzy_mmap_map");
+	cg_emit(cg,"extern bzy_mmap_size");
+	cg_emit(cg,"extern bzy_mmap_get_byte");
+	cg_emit(cg,"extern bzy_mmap_get_int");
+	cg_emit(cg,"extern bzy_mmap_get_long");
+	cg_emit(cg,"extern bzy_mmap_put_byte");
+	cg_emit(cg,"extern bzy_mmap_put_int");
+	cg_emit(cg,"extern bzy_mmap_put_long");
+	cg_emit(cg,"extern bzy_mmap_copy_into");
+	cg_emit(cg,"extern bzy_mmap_flush");
+	cg_emit(cg,"extern bzy_mmap_close");
 	cg_emit(cg,"extern bzy_filewriter_open");
 	cg_emit(cg,"extern bzy_filewriter_write");
 	cg_emit(cg,"extern bzy_filewriter_write_line");

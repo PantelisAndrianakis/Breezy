@@ -1413,6 +1413,21 @@ static void test_glsurface_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_glsurface_close") != NULL, 1);
 }
 
+static void test_mappedfile_lowers(void)
+{
+	/* FileChannel.map lowers to bzy_mmap_map guarded by io_check; the MappedFile
+	   methods lower to their bzy_mmap_* calls. */
+	emit("void main() { FileChannel c; c = File.openChannel(\"t\"); MappedFile m; m = c.mmap(); long n; n = m.size(); int b; b = m.getByte(0); m.putLong(0, 7); byte[] d; d = new byte[8]; m.copyInto(d, 0, 8); m.flush(); m.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_map") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_size") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_get_byte") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_put_long") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_copy_into") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_flush") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_mmap_close") != NULL, 1);
+}
+
 static void test_dynamic_extern_lowers(void)
 {
 	/* A dynamic extern call lowers to a bzy_dynsym resolve, a per-extern slot, an
@@ -1582,6 +1597,7 @@ int main(void)
 	RUN(test_tls_lowers);
 	RUN(test_surface_lowers);
 	RUN(test_glsurface_lowers);
+	RUN(test_mappedfile_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
