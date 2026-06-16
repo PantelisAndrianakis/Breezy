@@ -4672,6 +4672,23 @@ static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 		return;
 	}
+
+	if (strcmp(m,"openGL")==0)
+	{
+		/* Open a GL window -> owned GlSurface handle; fallible (no SDL / no display),
+		   so a post-call bzy_io_check throws IOException with the handle preserved. */
+		TypeRef ps[3];
+		for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+		cg_call_with_args(cg,tt,"bzy_glsurface_open",NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
 }
 
 static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
@@ -5121,6 +5138,34 @@ static void cg_surface_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
 		cg_aligned_call(cg,"bzy_io_check");
 	}
+}
+
+static void cg_glsurface_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	if (strcmp(n,"pollEvent")==0)
+	{
+		fn = "bzy_glsurface_poll";
+	}
+	else if (strcmp(n,"swapBuffers")==0)
+	{
+		fn = "bzy_glsurface_swap";
+	}
+	else if (strcmp(n,"isOpen")==0)
+	{
+		fn = "bzy_glsurface_isopen";
+	}
+	else
+	{
+		fn = "bzy_glsurface_close";
+	}
+
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+
+	/* GlSurface methods are non-fallible: swapBuffers aborts on misuse, never throws. */
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
 }
 
 /* FileWriter methods: receiver (e->lhs) in rcx, the one string/byte[] arg in rdx.
@@ -5993,6 +6038,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_SURFACE)
 		{
 			cg_surface_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_GLSURFACE)
+		{
+			cg_glsurface_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
@@ -10209,6 +10258,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_surface_poll_event");
 	cg_emit(cg,"extern bzy_surface_is_open");
 	cg_emit(cg,"extern bzy_surface_close");
+	cg_emit(cg,"extern bzy_glsurface_open");
+	cg_emit(cg,"extern bzy_glsurface_poll");
+	cg_emit(cg,"extern bzy_glsurface_swap");
+	cg_emit(cg,"extern bzy_glsurface_isopen");
+	cg_emit(cg,"extern bzy_glsurface_close");
 	cg_emit(cg,"extern bzy_dynsym");
 	cg_emit(cg,"extern bzy_ffi_bind");
 	cg_emit(cg,"extern bzy_net_read_url");

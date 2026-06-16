@@ -1400,6 +1400,19 @@ static void test_surface_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_surface_close") != NULL, 1);
 }
 
+static void test_glsurface_lowers(void)
+{
+	/* Graphics.openGL lowers to bzy_glsurface_open guarded by io_check; the GlSurface
+	   methods lower to their bzy_glsurface_* calls. */
+	emit("void main() { GlSurface g; g = Graphics.openGL(320, 240, \"t\"); long e; e = g.pollEvent(); g.swapBuffers(); bool o; o = g.isOpen(); g.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_glsurface_open") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_glsurface_poll") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_glsurface_swap") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_glsurface_isopen") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_glsurface_close") != NULL, 1);
+}
+
 static void test_dynamic_extern_lowers(void)
 {
 	/* A dynamic extern call lowers to a bzy_dynsym resolve, a per-extern slot, an
@@ -1568,6 +1581,7 @@ int main(void)
 	RUN(test_raw_socket_lowers);
 	RUN(test_tls_lowers);
 	RUN(test_surface_lowers);
+	RUN(test_glsurface_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
