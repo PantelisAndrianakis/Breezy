@@ -1,0 +1,40 @@
+// Advisory whole-file lock around a positioned write/read round-trip. A single
+// process re-locking is deterministic across hosts: lock() returns true, the
+// positioned write/read round-trips, unlock() releases. Prints:
+//   true   (lock acquired)
+//   10     (1 + 2 + 3 + 4, the record read back by offset)
+void main()
+{
+	FileChannel c;
+	c = File.openChannel("locktest.dat");
+
+	bool got;
+	got = c.lock();
+	print(got);                     // true.
+
+	byte[] r;
+	r = new byte[4];
+	r[0] = (byte)1;
+	r[1] = (byte)2;
+	r[2] = (byte)3;
+	r[3] = (byte)4;
+	c.writeAt(0, r);
+	c.sync();
+
+	byte[] back;
+	back = c.readAt(0, 4);
+	int sum;
+	sum = 0;
+	int i;
+	i = 0;
+	while (i < back.length)
+	{
+		sum = sum + back[i];
+		i = i + 1;
+	}
+	print(sum);                     // 10.
+
+	c.unlock();
+	c.close();
+	File.delete("locktest.dat");
+}

@@ -50,6 +50,47 @@ File.writeBytes("data/copy.bin", bytes);
 
 ---
 
+## Random access: `FileChannel`
+
+For random-access storage (a database file, a consensus log), open a
+`FileChannel` and read/write at explicit byte offsets without moving a cursor:
+
+```breezy
+FileChannel c = File.openChannel("store.dat");
+
+byte[] rec = new byte[4];
+rec[0] = (byte)1; rec[1] = (byte)2; rec[2] = (byte)3; rec[3] = (byte)4;
+
+if (c.lock())                       // Exclusive advisory whole-file lock.
+{
+	c.writeAt(0, rec);              // Positioned write (pwrite); no cursor.
+	c.sync();                       // Durability barrier.
+	byte[] back = c.readAt(0, 4);   // Positioned read (pread).
+	c.unlock();
+}
+c.close();
+```
+
+- `readAt(offset, maxBytes) -> byte[]` - positioned read; owned `byte[]` of the
+  bytes actually read (shorter at EOF, empty past EOF).
+- `writeAt(offset, data) -> int` - positioned write of a `byte[]`; returns the
+  byte count.
+- `readInto(buf, offset, maxLen) -> int` - positioned read into a reusable
+  `byte[]`; returns the count.
+- `size() -> long` / `truncate(size)` - query / set the file length.
+- `sync()` - flush buffers to disk (durability barrier).
+- `lock() -> bool` - acquire an **exclusive advisory** lock on the whole file,
+  parking the breeze until granted; returns `true` once held, `false` on failure.
+- `unlock()` - release the advisory lock (best-effort).
+- `close()` - close the handle.
+
+`writeAt` + `sync` + `lock` together give a crash-safe, single-writer storage
+primitive. The lock is **advisory** (POSIX `flock` / Windows `LockFileEx`): it
+coordinates cooperating processes that all lock, and does not block unrelated
+readers.
+
+---
+
 ## Windows attributes
 
 Read-only, hidden, system, and archive flags via the `File.READONLY` / `File.HIDDEN` / `File.SYSTEM` / `File.ARCHIVE` constants:
@@ -105,6 +146,7 @@ The **data** operations (the reads and writes) run on the [offload pool](../io/n
 - **Search returns full paths**; globs use `*` and `?`.
 - **Attributes are Windows concepts** - `HIDDEN`/`SYSTEM`/`ARCHIVE` have no POSIX equivalent.
 - **Data ops offload; metadata ops are synchronous.**
+- **`FileChannel.lock()` is an advisory whole-file lock** - it coordinates processes that cooperate by locking; it returns `false` on failure rather than throwing, and `unlock()` is best-effort. The blocking acquire parks the breeze on the offload pool.
 
 ---
 

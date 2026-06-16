@@ -1352,6 +1352,17 @@ static void test_system_realtime_io_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_sys_affinity") != NULL, 1);
 }
 
+static void test_filechannel_lock_lowers(void)
+{
+	/* FileChannel.lock() lowers to a bzy_filechannel_lock call. */
+	emit("void main() { FileChannel c; c = File.openChannel(\"x.dat\"); bool ok; ok = c.lock(); print(ok); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_filechannel_lock") != NULL, 1);
+
+	/* FileChannel.unlock() lowers to a bzy_filechannel_unlock call. */
+	emit("void main() { FileChannel c; c = File.openChannel(\"x.dat\"); c.unlock(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_filechannel_unlock") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1503,6 +1514,7 @@ int main(void)
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_system_realtime_io_lowers);
+	RUN(test_filechannel_lock_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

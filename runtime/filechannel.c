@@ -6,6 +6,7 @@
   #include <fcntl.h>
   #include <unistd.h>
   #include <sys/stat.h>
+  #include <sys/file.h>
 #endif
 
 /* FileChannel managed leaf (object_size = 40):
@@ -236,6 +237,65 @@ void bzy_filechannel_sync(void *ch)
 			bzy_io_fail("FileChannel.sync: flush failed.");
 		}
 	}
+}
+
+/* Exclusive whole-file advisory lock. LockFileEx blocks until granted, so run it
+   on the offload pool to park the breeze (the worker reports success in the ctx;
+   no g_io_error crosses a thread). Range is the maximum 64-bit span. */
+typedef struct
+{
+	HANDLE h;
+	int unlock;
+	int ok;
+} LockCtx;
+static void lock_run(void *p)
+{
+	LockCtx *c = (LockCtx*)p;
+	OVERLAPPED ov = {0};
+	if (c->unlock)
+	{
+		c->ok = UnlockFileEx(c->h, 0, 0xFFFFFFFF, 0xFFFFFFFF, &ov) ? 1 : 0;
+	}
+	else
+	{
+		c->ok = LockFileEx(c->h, LOCKFILE_EXCLUSIVE_LOCK, 0, 0xFFFFFFFF, 0xFFFFFFFF, &ov) ? 1 : 0;
+	}
+}
+
+int64_t bzy_filechannel_lock(void *ch)
+{
+	if (FC_CLOSED(ch))
+	{
+		return 0;   /* Closed channel: nothing to lock. */
+	}
+
+	if (bzy_sched_current())
+	{
+		LockCtx c = { FC_HANDLE(ch), 0, 0 };
+		bzy_offload_run(lock_run, &c);
+		return c.ok;
+	}
+
+	OVERLAPPED ov = {0};
+	return LockFileEx(FC_HANDLE(ch), LOCKFILE_EXCLUSIVE_LOCK, 0, 0xFFFFFFFF, 0xFFFFFFFF, &ov) ? 1 : 0;
+}
+
+void bzy_filechannel_unlock(void *ch)
+{
+	if (FC_CLOSED(ch))
+	{
+		return;
+	}
+
+	if (bzy_sched_current())
+	{
+		LockCtx c = { FC_HANDLE(ch), 1, 0 };
+		bzy_offload_run(lock_run, &c);
+		return;
+	}
+
+	OVERLAPPED ov = {0};
+	UnlockFileEx(FC_HANDLE(ch), 0, 0xFFFFFFFF, 0xFFFFFFFF, &ov);   /* Best-effort. */
 }
 
 void bzy_filechannel_close(void *ch)
@@ -493,6 +553,47 @@ void bzy_filechannel_sync(void *ch)
 			bzy_io_fail("FileChannel.sync: flush failed.");
 		}
 	}
+}
+
+/* Exclusive whole-file advisory lock via flock. flock(LOCK_EX) blocks until
+   granted, so run it on the offload pool to park the breeze. */
+typedef struct
+{
+	int fd;
+	int op;
+	int ok;
+} LockCtx;
+static void lock_run(void *p)
+{
+	LockCtx *c = (LockCtx*)p;
+	c->ok = (flock(c->fd, c->op) == 0) ? 1 : 0;
+}
+
+int64_t bzy_filechannel_lock(void *ch)
+{
+	if (FC_CLOSED(ch))
+	{
+		return 0;   /* Closed channel: nothing to lock. */
+	}
+
+	if (bzy_sched_current())
+	{
+		LockCtx c = { (int)FC_FD(ch), LOCK_EX, 0 };
+		bzy_offload_run(lock_run, &c);
+		return c.ok;
+	}
+
+	return (flock((int)FC_FD(ch), LOCK_EX) == 0) ? 1 : 0;
+}
+
+void bzy_filechannel_unlock(void *ch)
+{
+	if (FC_CLOSED(ch))
+	{
+		return;
+	}
+
+	flock((int)FC_FD(ch), LOCK_UN);   /* Best-effort release. */
 }
 
 void bzy_filechannel_close(void *ch)

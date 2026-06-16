@@ -2087,6 +2087,24 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_VOID;
 			}
+			else if (strcmp(e->name,"lock")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"FileChannel.lock() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;   /* true once the exclusive lock is held. */
+			}
+			else if (strcmp(e->name,"unlock")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"FileChannel.unlock() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
 			else
 			{
 				die(e->line,"Unknown FileChannel method: ",e->name);

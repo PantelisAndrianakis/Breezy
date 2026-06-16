@@ -294,6 +294,8 @@ int64_t bzy_filechannel_size(void *ch);                       /* Current size in
 void  bzy_filechannel_truncate(void *ch, int64_t size);       /* Set file length (grow or shrink). */
 void  bzy_filechannel_sync(void *ch);                         /* FlushFileBuffers (offloaded). */
 void  bzy_filechannel_close(void *ch);
+int64_t bzy_filechannel_lock(void *ch);      /* Exclusive advisory whole-file lock; parks; 1 ok, 0 fail. */
+void    bzy_filechannel_unlock(void *ch);    /* Release the advisory lock (best-effort). */
 
 /* Buffered file writer (6b-3): a managed handle over an open FILE* + a userspace
    buffer. write/writeLine/writeBytes memcpy into the buffer (no syscall); the buffer

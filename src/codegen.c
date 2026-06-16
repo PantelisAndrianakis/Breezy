@@ -4847,6 +4847,16 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 		fn = "bzy_filechannel_size";
 		fallible = 0;
 	}
+	else if (strcmp(n,"lock")==0)
+	{
+		fn = "bzy_filechannel_lock";   /* Returns bool in rax; not fallible (no throw). */
+		fallible = 0;
+	}
+	else if (strcmp(n,"unlock")==0)
+	{
+		fn = "bzy_filechannel_unlock";   /* void, best-effort release; not fallible. */
+		fallible = 0;
+	}
 	else
 	{
 		fn = "bzy_filechannel_close";
@@ -9958,6 +9968,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_filechannel_truncate");
 	cg_emit(cg,"extern bzy_filechannel_sync");
 	cg_emit(cg,"extern bzy_filechannel_close");
+	cg_emit(cg,"extern bzy_filechannel_lock");
+	cg_emit(cg,"extern bzy_filechannel_unlock");
 	cg_emit(cg,"extern bzy_filewriter_open");
 	cg_emit(cg,"extern bzy_filewriter_write");
 	cg_emit(cg,"extern bzy_filewriter_write_line");
