@@ -391,11 +391,21 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 {
 	if (TLS_CLOSED(s)) { bzy_io_fail("TlsSocket.read: socket is closed."); return NULL; }
 	int max = (int)(maxbytes > 0 ? maxbytes : 1);
-	char *buf = (char*)malloc((size_t)max);
+	/* Stage the plaintext on the stack for the common small read; only the rare
+	   large read touches the heap. The result byte[] must be sized to the actual
+	   byte count, so a staging copy is unavoidable - but the per-read malloc/free
+	   is not. */
+	char stackbuf[16384];
+	char *buf = (max <= (int)sizeof(stackbuf)) ? stackbuf : (char*)malloc((size_t)max);
+	if (!buf) { bzy_io_fail("TlsSocket.read: out of memory."); return NULL; }
 	int n = tls_run(s, 1, buf, max);
-	if (n < 0) { free(buf); bzy_io_fail("TlsSocket.read: TLS read error."); return NULL; }
+	if (n < 0)
+	{
+		if (buf != stackbuf) { free(buf); }
+		bzy_io_fail("TlsSocket.read: TLS read error."); return NULL;
+	}
 	void *arr = tls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean EOF). */
-	free(buf);
+	if (buf != stackbuf) { free(buf); }
 	return arr;
 }
 
