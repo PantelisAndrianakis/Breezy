@@ -337,6 +337,7 @@ check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
 check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
 check filechannel   tests/samples/pass/io/filechannel.bzy    $'10'
 check filelock      tests/samples/pass/io/filelock.bzy       $'true\n10'
+check mmap          tests/samples/pass/io/mmap_roundtrip.bzy 'mmap-ok'
 check readinto      tests/samples/pass/io/readinto.bzy       $'4 65 68\n4 71 74'
 check filewriter    tests/samples/pass/io/filewriter.bzy     $'102'
 check logger        tests/samples/pass/io/logger.bzy         $'200'
@@ -403,7 +404,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls surface glsurface dynsym; do
+    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"

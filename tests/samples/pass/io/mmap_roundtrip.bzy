@@ -1,0 +1,44 @@
+// Phase D: write values through a memory map, flush, then read them back through
+// a SECOND, fresh mapping of the same file -- proving the mapped writes reached the
+// file (true mmap, not a copy). Prints mmap-ok on a clean round-trip.
+void main()
+{
+	try
+	{
+		FileChannel c;
+		c = File.openChannel("mmap_test.bin");
+		c.truncate(4096);                 // Size the file so it can be mapped.
+
+		MappedFile w;
+		w = c.mmap();
+		w.putLong(0, 0x1234567);
+		w.putByte(16, 65);                // 'A'
+		w.flush();
+		w.close();
+
+		MappedFile r;
+		r = c.mmap();                     // Fresh mapping: sees the file's persisted bytes.
+		long v;
+		v = r.getLong(0);
+		int b;
+		b = r.getByte(16);
+		long n;
+		n = r.size();
+		r.close();
+		c.close();
+		File.delete("mmap_test.bin");
+
+		if (v == 0x1234567 and b == 65 and n == 4096)
+		{
+			print("mmap-ok");
+		}
+		else
+		{
+			print("mmap-bad");
+		}
+	}
+	catch (IOException e)
+	{
+		print("mmap-skip");
+	}
+}
