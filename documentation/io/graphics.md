@@ -89,6 +89,69 @@ the window-close button.
 
 ---
 
+## OpenGL - a hardware 3D context
+
+For accelerated 3D, `Graphics.openGL` opens an **OpenGL window** instead of a
+software framebuffer. You then call OpenGL **directly from Breezy** through
+[`extern dynamic`](../ffi/c-interop.md) - `openGL` installs an
+`SDL_GL_GetProcAddress` resolver, so a declared `extern dynamic` GL function
+binds to the live driver on first call.
+
+```breezy
+extern dynamic void glClear(int mask);
+extern dynamic void glClearColor(float r, float g, float b, float a);
+extern dynamic void glBegin(int mode);
+extern dynamic void glColor3f(float r, float g, float b);
+extern dynamic void glVertex2f(float x, float y);
+extern dynamic void glEnd();
+
+void main()
+{
+	GlSurface gs = Graphics.openGL(640, 480, "Breezy GL");
+	for (int frame = 0; frame < 600; frame = frame + 1)
+	{
+		long e = gs.pollEvent();           // Drain input (same packed events as above).
+		glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+		glClear(0x4000);                   // GL_COLOR_BUFFER_BIT
+		glBegin(0x0004);                   // GL_TRIANGLES
+		glColor3f(1.0f, 0.0f, 0.0f); glVertex2f(0.0f, 0.5f);
+		glColor3f(0.0f, 1.0f, 0.0f); glVertex2f(-0.5f, -0.5f);
+		glColor3f(0.0f, 0.0f, 1.0f); glVertex2f(0.5f, -0.5f);
+		glEnd();
+		gs.swapBuffers();                  // Present the frame.
+	}
+	gs.close();
+}
+```
+
+The example uses legacy immediate mode for brevity; a modern core/shader pipeline
+(VAOs, VBOs, `glDrawArrays`) works through the **identical** `extern dynamic` path -
+declare the entry points you need and call them.
+
+| Call | Returns | Behaviour |
+| --- | --- | --- |
+| `Graphics.openGL(width, height, title)` | `GlSurface` | Open a GL window + context. Throws `IOException` if SDL2, OpenGL, or a display is unavailable. |
+| `gs.pollEvent()` | `long` | Next packed input event (same encoding as `Surface`); `0` when none remain. |
+| `gs.swapBuffers()` | - | Present the rendered frame (`SDL_GL_SwapWindow`). |
+| `gs.isOpen()` | `bool` | `false` once you `close()`; watch `pollEvent` for the `kind == 6` quit event to break your loop. |
+| `gs.close()` | - | Destroy the context and window. Idempotent. |
+
+### The one hard rule: never yield inside a GL loop
+
+A GL context is bound to **one OS thread**. The breeze that calls `openGL` owns the
+context on its scheduler worker, and a *running* breeze never migrates - so the render
+loop stays on that worker **as long as it never yields**. Do **not** `await`,
+`System.sleep`, or join a spawned breeze anywhere between `openGL` and `close`: a yield
+can move the breeze to another worker, off the context's thread. `swapBuffers` detects
+this and aborts with a clear message rather than corrupting the driver. Pace the loop
+with the display's own vsync, not `System.sleep`.
+
+One more: the `extern dynamic` resolver is global and last-writer-wins, so call
+`openGL` **after** any [`Ffi.bind`](../ffi/c-interop.md) - otherwise the GL resolver
+would be replaced and `gl*` lookups would miss.
+
+---
+
 ## Rules & gotchas
 
 - **`Graphics.open` needs SDL2 at run time** (loaded dynamically) and a display; it
@@ -99,9 +162,11 @@ the window-close button.
   busy-spin.
 - **`present`'s framebuffer length must equal `width*height`** or it throws.
 - **Input is poll-only** - drain `pollEvent` until it returns `0` each frame.
-- **GPU / 3D (OpenGL, shaders, draw calls) is a future addition.** Today the surface is
-  a CPU framebuffer; for accelerated 3D, bind a GL library through the
-  [FFI surface](../ffi/c-interop.md).
+- **For GPU / 3D, use `Graphics.openGL`** (see [OpenGL](#opengl---a-hardware-3d-context)
+  above) - a real OpenGL context you drive with `extern dynamic` `gl*` calls. The
+  software `Surface` here stays a CPU framebuffer.
+- **Never yield inside a GL render loop** - the context is thread-bound; `await`/`sleep`
+  between `openGL` and `close` can migrate the breeze and `swapBuffers` will abort.
 
 ---
 
