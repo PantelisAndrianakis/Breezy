@@ -262,6 +262,11 @@ void   *bzy_tls_read(void *s, int64_t maxbytes);  /* Owned byte[] (len 0 = EOF);
 int64_t bzy_tls_write(void *s, void *data);       /* byte[]; encrypts+sends all; returns count; throws on error. */
 void    bzy_tls_close(void *s);                   /* TLS shutdown + release transport. */
 void    bzy_tls_close_listener(void *l);          /* Close the listener + free ctx. */
+void   *bzy_surface_open(int64_t w, int64_t h, void *title);   /* Owned Surface; throws if SDL2/display absent. */
+void    bzy_surface_present(void *s, void *pixels);            /* Blit a w*h ARGB int[]; throws on length/device error. */
+int64_t bzy_surface_poll_event(void *s);          /* Next packed event, 0 when none. */
+int64_t bzy_surface_is_open(void *s);             /* 0 once the window is closed. */
+void    bzy_surface_close(void *s);               /* Stop + join the render thread; idempotent. */
 void   *bzy_socket_read(void *s, int64_t maxbytes);    /* Parks; owned byte[] (length 0 = peer closed). */
 void   *bzy_socket_read_timeout(void *s, int64_t maxbytes, int64_t ms);  /* NULL on timeout. */
 void   *bzy_socket_try_read(void *s, int64_t maxbytes); /* NULL if no data ready; len 0 = EOF. */
