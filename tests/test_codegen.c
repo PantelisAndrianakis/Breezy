@@ -1371,6 +1371,22 @@ static void test_raw_socket_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
 }
 
+static void test_tls_lowers(void)
+{
+	/* Network.tlsConnect (2-arg) lowers to bzy_tls_connect guarded by io_check. */
+	emit("void main() { TlsSocket s; s = Network.tlsConnect(\"h\", 443); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_tls_connect") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+
+	/* Network.tlsListen + accept + read/write/close lower to their bzy_tls_* calls. */
+	emit("void main() { TlsListener l; l = Network.tlsListen(0, \"c.pem\", \"k.pem\"); TlsSocket s; s = l.accept(); byte[] b; b = s.read(16); s.write(b); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_tls_listen") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_tls_accept") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_tls_read") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_tls_write") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_tls_close") != NULL, 1);
+}
+
 static void test_ffi_variadic_win64_fpdup(void)
 {
 	/* SP3 Win64 variadic ABI: a double vararg is duplicated into its GP register
@@ -1524,6 +1540,7 @@ int main(void)
 	RUN(test_system_realtime_io_lowers);
 	RUN(test_filechannel_lock_lowers);
 	RUN(test_raw_socket_lowers);
+	RUN(test_tls_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
 	RUN(test_cycle_self_reference);

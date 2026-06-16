@@ -23,4 +23,8 @@
 
 int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
                     socklen_t *outlen, int *fam);                          /* 0 on success; AF_UNSPEC (v4/v6). */
+
+/* Reactor-parked raw byte I/O on a plain Socket handle (shared with tls.c). */
+int     bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms);    /* bytes, 0 EOF, -1 err, -2 timeout. */
+int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);          /* bytes sent, <0 on error. */
 #endif

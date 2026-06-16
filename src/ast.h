@@ -16,6 +16,8 @@ typedef enum
 	TY_TIMER,                                 /* Timer: 8-byte pointer to a heap timer handle. */
 	TY_LISTENER,                              /* Listener: TCP accept handle. */
 	TY_SOCKET,                                /* Socket: TCP connection handle. */
+	TY_TLSSOCKET,                             /* TlsSocket: TLS connection handle. */
+	TY_TLSLISTENER,                           /* TlsListener: TLS accept handle. */
 	TY_UDPSOCKET,                             /* UdpSocket: UDP datagram handle. */
 	TY_DATAGRAM,                              /* Datagram: a received UDP payload + sender. */
 	TY_FILECHANNEL,                           /* FileChannel: random-access file handle. */
@@ -70,6 +72,8 @@ static inline int ty_bits(TypeKind k)
 	case TY_TIMER:
 	case TY_LISTENER:
 	case TY_SOCKET:
+	case TY_TLSSOCKET:
+	case TY_TLSLISTENER:
 	case TY_UDPSOCKET:
 	case TY_DATAGRAM:
 	case TY_FILECHANNEL:
@@ -118,6 +122,7 @@ static inline int ty_is_managed(TypeKind k)
 {
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
 	       || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
+	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER
 	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_LOGGER;
 }
 

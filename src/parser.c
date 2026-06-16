@@ -760,6 +760,24 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"TlsSocket")==0)
+	{
+		out->kind=TY_TLSSOCKET;
+		out->class_name[0]='\0';
+		out->elem=NULL;
+		out->elem2=NULL;
+		advance(p);
+		return 1;
+	}
+	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"TlsListener")==0)
+	{
+		out->kind=TY_TLSLISTENER;
+		out->class_name[0]='\0';
+		out->elem=NULL;
+		out->elem2=NULL;
+		advance(p);
+		return 1;
+	}
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"UdpSocket")==0)
 	{
 		out->kind=TY_UDPSOCKET;

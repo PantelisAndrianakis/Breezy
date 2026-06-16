@@ -253,6 +253,15 @@ int64_t bzy_listener_port(void *l);           /* The actual bound port (resolves
 void    bzy_listener_close(void *l);
 void   *bzy_socket_connect(void *host, int64_t port);  /* Parks; owned (+1) connected Socket. */
 void   *bzy_raw_socket(int64_t protocol);   /* Network.rawSocket: owned Socket; throws IOException when denied. */
+void   *bzy_tls_connect(void *host, int64_t port);                  /* TLS client, system-default CAs. Owned TlsSocket; throws on failure. */
+void   *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle); /* TLS client, explicit PEM CA bundle. */
+void   *bzy_tls_listen(int64_t port, void *certPath, void *keyPath);  /* Owned TlsListener; throws on failure. */
+void   *bzy_tls_accept(void *l);                  /* Owned TlsSocket; parks + handshakes; throws on failure. */
+int64_t bzy_tls_listener_port(void *l);           /* The listener's bound port. */
+void   *bzy_tls_read(void *s, int64_t maxbytes);  /* Owned byte[] (len 0 = EOF); throws on error. */
+int64_t bzy_tls_write(void *s, void *data);       /* byte[]; encrypts+sends all; returns count; throws on error. */
+void    bzy_tls_close(void *s);                   /* TLS shutdown + release transport. */
+void    bzy_tls_close_listener(void *l);          /* Close the listener + free ctx. */
 void   *bzy_socket_read(void *s, int64_t maxbytes);    /* Parks; owned byte[] (length 0 = peer closed). */
 void   *bzy_socket_read_timeout(void *s, int64_t maxbytes, int64_t ms);  /* NULL on timeout. */
 void   *bzy_socket_try_read(void *s, int64_t maxbytes); /* NULL if no data ready; len 0 = EOF. */

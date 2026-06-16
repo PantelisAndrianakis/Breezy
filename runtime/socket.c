@@ -992,3 +992,16 @@ void bzy_listener_close(void *l)
 }
 
 #endif
+
+/* Shared with tls.c: expose the reactor-parked raw byte transport I/O on a
+   plain Socket handle, so TLS can pump ciphertext over an existing socket
+   without re-implementing the platform recv/send. Additive; the plain path is
+   unchanged. */
+int bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
+{
+	return sock_recv(s, buf, max, timeout_ms);
+}
+int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len)
+{
+	return sock_send_all(s, buf, len);
+}

@@ -104,6 +104,41 @@ they need `CAP_NET_RAW` (typically root).
 
 ---
 
+## TLS
+
+Wrap a connection in TLS with `Network.tlsConnect` (client) or `Network.tlsListen`
+(server). OpenSSL is loaded dynamically at first use; if it is absent the call
+throws a catchable [`IOException`](../stdlib/file.md). Every TLS read/write parks
+the breeze on the reactor, so TLS scales like any other socket.
+
+```breezy
+// Client: verify the server against the system CA store (or a CA bundle).
+TlsSocket s = Network.tlsConnect("example.com", 443);
+s.write(request);
+byte[] body = s.read(65536);
+s.close();
+
+// Server: present a certificate + key (PEM).
+TlsListener l = Network.tlsListen(8443, "server-cert.pem", "server-key.pem");
+TlsSocket c = l.accept();             // Parks; runs the handshake.
+```
+
+- `Network.tlsConnect(host, port) -> TlsSocket` - verify the peer against the
+  **system-default CA paths**, checking the hostname.
+- `Network.tlsConnect(host, port, caBundlePath) -> TlsSocket` - verify against a
+  PEM CA bundle. **Required on Windows**, where OpenSSL does not read the OS
+  certificate store.
+- `Network.tlsListen(port, certPath, keyPath) -> TlsListener` - server identity
+  from a PEM cert chain + private key; `accept()` runs the server handshake and
+  `port()` reports the bound port.
+- `TlsSocket.read(max)` / `write(byte[])` / `close()` - same semantics as
+  `Socket`, encrypted.
+
+Verification is always on (no insecure mode); a handshake or certificate failure
+throws `IOException`.
+
+---
+
 ## Rules & gotchas
 
 - **Every I/O call looks blocking but parks the breeze**, not the OS thread.
@@ -113,6 +148,7 @@ they need `CAP_NET_RAW` (typically root).
 - **`Network.readUrl` is one-call HTTP/HTTPS GET**, returns the body, and throws `IOException` on failure.
 - **For more than a GET body**, use a raw `Socket`.
 - **`Network.rawSocket(protocol)` is privilege-gated** - needs `CAP_NET_RAW`/root or Administrator, throws `IOException` when denied, and on Windows cannot send TCP/UDP.
+- **`Network.tlsConnect` / `tlsListen` need OpenSSL at runtime** (loaded dynamically) and throw `IOException` when it is absent or when verification fails; on Windows, pass a CA-bundle path since OpenSSL does not read the Windows certificate store.
 
 ---
 

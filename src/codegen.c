@@ -4649,6 +4649,38 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"tlsConnect")==0)
+	{
+		/* 2-arg -> system-default CAs; 3-arg -> explicit CA bundle. Fallible. */
+		const char *tfn = (e->arg_count==3) ? "bzy_tls_connect_ca" : "bzy_tls_connect";
+		TypeRef pst[3];
+		for (int i=0; i<e->arg_count; i++) { pst[i]=e->args[i]->type; }
+		cg_call_with_args(cg,tt,tfn,NULL,e->args,e->arg_count,0, 1, 0, pst, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int kc = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), kc);
+		cg_emit(cg,".L%d:", kc);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
+	if (strcmp(m,"tlsListen")==0)
+	{
+		TypeRef psl[3];
+		for (int i=0; i<e->arg_count; i++) { psl[i]=e->args[i]->type; }
+		cg_call_with_args(cg,tt,"bzy_tls_listen",NULL,e->args,e->arg_count,0, 1, 0, psl, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int kl = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), kl);
+		cg_emit(cg,".L%d:", kl);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
 	const char *fn;
 	if (strcmp(m,"listen")==0)
 	{
@@ -4894,6 +4926,86 @@ static void cg_filechannel_method(Codegen *cg, TypeTable *tt, Expr *e)
 		if (e->type.kind != TY_VOID)
 		{
 			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the return value (byte[] or count) across the check. */
+		}
+
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		if (e->type.kind != TY_VOID)
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
+}
+
+/* TlsListener.accept() -> owned TlsSocket (fallible: handshake can fail);
+   close() -> void (not fallible). */
+static void cg_tls_listener_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	if (strcmp(n,"accept")==0)
+	{
+		fn = "bzy_tls_accept";
+	}
+	else if (strcmp(n,"port")==0)
+	{
+		fn = "bzy_tls_listener_port";
+	}
+	else
+	{
+		fn = "bzy_tls_close_listener";
+	}
+	int fallible = (strcmp(n,"accept")==0);
+
+	int obj = ty_is_managed(e->type.kind);
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, NULL, 0, 0);
+
+	if (fallible)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+	}
+}
+
+/* TlsSocket.read(max)->byte[] / write(byte[])->int are fallible; close()->void is not. */
+static void cg_tls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	int fallible = 1;
+	if (strcmp(n,"read")==0)
+	{
+		fn = "bzy_tls_read";
+	}
+	else if (strcmp(n,"write")==0)
+	{
+		fn = "bzy_tls_write";
+	}
+	else
+	{
+		fn = "bzy_tls_close";
+		fallible = 0;
+	}
+
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+
+	int obj = ty_is_managed(e->type.kind);   /* read -> byte[] (owned); others scalar/void. */
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count, 0);
+
+	if (fallible)
+	{
+		if (e->type.kind != TY_VOID)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		}
 
 		int k = cg_label(cg);
@@ -5766,6 +5878,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				 || e->lhs->type.kind==TY_UDPSOCKET || e->lhs->type.kind==TY_DATAGRAM)
 		{
 			cg_net_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_TLSLISTENER)
+		{
+			cg_tls_listener_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_TLSSOCKET)
+		{
+			cg_tls_socket_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
@@ -9956,6 +10076,15 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_listener_close");
 	cg_emit(cg,"extern bzy_socket_connect");
 	cg_emit(cg,"extern bzy_raw_socket");
+	cg_emit(cg,"extern bzy_tls_connect");
+	cg_emit(cg,"extern bzy_tls_connect_ca");
+	cg_emit(cg,"extern bzy_tls_listen");
+	cg_emit(cg,"extern bzy_tls_accept");
+	cg_emit(cg,"extern bzy_tls_listener_port");
+	cg_emit(cg,"extern bzy_tls_read");
+	cg_emit(cg,"extern bzy_tls_write");
+	cg_emit(cg,"extern bzy_tls_close");
+	cg_emit(cg,"extern bzy_tls_close_listener");
 	cg_emit(cg,"extern bzy_net_read_url");
 	cg_emit(cg,"extern bzy_socket_read");
 	cg_emit(cg,"extern bzy_socket_read_timeout");

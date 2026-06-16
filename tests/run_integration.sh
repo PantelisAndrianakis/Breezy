@@ -290,6 +290,16 @@ check multi_class    tests/samples/pass/oop/multi_class.bzy   $'15\n7\n7'
 check field_init     tests/samples/pass/oop/field_init.bzy  $'4\nrex\ndog\nanimal\n10\n11\n4\n7\n7\n0\n9\n4\nanimal\ndog'
 check tcp_echo      tests/samples/pass/net/tcp_echo.bzy       $'4'
 check rawsocket     tests/samples/pass/net/rawsocket.bzy      "raw-ok"
+# TLS echo: OK on a verified round-trip (prints 4); SKIP when OpenSSL is absent
+# (the program aborts with the "TLS unavailable" IOException -- not our bug).
+bzy_build tests/samples/pass/net/tls_echo.bzy
+if [ $? -ne 0 ]; then echo "  tls_echo: COMPILE FAILED"; fail=1
+else
+    tls_out="$(./out.exe 2>&1)"; tls_out="${tls_out//$'\r'/}"
+    if [ "$tls_out" == "4" ]; then echo "  tls_echo: OK"
+    elif echo "$tls_out" | grep -qi "TLS unavailable"; then echo "  tls_echo: SKIP (OpenSSL not present)"
+    else echo "  tls_echo: FAIL (got '$tls_out')"; fail=1; fi
+fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
 check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
@@ -361,7 +371,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock; do
+    for obj in system socket udp http desktop file filechannel regex logger affinity rawsock tls; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
