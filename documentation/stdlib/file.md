@@ -91,6 +91,50 @@ readers.
 
 ---
 
+## Memory-mapped files: `MappedFile`
+
+For zero-copy access to a large file - scanning, random reads, in-place edits -
+map it into memory with `FileChannel.mmap()`. Reads and writes then hit the OS
+page cache directly, with **no `read()`/`write()` syscall per access**.
+
+```breezy
+FileChannel c = File.openChannel("data.bin");
+c.truncate(1 << 20);                // The file must be non-empty to map.
+
+MappedFile m = c.mmap();            // Whole-file read-write map (MAP_SHARED).
+m.putLong(0, 0x1234567);           // Write straight into the mapped pages.
+long v = m.getLong(0);             // Read with no syscall.
+m.flush();                         // Force dirty pages to disk.
+m.close();                         // Unmap.
+c.close();
+```
+
+- `c.mmap() -> MappedFile` - map the whole file read-write. Throws
+  [`IOException`](#deleting-and-handling-errors) if the file is empty (truncate
+  it to a size first) or cannot be mapped.
+- `size() -> long` - the mapped length in bytes.
+- `getByte(off) -> int` (0..255), `getInt(off) -> int`, `getLong(off) -> long` -
+  read a native-endian value at a byte offset.
+- `putByte(off, v)`, `putInt(off, v)`, `putLong(off, v)` - write one.
+- `copyInto(byte[] dst, srcOffset, len)` - bulk-copy mapped bytes into a `byte[]`
+  off the page cache (no `read()` syscall).
+- `flush()` - force dirty pages to disk (`msync` / `FlushViewOfFile` +
+  `FlushFileBuffers`); parks the breeze on the offload pool. Throws on error.
+- `close()` - unmap and release; idempotent.
+
+Offsets are **bounds-checked** - an out-of-range index aborts with the same
+message as an array subscript. Values are **native-endian**: a file written and
+read on the same architecture round-trips exactly.
+
+**Concurrency:** mapped bytes are not ARC objects, so overlapping writes from
+multiple breezes are **not** auto-synchronized the way a shared container is.
+Use a single writer, or coordinate with your own lock / `FileChannel.lock()`.
+
+**Durability:** call `flush()` before you rely on the bytes being on disk;
+`close()` (and process exit) unmaps but does not guarantee a flush.
+
+---
+
 ## Windows attributes
 
 Read-only, hidden, system, and archive flags via the `File.READONLY` / `File.HIDDEN` / `File.SYSTEM` / `File.ARCHIVE` constants:
