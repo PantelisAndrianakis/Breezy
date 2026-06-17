@@ -42,6 +42,13 @@ foreach (int n in nums)
 print(sum);                // 60.
 ```
 
+`List` (and the other vector-backed collections) also take [lambdas](functions.md) through the `map`, `filter`, `forEach`, and `reduce` combinators, and `reserve(capacity)` pre-sizes the backing store. See [first-class functions](functions.md#collection-combinators) for the full set.
+
+```breezy
+List<int> doubled = nums.map(x => x * 2);          // 20, 40, 60.
+int total = nums.reduce(0, (acc, x) => acc + x);   // 60.
+```
+
 ---
 
 ## Set
