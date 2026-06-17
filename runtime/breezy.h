@@ -141,6 +141,22 @@ int64_t bzy_pq_poll(void *o);
 int64_t bzy_pq_peek(void *o);
 int64_t bzy_pq_size(void *o);
 
+/* TreeMap<K,V> / TreeSet<T>: a B-tree (own TU runtime/btree.c). has_values=0 is a
+   TreeSet. get/first/last/floor/ceiling return owned managed keys/values; keys/
+   values/entries return owned arrays. obj_slot = compareTo vtable slot, -1 else. */
+void   *bzy_btree_new(int64_t kkind, int64_t has_values, int64_t vman, int64_t obj_slot);
+void    bzy_btree_put(void *o, int64_t k, int64_t v);
+int64_t bzy_btree_get(void *o, int64_t k);
+int64_t bzy_btree_has(void *o, int64_t k);
+int64_t bzy_btree_size(void *o);
+int64_t bzy_btree_first(void *o);
+int64_t bzy_btree_last(void *o);
+int64_t bzy_btree_floor(void *o, int64_t k);
+int64_t bzy_btree_ceiling(void *o, int64_t k);
+void   *bzy_btree_keys(void *o);
+void   *bzy_btree_values(void *o);
+void   *bzy_btree_entries(void *o);
+
 void   *bzy_vec_new(int64_t elem_kind);          /* Owned (+1). 0 int,1 float,2 double,3 string,4 object. */
 int64_t bzy_vec_len(void *v);
 void    bzy_vec_push_back(void *v, int64_t val); /* Retains a managed element. */
