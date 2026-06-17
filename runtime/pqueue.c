@@ -60,6 +60,13 @@ static int pq_less(void *o, int64_t x, int64_t y)
 	return c < 0;
 }
 
+/* The hot case -- an int/long/bool heap (elem_kind 0) -- orders by a plain signed
+   compare, identical to the cmp_i64 the comparator would return. The sift loops
+   hoist this once (prim) so each comparison is an inline < instead of an indirect
+   comparator call; float/string/object keys keep the general pq_less path. The
+   branch is loop-invariant, so it predicts away. */
+#define PQ_LESS(o, prim, x, y) ((prim) ? (x) < (y) : pq_less((o), (x), (y)))
+
 void *bzy_pq_new(int64_t elem_kind, int64_t obj_slot)
 {
 	void *o = bzy_alloc(72);
@@ -112,13 +119,14 @@ static void pq_add_impl(void *o, int64_t v)
 		bzy_retain((void*)v);
 	}
 
+	int prim = (*PQ_KIND(o) == 0);
 	int64_t *a = pq_slots(o);
 	int64_t i = (*PQ_LEN(o))++;
 	a[i] = v;
 	while (i > 0)                                   /* Sift up. */
 	{
 		int64_t p = (i - 1) / 2;
-		if (!pq_less(o, a[i], a[p]))
+		if (!PQ_LESS(o, prim, a[i], a[p]))
 		{
 			break;
 		}
@@ -144,16 +152,17 @@ static int64_t pq_poll_impl(void *o)
 	a[0] = a[n];
 	a[n] = 0;                                       /* Blank the vacated slot (no double-release). */
 	*PQ_LEN(o) = n;
+	int prim = (*PQ_KIND(o) == 0);
 	int64_t i = 0;
 	while (1)                                        /* Sift down. */
 	{
 		int64_t l = 2 * i + 1, r = 2 * i + 2, m = i;
-		if (l < n && pq_less(o, a[l], a[m]))
+		if (l < n && PQ_LESS(o, prim, a[l], a[m]))
 		{
 			m = l;
 		}
 
-		if (r < n && pq_less(o, a[r], a[m]))
+		if (r < n && PQ_LESS(o, prim, a[r], a[m]))
 		{
 			m = r;
 		}
