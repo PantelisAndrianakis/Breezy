@@ -42,6 +42,29 @@ static int class_is_exception(ClassInfo *c)
 	return 0;
 }
 
+/* A class is Comparable if it declares `int compareTo(SelfClass other)`. The
+   ordered containers (PriorityQueue / TreeMap / TreeSet) call it to order object
+   keys -- the ordering analogue of the reserved protocol the hash containers use
+   to hash object keys. We do not add F-bounded generics: the self-typed parameter
+   is accepted as any object/generic type, checked structurally here. */
+static int class_is_comparable(const char *class_name)
+{
+	ClassInfo *ci = types_find_class(g_types, class_name);
+	if (!ci)
+	{
+		return 0;
+	}
+
+	MethodInfo *m = types_find_method(ci, "compareTo");
+	if (!m || m->ret_type.kind != TY_INT || m->param_count != 1)
+	{
+		return 0;
+	}
+
+	TypeKind pk = m->param_types[0].kind;
+	return pk == TY_OBJECT || pk == TY_GENERIC;
+}
+
 /* StringBuilder is a runtime-provided builtin object class (not user-declared),
    so its type, new, and methods are special-cased rather than table-resolved. */
 static int is_stringbuilder(const TypeRef *t)
