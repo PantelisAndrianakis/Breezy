@@ -127,6 +127,10 @@ void   *bzy_entry_new(int64_t key, int64_t val, int64_t key_managed, int64_t val
 int64_t bzy_entry_key(void *e);    /* Key (managed -> +1 owned). */
 int64_t bzy_entry_val(void *e);    /* Value (managed -> +1 owned). */
 
+/* Ordering comparators for the ordered containers (own TU runtime/order.c). */
+typedef int (*bzy_cmp_fn)(int64_t, int64_t);
+bzy_cmp_fn bzy_order_cmp_for(int64_t elem_kind);   /* Primitive comparator by elem_kind; NULL for objects (4). */
+
 void   *bzy_vec_new(int64_t elem_kind);          /* Owned (+1). 0 int,1 float,2 double,3 string,4 object. */
 int64_t bzy_vec_len(void *v);
 void    bzy_vec_push_back(void *v, int64_t val); /* Retains a managed element. */
