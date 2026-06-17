@@ -2535,6 +2535,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			TypeRef *T=e->lhs->type.elem;
 			const char *nm=e->name;
 
+			/* Ordered containers require an ordering for object keys/elements:
+			   the class must implement Comparable (int compareTo). Primitives and
+			   strings order natively. */
+			int is_ordered = strcmp(tmpl,"PriorityQueue")==0 || strcmp(tmpl,"TreeSet")==0 || strcmp(tmpl,"TreeMap")==0;
+			if (is_ordered && T->kind==TY_OBJECT && !class_is_comparable(T->class_name))
+			{
+				die(e->line,"An object key/element of an ordered collection must implement Comparable (int compareTo).",NULL);
+			}
+
 			/* Shared by all: contains(T) -> bool. */
 			if (strcmp(nm,"contains")==0)
 			{
@@ -2589,6 +2598,207 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				else
 				{
 					die(e->line,"Unknown Set method: ",nm);
+				}
+
+				break;
+			}
+
+			if (strcmp(tmpl,"PriorityQueue")==0)
+			{
+				if (strcmp(nm,"add")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"PriorityQueue.add type mismatch.",NULL);
+					}
+
+					e->type.kind=TY_VOID;
+				}
+				else if (strcmp(nm,"poll")==0 || strcmp(nm,"peek")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"This method takes no arguments.",NULL);
+					}
+
+					e->type=*T;
+				}
+				else if (strcmp(nm,"size")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"size() takes no arguments.",NULL);
+					}
+
+					e->type.kind=TY_INT;
+				}
+				else if (strcmp(nm,"isEmpty")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"isEmpty() takes no arguments.",NULL);
+					}
+
+					e->type.kind=TY_BOOL;
+				}
+				else
+				{
+					die(e->line,"Unknown PriorityQueue method: ",nm);
+				}
+
+				break;
+			}
+
+			if (strcmp(tmpl,"TreeSet")==0)
+			{
+				if (strcmp(nm,"add")==0 || strcmp(nm,"remove")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"TreeSet op type mismatch.",NULL);
+					}
+
+					e->type.kind=TY_VOID;
+				}
+				else if (strcmp(nm,"first")==0 || strcmp(nm,"last")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"This method takes no arguments.",NULL);
+					}
+
+					e->type=*T;
+				}
+				else if (strcmp(nm,"floor")==0 || strcmp(nm,"ceiling")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"floor/ceiling type mismatch.",NULL);
+					}
+
+					e->type=*T;
+				}
+				else if (strcmp(nm,"size")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"size() takes no arguments.",NULL);
+					}
+
+					e->type.kind=TY_INT;
+				}
+				else
+				{
+					die(e->line,"Unknown TreeSet method: ",nm);
+				}
+
+				break;
+			}
+
+			if (strcmp(tmpl,"TreeMap")==0)
+			{
+				TypeRef *V=e->lhs->type.elem2;
+				if (strcmp(nm,"put")==0)
+				{
+					if (e->arg_count!=2 || !assignable(T,&e->args[0]->type) || !assignable(V,&e->args[1]->type))
+					{
+						die(e->line,"TreeMap.put type mismatch.",NULL);
+					}
+
+					e->type.kind=TY_VOID;
+				}
+				else if (strcmp(nm,"get")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"TreeMap.get key type mismatch.",NULL);
+					}
+
+					e->type=*V;
+				}
+				else if (strcmp(nm,"remove")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"TreeMap.remove key type mismatch.",NULL);
+					}
+
+					e->type.kind=TY_VOID;
+				}
+				else if (strcmp(nm,"containsKey")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"TreeMap.containsKey type mismatch.",NULL);
+					}
+
+					e->type.kind=TY_BOOL;
+				}
+				else if (strcmp(nm,"firstKey")==0 || strcmp(nm,"lastKey")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"This method takes no arguments.",NULL);
+					}
+
+					e->type=*T;
+				}
+				else if (strcmp(nm,"floorKey")==0 || strcmp(nm,"ceilingKey")==0)
+				{
+					if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
+					{
+						die(e->line,"floorKey/ceilingKey type mismatch.",NULL);
+					}
+
+					e->type=*T;
+				}
+				else if (strcmp(nm,"size")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"size() takes no arguments.",NULL);
+					}
+
+					e->type.kind=TY_INT;
+				}
+				else if (strcmp(nm,"getKeys")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"getKeys() takes no arguments.",NULL);
+					}
+
+					e->type.kind=TY_ARRAY;
+					e->type.elem=typeref_box(*T);
+				}
+				else if (strcmp(nm,"getValues")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"getValues() takes no arguments.",NULL);
+					}
+
+					e->type.kind=TY_ARRAY;
+					e->type.elem=typeref_box(*V);
+				}
+				else if (strcmp(nm,"getEntries")==0)
+				{
+					if (e->arg_count!=0)
+					{
+						die(e->line,"getEntries() takes no arguments.",NULL);
+					}
+
+					TypeRef ent;
+					memset(&ent,0,sizeof(ent));
+					ent.kind=TY_ENTRY;
+					ent.elem=typeref_box(*T);
+					ent.elem2=typeref_box(*V);
+					e->type.kind=TY_ARRAY;
+					e->type.elem=typeref_box(ent);
+				}
+				else
+				{
+					die(e->line,"Unknown TreeMap method: ",nm);
 				}
 
 				break;
