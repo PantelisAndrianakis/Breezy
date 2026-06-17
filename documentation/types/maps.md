@@ -87,6 +87,36 @@ foreach (string name in counts)              // Keys only.
 
 ---
 
+## TreeMap (a sorted map)
+
+`map<K,V>` is a hash table: fast, but **unordered**. When you need the keys kept in order - range scans, leaderboards, "the entry just below this one" - reach for `TreeMap<K,V>`, a B-tree-backed sorted map.
+
+```breezy
+TreeMap<int,string> ranks = new TreeMap<int,string>();
+ranks.put(30, "gold");
+ranks.put(10, "bronze");
+ranks.put(20, "silver");
+
+print(ranks.get(20));         // silver.
+print(ranks.size());          // 3  -- a method here, not a field.
+print(ranks.firstKey());      // 10  -- smallest key.
+print(ranks.lastKey());       // 30  -- largest key.
+print(ranks.floorKey(25));    // 20  -- greatest key <= 25.
+print(ranks.ceilingKey(25));  // 30  -- least key >= 25.
+
+foreach (int k in ranks.getKeys())   // Keys come out sorted ascending.
+{
+	print(k);                 // 10, 20, 30.
+}
+ranks.remove(10);
+```
+
+Surface: `put(k, v)`, `get(k)`, `containsKey(k)`, `remove(k)`, `size()`, the navigation methods `firstKey()` / `lastKey()` / `floorKey(k)` / `ceilingKey(k)`, and the views `getKeys()` / `getValues()` / `getEntries()` - the same view shapes as `map`, but returned **in sorted key order**.
+
+Two differences from `map` to keep in mind: `size()` is a **method** (a `map` exposes a `.size` field), and **`float`/`double` keys are allowed** (they order numerically), where a hash `map` rejects them. Object keys must implement [`Comparable`](collections.md#ordering-objects-with-comparable) - the same contract the ordered collections use - and a missing `compareTo` is a compile-time error.
+
+---
+
 ## Maps and memory
 
 Managed keys and values are **retained** while stored and **released** when removed or when the map is reclaimed. If a map ends up in a reference cycle (it holds an object that, directly or indirectly, points back at the map), the [cycle collector](../memory/automatic-memory.md) cleans it up - you never annotate a weak reference.
