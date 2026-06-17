@@ -1056,16 +1056,46 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 /* Resolve an expression that may be a lambda against an expected function type:
    a lambda gets its parameter types inferred from `expected` and its captures
    collected; anything else resolves normally (the expected type is unused). */
+static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc);
+
 static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const char *tc)
 {
 	if (e->kind == EX_LAMBDA)
 	{
 		resolve_lambda(st, e, expected, tc);
+		return;
 	}
-	else
+
+	/* A bare named function in a (P)->R context becomes a function value: rewrite
+	   the identifier in place into an adapter lambda (a0, ...) => name(a0, ...) and
+	   resolve that, reusing the closure machinery (it captures nothing -> singleton). */
+	if (e->kind == EX_IDENT && expected && expected->kind == TY_FUNC
+			&& types_find_func(g_types, e->name))
 	{
-		resolve_expr(st, e, tc);
+		char fname[64];
+		snprintf(fname,sizeof(fname),"%s",e->name);
+		LambdaInfo *li = lambda_new();
+		Expr *call = expr_new(EX_CALL, e->line);
+		snprintf(call->name,sizeof(call->name),"%s",fname);
+		for (int i = 0; i < expected->targ_count; i++)
+		{
+			char an[24];
+			snprintf(an,sizeof(an),"__a%d",i);
+			lambda_add_param(li, an, 1, *expected->targs[i]);
+			Expr *a = expr_new(EX_IDENT, e->line);
+			snprintf(a->name,sizeof(a->name),"%s",an);
+			expr_add_arg(call, a);
+		}
+
+		li->is_block = 0;
+		li->body_expr = call;
+		e->kind = EX_LAMBDA;
+		e->lam = li;
+		resolve_lambda(st, e, expected, tc);
+		return;
 	}
+
+	resolve_expr(st, e, tc);
 }
 
 static LambdaCap *lam_find_cap(LambdaInfo *l, const char *name)
@@ -4547,6 +4577,8 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 {
+	g_lam_count = 0;     /* Reset the lambda registry: a process may compile more than once (the test harness). */
+	g_lambda_seq = 0;
 	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
 
 	for (int i=0; i<unit_count; i++)

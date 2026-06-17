@@ -6111,6 +6111,26 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		   are snapshotted from the enclosing frame (managed ones retained). */
 		LambdaInfo *lam = e->lam;
 		int cc = lam->cap_count;
+		if (cc == 0)
+		{
+			/* No captures -> the closure is stateless: allocate it once and cache it
+			   in a static slot, so re-evaluating the lambda (e.g. each loop turn)
+			   costs only a load, not an allocation. */
+			int done = cg_label(cg);
+			cg_emit(cg,"    mov rax, [rel __%s_single]", lam->label);
+			cg_emit(cg,"    test rax, rax");
+			cg_emit(cg,"    jnz .L%d", done);
+			cg_emit(cg,"    mov %s, 32", cg_iarg(cg, 0));
+			cg_aligned_call(cg,"bzy_alloc");
+			cg_emit(cg,"    lea rcx, [rel __%s_vt]", lam->label);
+			cg_emit(cg,"    mov [rax], rcx");
+			cg_emit(cg,"    lea rcx, [rel %s]", lam->label);
+			cg_emit(cg,"    mov [rax + 24], rcx");
+			cg_emit(cg,"    mov [rel __%s_single], rax", lam->label);
+			cg_emit(cg,".L%d:", done);
+			break;
+		}
+
 		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), 32 + cc * 8);
 		cg_aligned_call(cg,"bzy_alloc");
 		int b = cg_scratch_alloc(cg, 16);
@@ -11065,6 +11085,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		cg_emit(cg,"    dq __%s_ti", lam->label);   /* Descriptor pointer at vtable-8. */
 		cg_emit(cg,"__%s_vt:", lam->label);
 		cg_emit(cg,"    dq 0");           /* No methods; the slot exists only to anchor the label. */
+		if (lam->cap_count == 0)
+		{
+			cg_emit(cg,"__%s_single: dq 0", lam->label);   /* Cached stateless closure. */
+		}
 	}
 
 	cg_emit(cg,"__bzy_vtable_parents:");           /* (child vtable, parent vtable) pairs for is-a. */

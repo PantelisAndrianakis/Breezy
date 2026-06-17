@@ -1459,6 +1459,19 @@ static void test_function_value_call_lowers(void)
 	ASSERT_INT(strstr(g_asm, "call rax") != NULL, 1);     /* indirect call. */
 }
 
+static void test_noncapturing_singleton_and_func_value(void)
+{
+	/* A named function assigned to a (P)->R slot becomes a function value via a
+	   synthesized adapter that calls the named function. */
+	emit("int dbl(int x){ return x*2; } void main(){ (int)->int f; f = dbl; print(f(4)); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "call bzy_dbl") != NULL, 1);      /* the adapter calls the named function. */
+
+	/* A non-capturing lambda is allocated once into a static singleton slot. */
+	emit("void main(){ (int)->int f; f = x => x + 1; print(f(2)); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "__lambda_0:") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "_single") != NULL, 1);           /* cached, not re-allocated. */
+}
+
 static void test_treemap_lowers(void)
 {
 	/* TreeMap construction lowers to bzy_btree_new; the methods to bzy_btree_*. */
@@ -1654,6 +1667,7 @@ int main(void)
 	RUN(test_pqueue_lowers);
 	RUN(test_lambda_lowers_to_closure_object);
 	RUN(test_function_value_call_lowers);
+	RUN(test_noncapturing_singleton_and_func_value);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
