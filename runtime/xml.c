@@ -118,7 +118,7 @@ static void *parse_name(Scan *s)
 	const char *start = s->p;
 	if (!is_name_start(peek(s)))
 	{
-		fail(s, "expected a name");
+		fail(s, "Expected a name.");
 		return NULL;
 	}
 
@@ -164,6 +164,96 @@ static void at_push(AttrTmp *a, void *name, void *val)
 
 static void *parse_element(Scan *s);
 
+/* Append a Unicode code point to the buffer as UTF-8 (1-4 bytes). */
+static void append_utf8(TextBuf *t, long cp)
+{
+	unsigned char b[4];
+	int n;
+	if (cp < 0x80) { b[0] = (unsigned char)cp; n = 1; }
+	else if (cp < 0x800) { b[0] = 0xC0 | (cp >> 6); b[1] = 0x80 | (cp & 0x3F); n = 2; }
+	else if (cp < 0x10000) { b[0] = 0xE0 | (cp >> 12); b[1] = 0x80 | ((cp >> 6) & 0x3F); b[2] = 0x80 | (cp & 0x3F); n = 3; }
+	else { b[0] = 0xF0 | (cp >> 18); b[1] = 0x80 | ((cp >> 12) & 0x3F); b[2] = 0x80 | ((cp >> 6) & 0x3F); b[3] = 0x80 | (cp & 0x3F); n = 4; }
+	tb_push(t, (char*)b, (size_t)n);
+}
+
+/* Decode one entity reference at the cursor (positioned on '&') into the buffer:
+   the five built-ins, or a numeric character reference &#NN; / &#xHH;. Returns 1
+   on success, 0 (with the error set) on an unknown or malformed reference. */
+static int decode_entity(Scan *s, TextBuf *t)
+{
+	advance(s);   /* '&'. */
+	if (peek(s) == '#')
+	{
+		advance(s);
+		int hex = 0;
+		if (peek(s) == 'x' || peek(s) == 'X') { hex = 1; advance(s); }
+		long cp = 0;
+		int digits = 0;
+		while (!at_end(s) && peek(s) != ';')
+		{
+			int c = peek(s), d;
+			if (c >= '0' && c <= '9') { d = c - '0'; }
+			else if (hex && c >= 'a' && c <= 'f') { d = c - 'a' + 10; }
+			else if (hex && c >= 'A' && c <= 'F') { d = c - 'A' + 10; }
+			else { fail(s, "Bad numeric character reference."); return 0; }
+			cp = cp * (hex ? 16 : 10) + d;
+			digits++;
+			advance(s);
+		}
+
+		if (peek(s) != ';' || digits == 0) { fail(s, "Bad numeric character reference."); return 0; }
+		advance(s);   /* ';'. */
+		append_utf8(t, cp);
+		return 1;
+	}
+
+	const char *nm = s->p;
+	while (!at_end(s) && peek(s) != ';' && is_name_char(peek(s))) { advance(s); }
+	if (peek(s) != ';') { fail(s, "Unterminated entity reference."); return 0; }
+	size_t len = (size_t)(s->p - nm);
+	char rep;
+	if (len == 2 && !memcmp(nm, "lt", 2)) { rep = '<'; }
+	else if (len == 2 && !memcmp(nm, "gt", 2)) { rep = '>'; }
+	else if (len == 3 && !memcmp(nm, "amp", 3)) { rep = '&'; }
+	else if (len == 4 && !memcmp(nm, "quot", 4)) { rep = '"'; }
+	else if (len == 4 && !memcmp(nm, "apos", 4)) { rep = '\''; }
+	else { fail(s, "Unknown entity reference."); return 0; }
+	advance(s);   /* ';'. */
+	tb_push(t, &rep, 1);
+	return 1;
+}
+
+/* If the bytes at the cursor equal `lit`, consume them and return 1; else 0. */
+static int match_lit(Scan *s, const char *lit)
+{
+	size_t n = strlen(lit);
+	if ((size_t)(s->end - s->p) < n || memcmp(s->p, lit, n) != 0) { return 0; }
+	for (size_t i = 0; i < n; i++) { advance(s); }
+	return 1;
+}
+
+/* Advance past `term`, consuming it; fail at EOF. */
+static void skip_until(Scan *s, const char *term)
+{
+	while (!at_end(s) && !match_lit(s, term)) { advance(s); }
+}
+
+/* Document-level: skip whitespace, comments, the <?xml?> declaration, and other
+   processing instructions, stopping at an element start or end of input. A
+   DOCTYPE is rejected. */
+static void skip_misc(Scan *s)
+{
+	for (;;)
+	{
+		skip_ws(s);
+		if (at_end(s) || peek(s) != '<') { break; }
+		if (peek2(s) == '?') { match_lit(s, "<?"); skip_until(s, "?>"); }
+		else if (s->p + 4 <= s->end && memcmp(s->p, "<!--", 4) == 0) { match_lit(s, "<!--"); skip_until(s, "-->"); }
+		else if (peek2(s) == '!') { fail(s, "DTD / DOCTYPE is not supported."); break; }
+		else { break; }   /* An element start. */
+	}
+}
+
 /* Parse the attributes of a start tag into the node (after the tag name, before
    '>' or '/>'). Leaves the cursor at '>' or '/'. */
 static void parse_attrs(Scan *s, void *node)
@@ -178,16 +268,24 @@ static void parse_attrs(Scan *s, void *node)
 		void *aname = parse_name(s);
 		if (s->err) { break; }
 		skip_ws(s);
-		if (peek(s) != '=') { fail(s, "expected '=' after attribute name"); break; }
+		if (peek(s) != '=') { fail(s, "Expected '=' after attribute name."); break; }
 		advance(s);
 		skip_ws(s);
 		int q = peek(s);
-		if (q != '"' && q != '\'') { fail(s, "expected a quoted attribute value"); break; }
+		if (q != '"' && q != '\'') { fail(s, "Expected a quoted attribute value."); break; }
 		advance(s);
-		const char *vstart = s->p;
-		while (!at_end(s) && peek(s) != q) { advance(s); }
-		if (peek(s) != q) { fail(s, "unterminated attribute value"); break; }
-		void *aval = bzy_str_new(vstart, (int64_t)(s->p - vstart));   /* Raw; decode in Task 7. */
+		TextBuf vb = { 0 };
+		while (!at_end(s) && peek(s) != q)
+		{
+			const char *seg = s->p;
+			while (!at_end(s) && peek(s) != q && peek(s) != '&') { advance(s); }
+			if (s->p > seg) { tb_push(&vb, seg, (size_t)(s->p - seg)); }
+			if (peek(s) == '&' && !decode_entity(s, &vb)) { break; }
+		}
+
+		if (s->err || peek(s) != q) { free(vb.data); bzy_release(aname); if (!s->err) { fail(s, "Unterminated attribute value."); } break; }
+		void *aval = bzy_str_new(vb.data ? vb.data : "", (int64_t)vb.len);
+		free(vb.data);
 		advance(s);   /* Closing quote. */
 		at_push(&a, aname, aval);
 	}
@@ -224,7 +322,7 @@ static void parse_attrs(Scan *s, void *node)
 /* Parse one element starting at '<'. Returns the owned (+1) node, or NULL. */
 static void *parse_element(Scan *s)
 {
-	if (peek(s) != '<') { fail(s, "expected '<'"); return NULL; }
+	if (peek(s) != '<') { fail(s, "Expected '<'."); return NULL; }
 	advance(s);
 
 	void *node = node_new();
@@ -239,14 +337,14 @@ static void *parse_element(Scan *s)
 	if (peek(s) == '/')          /* Self-closing <tag/>. */
 	{
 		advance(s);
-		if (peek(s) != '>') { fail(s, "expected '>' after '/'"); bzy_release(node); return NULL; }
+		if (peek(s) != '>') { fail(s, "Expected '>' after '/'."); bzy_release(node); return NULL; }
 		advance(s);
 		NODE_SET(node, X_TEXT, bzy_str_new("", 0));
 		NODE_SET(node, X_KIDS, bzy_vec_new(4));   /* An empty children list. */
 		return node;
 	}
 
-	if (peek(s) != '>') { fail(s, "expected '>'"); bzy_release(node); return NULL; }
+	if (peek(s) != '>') { fail(s, "Expected '>'."); bzy_release(node); return NULL; }
 	advance(s);
 
 	/* Content: direct text runs (into tb) interleaved with child elements. The
@@ -257,7 +355,7 @@ static void *parse_element(Scan *s)
 
 	for (;;)
 	{
-		if (at_end(s)) { fail(s, "unexpected end of input inside element"); break; }
+		if (at_end(s)) { fail(s, "Unexpected end of input inside element."); break; }
 
 		if (peek(s) == '<')
 		{
@@ -268,26 +366,59 @@ static void *parse_element(Scan *s)
 				void *ename = parse_name(s);
 				if (s->err) { break; }
 				skip_ws(s);
-				if (peek(s) != '>') { fail(s, "expected '>' in end tag"); bzy_release(ename); break; }
+				if (peek(s) != '>') { fail(s, "Expected '>' in end tag."); bzy_release(ename); break; }
 				advance(s);
-				if (!bzy_str_eq(ename, name)) { fail(s, "mismatched end tag"); bzy_release(ename); break; }
+				if (!bzy_str_eq(ename, name)) { fail(s, "Mismatched end tag."); bzy_release(ename); break; }
 				bzy_release(ename);
 				break;
 			}
 
-			/* A child element (Task 7 will also accept <!-- / <![CDATA / <?). */
-			if (!is_name_start(peek2(s))) { fail(s, "unsupported markup"); break; }
+			if (peek2(s) == '!')                 /* CDATA, comment, or a rejected DTD. */
+			{
+				if (match_lit(s, "<![CDATA["))   /* Literal content, no decode. */
+				{
+					const char *cs = s->p;
+					while (!at_end(s) && !(s->end - s->p >= 3 && memcmp(s->p, "]]>", 3) == 0)) { advance(s); }
+					if (s->end - s->p < 3) { fail(s, "Unterminated CDATA section."); break; }
+					tb_push(&tb, cs, (size_t)(s->p - cs));
+					match_lit(s, "]]>");
+					continue;
+				}
+
+				if (s->end - s->p >= 4 && memcmp(s->p, "<!--", 4) == 0)
+				{
+					match_lit(s, "<!--");
+					skip_until(s, "-->");
+					continue;
+				}
+
+				fail(s, "DTD / DOCTYPE is not supported.");
+				break;
+			}
+
+			if (peek2(s) == '?')                 /* Processing instruction: skip. */
+			{
+				match_lit(s, "<?");
+				skip_until(s, "?>");
+				continue;
+			}
+
+			if (!is_name_start(peek2(s))) { fail(s, "Unsupported markup."); break; }
 
 			void *child = parse_element(s);
 			if (s->err) { break; }
 			bzy_vec_push_back(kids, (int64_t)child);  /* Retains. */
 			bzy_release(child);                       /* Drop our +1; the vector owns it. */
 		}
-		else                                     /* A run of character data. */
+		else                                     /* A run of character data (entities decoded). */
 		{
-			const char *tstart = s->p;
-			while (!at_end(s) && peek(s) != '<') { advance(s); }
-			tb_push(&tb, tstart, (size_t)(s->p - tstart));
+			while (!at_end(s) && peek(s) != '<')
+			{
+				const char *seg = s->p;
+				while (!at_end(s) && peek(s) != '<' && peek(s) != '&') { advance(s); }
+				if (s->p > seg) { tb_push(&tb, seg, (size_t)(s->p - seg)); }
+				if (peek(s) == '&' && !decode_entity(s, &tb)) { break; }
+			}
 		}
 	}
 
@@ -317,12 +448,12 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	s.col = 1;
 	s.err = NULL;
 
-	skip_ws(&s);
-	if (peek(&s) != '<') { s.err = "expected a root element"; }
+	skip_misc(&s);   /* Leading whitespace, comments, <?xml?> declaration, PIs. */
+	if (!s.err && (peek(&s) != '<' || !is_name_start(peek2(&s)))) { fail(&s, "expected a root element"); }
 	void *root = s.err ? NULL : parse_element(&s);
 	if (!s.err)
 	{
-		skip_ws(&s);
+		skip_misc(&s);   /* Trailing whitespace, comments, PIs. */
 		if (s.p != s.end) { fail(&s, "trailing content after the root element"); }
 	}
 

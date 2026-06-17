@@ -1,0 +1,12 @@
+// Entity + numeric-reference decoding in text and attributes, a literal CDATA
+// section, a skipped comment, and a skipped <?xml?> declaration.
+
+void main()
+{
+	XmlNode r = Xml.parse("<doc note='a &amp; b'>x &lt; y &#65;z<![CDATA[<raw>]]>!<!-- skip --></doc>");
+	print(r.text);          // x < y Az<raw>!
+	print(r.attr("note"));  // a & b.
+
+	XmlNode d = Xml.parse("<?xml version=\"1.0\"?><r/>");
+	print(d.name);          // r.
+}
