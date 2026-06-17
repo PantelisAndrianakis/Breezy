@@ -1,0 +1,14 @@
+// Malformed XML throws a catchable XmlException.
+
+void main()
+{
+	try
+	{
+		XmlNode r = Xml.parse("<a><b></a>");   // Mismatched end tag.
+		print("no-throw");
+	}
+	catch (XmlException e)
+	{
+		print("caught");
+	}
+}

@@ -154,6 +154,7 @@ check xml_children tests/samples/pass/xml/children.bzy $'3\na\nb\nc\n3'
 check xml_attrs tests/samples/pass/xml/attrs.bzy $'10\n20\n\ntrue\nfalse\nw'
 check xml_entities tests/samples/pass/xml/entities.bzy $'x < y Az<raw>!\na & b\nr'
 check xml_descendants tests/samples/pass/xml/descendants.bzy $'3\n3'
+check xml_malformed tests/samples/pass/xml/malformed.bzy $'caught'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'
@@ -417,7 +418,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue btree; do
+    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue btree xml; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
