@@ -599,6 +599,351 @@ int64_t bzy_btree_ceiling(void *o, int64_t k)
 	return bt_bound_owned(o, k, 0);
 }
 
+/* ---- delete (CLRS min-degree deletion) ----
+   Structural rebalancing (borrow / merge) moves keys, values, and child pointers
+   as raw bit patterns -- pure relocation, never ARC. Exactly one genuine removal
+   happens per call: the (key,value) that actually leaves the tree is released once
+   (managed key / managed value), at the leaf where it finally lands. Internal
+   deletions replace the separator with an EXTRACTED predecessor/successor (removed
+   from the descendant without releasing, so it is never double-referenced) and
+   release only the old separator. A node whose contents are relocated into a
+   sibling has its slots zeroed before the shell is freed, so freeing it cannot
+   release the relocated children. */
+
+static void bt_release_entry(void *o, BTNode *x, int i)
+{
+	if (bt_kman(o))
+	{
+		bzy_release((void*)x->key[i]);
+	}
+
+	if (*HHV(o) && (int)*HVMAN(o))
+	{
+		bzy_release((void*)x->val[i]);
+	}
+}
+
+/* Free a node shell whose contents have already been relocated out (managed mode
+   releases the object -- its declared key/val/kid slots must be zeroed first). */
+static void bt_free_node(void *o, BTNode *x)
+{
+	if (bt_managed(o))
+	{
+		bzy_release((void*)x);
+	}
+	else
+	{
+		free(x);
+	}
+}
+
+static int bt_remove_leaf(void *o, BTNode *x, int i)
+{
+	bt_release_entry(o, x, i);
+	for (int j = i; j < x->n - 1; j++)
+	{
+		x->key[j] = x->key[j + 1];
+		x->val[j] = x->val[j + 1];
+	}
+
+	x->key[x->n - 1] = 0;
+	x->val[x->n - 1] = 0;
+	x->n--;
+	return 1;
+}
+
+/* Rotate a key from the left sibling (kid[i-1]) through the separator into kid[i]. */
+static void bt_borrow_prev(void *o, BTNode *x, int i)
+{
+	(void)o;
+	BTNode *c = (BTNode*)x->kid[i];
+	BTNode *s = (BTNode*)x->kid[i - 1];
+	for (int j = (int)c->n - 1; j >= 0; j--)
+	{
+		c->key[j + 1] = c->key[j];
+		c->val[j + 1] = c->val[j];
+	}
+
+	if (!c->leaf)
+	{
+		for (int j = (int)c->n; j >= 0; j--)
+		{
+			c->kid[j + 1] = c->kid[j];
+		}
+	}
+
+	c->key[0] = x->key[i - 1];
+	c->val[0] = x->val[i - 1];
+	if (!c->leaf)
+	{
+		c->kid[0] = s->kid[s->n];
+		s->kid[s->n] = 0;
+	}
+
+	x->key[i - 1] = s->key[s->n - 1];
+	x->val[i - 1] = s->val[s->n - 1];
+	s->key[s->n - 1] = 0;
+	s->val[s->n - 1] = 0;
+	c->n++;
+	s->n--;
+}
+
+/* Rotate a key from the right sibling (kid[i+1]) through the separator into kid[i]. */
+static void bt_borrow_next(void *o, BTNode *x, int i)
+{
+	(void)o;
+	BTNode *c = (BTNode*)x->kid[i];
+	BTNode *s = (BTNode*)x->kid[i + 1];
+	c->key[c->n] = x->key[i];
+	c->val[c->n] = x->val[i];
+	if (!c->leaf)
+	{
+		c->kid[c->n + 1] = s->kid[0];
+	}
+
+	x->key[i] = s->key[0];
+	x->val[i] = s->val[0];
+	for (int j = 1; j < s->n; j++)
+	{
+		s->key[j - 1] = s->key[j];
+		s->val[j - 1] = s->val[j];
+	}
+
+	if (!s->leaf)
+	{
+		for (int j = 1; j <= s->n; j++)
+		{
+			s->kid[j - 1] = s->kid[j];
+		}
+	}
+
+	s->key[s->n - 1] = 0;
+	s->val[s->n - 1] = 0;
+	if (!s->leaf)
+	{
+		s->kid[s->n] = 0;
+	}
+
+	c->n++;
+	s->n--;
+}
+
+/* Merge kid[i], the separator key[i], and kid[i+1] into a single 2t-1 node. */
+static void bt_merge(void *o, BTNode *x, int i)
+{
+	BTNode *y = (BTNode*)x->kid[i];
+	BTNode *z = (BTNode*)x->kid[i + 1];
+	int t = BT_B;
+	y->key[t - 1] = x->key[i];               /* Separator sinks into y. */
+	y->val[t - 1] = x->val[i];
+	for (int j = 0; j < z->n; j++)
+	{
+		y->key[t + j] = z->key[j];
+		y->val[t + j] = z->val[j];
+	}
+
+	if (!y->leaf)
+	{
+		for (int j = 0; j <= z->n; j++)
+		{
+			y->kid[t + j] = z->kid[j];
+		}
+	}
+
+	y->n += z->n + 1;
+	for (int j = i + 1; j < x->n; j++)       /* Drop separator + right child from x. */
+	{
+		x->key[j - 1] = x->key[j];
+		x->val[j - 1] = x->val[j];
+	}
+
+	for (int j = i + 2; j <= x->n; j++)
+	{
+		x->kid[j - 1] = x->kid[j];
+	}
+
+	x->key[x->n - 1] = 0;
+	x->val[x->n - 1] = 0;
+	x->kid[x->n] = 0;
+	x->n--;
+	for (int j = 0; j < BT_MAX; j++)         /* z relocated into y: zero before free. */
+	{
+		z->key[j] = 0;
+		z->val[j] = 0;
+		z->kid[j] = 0;
+	}
+
+	z->kid[BT_MAX] = 0;
+	z->n = 0;
+	bt_free_node(o, z);
+}
+
+/* Ensure kid[i] has at least BT_B keys before a descent: borrow, else merge. */
+static void bt_fill(void *o, BTNode *x, int i)
+{
+	int t = BT_B;
+	if (i != 0 && ((BTNode*)x->kid[i - 1])->n >= t)
+	{
+		bt_borrow_prev(o, x, i);
+	}
+	else if (i != x->n && ((BTNode*)x->kid[i + 1])->n >= t)
+	{
+		bt_borrow_next(o, x, i);
+	}
+	else if (i != x->n)
+	{
+		bt_merge(o, x, i);
+	}
+	else
+	{
+		bt_merge(o, x, i - 1);
+	}
+}
+
+/* Remove and return the greatest key/value of the subtree (no release: relocated
+   up to the caller). Fills thin children on the way down to keep the invariant. */
+static void bt_extract_max(void *o, BTNode *x, int64_t *ok, int64_t *ov)
+{
+	while (!x->leaf)
+	{
+		int last = (int)x->n;
+		if (((BTNode*)x->kid[last])->n < BT_B)
+		{
+			bt_fill(o, x, last);
+			last = (int)x->n;                /* A merge shrinks n; re-read the rightmost. */
+		}
+
+		x = (BTNode*)x->kid[last];
+	}
+
+	*ok = x->key[x->n - 1];
+	*ov = x->val[x->n - 1];
+	x->key[x->n - 1] = 0;
+	x->val[x->n - 1] = 0;
+	x->n--;
+}
+
+static void bt_extract_min(void *o, BTNode *x, int64_t *ok, int64_t *ov)
+{
+	while (!x->leaf)
+	{
+		if (((BTNode*)x->kid[0])->n < BT_B)
+		{
+			bt_fill(o, x, 0);
+		}
+
+		x = (BTNode*)x->kid[0];
+	}
+
+	*ok = x->key[0];
+	*ov = x->val[0];
+	for (int j = 0; j < x->n - 1; j++)
+	{
+		x->key[j] = x->key[j + 1];
+		x->val[j] = x->val[j + 1];
+	}
+
+	x->key[x->n - 1] = 0;
+	x->val[x->n - 1] = 0;
+	x->n--;
+}
+
+/* Delete k from the subtree rooted at x (which holds >= BT_B keys unless it is the
+   tree root). Returns 1 if k existed, 0 otherwise. */
+static int bt_remove(void *o, BTNode *x, int64_t k)
+{
+	int t = BT_B;
+	int i = 0;
+	while (i < x->n && bt_cmp(o, k, x->key[i]) > 0)
+	{
+		i++;
+	}
+
+	if (i < x->n && bt_cmp(o, k, x->key[i]) == 0)
+	{
+		if (x->leaf)
+		{
+			return bt_remove_leaf(o, x, i);
+		}
+
+		BTNode *y = (BTNode*)x->kid[i];
+		BTNode *z = (BTNode*)x->kid[i + 1];
+		if (y->n >= t)
+		{
+			int64_t pk, pv;
+			bt_extract_max(o, y, &pk, &pv);  /* Predecessor (relocated, not released). */
+			bt_release_entry(o, x, i);       /* Old separator is the genuine leave. */
+			x->key[i] = pk;
+			x->val[i] = pv;
+			return 1;
+		}
+
+		if (z->n >= t)
+		{
+			int64_t sk, sv;
+			bt_extract_min(o, z, &sk, &sv);  /* Successor. */
+			bt_release_entry(o, x, i);
+			x->key[i] = sk;
+			x->val[i] = sv;
+			return 1;
+		}
+
+		bt_merge(o, x, i);                   /* k sinks into y; released at a leaf below. */
+		return bt_remove(o, y, k);
+	}
+
+	if (x->leaf)
+	{
+		return 0;                            /* Not present. */
+	}
+
+	int last = (i == x->n);
+	if (((BTNode*)x->kid[i])->n < t)
+	{
+		bt_fill(o, x, i);
+	}
+
+	if (last && i > x->n)
+	{
+		return bt_remove(o, (BTNode*)x->kid[i - 1], k);   /* The last child merged left. */
+	}
+
+	return bt_remove(o, (BTNode*)x->kid[i], k);
+}
+
+static int bt_remove_impl(void *o, int64_t k)
+{
+	BTNode *r = bt_root(o);
+	int removed = bt_remove(o, r, k);
+	if (r->n == 0 && !r->leaf)              /* Root emptied: its only child becomes root. */
+	{
+		BTNode *nr = (BTNode*)r->kid[0];
+		*HROOT(o) = (int64_t)(intptr_t)nr;
+		r->kid[0] = 0;                       /* Detach so freeing r does not release nr. */
+		bt_free_node(o, r);
+	}
+
+	if (removed)
+	{
+		*HCOUNT(o) -= 1;
+	}
+
+	return removed;
+}
+
+int64_t bzy_btree_remove(void *o, int64_t k)
+{
+	if (bt_shared(o))
+	{
+		bzy_shared_lock(o);
+		int r = bt_remove_impl(o, k);
+		bzy_shared_unlock(o);
+		return r;
+	}
+
+	return bt_remove_impl(o, k);
+}
+
 /* In-order traversal collecting keys, values, or entries into a fresh array. */
 typedef struct { int64_t *out; int64_t n; int want; void *tree; } BtCollect;   /* want: 0 keys, 1 values, 2 entries. */
 

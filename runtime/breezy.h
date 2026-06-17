@@ -148,6 +148,7 @@ void   *bzy_btree_new(int64_t kkind, int64_t has_values, int64_t vman, int64_t o
 void    bzy_btree_put(void *o, int64_t k, int64_t v);
 int64_t bzy_btree_get(void *o, int64_t k);
 int64_t bzy_btree_has(void *o, int64_t k);
+int64_t bzy_btree_remove(void *o, int64_t k);
 int64_t bzy_btree_size(void *o);
 int64_t bzy_btree_first(void *o);
 int64_t bzy_btree_last(void *o);
