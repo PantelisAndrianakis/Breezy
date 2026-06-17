@@ -1,0 +1,14 @@
+// descendants() returns every descendant element pre-order (the receiver
+// excluded), as a List<XmlNode> the collection combinators traverse.
+
+void main()
+{
+	XmlNode r = Xml.parse("<a><b><c>1</c></b><d>2</d></a>");
+	List<XmlNode> all = r.descendants();
+	print(all.size);                                 // 3 (b, c, d).
+
+	int sum = r.descendants()
+			   .filter(n => n.name.equals("c") or n.name.equals("d"))
+			   .reduce(0, (acc, n) => acc + n.text.toInt());
+	print(sum);                                      // 3.
+}

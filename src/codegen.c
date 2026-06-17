@@ -5443,6 +5443,27 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_xml_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *n = e->name;
+
+	if (strcmp(n,"descendants")==0)               /* Zero-arg; owned List<XmlNode>. */
+	{
+		int b = cg_scratch_alloc(cg, 16);
+		cg_expr(cg,tt,e->lhs);                     /* Receiver -> rax. */
+		int owned = expr_is_owned(e->lhs);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);  /* Receiver (for a possible release). */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_aligned_call(cg,"bzy_xml_descendants"); /* Owned List -> rax. */
+		if (owned)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", b - 8);   /* Preserve the result. */
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+			cg_release_rcx(cg);
+			cg_emit(cg,"    mov rax, [rbp - %d]", b - 8);
+		}
+
+		cg_scratch_free(cg, 16);
+		return;
+	}
+
 	const char *fn = strcmp(n,"attr")==0 ? "bzy_xml_attr"
 					 : strcmp(n,"hasAttr")==0 ? "bzy_xml_has_attr"
 					 : "bzy_xml_attr_name_at";
@@ -11338,6 +11359,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_xml_attr");
 	cg_emit(cg,"extern bzy_xml_has_attr");
 	cg_emit(cg,"extern bzy_xml_attr_name_at");
+	cg_emit(cg,"extern bzy_xml_descendants");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");

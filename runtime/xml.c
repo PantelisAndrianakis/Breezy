@@ -521,6 +521,43 @@ void *bzy_xml_attr_name_at(void *node, int64_t i)
 	return nm;
 }
 
+/* ---- descendants --------------------------------------------------------------
+
+   Walk a node's subtree pre-order, pushing every descendant element onto `out`.
+   The children list is parser-built (only push_back, so head is 0); read its slots
+   directly. push_back retains each element into the result. */
+static void collect_descendants(void *node, void *out)
+{
+	void *kids = NODE_GET(node, X_KIDS);
+	if (!kids)
+	{
+		return;
+	}
+
+	int64_t len = *(int64_t*)((char*)kids + 24);   /* length@24. */
+	void *data = NODE_GET(kids, 48);               /* data array@48. */
+	if (!data)
+	{
+		return;
+	}
+
+	for (int64_t i = 0; i < len; i++)
+	{
+		void *child = ((void**)((char*)data + 32))[i];   /* Borrowed slot. */
+		bzy_vec_push_back(out, (int64_t)child);          /* Retains into the result. */
+		collect_descendants(child, out);
+	}
+}
+
+/* All descendant elements, pre-order (the receiver excluded), as an owned (+1)
+   List<XmlNode>. */
+void *bzy_xml_descendants(void *node)
+{
+	void *out = bzy_vec_new(4);
+	collect_descendants(node, out);
+	return out;
+}
+
 /* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
 
 static __thread const char *g_xml_error;   /* Set by bzy_xml_parse; consumed by bzy_xml_check. */

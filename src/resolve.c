@@ -2501,6 +2501,20 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_STRING;
 			}
+			else if (strcmp(e->name,"descendants")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"XmlNode.descendants() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_XMLNODE;
+				e->type.kind=TY_GENERIC;
+				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
+				e->type.elem=typeref_box(el);
+			}
 			else
 			{
 				die(e->line,"Unknown XmlNode method: ",e->name);
@@ -4420,23 +4434,34 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 		return 0;   /* Expression body only; a block body keeps the closure path. */
 	}
 
-	/* Element type from the receiver (resolve a clone so the foreach resolves the
-	   original exactly once). */
+	/* Element type from the receiver: resolve a throwaway clone so the foreach
+	   resolves the original exactly once. The clone's resolution may register
+	   lambdas (a receiver like xs.filter(...)) -- roll the lambda registry back
+	   afterwards on every path so those throwaway lambdas are not emitted twice. */
+	int lam_save = g_lam_count, seq_save = g_lambda_seq;
 	Expr *rc = expr_clone(C->lhs);
 	resolve_expr(st, rc, tc);
-	if (rc->type.kind != TY_GENERIC || !rc->type.elem)
+	TypeKind rk = rc->type.kind;
+	char tmpl[64];
+	snprintf(tmpl, sizeof(tmpl), "%s", rc->type.class_name);
+	int have_elem = rc->type.elem != NULL;
+	TypeRef T;
+	memset(&T, 0, sizeof(T));
+	if (have_elem) { T = typeref_deepcopy(rc->type.elem); }
+	g_lam_count = lam_save;
+	g_lambda_seq = seq_save;
+
+	if (rk != TY_GENERIC || !have_elem)
 	{
 		return 0;
 	}
 
-	const char *tmpl = rc->type.class_name;
 	if (strcmp(tmpl,"Box")==0 || strcmp(tmpl,"Set")==0 || strcmp(tmpl,"PriorityQueue")==0
 			|| strcmp(tmpl,"TreeSet")==0 || strcmp(tmpl,"TreeMap")==0)
 	{
 		return 0;
 	}
 
-	TypeRef T = typeref_deepcopy(rc->type.elem);
 	int line = s->line;
 
 	char xv[32];

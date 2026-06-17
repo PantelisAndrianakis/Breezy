@@ -153,6 +153,7 @@ check closures_capture_managed tests/samples/pass/closures/capture_managed.bzy $
 check xml_children tests/samples/pass/xml/children.bzy $'3\na\nb\nc\n3'
 check xml_attrs tests/samples/pass/xml/attrs.bzy $'10\n20\n\ntrue\nfalse\nw'
 check xml_entities tests/samples/pass/xml/entities.bzy $'x < y Az<raw>!\na & b\nr'
+check xml_descendants tests/samples/pass/xml/descendants.bzy $'3\n3'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'
