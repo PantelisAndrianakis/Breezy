@@ -1472,6 +1472,13 @@ static void test_noncapturing_singleton_and_func_value(void)
 	ASSERT_INT(strstr(g_asm, "_single") != NULL, 1);           /* cached, not re-allocated. */
 }
 
+static void test_xml_parse_lowers(void)
+{
+	emit("void main(){ XmlNode r = Xml.parse(\"<a/>\"); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_xml_parse") != NULL, 1);   /* the parse call. */
+	ASSERT_INT(strstr(g_asm, "bzy_xml_check") != NULL, 1);   /* malformed -> XmlException. */
+}
+
 static void test_combinator_lowers_to_loop(void)
 {
 	/* A value map presizes a fresh result List and fills it by index (the lambda
@@ -1685,6 +1692,7 @@ int main(void)
 	RUN(test_function_value_call_lowers);
 	RUN(test_noncapturing_singleton_and_func_value);
 	RUN(test_combinator_lowers_to_loop);
+	RUN(test_xml_parse_lowers);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);

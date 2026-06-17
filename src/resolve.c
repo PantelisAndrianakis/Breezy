@@ -802,6 +802,23 @@ static void resolve_log(Expr *e)
 	die(e->line,"Unknown Log method: ",m);
 }
 
+static void resolve_xml(Expr *e)
+{
+	const char *m = e->name + 4;   /* After "Xml.". */
+	if (strcmp(m,"parse")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Xml.parse(text) takes one string.",NULL);
+		}
+
+		e->type.kind = TY_XMLNODE;
+		return;
+	}
+
+	die(e->line,"Unknown Xml method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -3404,6 +3421,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Log.",4)==0)
 		{
 			resolve_log(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Xml.",4)==0)
+		{
+			resolve_xml(e);
 			break;
 		}
 

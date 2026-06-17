@@ -8,7 +8,13 @@
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+/* Emitted per-program by codegen; bzy_xml_check stamps a thrown XmlException with
+   it (the bzy_number_check pattern). */
+extern char __vtable_XmlException[];
+extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
 /* XmlNode layout: vtable|rc|gcinfo|name@24|text@32|anames@40|avals@48|acount@56|children@64. */
 #define X_NAME   24
@@ -328,4 +334,42 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	}
 
 	return root;
+}
+
+/* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
+
+static __thread const char *g_xml_error;   /* Set by bzy_xml_parse; consumed by bzy_xml_check. */
+
+/* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error
+   message buffered for the codegen-emitted bzy_xml_check at the call site. */
+void *bzy_xml_parse(void *src)
+{
+	const char *err = NULL;
+	int64_t line = 0, col = 0;
+	void *root = bzy_xml_parse_impl(src, &err, &line, &col);
+	if (err)
+	{
+		static __thread char buf[192];
+		snprintf(buf, sizeof buf, "XML parse error at line %lld, column %lld: %s",
+				 (long long)line, (long long)col, err);
+		g_xml_error = buf;
+		return NULL;
+	}
+
+	return root;
+}
+
+void bzy_xml_check(int64_t pc, int64_t frame)
+{
+	if (!g_xml_error)
+	{
+		return;
+	}
+
+	void *msg = bzy_str_new(g_xml_error, (int64_t)strlen(g_xml_error));
+	g_xml_error = NULL;
+	void *exc = bzy_alloc(32);
+	*(void**)exc = (void*)__vtable_XmlException;
+	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
+	bzy_throw(exc, pc, frame);                  /* Never returns. */
 }

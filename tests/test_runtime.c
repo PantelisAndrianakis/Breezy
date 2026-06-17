@@ -16,6 +16,7 @@ long long __bzy_vtable_parent_count = 0;
 char __vtable_IndexOutOfBounds[8] = { 0 };
 char __vtable_IOException[8] = { 0 };
 char __vtable_NumberFormatException[8] = { 0 };
+char __vtable_XmlException[8] = { 0 };
 
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],
