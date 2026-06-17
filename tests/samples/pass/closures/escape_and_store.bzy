@@ -1,0 +1,26 @@
+// Closures as managed values: a closure returned from a function (its captured
+// environment outlives the call frame), and closures stored in and retrieved from
+// a collection. The captured k / base survive because the environment is on the
+// heap and reference-counted.
+
+(int)->int makeAdder(int k)
+{
+	return x => x + k;          // The environment holding k escapes the frame.
+}
+
+void main()
+{
+	(int)->int add10 = makeAdder(10);
+	print(add10(5));            // 15.
+
+	List<(int)->int> fns = new List<(int)->int>();
+	int base = 100;
+	(int)->int e0 = x => x + base;
+	fns.add(e0);
+	fns.add(makeAdder(1));
+
+	(int)->int g0 = fns.get(0);
+	(int)->int g1 = fns.get(1);
+	print(g0(5));               // 105.
+	print(g1(5));               // 6.
+}

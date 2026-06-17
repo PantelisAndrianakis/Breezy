@@ -1305,7 +1305,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	{
 		const char *tmpl=e->type.class_name;
 		TypeKind ek=e->type.elem->kind;
-		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT;
+		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT || ek==TY_FUNC;
 		if (!scalar_or_obj)
 		{
 			die(e->line,"Collection element must be a scalar, string, or object.",NULL);
@@ -3661,6 +3661,30 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 		sf->cap_env_off[i] = lam->caps[i].env_offset;
 		sf->cap_local_off[i] = lam->caps[i].local_slot;
 	}
+
+	/* A captured local is a borrow -- the closure environment owns the reference
+	   and releases it when the closure is freed. Drop capture slots from the body's
+	   release set so the body does not over-release them at its exit. */
+	int w = 0;
+	for (int r = 0; r < sf->obj_local_count; r++)
+	{
+		int is_cap = 0;
+		for (int i = 0; i < sf->cap_count; i++)
+		{
+			if (sf->obj_local_offsets[r] == sf->cap_local_off[i])
+			{
+				is_cap = 1;
+				break;
+			}
+		}
+
+		if (!is_cap)
+		{
+			sf->obj_local_offsets[w++] = sf->obj_local_offsets[r];
+		}
+	}
+
+	sf->obj_local_count = w;
 
 	lam->sf = sf;
 	if (g_lam_count >= LAMBDA_MAX)

@@ -1811,7 +1811,8 @@ static int expr_is_owned(Expr *e)
 	   EX_STR literal is +1 from bzy_str_new. */
 	return e->kind==EX_NEW || e->kind==EX_CALL || e->kind==EX_METHOD_CALL
 		   || e->kind==EX_STR || e->kind==EX_BINARY || e->kind==EX_NEWARRAY
-		   || e->kind==EX_NEWMAP || e->kind==EX_NEWGEN || e->kind==EX_NEWCHANNEL;
+		   || e->kind==EX_NEWMAP || e->kind==EX_NEWGEN || e->kind==EX_NEWCHANNEL
+		   || e->kind==EX_LAMBDA;   /* A closure is a fresh +1 (capturing alloc, or singleton retained before return). */
 }
 
 /* Retain the object pointer currently in rax; rax is preserved (rdx is clobbered,
@@ -6128,6 +6129,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov [rax + 24], rcx");
 			cg_emit(cg,"    mov [rel __%s_single], rax", lam->label);
 			cg_emit(cg,".L%d:", done);
+			cg_retain_rax(cg);   /* Return +1; the cache keeps the alloc's original ref, so rc never hits 0. */
 			break;
 		}
 

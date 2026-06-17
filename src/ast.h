@@ -129,7 +129,8 @@ static inline int ty_is_managed(TypeKind k)
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
 	       || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
 	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
-	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER;
+	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
+	       || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
