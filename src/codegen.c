@@ -4125,14 +4125,22 @@ static void cg_btree_method(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	/* getKeys / getValues / getEntries -> owned array (+1). */
+	/* getKeys / getValues / getEntries -> owned array (+1). keys/values pack at the
+	   result element stride (entries are always 8-byte Entry pointers). */
 	if (strcmp(nm,"getKeys")==0 || strcmp(nm,"getValues")==0 || strcmp(nm,"getEntries")==0)
 	{
 		cg_expr(cg,tt,e->lhs);
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-		const char *fn = strcmp(nm,"getKeys")==0 ? "bzy_btree_keys"
-						 : strcmp(nm,"getValues")==0 ? "bzy_btree_values" : "bzy_btree_entries";
-		cg_aligned_call(cg,fn);
+		if (strcmp(nm,"getEntries")==0)
+		{
+			cg_aligned_call(cg,"bzy_btree_entries");
+		}
+		else
+		{
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), cg_elem_stride(e->type.elem->kind));
+			cg_aligned_call(cg, strcmp(nm,"getKeys")==0 ? "bzy_btree_keys" : "bzy_btree_values");
+		}
+
 		return;
 	}
 

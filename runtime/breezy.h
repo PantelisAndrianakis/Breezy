@@ -154,8 +154,8 @@ int64_t bzy_btree_first(void *o);
 int64_t bzy_btree_last(void *o);
 int64_t bzy_btree_floor(void *o, int64_t k);
 int64_t bzy_btree_ceiling(void *o, int64_t k);
-void   *bzy_btree_keys(void *o);
-void   *bzy_btree_values(void *o);
+void   *bzy_btree_keys(void *o, int64_t elem_size);
+void   *bzy_btree_values(void *o, int64_t elem_size);
 void   *bzy_btree_entries(void *o);
 
 void   *bzy_vec_new(int64_t elem_kind);          /* Owned (+1). 0 int,1 float,2 double,3 string,4 object. */

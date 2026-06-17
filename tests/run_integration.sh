@@ -145,6 +145,7 @@ check map_enum_key   tests/samples/pass/collections/proj_map_enum_key    $'100\n
 check map_object_key tests/samples/pass/collections/proj_map_object_key  $'42\nfalse\n1'
 check map_object_cycle tests/samples/pass/collections/proj_map_object_cycle  $'0'
 check pqueue      tests/samples/pass/collections/pqueue_order.bzy $'4\n1\n1\n2\n3\n5\ntrue\n2'
+check treemap     tests/samples/pass/collections/treemap_order.bzy $'3\nb\n10\n30\n20\n30\nfalse\n2\n10\n30\n3\n1\n5\n3\n3\n2\n5\n9\n2'
 check_fail map_float tests/samples/fail/collections/map_float.bzy
 check_fail pia_type tests/samples/fail/collections/put_if_absent_type.bzy
 check incdec      tests/samples/pass/basics/incdec.bzy    $'42\n40'
@@ -405,7 +406,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue; do
+    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue btree; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"

@@ -944,8 +944,31 @@ int64_t bzy_btree_remove(void *o, int64_t k)
 	return bt_remove_impl(o, k);
 }
 
+/* Write a 64-bit value into a packed output buffer at offset (n * esize),
+   truncating to esize bytes -- keys/values pack at their natural element width
+   (a long[] at 8 bytes, an int[] at 4, etc.); managed elements are 8-byte ptrs. */
+static void bt_pack(char *base, int64_t n, int64_t esize, int64_t v)
+{
+	char *p = base + n * esize;
+	switch (esize)
+	{
+	case 1:
+		*(int8_t*)p = (int8_t)v;
+		break;
+	case 2:
+		*(int16_t*)p = (int16_t)v;
+		break;
+	case 4:
+		*(int32_t*)p = (int32_t)v;
+		break;
+	default:
+		*(int64_t*)p = v;
+		break;
+	}
+}
+
 /* In-order traversal collecting keys, values, or entries into a fresh array. */
-typedef struct { int64_t *out; int64_t n; int want; void *tree; } BtCollect;   /* want: 0 keys, 1 values, 2 entries. */
+typedef struct { char *out; int64_t n; int64_t esize; int want; } BtCollect;   /* want: 0 keys, 1 values, 2 entries. */
 
 static void bt_collect(void *o, BTNode *x, BtCollect *c)
 {
@@ -968,7 +991,7 @@ static void bt_collect(void *o, BTNode *x, BtCollect *c)
 				bzy_retain((void*)x->key[i]);
 			}
 
-			c->out[c->n++] = x->key[i];
+			bt_pack(c->out, c->n++, c->esize, x->key[i]);
 		}
 		else if (c->want == 1)
 		{
@@ -977,12 +1000,12 @@ static void bt_collect(void *o, BTNode *x, BtCollect *c)
 				bzy_retain((void*)x->val[i]);
 			}
 
-			c->out[c->n++] = x->val[i];
+			bt_pack(c->out, c->n++, c->esize, x->val[i]);
 		}
 		else
 		{
 			void *e = bzy_entry_new(x->key[i], x->val[i], bt_kman(o), (int)*HVMAN(o));   /* Owned Entry. */
-			c->out[c->n++] = (int64_t)(intptr_t)e;
+			bt_pack(c->out, c->n++, c->esize, (int64_t)(intptr_t)e);
 		}
 	}
 
@@ -992,43 +1015,44 @@ static void bt_collect(void *o, BTNode *x, BtCollect *c)
 	}
 }
 
-static void *bt_iter(void *o, int want)
+/* esize is the caller's element stride; entries (want 2) are always 8-byte ptrs. */
+static void *bt_iter(void *o, int want, int64_t esize)
 {
 	int managed_elem = want == 0 ? bt_kman(o) : (want == 1 ? (int)*HVMAN(o) : 1);
-	void *arr = bzy_array_new(*HCOUNT(o), managed_elem ? 1 : 0);
+	void *arr = bzy_array_new_sized(*HCOUNT(o), esize, managed_elem ? 1 : 0);
 	BtCollect c;
-	c.out = (int64_t*)((char*)arr + 32);
+	c.out = (char*)arr + 32;
 	c.n = 0;
+	c.esize = esize;
 	c.want = want;
-	c.tree = o;
 	bt_collect(o, bt_root(o), &c);
 	return arr;
 }
 
-void *bzy_btree_keys(void *o)
+void *bzy_btree_keys(void *o, int64_t elem_size)
 {
 	if (bt_shared(o))
 	{
 		bzy_shared_lock(o);
-		void *a = bt_iter(o, 0);
+		void *a = bt_iter(o, 0, elem_size);
 		bzy_shared_unlock(o);
 		return a;
 	}
 
-	return bt_iter(o, 0);
+	return bt_iter(o, 0, elem_size);
 }
 
-void *bzy_btree_values(void *o)
+void *bzy_btree_values(void *o, int64_t elem_size)
 {
 	if (bt_shared(o))
 	{
 		bzy_shared_lock(o);
-		void *a = bt_iter(o, 1);
+		void *a = bt_iter(o, 1, elem_size);
 		bzy_shared_unlock(o);
 		return a;
 	}
 
-	return bt_iter(o, 1);
+	return bt_iter(o, 1, elem_size);
 }
 
 void *bzy_btree_entries(void *o)
@@ -1036,10 +1060,10 @@ void *bzy_btree_entries(void *o)
 	if (bt_shared(o))
 	{
 		bzy_shared_lock(o);
-		void *a = bt_iter(o, 2);
+		void *a = bt_iter(o, 2, 8);
 		bzy_shared_unlock(o);
 		return a;
 	}
 
-	return bt_iter(o, 2);
+	return bt_iter(o, 2, 8);
 }
