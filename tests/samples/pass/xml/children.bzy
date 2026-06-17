@@ -1,0 +1,11 @@
+// node.children is a List<XmlNode>, so the existing collection combinators and
+// closures traverse it -- no XML-specific query API.
+
+void main()
+{
+	XmlNode root = Xml.parse("<list><item>a</item><item>b</item><item>c</item></list>");
+	print(root.children.size);                       // 3.
+	root.children.forEach(c => print(c.text));       // a / b / c.
+	List<XmlNode> items = root.children.filter(c => c.name.equals("item"));
+	print(items.size);                               // 3.
+}

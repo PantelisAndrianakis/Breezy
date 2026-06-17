@@ -242,15 +242,18 @@ static void *parse_element(Scan *s)
 		if (peek(s) != '>') { fail(s, "expected '>' after '/'"); bzy_release(node); return NULL; }
 		advance(s);
 		NODE_SET(node, X_TEXT, bzy_str_new("", 0));
+		NODE_SET(node, X_KIDS, bzy_vec_new(4));   /* An empty children list. */
 		return node;
 	}
 
 	if (peek(s) != '>') { fail(s, "expected '>'"); bzy_release(node); return NULL; }
 	advance(s);
 
-	/* Content: direct text runs (into tb) interleaved with child elements. */
+	/* Content: direct text runs (into tb) interleaved with child elements. The
+	   children list is always present (empty for a leaf) so `node.children` is a
+	   plain borrowed field read -- no NULL case for the collection combinators. */
 	TextBuf tb = { 0 };
-	void *kids = NULL;
+	void *kids = bzy_vec_new(4);   /* Object elements. */
 
 	for (;;)
 	{
@@ -277,7 +280,6 @@ static void *parse_element(Scan *s)
 
 			void *child = parse_element(s);
 			if (s->err) { break; }
-			if (!kids) { kids = bzy_vec_new(4); }   /* Object elements. */
 			bzy_vec_push_back(kids, (int64_t)child);  /* Retains. */
 			bzy_release(child);                       /* Drop our +1; the vector owns it. */
 		}

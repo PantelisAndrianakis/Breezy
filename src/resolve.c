@@ -1323,7 +1323,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	{
 		const char *tmpl=e->type.class_name;
 		TypeKind ek=e->type.elem->kind;
-		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT || ek==TY_FUNC;
+		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT || ek==TY_FUNC || ek==TY_XMLNODE;
 		if (!scalar_or_obj)
 		{
 			die(e->line,"Collection element must be a scalar, string, or object.",NULL);
@@ -1827,6 +1827,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			{
 				e->type.kind=TY_INT;
 				e->anno_int=56;         /* attr_count@56. */
+			}
+			else if (strcmp(e->name,"children")==0)
+			{
+				/* A List<XmlNode> stored on the node; a borrowed field read at 64,
+				   traversed by the existing collection combinators. */
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_XMLNODE;
+				e->type.kind=TY_GENERIC;
+				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
+				e->type.elem=typeref_box(el);
+				e->anno_int=64;         /* children@64. */
 			}
 			else
 			{
