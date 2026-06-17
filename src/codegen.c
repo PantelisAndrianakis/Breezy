@@ -4105,6 +4105,179 @@ static void cg_pqueue_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+/* TreeMap<K,V> / TreeSet<T> (B-tree, runtime/btree.c). Keys and values pass as
+   int64 bit patterns in GP registers; FP keys/values are bridged xmm<->GP, and
+   object keys order through the compareTo vtable slot baked in at construction.
+   TreeSet is a value-less TreeMap: add(k) lowers to put(k,0); its first/last/
+   floor/ceiling share the firstKey/lastKey/floorKey/ceilingKey runtime entries. */
+static void cg_btree_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	int is_set = strcmp(e->lhs->type.class_name,"TreeSet")==0;
+	TypeKind kk = e->lhs->type.elem->kind;     /* Key type. */
+	const char *nm = e->name;
+
+	/* size(). */
+	if (strcmp(nm,"size")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_aligned_call(cg,"bzy_btree_size");
+		return;
+	}
+
+	/* getKeys / getValues / getEntries -> owned array (+1). */
+	if (strcmp(nm,"getKeys")==0 || strcmp(nm,"getValues")==0 || strcmp(nm,"getEntries")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		const char *fn = strcmp(nm,"getKeys")==0 ? "bzy_btree_keys"
+						 : strcmp(nm,"getValues")==0 ? "bzy_btree_values" : "bzy_btree_entries";
+		cg_aligned_call(cg,fn);
+		return;
+	}
+
+	/* first/last (TreeSet) and firstKey/lastKey (TreeMap): no argument, return key T. */
+	if (strcmp(nm,"first")==0 || strcmp(nm,"last")==0
+			|| strcmp(nm,"firstKey")==0 || strcmp(nm,"lastKey")==0)
+	{
+		int last = (nm[0]=='l');               /* "last" / "lastKey" both start 'l'. */
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_aligned_call(cg, last ? "bzy_btree_last" : "bzy_btree_first");
+		if (ty_is_float(kk))
+		{
+			cg_emit(cg, kk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+		}
+
+		return;
+	}
+
+	/* put(k,v) (TreeMap) / add(k) (TreeSet -> put(k,0)). */
+	if (strcmp(nm,"put")==0 || strcmp(nm,"add")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		int b = cg_scratch_alloc(cg, 32);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
+		cg_expr(cg,tt,e->args[0]);             /* Key. */
+		if (ty_is_float(kk))
+		{
+			cg_emit(cg, kk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+		}
+		else
+		{
+			cg_extend_reg(cg, kk);             /* Canonicalize an int key to 64 bits. */
+		}
+
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
+		TypeKind vk = TY_VOID;
+		if (is_set)
+		{
+			cg_emit(cg,"    mov qword [rbp - %d], 0", b - 16);   /* No value column. */
+		}
+		else
+		{
+			vk = e->lhs->type.elem2->kind;
+			cg_expr(cg,tt,e->args[1]);         /* Value. */
+			if (ty_is_float(vk))
+			{
+				cg_emit(cg, vk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+			}
+
+			cg_emit(cg,"    mov [rbp - %d], rax", b - 16);
+		}
+
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 2), b - 16);
+		cg_aligned_call(cg,"bzy_btree_put");   /* Runtime retains managed key/value. */
+		if (ty_is_managed(kk) && expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
+			cg_release_rcx(cg);
+		}
+
+		if (!is_set && ty_is_managed(vk) && expr_is_owned(e->args[1]))
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 16);
+			cg_release_rcx(cg);
+		}
+
+		cg_scratch_free(cg, 32);
+		return;
+	}
+
+	/* Single-key-arg group: get / containsKey / remove / floor(Key) / ceiling(Key).
+	   get returns V; floor/ceiling return the matched key T; containsKey a bool;
+	   remove is void. bridge_fp names an FP result needing a GP->xmm move. */
+	const char *fn;
+	TypeKind bridge_fp = TY_VOID;
+	if (strcmp(nm,"get")==0)
+	{
+		fn = "bzy_btree_get";
+		TypeKind vk = e->lhs->type.elem2->kind;
+		if (ty_is_float(vk))
+		{
+			bridge_fp = vk;
+		}
+	}
+	else if (strcmp(nm,"containsKey")==0)
+	{
+		fn = "bzy_btree_has";
+	}
+	else if (strcmp(nm,"remove")==0)
+	{
+		fn = "bzy_btree_remove";
+	}
+	else if (strcmp(nm,"floor")==0 || strcmp(nm,"floorKey")==0)
+	{
+		fn = "bzy_btree_floor";
+		if (ty_is_float(kk))
+		{
+			bridge_fp = kk;
+		}
+	}
+	else   /* ceiling / ceilingKey. */
+	{
+		fn = "bzy_btree_ceiling";
+		if (ty_is_float(kk))
+		{
+			bridge_fp = kk;
+		}
+	}
+
+	cg_expr(cg,tt,e->lhs);
+	int b = cg_scratch_alloc(cg, 16);
+	cg_emit(cg,"    mov [rbp - %d], rax", b);
+	cg_expr(cg,tt,e->args[0]);                  /* Key. */
+	if (ty_is_float(kk))
+	{
+		cg_emit(cg, kk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+	}
+	else
+	{
+		cg_extend_reg(cg, kk);
+	}
+
+	cg_emit(cg,"    mov [rbp - %d], rax", b - 8);
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
+	cg_aligned_call(cg,fn);                     /* Result (get/has/floor/ceiling) in rax. */
+	if (ty_is_managed(kk) && expr_is_owned(e->args[0]))
+	{
+		cg_emit(cg,"    mov [rbp - %d], rax", b);        /* Preserve the result across the key release. */
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
+		cg_release_rcx(cg);
+		cg_emit(cg,"    mov rax, [rbp - %d]", b);
+	}
+
+	if (bridge_fp != TY_VOID)
+	{
+		cg_emit(cg, bridge_fp==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+	}
+
+	cg_scratch_free(cg, 16);
+}
+
 /* Run a constructor on a freshly-built object: the object is in rax on entry and
    becomes arg slot 0 (this, borrowed), the user args follow. Spills this first so
    arg evaluation can't clobber it (mirrors cg_call_with_args' self handling). The
@@ -5816,6 +5989,24 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), slot);
 			cg_aligned_call(cg,"bzy_pq_new");
 		}
+		else if (strcmp(e->type.class_name,"TreeSet")==0 || strcmp(e->type.class_name,"TreeMap")==0)
+		{
+			int is_map = strcmp(e->type.class_name,"TreeMap")==0;
+			int slot = -1;   /* compareTo vtable slot for object keys; -1 otherwise. */
+			if (e->type.elem->kind==TY_OBJECT)
+			{
+				ClassInfo *ci = types_find_class(tt, e->type.elem->class_name);
+				MethodInfo *cm = ci ? types_find_method(ci, "compareTo") : (MethodInfo*)0;
+				slot = cm ? cm->vtable_slot : -1;
+			}
+
+			int vman = is_map && ty_is_managed(e->type.elem2->kind) ? 1 : 0;
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_elem_kind(e->type.elem->kind));   /* kkind. */
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), is_map ? 1 : 0);                     /* has_values. */
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 2), vman);                               /* vman. */
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 3), slot);                               /* obj_slot. */
+			cg_aligned_call(cg,"bzy_btree_new");
+		}
 		else   /* List / Stack / Queue / Deque / ArrayDeque -> vector. */
 		{
 			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_elem_kind(e->type.elem->kind));
@@ -6114,6 +6305,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			else if (strcmp(e->lhs->type.class_name,"PriorityQueue")==0)
 			{
 				cg_pqueue_method(cg,tt,e);
+			}
+			else if (strcmp(e->lhs->type.class_name,"TreeSet")==0
+					 || strcmp(e->lhs->type.class_name,"TreeMap")==0)
+			{
+				cg_btree_method(cg,tt,e);
 			}
 			else
 			{
@@ -10488,6 +10684,19 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_pq_poll");
 	cg_emit(cg,"extern bzy_pq_peek");
 	cg_emit(cg,"extern bzy_pq_size");
+	cg_emit(cg,"extern bzy_btree_new");
+	cg_emit(cg,"extern bzy_btree_put");
+	cg_emit(cg,"extern bzy_btree_get");
+	cg_emit(cg,"extern bzy_btree_has");
+	cg_emit(cg,"extern bzy_btree_remove");
+	cg_emit(cg,"extern bzy_btree_size");
+	cg_emit(cg,"extern bzy_btree_first");
+	cg_emit(cg,"extern bzy_btree_last");
+	cg_emit(cg,"extern bzy_btree_floor");
+	cg_emit(cg,"extern bzy_btree_ceiling");
+	cg_emit(cg,"extern bzy_btree_keys");
+	cg_emit(cg,"extern bzy_btree_values");
+	cg_emit(cg,"extern bzy_btree_entries");
 	cg_emit(cg,"extern cos");
 	cg_emit(cg,"extern tan");
 	cg_emit(cg,"extern exp");

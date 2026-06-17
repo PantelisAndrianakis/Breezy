@@ -1439,6 +1439,28 @@ static void test_pqueue_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_pq_size") != NULL, 1);
 }
 
+static void test_treemap_lowers(void)
+{
+	/* TreeMap construction lowers to bzy_btree_new; the methods to bzy_btree_*. */
+	emit("void main() { TreeMap<long,long> m; m = new TreeMap<long,long>(); m.put(3, 30);"
+		 " long v; v = m.get(3); bool c; c = m.containsKey(3); int n; n = m.size();"
+		 " long f; f = m.firstKey(); long g; g = m.floorKey(2); long[] ks; ks = m.getKeys(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_new") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_put") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_get") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_has") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_size") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_first") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_floor") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_keys") != NULL, 1);
+
+	/* TreeSet add lowers to put (value-less); contains/first to btree entries. */
+	emit("void main() { TreeSet<long> s; s = new TreeSet<long>(); s.add(5); long f; f = s.first(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_new") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_put") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_btree_first") != NULL, 1);
+}
+
 static void test_dynamic_extern_lowers(void)
 {
 	/* A dynamic extern call lowers to a bzy_dynsym resolve, a per-extern slot, an
@@ -1610,6 +1632,7 @@ int main(void)
 	RUN(test_glsurface_lowers);
 	RUN(test_mappedfile_lowers);
 	RUN(test_pqueue_lowers);
+	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);
