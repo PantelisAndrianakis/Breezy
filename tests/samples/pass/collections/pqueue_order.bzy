@@ -1,0 +1,45 @@
+// PriorityQueue: primitive min-order, an object key ordered via Comparable, and
+// peek/size/isEmpty. Prints the polled order plus the object min and final state.
+class Job
+{
+	int prio;
+	void init(int p) { prio = p; }
+	int compareTo(Job o) { return prio - o.prio; }
+}
+
+void main()
+{
+	PriorityQueue<int> q;
+	q = new PriorityQueue<int>();
+	q.add(5);
+	q.add(1);
+	q.add(3);
+	q.add(2);
+
+	print(q.size());     // 4
+	print(q.peek());     // 1
+	print(q.poll());     // 1
+	print(q.poll());     // 2
+	print(q.poll());     // 3
+	print(q.poll());     // 5
+	print(q.isEmpty());  // true
+
+	PriorityQueue<Job> jobs;
+	jobs = new PriorityQueue<Job>();
+	Job a;
+	a = new Job();
+	a.init(9);
+	Job b;
+	b = new Job();
+	b.init(2);
+	Job c;
+	c = new Job();
+	c.init(5);
+	jobs.add(a);
+	jobs.add(b);
+	jobs.add(c);
+
+	Job top;
+	top = jobs.poll();
+	print(top.prio);     // 2
+}
