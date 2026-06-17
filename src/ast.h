@@ -26,6 +26,7 @@ typedef enum
 	TY_FILEWRITER,                            /* FileWriter: buffered file-write handle. */
 	TY_MAPPEDFILE,                            /* MappedFile: memory-mapped file handle. */
 	TY_LOGGER,                                /* Logger: channel-fed buffered log handle. */
+	TY_XMLNODE,                               /* XmlNode: a parsed XML element node (managed tree). */
 	TY_OBJECT,
 	TY_STRING,  /* Immutable string. */
 	TY_NULL,    /* The `null` literal: a bare 0 assignable to any managed reference. */
@@ -85,6 +86,7 @@ static inline int ty_bits(TypeKind k)
 	case TY_FILEWRITER:
 	case TY_MAPPEDFILE:
 	case TY_LOGGER:
+	case TY_XMLNODE:
 	case TY_OBJECT:
 	case TY_STRING:
 	case TY_NULL:
@@ -130,6 +132,7 @@ static inline int ty_is_managed(TypeKind k)
 	       || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
 	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
 	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
+	       || k == TY_XMLNODE
 	       || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */
 }
 

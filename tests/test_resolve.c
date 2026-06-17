@@ -408,6 +408,12 @@ static void test_string_literal_type(void)
 	ASSERT_INT(a->value->type.kind, TY_STRING);
 }
 
+static void test_xmlnode_type(void)
+{
+	Func *f = build1("void main() { XmlNode n; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_XMLNODE);
+}
+
 static void test_concat_is_string(void)
 {
 	Func *f = build1("void main() { string s; s = \"a\" + \"b\"; }")->funcs[0];
@@ -898,6 +904,7 @@ int main(void)
 	RUN(test_implicit_int_to_double_init);
 	RUN(test_float_compare_is_bool);
 	RUN(test_string_literal_type);
+	RUN(test_xmlnode_type);
 	RUN(test_concat_is_string);
 	RUN(test_length_is_int);
 	RUN(test_newarray_type);

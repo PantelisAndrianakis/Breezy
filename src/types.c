@@ -107,6 +107,19 @@ void types_register_builtins(TypeTable *tt)
 	nf->object_size = 32;
 	nf->vtable_size = 0;
 	nf->method_count = 0;
+
+	ClassInfo *xe = tt_add_class(tt);
+	memset(xe, 0, sizeof(*xe));
+	xe->fields = grow_reserve(xe->fields, 1, &xe->fields_cap, sizeof(FieldInfo));
+	strcpy(xe->name, "XmlException");
+	xe->parent = c;                      /* Subclass of Exception. */
+	strcpy(xe->fields[0].name, "message");
+	xe->fields[0].type.kind = TY_STRING;
+	xe->fields[0].offset = 24;
+	xe->field_count = 1;
+	xe->object_size = 32;
+	xe->vtable_size = 0;
+	xe->method_count = 0;
 }
 
 ClassInfo *types_find_class(TypeTable *tt, const char *name)
