@@ -15,6 +15,7 @@ File.appendText("data/note.txt", "again\n");
 
 print(File.exists("data/note.txt"));               // true.
 print(File.readText("data/note.txt"));             // The file's contents.
+// Reading a structured document? Pass the text to Xml.parse -- see [XML](xml.md).
 
 foreach (string line in File.readLines("data/note.txt"))
 {

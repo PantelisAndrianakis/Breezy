@@ -74,6 +74,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [DateTime](stdlib/datetime.md) | Mutable date-time object - field access, calendar arithmetic, comparison, formatting. |
 | [Random](stdlib/random.md) | The fast `xoshiro256**` pseudo-random number generator. |
 | [Regex](stdlib/regex.md) | The linear-time, ReDoS-safe `Regex` engine. |
+| [XML](stdlib/xml.md) | `Xml.parse` - read XML into a node tree, traversed with collections + closures. |
 | [File](stdlib/file.md) | The `File` namespace - filesystem work with `IOException`. |
 | [System](stdlib/system.md) | The `System` namespace - launching OS commands, reading arguments. |
 | [Desktop](stdlib/desktop.md) | The `Desktop` GUI - GTK-backed windows, controls, listeners (Windows + Linux KDE). |
