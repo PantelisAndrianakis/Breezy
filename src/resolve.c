@@ -1052,6 +1052,7 @@ static void resolve_random(Expr *e)
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
 static void resolve_block(SymTable *st, Block *b, const char *tc);
 static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc);
+static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc);
 
 /* Resolve an expression that may be a lambda against an expected function type:
    a lambda gets its parameter types inferred from `expected` and its captures
@@ -2640,10 +2641,25 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (e->lhs->type.kind==TY_GENERIC)
 		{
-			resolve_args(st,e,tc);
 			const char *tmpl=e->lhs->type.class_name;
 			TypeRef *T=e->lhs->type.elem;
 			const char *nm=e->name;
+
+			/* Vector-backed combinators take a lambda whose parameter types come from
+			   the element type: resolve the lambda argument against its constructed
+			   function type (which drives param inference) BEFORE the generic
+			   argument pass, which would otherwise resolve it with no expected type. */
+			int vecbacked = strcmp(tmpl,"Box")!=0 && strcmp(tmpl,"Set")!=0
+							&& strcmp(tmpl,"PriorityQueue")!=0 && strcmp(tmpl,"TreeSet")!=0
+							&& strcmp(tmpl,"TreeMap")!=0;
+			if (vecbacked && (strcmp(nm,"map")==0 || strcmp(nm,"filter")==0
+							  || strcmp(nm,"forEach")==0 || strcmp(nm,"reduce")==0))
+			{
+				resolve_combinator(st,e,T,tc);
+				break;
+			}
+
+			resolve_args(st,e,tc);
 
 			/* Ordered containers require an ordering for object keys/elements:
 			   the class must implement Comparable (int compareTo). Primitives and
@@ -3695,6 +3711,102 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 	g_lams[g_lam_count++] = lam;
 }
 
+/* Build a List<elem> generic type (the result element kind of map/filter). */
+static TypeRef list_of(TypeRef elem)
+{
+	TypeRef r;
+	memset(&r,0,sizeof(r));
+	r.kind = TY_GENERIC;
+	snprintf(r.class_name,sizeof(r.class_name),"List");
+	r.elem = typeref_box(elem);
+	return r;
+}
+
+/* Build a function type (params...)->ret as the expected type for a combinator's
+   lambda argument. params are copied from the given element/accumulator types. */
+static TypeRef func_type(const TypeRef *params, int nparams, TypeRef ret)
+{
+	TypeRef f;
+	memset(&f,0,sizeof(f));
+	f.kind = TY_FUNC;
+	for (int i = 0; i < nparams; i++)
+	{
+		typeref_add_targ(&f, params[i]);
+	}
+
+	f.elem = typeref_box(ret);
+	return f;
+}
+
+/* Resolve a vector-backed combinator: map/filter/forEach/reduce. The lambda
+   argument is resolved against a function type built from the element type T,
+   which supplies the inferred parameter types. v1 map preserves the element
+   type (U == T). */
+static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc)
+{
+	const char *nm = e->name;
+	if (strcmp(nm,"reduce")==0)
+	{
+		if (e->arg_count != 2)
+		{
+			die(e->line,"reduce(seed, (acc,x)->acc) takes a seed and a lambda.",NULL);
+		}
+
+		resolve_value(st, e->args[0], NULL, tc);       /* Seed -> accumulator type U. */
+		TypeRef U = e->args[0]->type;
+		TypeRef params[2] = { U, *T };
+		TypeRef ft = func_type(params, 2, U);
+		resolve_value(st, e->args[1], &ft, tc);
+		if (e->args[1]->type.kind != TY_FUNC)
+		{
+			die(e->line,"reduce expects a (acc, element) lambda.",NULL);
+		}
+
+		e->type = U;
+		return;
+	}
+
+	if (e->arg_count != 1)
+	{
+		die(e->line,"This combinator takes a single lambda argument.",NULL);
+	}
+
+	TypeRef ret;
+	memset(&ret,0,sizeof(ret));
+	if (strcmp(nm,"map")==0)
+	{
+		ret = *T;                                      /* v1: element-type preserving. */
+	}
+	else if (strcmp(nm,"filter")==0)
+	{
+		ret.kind = TY_BOOL;
+	}
+	else   /* forEach */
+	{
+		ret.kind = TY_VOID;
+	}
+
+	TypeRef ft = func_type(T, 1, ret);
+	resolve_value(st, e->args[0], &ft, tc);
+	if (e->args[0]->type.kind != TY_FUNC)
+	{
+		die(e->line,"This combinator expects a lambda argument.",NULL);
+	}
+
+	if (strcmp(nm,"map")==0)
+	{
+		e->type = list_of(*T);
+	}
+	else if (strcmp(nm,"filter")==0)
+	{
+		e->type = list_of(*T);
+	}
+	else   /* forEach */
+	{
+		e->type.kind = TY_VOID;
+	}
+}
+
 static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 {
 	switch (s->kind)
@@ -4133,8 +4245,17 @@ static int frame_node_block(Expr *e)
 		}
 
 		return 0;                               /* Integer binary uses temp slots now, no sub rsp. */
-	case EX_CALL:
 	case EX_METHOD_CALL:
+		/* A collection combinator (map/filter/forEach/reduce) reserves a working
+		   block plus a per-call argument block simultaneously (cg_combinator). */
+		if (strcmp(e->name,"map")==0 || strcmp(e->name,"filter")==0
+				|| strcmp(e->name,"forEach")==0 || strcmp(e->name,"reduce")==0)
+		{
+			return 112;
+		}
+
+		return 48;
+	case EX_CALL:
 	case EX_NEW:
 		return 48;                              /* Widest call-shaped block (blocking ctx); arg/builtin blocks <= 32. */
 	case EX_INDEX:

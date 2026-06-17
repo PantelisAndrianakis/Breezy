@@ -353,7 +353,20 @@ static Expr *parse_postfix(Parser *p)
 		}
 
 		advance(p);
-		Token name = expect(p, TOKEN_IDENT);
+		/* `map` is a type keyword but also a collection combinator method name; accept
+		   it (and only it) as a member name after a dot. */
+		Token name;
+		if (check(p,TOKEN_MAP))
+		{
+			name = p->cur;
+			strcpy(name.text, "map");
+			advance(p);
+		}
+		else
+		{
+			name = expect(p, TOKEN_IDENT);
+		}
+
 		if (check(p,TOKEN_LPAREN))
 		{
 			advance(p);

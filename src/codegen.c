@@ -3717,6 +3717,186 @@ static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_scratch_free(cg, 16);
 }
 
+/* map / filter / forEach / reduce over a vector-backed collection: evaluate the
+   lambda closure once, then loop the receiver's elements calling the closure per
+   element through its code pointer (closure is arg0, the element is the next arg,
+   with the accumulator before it for reduce). map/filter build a fresh List;
+   reduce folds to a scalar; forEach runs for effect. Value elements load inline;
+   managed elements come from bzy_vec_get (owned) and are released after the call. */
+static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *nm = e->name;
+	int is_map = strcmp(nm,"map")==0;
+	int is_filter = strcmp(nm,"filter")==0;
+	int is_reduce = strcmp(nm,"reduce")==0;
+	int builds = is_map || is_filter;
+	TypeKind et = e->lhs->type.elem->kind;
+	int emanaged = ty_is_managed(et);
+	int lam_idx = is_reduce ? 1 : 0;
+	TypeKind ut = e->type.kind;   /* reduce: accumulator type U; otherwise unused. */
+
+	int B = cg_scratch_alloc(cg, 64);
+	int s_coll = B, s_clo = B-8, s_res = B-16, s_idx = B-24, s_len = B-32, s_acc = B-40, s_elem = B-48;
+
+	cg_expr(cg,tt,e->lhs);                              /* Receiver -> rax. */
+	cg_emit(cg,"    mov [rbp - %d], rax", s_coll);
+
+	if (is_reduce)
+	{
+		cg_expr(cg,tt,e->args[0]);                      /* Seed -> accumulator. */
+		if (ty_is_float(ut))
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", s_acc);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", s_acc);
+		}
+	}
+
+	cg_expr(cg,tt,e->args[lam_idx]);                    /* Closure (owned +1) -> rax. */
+	cg_emit(cg,"    mov [rbp - %d], rax", s_clo);
+
+	if (builds)
+	{
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg,0), cg_elem_kind(et));   /* Result holds element kind. */
+		cg_aligned_call(cg,"bzy_vec_new");              /* Fresh result List (owned) -> rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", s_res);
+	}
+
+	cg_emit(cg,"    mov rax, [rbp - %d]", s_coll);
+	cg_emit(cg,"    mov rax, [rax + 24]");              /* length@24. */
+	cg_emit(cg,"    mov [rbp - %d], rax", s_len);
+	cg_emit(cg,"    mov qword [rbp - %d], 0", s_idx);
+
+	int top = cg_label(cg), end = cg_label(cg);
+	cg_emit(cg,".L%d:", top);
+	cg_emit(cg,"    mov rcx, [rbp - %d]", s_idx);
+	cg_emit(cg,"    cmp rcx, [rbp - %d]", s_len);
+	cg_emit(cg,"    jge .L%d", end);
+
+	if (emanaged)
+	{
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_coll);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,1), s_idx);
+		cg_aligned_call(cg,"bzy_vec_get");              /* Owned (+1) element -> rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", s_elem);
+	}
+	else
+	{
+		/* Inline ring load: phys = (head+i) & (cap-1), with the head==0 (plain List)
+		   fast path skipping the ring arithmetic. rcx = index from the bounds check. */
+		int phys_done = cg_label(cg);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s_coll);
+		cg_emit(cg,"    mov rax, [rdx + 48]");          /* data array ptr. */
+		cg_emit(cg,"    mov r8, [rdx + 40]");           /* head. */
+		cg_emit(cg,"    test r8, r8");
+		cg_emit(cg,"    jz .L%d", phys_done);
+		cg_emit(cg,"    add rcx, r8");
+		cg_emit(cg,"    mov r8, [rdx + 32]");           /* cap. */
+		cg_emit(cg,"    dec r8");
+		cg_emit(cg,"    and rcx, r8");
+		cg_emit(cg,".L%d:", phys_done);
+		cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");  /* slot value. */
+		cg_emit(cg,"    mov [rbp - %d], rax", s_elem);
+	}
+
+	/* Call the closure: arg0 = closure (env), then the element (preceded by the
+	   accumulator for reduce). cg_place_args marshals int/float into the right
+	   registers from the staged block. */
+	int ab = cg_scratch_alloc(cg, 32);
+	int total = is_reduce ? 3 : 2;
+	TypeKind slot_kind[3];
+	slot_kind[0] = TY_OBJECT;
+	cg_emit(cg,"    mov rax, [rbp - %d]", s_clo);
+	cg_emit(cg,"    mov [rbp - %d], rax", ab);
+	if (is_reduce)
+	{
+		slot_kind[1] = ut;
+		slot_kind[2] = et;
+		cg_emit(cg,"    mov rax, [rbp - %d]", s_acc);
+		cg_emit(cg,"    mov [rbp - %d], rax", ab-8);
+		cg_emit(cg,"    mov rax, [rbp - %d]", s_elem);
+		cg_emit(cg,"    mov [rbp - %d], rax", ab-16);
+	}
+	else
+	{
+		slot_kind[1] = et;
+		cg_emit(cg,"    mov rax, [rbp - %d]", s_elem);
+		cg_emit(cg,"    mov [rbp - %d], rax", ab-8);
+	}
+
+	cg_place_args(cg, slot_kind, total, ab, 0, 0);
+	cg_emit(cg,"    mov rax, [rbp - %d]", ab);
+	cg_emit(cg,"    mov rax, [rax + 24]");              /* Code pointer. */
+	cg_emit(cg,"    call rax");                         /* Result -> rax / xmm0. */
+	cg_scratch_free(cg, 32);
+
+	if (is_map)
+	{
+		if (ty_is_float(et))
+		{
+			cg_emit(cg,"    movq rax, xmm0");
+		}
+
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg,1));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_res);
+		cg_aligned_call(cg,"bzy_vec_push_back");
+	}
+	else if (is_filter)
+	{
+		int skip = cg_label(cg);
+		cg_emit(cg,"    test al, al");
+		cg_emit(cg,"    jz .L%d", skip);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,1), s_elem);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_res);
+		cg_aligned_call(cg,"bzy_vec_push_back");
+		cg_emit(cg,".L%d:", skip);
+	}
+	else if (is_reduce)
+	{
+		if (ty_is_float(ut))
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", s_acc);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", s_acc);
+		}
+	}
+
+	if (emanaged)
+	{
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_elem);
+		cg_release_rcx(cg);
+	}
+
+	cg_emit(cg,"    inc qword [rbp - %d]", s_idx);
+	cg_emit(cg,"    jmp .L%d", top);
+	cg_emit(cg,".L%d:", end);
+
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_clo);   /* Release the closure. */
+	cg_release_rcx(cg);
+
+	if (builds)
+	{
+		cg_emit(cg,"    mov rax, [rbp - %d]", s_res);
+	}
+	else if (is_reduce)
+	{
+		if (ty_is_float(ut))
+		{
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", s_acc);
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", s_acc);
+		}
+	}
+
+	cg_scratch_free(cg, 64);
+}
+
 /* List / Stack / Queue / Deque / ArrayDeque methods over the vector runtime.
    The receiver is borrowed; an owned managed argument is released after the call
    (the runtime retains its own copy); fp element values are reinterpreted between
@@ -3727,6 +3907,13 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	TypeKind tk = e->lhs->type.elem->kind;
 	int fp = ty_is_float(tk);
 	const char *nm = e->name;
+
+	if (strcmp(nm,"map")==0 || strcmp(nm,"filter")==0
+			|| strcmp(nm,"forEach")==0 || strcmp(nm,"reduce")==0)
+	{
+		cg_combinator(cg,tt,e);
+		return;
+	}
 
 	const char *fn = NULL;
 	if (strcmp(nm,"add")==0 || strcmp(nm,"push")==0 || strcmp(nm,"enqueue")==0 || strcmp(nm,"addLast")==0)

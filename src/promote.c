@@ -227,6 +227,28 @@ static void scan_expr(Expr *e, int depth, Ctx *c)
 		fbump(e->anno_int, depth, c);
 	}
 
+	/* A lambda captures enclosing locals by value at its construction site. Those
+	   reads live inside the lambda body (not this AST), so count each capture as a
+	   use HERE: the captured local must stay live - and, if promoted, register-
+	   resident with the right value - through the closure build, never reassigned
+	   out from under a later-constructed capturing closure. */
+	if (e->kind == EX_LAMBDA && e->lam)
+	{
+		for (int i = 0; i < e->lam->cap_count; i++)
+		{
+			int off = e->lam->caps[i].src_offset;
+			TypeKind ck = e->lam->caps[i].type.kind;
+			if (off > 0 && is_promotable_kind(ck))
+			{
+				bump(off, depth, c);
+			}
+			else if (off > 0 && ck == TY_DOUBLE)
+			{
+				fbump(off, depth, c);
+			}
+		}
+	}
+
 	scan_expr(e->lhs, depth, c);
 	scan_expr(e->rhs, depth, c);
 	for (int i = 0; i < e->arg_count; i++)

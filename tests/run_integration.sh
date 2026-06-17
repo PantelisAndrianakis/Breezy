@@ -147,6 +147,7 @@ check map_object_cycle tests/samples/pass/collections/proj_map_object_cycle  $'0
 check pqueue      tests/samples/pass/collections/pqueue_order.bzy $'4\n1\n1\n2\n3\n5\ntrue\n2'
 check treemap     tests/samples/pass/collections/treemap_order.bzy $'3\nb\n10\n30\n20\n30\nfalse\n2\n10\n30\n3\n1\n5\n3\n3\n2\n5\n9\n2'
 check closures_escape tests/samples/pass/closures/escape_and_store.bzy $'15\n105\n6'
+check closures_combinators tests/samples/pass/closures/combinators.bzy $'11\n2\n15'
 check_fail map_float tests/samples/fail/collections/map_float.bzy
 check_fail pia_type tests/samples/fail/collections/put_if_absent_type.bzy
 check incdec      tests/samples/pass/basics/incdec.bzy    $'42\n40'
