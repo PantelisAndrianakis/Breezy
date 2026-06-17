@@ -617,7 +617,10 @@ static int is_generic_template(const char *name)
 	       || strcmp(name,"Queue")==0
 	       || strcmp(name,"Deque")==0
 	       || strcmp(name,"ArrayDeque")==0
-	       || strcmp(name,"Set")==0;
+	       || strcmp(name,"Set")==0
+	       || strcmp(name,"PriorityQueue")==0
+	       || strcmp(name,"TreeSet")==0
+	       || strcmp(name,"TreeMap")==0;
 }
 
 /* Consume the single '>' that closes a generic type. Nested generics such as
@@ -665,6 +668,13 @@ static int parse_base_type(Parser *p, TypeRef *out)
 			TypeRef el;
 			parse_type(p,&el);
 			out->elem=typeref_box(el);   /* Built-in templates carry T in elem (4e/4f). */
+			if (strcmp(tmpl,"TreeMap")==0)
+			{
+				expect(p,TOKEN_COMMA);
+				TypeRef val;
+				parse_type(p,&val);
+				out->elem2=typeref_box(val);   /* TreeMap<K,V>: V in elem2 (like map<K,V>). */
+			}
 		}
 		else
 		{
