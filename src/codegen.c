@@ -4044,6 +4044,67 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_scratch_free(cg, 16);
 }
 
+/* PriorityQueue<T> (binary min-heap, runtime/pqueue.c). add takes one value
+   (the runtime retains; an owned temporary is released after); poll/peek return
+   an owned T (FP results come back as bits in rax -> moved to xmm0); size/isEmpty
+   return an int. The element value is passed in a GP register even for FP keys
+   (the runtime stores the bit pattern and the comparator reinterprets it). */
+static void cg_pqueue_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	TypeKind tk = e->lhs->type.elem->kind;
+	int fp = ty_is_float(tk);
+	const char *nm = e->name;
+
+	if (strcmp(nm,"add")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);          /* Receiver. */
+		cg_expr(cg,tt,e->args[0]);                         /* Value -> rax (xmm0 if fp). */
+		if (fp)
+		{
+			cg_emit(cg,"    movq rax, xmm0");              /* Bits -> GP (low 32 valid for float). */
+		}
+
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);      /* Owned-temp slot. */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+		cg_aligned_call(cg,"bzy_pq_add");
+		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
+			cg_release_rcx(cg);
+		}
+
+		cg_scratch_free(cg, 16);
+		return;
+	}
+
+	if (strcmp(nm,"poll")==0 || strcmp(nm,"peek")==0)
+	{
+		cg_expr(cg,tt,e->lhs);
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+		cg_aligned_call(cg, strcmp(nm,"poll")==0 ? "bzy_pq_poll" : "bzy_pq_peek");
+		if (fp)
+		{
+			cg_emit(cg, tk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
+		}
+
+		return;
+	}
+
+	/* size() / isEmpty(). */
+	cg_expr(cg,tt,e->lhs);
+	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+	cg_aligned_call(cg,"bzy_pq_size");
+	if (strcmp(nm,"isEmpty")==0)
+	{
+		cg_emit(cg,"    cmp rax, 0");
+		cg_emit(cg,"    sete al");
+		cg_emit(cg,"    movzx rax, al");
+	}
+}
+
 /* Run a constructor on a freshly-built object: the object is in rax on entry and
    becomes arg slot 0 (this, borrowed), the user args follow. Spills this first so
    arg evaluation can't clobber it (mirrors cg_call_with_args' self handling). The
@@ -5741,6 +5802,20 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov %s, 0", cg_iarg(cg, 1));                                            /* Values unmanaged. */
 			cg_aligned_call(cg,"bzy_map_new");
 		}
+		else if (strcmp(e->type.class_name,"PriorityQueue")==0)
+		{
+			int slot = -1;   /* compareTo vtable slot for object keys; -1 for primitives. */
+			if (e->type.elem->kind==TY_OBJECT)
+			{
+				ClassInfo *ci = types_find_class(tt, e->type.elem->class_name);
+				MethodInfo *cm = ci ? types_find_method(ci, "compareTo") : (MethodInfo*)0;
+				slot = cm ? cm->vtable_slot : -1;
+			}
+
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_elem_kind(e->type.elem->kind));
+			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), slot);
+			cg_aligned_call(cg,"bzy_pq_new");
+		}
 		else   /* List / Stack / Queue / Deque / ArrayDeque -> vector. */
 		{
 			cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), cg_elem_kind(e->type.elem->kind));
@@ -6035,6 +6110,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			else if (strcmp(e->lhs->type.class_name,"Set")==0)
 			{
 				cg_set_method(cg,tt,e);
+			}
+			else if (strcmp(e->lhs->type.class_name,"PriorityQueue")==0)
+			{
+				cg_pqueue_method(cg,tt,e);
 			}
 			else
 			{
@@ -10402,6 +10481,13 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_vec_remove_at");
 	cg_emit(cg,"extern bzy_vec_index_of");
 	cg_emit(cg,"extern bzy_vec_contains");
+	cg_emit(cg,"extern bzy_order_cmp_for");
+	cg_emit(cg,"extern bzy_obj_compare");
+	cg_emit(cg,"extern bzy_pq_new");
+	cg_emit(cg,"extern bzy_pq_add");
+	cg_emit(cg,"extern bzy_pq_poll");
+	cg_emit(cg,"extern bzy_pq_peek");
+	cg_emit(cg,"extern bzy_pq_size");
 	cg_emit(cg,"extern cos");
 	cg_emit(cg,"extern tan");
 	cg_emit(cg,"extern exp");

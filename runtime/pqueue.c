@@ -14,7 +14,9 @@
    array, which releases its managed slots.
 
    Handle layout (object_size = 72): 0 vtable | 8 rc | 16 gcinfo | 24 len |
-   32 cap | 40 data (managed array child) | 48 elem_kind | 56 cmp | 64 obj_cmp. */
+   32 cap | 40 data (managed array child) | 48 elem_kind | 56 cmp | 64 obj_slot.
+   obj_slot >= 0 is the Comparable.compareTo vtable slot for object keys; -1 for
+   primitives (which use cmp). */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,8 +25,8 @@ static int64_t  *PQ_LEN(void *o)  { return (int64_t*)((char*)o + 24); }
 static int64_t  *PQ_CAP(void *o)  { return (int64_t*)((char*)o + 32); }
 static void    **PQ_DATA(void *o) { return (void**)((char*)o + 40); }
 static int64_t  *PQ_KIND(void *o) { return (int64_t*)((char*)o + 48); }
-static bzy_cmp_fn *PQ_CMP(void *o)    { return (bzy_cmp_fn*)((char*)o + 56); }
-static bzy_cmp_fn *PQ_OBJCMP(void *o) { return (bzy_cmp_fn*)((char*)o + 64); }
+static bzy_cmp_fn *PQ_CMP(void *o)     { return (bzy_cmp_fn*)((char*)o + 56); }
+static int64_t    *PQ_OBJSLOT(void *o) { return (int64_t*)((char*)o + 64); }
 
 static int64_t *pq_slots(void *o)
 {
@@ -53,17 +55,18 @@ static int pq_managed(void *o)
 
 static int pq_less(void *o, int64_t x, int64_t y)
 {
-	bzy_cmp_fn oc = *PQ_OBJCMP(o);
-	return (oc ? oc(x, y) : (*PQ_CMP(o))(x, y)) < 0;
+	int64_t slot = *PQ_OBJSLOT(o);
+	int64_t c = slot >= 0 ? bzy_obj_compare((void*)x, (void*)y, slot) : (*PQ_CMP(o))(x, y);
+	return c < 0;
 }
 
-void *bzy_pq_new(int64_t elem_kind, void *obj_cmp)
+void *bzy_pq_new(int64_t elem_kind, int64_t obj_slot)
 {
 	void *o = bzy_alloc(72);
 	*(void**)o = pq_vtable();
 	*PQ_KIND(o) = elem_kind;
-	*PQ_OBJCMP(o) = (bzy_cmp_fn)obj_cmp;
-	*PQ_CMP(o) = obj_cmp ? (bzy_cmp_fn)0 : bzy_order_cmp_for(elem_kind);
+	*PQ_OBJSLOT(o) = obj_slot;
+	*PQ_CMP(o) = obj_slot >= 0 ? (bzy_cmp_fn)0 : bzy_order_cmp_for(elem_kind);
 	/* len, cap, data left zero by bzy_alloc; the array is allocated on first add. */
 	return o;
 }

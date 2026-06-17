@@ -130,10 +130,12 @@ int64_t bzy_entry_val(void *e);    /* Value (managed -> +1 owned). */
 /* Ordering comparators for the ordered containers (own TU runtime/order.c). */
 typedef int (*bzy_cmp_fn)(int64_t, int64_t);
 bzy_cmp_fn bzy_order_cmp_for(int64_t elem_kind);   /* Primitive comparator by elem_kind; NULL for objects (4). */
+int64_t    bzy_obj_compare(void *a, void *b, int64_t slot); /* Order object keys via Comparable.compareTo at a vtable slot. */
 
 /* PriorityQueue<T>: binary min-heap (own TU runtime/pqueue.c). poll/peek return
-   an owned managed value (like bzy_map_get). obj_cmp = vtable thunk or NULL. */
-void   *bzy_pq_new(int64_t elem_kind, void *obj_cmp);
+   an owned managed value (like bzy_map_get). obj_slot = Comparable.compareTo
+   vtable slot for object keys, -1 for primitives. */
+void   *bzy_pq_new(int64_t elem_kind, int64_t obj_slot);
 void    bzy_pq_add(void *o, int64_t v);
 int64_t bzy_pq_poll(void *o);
 int64_t bzy_pq_peek(void *o);

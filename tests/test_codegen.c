@@ -1428,6 +1428,17 @@ static void test_mappedfile_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_mmap_close") != NULL, 1);
 }
 
+static void test_pqueue_lowers(void)
+{
+	/* PriorityQueue construction lowers to bzy_pq_new; the methods to bzy_pq_*. */
+	emit("void main() { PriorityQueue<long> q; q = new PriorityQueue<long>(); q.add(5); long x; x = q.poll(); long p; p = q.peek(); int n; n = q.size(); bool e; e = q.isEmpty(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_pq_new") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_pq_add") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_pq_poll") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_pq_peek") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_pq_size") != NULL, 1);
+}
+
 static void test_dynamic_extern_lowers(void)
 {
 	/* A dynamic extern call lowers to a bzy_dynsym resolve, a per-extern slot, an
@@ -1598,6 +1609,7 @@ int main(void)
 	RUN(test_surface_lowers);
 	RUN(test_glsurface_lowers);
 	RUN(test_mappedfile_lowers);
+	RUN(test_pqueue_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
 	RUN(test_cycle_adjacency_self);

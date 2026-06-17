@@ -17,7 +17,9 @@ static int is_builtin_template(const char *name)
 {
 	return strcmp(name,"Box")==0 || strcmp(name,"List")==0 || strcmp(name,"Stack")==0
 		   || strcmp(name,"Queue")==0 || strcmp(name,"Deque")==0
-		   || strcmp(name,"ArrayDeque")==0 || strcmp(name,"Set")==0;
+		   || strcmp(name,"ArrayDeque")==0 || strcmp(name,"Set")==0
+		   || strcmp(name,"PriorityQueue")==0 || strcmp(name,"TreeSet")==0
+		   || strcmp(name,"TreeMap")==0;
 }
 
 /* ---- template + instance registries (file-static; one expand() per run) ---- */

@@ -47,6 +47,17 @@ static int cmp_str(int64_t a, int64_t b)
 	return (la > lb) - (la < lb);
 }
 
+/* Order two object keys by calling their Comparable.compareTo through the vtable.
+   A Breezy method is C-ABI (receiver in arg0, argument in arg1) and the vtable
+   pointer sits at object offset 0, so the call needs no per-class thunk -- just
+   the compareTo slot, passed by codegen at construction. Returns <0/0/>0. */
+int64_t bzy_obj_compare(void *a, void *b, int64_t slot)
+{
+	void **vt = *(void***)a;
+	int (*fn)(void *, void *) = (int (*)(void *, void *))vt[slot];
+	return (int64_t)fn(a, b);   /* int return, sign-extended. */
+}
+
 /* Return the primitive comparator for an elem_kind, or NULL for objects (4). */
 bzy_cmp_fn bzy_order_cmp_for(int64_t elem_kind)
 {
