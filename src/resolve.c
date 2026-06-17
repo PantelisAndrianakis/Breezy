@@ -1811,6 +1811,31 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_XMLNODE)
+		{
+			if (strcmp(e->name,"name")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=24;         /* name@24. */
+			}
+			else if (strcmp(e->name,"text")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=32;         /* text@32. */
+			}
+			else if (strcmp(e->name,"attrCount")==0)
+			{
+				e->type.kind=TY_INT;
+				e->anno_int=56;         /* attr_count@56. */
+			}
+			else
+			{
+				die(e->line,"Unknown XmlNode field: ",e->name);
+			}
+
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{

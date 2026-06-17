@@ -1479,6 +1479,13 @@ static void test_xml_parse_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_xml_check") != NULL, 1);   /* malformed -> XmlException. */
 }
 
+static void test_xml_fields_lower(void)
+{
+	emit("void main(){ XmlNode r = Xml.parse(\"<a x='1'>hi</a>\"); print(r.name); print(r.text); print(r.attrCount); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "+ 24]") != NULL, 1);   /* name@24 read. */
+	ASSERT_INT(strstr(g_asm, "+ 56]") != NULL, 1);   /* attrCount@56 read. */
+}
+
 static void test_combinator_lowers_to_loop(void)
 {
 	/* A value map presizes a fresh result List and fills it by index (the lambda
@@ -1693,6 +1700,7 @@ int main(void)
 	RUN(test_noncapturing_singleton_and_func_value);
 	RUN(test_combinator_lowers_to_loop);
 	RUN(test_xml_parse_lowers);
+	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);
