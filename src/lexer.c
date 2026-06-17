@@ -304,6 +304,11 @@ Token lexer_next(Lexer *l)
 			next_ch(l);
 			t.type=TOKEN_MINUS_ASSIGN;
 		}
+		else if (peek_ch(l)=='>')
+		{
+			next_ch(l);
+			t.type=TOKEN_ARROW;             /* -> function-type separator. */
+		}
 		else
 		{
 			t.type=TOKEN_MINUS;
@@ -447,6 +452,11 @@ Token lexer_next(Lexer *l)
 		{
 			next_ch(l);
 			t.type=TOKEN_EQ;
+		}
+		else if (peek_ch(l)=='>')
+		{
+			next_ch(l);
+			t.type=TOKEN_FATARROW;          /* => lambda arrow. */
 		}
 		else
 		{

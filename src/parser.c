@@ -875,6 +875,36 @@ static int parse_base_type(Parser *p, TypeRef *out)
    index are left for their own parsers). */
 static int parse_type(Parser *p, TypeRef *out)
 {
+	/* Arrow function type: (P1, P2, ...) -> R. The leading '(' only begins a
+	   function type in type position (Breezy has no grouped types), so this is
+	   unambiguous. The internal shape matches the FFI TY_FUNC: elem = return,
+	   targs = parameters. */
+	if (check(p,TOKEN_LPAREN))
+	{
+		memset(out,0,sizeof(*out));
+		out->kind=TY_FUNC;
+		advance(p);   /* '(' */
+		if (!check(p,TOKEN_RPAREN))
+		{
+			do
+			{
+				TypeRef pt;
+				memset(&pt,0,sizeof(pt));
+				parse_type(p,&pt);
+				typeref_add_targ(out,pt);
+			}
+			while (check(p,TOKEN_COMMA) && (advance(p),1));
+		}
+
+		expect(p,TOKEN_RPAREN);
+		expect(p,TOKEN_ARROW);
+		TypeRef ret;
+		memset(&ret,0,sizeof(ret));
+		parse_type(p,&ret);
+		out->elem=typeref_box(ret);
+		return 1;
+	}
+
 	if (!parse_base_type(p,out))
 	{
 		return 0;
@@ -893,8 +923,49 @@ static int parse_type(Parser *p, TypeRef *out)
 	return 1;
 }
 
+/* A '(' begins an arrow function type (vardecl) rather than a parenthesized/cast
+   expression iff the token after the matching ')' is '->'. Scans a copy of the
+   parser so the real token stream is untouched (Parser holds its lexer by value
+   and token text points into the persistent source). */
+static int looks_like_fn_type(Parser *p)
+{
+	if (p->cur.type != TOKEN_LPAREN)
+	{
+		return 0;
+	}
+
+	Parser t = *p;
+	int depth = 0;
+	for (;;)
+	{
+		if (t.cur.type == TOKEN_EOF)
+		{
+			return 0;
+		}
+
+		if (t.cur.type == TOKEN_LPAREN)
+		{
+			depth++;
+		}
+		else if (t.cur.type == TOKEN_RPAREN)
+		{
+			if (--depth == 0)
+			{
+				advance(&t);
+				return t.cur.type == TOKEN_ARROW;
+			}
+		}
+
+		advance(&t);
+	}
+}
+
 static int starts_vardecl(Parser *p)
 {
+	if (check(p,TOKEN_LPAREN) && looks_like_fn_type(p))
+	{
+		return 1;
+	}
 	TypeKind k;
 	if (scalar_type_kind(p->cur.type, &k) && k != TY_VOID)
 	{

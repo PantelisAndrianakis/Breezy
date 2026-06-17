@@ -26,6 +26,7 @@ typedef enum
 	TOKEN_LBRACKET, TOKEN_RBRACKET,                      /* [ ] */
 	TOKEN_PLUS, TOKEN_MINUS, TOKEN_STAR, TOKEN_SLASH, TOKEN_PERCENT,
 	TOKEN_SHL, TOKEN_SHR,                                /* << >> */
+	TOKEN_ARROW, TOKEN_FATARROW,                         /* -> => (function type / lambda) */
 	TOKEN_PLUSPLUS, TOKEN_MINUSMINUS,                    /* ++ -- */
 	TOKEN_PLUS_ASSIGN, TOKEN_MINUS_ASSIGN, TOKEN_STAR_ASSIGN, TOKEN_SLASH_ASSIGN, TOKEN_PERCENT_ASSIGN,   /* += -= *= /= %= */
 	TOKEN_SHL_ASSIGN, TOKEN_SHR_ASSIGN,                  /* <<= >>= */

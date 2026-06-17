@@ -437,6 +437,24 @@ static void test_map_type_decl(void)
 	ASSERT_INT(t->elem2->kind, TY_INT);
 }
 
+static void test_arrow_fn_type_decl(void)
+{
+	Unit *u = parse_unit_str("void m() { (int,string)->bool f; }");
+	TypeRef *t = &u->funcs[0]->body->stmts[0]->decl_type;
+	ASSERT_INT(t->kind, TY_FUNC);
+	ASSERT_INT(t->elem->kind, TY_BOOL);     /* return type. */
+	ASSERT_INT(t->targ_count, 2);
+	ASSERT_INT(t->targs[0]->kind, TY_INT);
+	ASSERT_INT(t->targs[1]->kind, TY_STRING);
+
+	/* Zero-arg form. */
+	Unit *u2 = parse_unit_str("void m() { ()->int g; }");
+	TypeRef *t2 = &u2->funcs[0]->body->stmts[0]->decl_type;
+	ASSERT_INT(t2->kind, TY_FUNC);
+	ASSERT_INT(t2->elem->kind, TY_INT);
+	ASSERT_INT(t2->targ_count, 0);
+}
+
 static void test_new_map(void)
 {
 	Expr *e = parse_str("new map<int,int>()");
@@ -696,6 +714,7 @@ int main(void)
 	RUN(test_parse_logger_vardecl);
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);
+	RUN(test_arrow_fn_type_decl);
 	RUN(test_new_map);
 	RUN(test_incdec_parse);
 	RUN(test_break_continue_stmt);
