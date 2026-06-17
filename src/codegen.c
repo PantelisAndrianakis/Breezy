@@ -4342,6 +4342,87 @@ static void cg_ctor_call(Codegen *cg, TypeTable *tt, const char *label,
 	cg_scratch_free(cg, block);
 }
 
+/* Indirect call of a function value (closure): the closure object is arg0 (its
+   environment), and the code pointer at [closure+24] is the call target. e->anno_int
+   is the stack slot of the closure local; the user args follow in arg1.. Mirrors
+   cg_ctor_call's spill-and-place, then calls through the loaded code pointer. */
+static void cg_closure_call(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	int argc = e->arg_count;
+	int total = 1 + argc;
+	int block = ((total*8 + 15)/16)*16;
+	if (block < 16)
+	{
+		block = 16;
+	}
+
+	int b = cg_scratch_alloc(cg, block);
+	cg_emit(cg,"    mov rax, [rbp - %d]", e->anno_int);   /* Closure pointer (env / arg0). */
+	cg_emit(cg,"    mov [rbp - %d], rax", b);
+
+	TypeKind slot_kind[total];   /* C99 VLA: closure + user args. */
+	int owned_tmp[total];
+	int owned_n = 0;
+	slot_kind[0] = TY_OBJECT;
+	int sl = 1;
+	for (int i=0; i<argc; i++)
+	{
+		TypeKind pk = e->args[i]->type.kind;
+		cg_expr(cg,tt,e->args[i]);
+		slot_kind[sl] = pk;
+		if (ty_is_float(pk))
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - sl*8);
+		}
+		else
+		{
+			if (expr_is_owned(e->args[i]))
+			{
+				owned_tmp[owned_n++] = sl;
+			}
+
+			cg_emit(cg,"    mov [rbp - %d], rax", b - sl*8);
+		}
+
+		sl++;
+	}
+
+	cg_place_args(cg, slot_kind, total, b, 0, 0);
+	cg_emit(cg,"    mov rax, [rbp - %d]", b);   /* Reload closure for the indirect target. */
+	cg_emit(cg,"    mov rax, [rax + 24]");      /* Code pointer. */
+	cg_emit(cg,"    call rax");
+
+	if (owned_n > 0)
+	{
+		int fp = ty_is_float(e->type.kind);
+		if (fp)
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);   /* Preserve result across releases. */
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", b);
+		}
+
+		for (int i=0; i<owned_n; i++)
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - owned_tmp[i]*8);
+			cg_release_rcx(cg);
+		}
+
+		if (fp)
+		{
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", b);
+		}
+	}
+
+	cg_scratch_free(cg, block);
+}
+
 /* Smallest pool class (1..10) whose block holds object_size, or 0 if unpooled
    (> 256). Mirrors runtime/alloc.c g_class_size; the inline allocator uses it to
    pick the free-list index and block size at compile time. */
@@ -6470,7 +6551,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 
 		break;
 	case EX_CALL:
-		if (strcmp(e->name,"print")==0)
+		if (e->anno_indirect)
+		{
+			cg_closure_call(cg,tt,e);   /* Calling a function value through its code pointer. */
+		}
+		else if (strcmp(e->name,"print")==0)
 		{
 			cg_print(cg,tt,e);
 		}

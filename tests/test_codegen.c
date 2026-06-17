@@ -1450,6 +1450,15 @@ static void test_lambda_lowers_to_closure_object(void)
 	ASSERT_INT(strstr(g_asm, "[rax + 32]") != NULL, 1);           /* capture seeded from env. */
 }
 
+static void test_function_value_call_lowers(void)
+{
+	/* Calling a function value loads the code pointer from [closure+24] and calls
+	   through it, the closure passed as the hidden arg0. */
+	emit("void main() { (int)->int f; f = x => x * 2; print(f(21)); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "[rax + 24]") != NULL, 1);   /* code pointer load. */
+	ASSERT_INT(strstr(g_asm, "call rax") != NULL, 1);     /* indirect call. */
+}
+
 static void test_treemap_lowers(void)
 {
 	/* TreeMap construction lowers to bzy_btree_new; the methods to bzy_btree_*. */
@@ -1644,6 +1653,7 @@ int main(void)
 	RUN(test_mappedfile_lowers);
 	RUN(test_pqueue_lowers);
 	RUN(test_lambda_lowers_to_closure_object);
+	RUN(test_function_value_call_lowers);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);

@@ -3214,6 +3214,34 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	}
 	case EX_CALL:
+	{
+		/* Calling a function value: a local/parameter/captured name of type (P)->R,
+		   rather than a named function. Resolve as an indirect call through the
+		   closure object (its code pointer at +24, the closure itself as arg0). */
+		Symbol *fv = sym_find(st, e->name);
+		if (fv && fv->type.kind == TY_FUNC)
+		{
+			if (e->arg_count != fv->type.targ_count)
+			{
+				die(e->line,"Function value called with the wrong number of arguments: ",e->name);
+			}
+
+			for (int ai = 0; ai < e->arg_count; ai++)
+			{
+				resolve_expr(st, e->args[ai], tc);
+				if (!assignable(fv->type.targs[ai], &e->args[ai]->type))
+				{
+					die(e->line,"Function-value argument type does not match: ",e->name);
+				}
+			}
+
+			e->type = *fv->type.elem;
+			e->anno_indirect = 1;
+			e->anno_int = fv->offset;   /* Stack slot of the closure value. */
+			break;
+		}
+	}
+
 		if (strcmp(e->name,"scheduleAfter")==0 || strcmp(e->name,"scheduleEvery")==0)
 		{
 			resolve_schedule(st,e,tc);
