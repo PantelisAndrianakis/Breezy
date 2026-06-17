@@ -1,0 +1,13 @@
+// Attribute access: attr(name) returns the value (or empty when absent),
+// hasAttr(name) tests presence, attrNameAt(i) enumerates.
+
+void main()
+{
+	XmlNode r = Xml.parse("<box w='10' h=\"20\" />");
+	print(r.attr("w"));        // 10.
+	print(r.attr("h"));        // 20.
+	print(r.attr("missing"));  // (empty line).
+	print(r.hasAttr("w"));     // true.
+	print(r.hasAttr("z"));     // false.
+	print(r.attrNameAt(0));    // w.
+}

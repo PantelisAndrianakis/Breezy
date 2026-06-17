@@ -151,6 +151,7 @@ check closures_combinators tests/samples/pass/closures/combinators.bzy $'11\n2\n
 check closures_noncapturing tests/samples/pass/closures/noncapturing.bzy $'42\n42\n42'
 check closures_capture_managed tests/samples/pass/closures/capture_managed.bzy $'2\n9\nok'
 check xml_children tests/samples/pass/xml/children.bzy $'3\na\nb\nc\n3'
+check xml_attrs tests/samples/pass/xml/attrs.bzy $'10\n20\n\ntrue\nfalse\nw'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'

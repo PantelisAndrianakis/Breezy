@@ -2471,6 +2471,44 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_XMLNODE)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"attr")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"XmlNode.attr(name) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"hasAttr")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"XmlNode.hasAttr(name) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"attrNameAt")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"XmlNode.attrNameAt(index) takes one integer.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else
+			{
+				die(e->line,"Unknown XmlNode method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
 			resolve_args(st,e,tc);

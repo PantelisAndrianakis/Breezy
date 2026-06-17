@@ -338,6 +338,58 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	return root;
 }
 
+/* ---- attribute accessors ---------------------------------------------------- */
+
+/* The attribute value for `name` (owned +1), or an owned empty string if absent. */
+void *bzy_xml_attr(void *node, void *name)
+{
+	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);
+	void *names = NODE_GET(node, X_ANAMES);
+	void *vals  = NODE_GET(node, X_AVALS);
+	for (int64_t i = 0; i < n; i++)
+	{
+		void *an = ((void**)((char*)names + 32))[i];
+		if (bzy_str_eq(an, name))
+		{
+			void *v = ((void**)((char*)vals + 32))[i];
+			bzy_retain(v);
+			return v;
+		}
+	}
+
+	return bzy_str_new("", 0);
+}
+
+int64_t bzy_xml_has_attr(void *node, void *name)
+{
+	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);
+	void *names = NODE_GET(node, X_ANAMES);
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (bzy_str_eq(((void**)((char*)names + 32))[i], name))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* The attribute name at index i (owned +1); aborts on out-of-range. */
+void *bzy_xml_attr_name_at(void *node, int64_t i)
+{
+	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);
+	if (i < 0 || i >= n)
+	{
+		bzy_oob_abort(i, n);   /* No return. */
+	}
+
+	void *names = NODE_GET(node, X_ANAMES);
+	void *nm = ((void**)((char*)names + 32))[i];
+	bzy_retain(nm);
+	return nm;
+}
+
 /* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
 
 static __thread const char *g_xml_error;   /* Set by bzy_xml_parse; consumed by bzy_xml_check. */

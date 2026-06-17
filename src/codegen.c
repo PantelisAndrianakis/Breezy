@@ -5436,6 +5436,49 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 
 /* Log.open(path) -> owned Logger. Single string arg; fallible (the FileWriter open
    can fail) so a post-call bzy_io_check throws IOException, result preserved. */
+/* XmlNode methods: attr(name)/hasAttr(name) take a string, attrNameAt(index)
+   takes an int. attr/attrNameAt return an owned string; hasAttr returns a bool.
+   The receiver is borrowed; an owned argument or receiver is released after the
+   call, preserving the result across the releases. */
+static void cg_xml_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn = strcmp(n,"attr")==0 ? "bzy_xml_attr"
+					 : strcmp(n,"hasAttr")==0 ? "bzy_xml_has_attr"
+					 : "bzy_xml_attr_name_at";
+
+	cg_expr(cg,tt,e->lhs);                        /* Receiver -> rax. */
+	int b = cg_scratch_alloc(cg, 24);
+	cg_emit(cg,"    mov [rbp - %d], rax", b);     /* receiver. */
+	cg_expr(cg,tt,e->args[0]);                    /* name string / index -> rax. */
+	cg_emit(cg,"    mov [rbp - %d], rax", b - 8); /* owned-arg slot. */
+	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
+	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+	cg_aligned_call(cg,fn);                       /* Owned string, or bool, in rax. */
+
+	int rel_arg = expr_is_owned(e->args[0]);
+	int rel_recv = expr_is_owned(e->lhs);
+	if (rel_arg || rel_recv)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rax", b - 16);   /* Preserve the result. */
+		if (rel_arg)
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
+			cg_release_rcx(cg);
+		}
+
+		if (rel_recv)
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+			cg_release_rcx(cg);
+		}
+
+		cg_emit(cg,"    mov rax, [rbp - %d]", b - 16);
+	}
+
+	cg_scratch_free(cg, 24);
+}
+
 /* Xml.parse(text) -> XmlNode. Lowers to bzy_xml_parse(text); a post-call
    bzy_xml_check throws a catchable XmlException on malformed input (the
    bzy_io_check / bzy_number_check pattern), preserving the node result. */
@@ -6882,6 +6925,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
 			cg_filechannel_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_XMLNODE)
+		{
+			cg_xml_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_MAPPEDFILE)
 		{
@@ -11288,6 +11335,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_io_check");
 	cg_emit(cg,"extern bzy_xml_parse");
 	cg_emit(cg,"extern bzy_xml_check");
+	cg_emit(cg,"extern bzy_xml_attr");
+	cg_emit(cg,"extern bzy_xml_has_attr");
+	cg_emit(cg,"extern bzy_xml_attr_name_at");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
