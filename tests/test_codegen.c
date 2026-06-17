@@ -1474,18 +1474,18 @@ static void test_noncapturing_singleton_and_func_value(void)
 
 static void test_combinator_lowers_to_loop(void)
 {
-	/* map lowers to a fresh result List plus a loop that calls the lambda per
-	   element through its code pointer and pushes each result. */
+	/* A value map presizes a fresh result List and fills it by index (the lambda
+	   body is inlined, not called through a closure). */
 	emit("void main(){ List<int> n = new List<int>(); n.add(1); int b = 2;"
 		 " List<int> m = n.map(x => x + b); print(m.get(0)); }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "bzy_vec_new") != NULL, 1);          /* result List. */
-	ASSERT_INT(strstr(g_asm, "call rax") != NULL, 1);             /* indirect per-element call. */
-	ASSERT_INT(strstr(g_asm, "bzy_vec_push_back") != NULL, 1);    /* accumulate. */
+	ASSERT_INT(strstr(g_asm, "bzy_vec_reserve") != NULL, 1);      /* presized fill. */
 
-	/* reduce folds to a scalar (no result List). */
+	/* A statement-level reduce desugars to a foreach accumulation: no closure object
+	   is constructed or called, so no lambda body is emitted. */
 	emit("void main(){ List<int> n = new List<int>(); n.add(1);"
-		 " print(n.reduce(0, (acc, x) => acc + x)); }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "call rax") != NULL, 1);
+		 " int s = n.reduce(0, (acc, x) => acc + x); print(s); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "__lambda_") == NULL, 1);
 }
 
 static void test_treemap_lowers(void)

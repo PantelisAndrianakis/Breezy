@@ -122,6 +122,61 @@ static void vec_grow(void *v)
 	bzy_release(olddata);                   /* Old slots blanked: frees the block only. */
 }
 
+/* Grow the backing array once so the vector can hold at least `want` elements
+   without reallocating. A single allocation to the next power-of-two capacity >=
+   want, re-normalizing any existing ring into logical order at head 0 -- unlike
+   repeated push-driven doubling, which would copy O(n) elements many times while
+   filling a known-size result. A no-op when the current capacity already suffices. */
+void bzy_vec_reserve(void *v, int64_t want)
+{
+	if (vec_is_shared(v))
+	{
+		bzy_shared_lock(v);
+	}
+
+	if (want > *V_CAP(v))
+	{
+		int64_t newcap = *V_CAP(v) ? *V_CAP(v) : 8;
+		while (newcap < want)
+		{
+			newcap *= 2;
+		}
+
+		int64_t n = *V_LEN(v);
+		void *olddata = *V_DATA(v);
+		void *newdata = bzy_array_new(newcap, vec_managed(v) ? 1 : 0);
+		if (olddata)
+		{
+			int64_t *os = (int64_t*)((char*)olddata + 32);
+			int64_t *ns = (int64_t*)((char*)newdata + 32);
+			for (int64_t i = 0; i < n; i++)
+			{
+				int64_t p = vec_phys(v, i);
+				ns[i] = os[p];
+				os[p] = 0;
+			}
+		}
+
+		if (vec_is_shared(v))
+		{
+			*(int64_t*)((char*)newdata + 16) |= (1ll << 3);
+		}
+
+		*V_DATA(v) = newdata;
+		*V_CAP(v) = newcap;
+		*V_HEAD(v) = 0;
+		if (olddata)
+		{
+			bzy_release(olddata);
+		}
+	}
+
+	if (vec_is_shared(v))
+	{
+		bzy_shared_unlock(v);
+	}
+}
+
 static void vec_push_back_impl(void *v, int64_t val)
 {
 	if (*V_LEN(v) + 1 > *V_CAP(v))

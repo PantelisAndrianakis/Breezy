@@ -3723,6 +3723,56 @@ static void cg_set_method(Codegen *cg, TypeTable *tt, Expr *e)
    with the accumulator before it for reduce). map/filter build a fresh List;
    reduce folds to a scalar; forEach runs for effect. Value elements load inline;
    managed elements come from bzy_vec_get (owned) and are released after the call. */
+/* Repoint a cloned lambda-body expression for inline emission inside the
+   enclosing function: every reference to a lambda parameter or capture is moved
+   from its body-frame slot to a slot in the enclosing frame -- the per-element
+   scratch (element / accumulator) for parameters, the captured local's own home
+   for captures (so a promoted capture is read straight from its register). */
+static void cg_inline_remap(Expr *e, LambdaInfo *lam, int elem_slot, int acc_slot, int is_reduce)
+{
+	if (!e)
+	{
+		return;
+	}
+
+	if (e->kind == EX_IDENT)
+	{
+		int done = 0;
+		for (int i = 0; i < lam->cap_count && !done; i++)
+		{
+			if (strcmp(e->name, lam->caps[i].name) == 0)
+			{
+				e->anno_int = lam->caps[i].src_offset;
+				done = 1;
+			}
+		}
+
+		if (!done && is_reduce && strcmp(e->name, lam->params[0].name) == 0)
+		{
+			e->anno_int = acc_slot;
+			done = 1;
+		}
+
+		if (!done && is_reduce && strcmp(e->name, lam->params[1].name) == 0)
+		{
+			e->anno_int = elem_slot;
+			done = 1;
+		}
+
+		if (!done && !is_reduce && strcmp(e->name, lam->params[0].name) == 0)
+		{
+			e->anno_int = elem_slot;
+		}
+	}
+
+	cg_inline_remap(e->lhs, lam, elem_slot, acc_slot, is_reduce);
+	cg_inline_remap(e->rhs, lam, elem_slot, acc_slot, is_reduce);
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		cg_inline_remap(e->args[i], lam, elem_slot, acc_slot, is_reduce);
+	}
+}
+
 static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *nm = e->name;
@@ -3732,14 +3782,30 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 	int builds = is_map || is_filter;
 	TypeKind et = e->lhs->type.elem->kind;
 	int emanaged = ty_is_managed(et);
+	int map_direct = is_map && !emanaged;   /* Value map: presized indexed fill, no per-element retain. */
 	int lam_idx = is_reduce ? 1 : 0;
 	TypeKind ut = e->type.kind;   /* reduce: accumulator type U; otherwise unused. */
 
+	/* Monomorphize when the combinator argument is a literal expression lambda
+	   (the common case): inline its body into the loop instead of constructing a
+	   closure and calling it indirectly per element. A block-body lambda or a
+	   function VALUE (a variable, not a literal) keeps the indirect path. */
+	Expr *litlam = (e->args[lam_idx]->kind == EX_LAMBDA) ? e->args[lam_idx] : NULL;
+	int do_inline = litlam && !litlam->lam->is_block;
+
 	int B = cg_scratch_alloc(cg, 64);
 	int s_coll = B, s_clo = B-8, s_res = B-16, s_idx = B-24, s_len = B-32, s_acc = B-40, s_elem = B-48;
+	Expr *ibody = NULL;
+	if (do_inline)
+	{
+		ibody = expr_clone(litlam->lam->body_expr);
+		cg_inline_remap(ibody, litlam->lam, s_elem, s_acc, is_reduce);
+	}
 
 	cg_expr(cg,tt,e->lhs);                              /* Receiver -> rax. */
 	cg_emit(cg,"    mov [rbp - %d], rax", s_coll);
+	cg_emit(cg,"    mov rax, [rax + 24]");              /* length@24. */
+	cg_emit(cg,"    mov [rbp - %d], rax", s_len);
 
 	if (is_reduce)
 	{
@@ -3754,8 +3820,11 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 	}
 
-	cg_expr(cg,tt,e->args[lam_idx]);                    /* Closure (owned +1) -> rax. */
-	cg_emit(cg,"    mov [rbp - %d], rax", s_clo);
+	if (!do_inline)
+	{
+		cg_expr(cg,tt,e->args[lam_idx]);                /* Closure (owned +1) -> rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", s_clo);
+	}
 
 	if (builds)
 	{
@@ -3764,9 +3833,24 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov [rbp - %d], rax", s_res);
 	}
 
-	cg_emit(cg,"    mov rax, [rbp - %d]", s_coll);
-	cg_emit(cg,"    mov rax, [rax + 24]");              /* length@24. */
-	cg_emit(cg,"    mov [rbp - %d], rax", s_len);
+	if (is_map)
+	{
+		/* map produces exactly one element per source element: pre-size the result to
+		   the source length once so the fill never reallocates. */
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_res);
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,1), s_len);
+		cg_aligned_call(cg,"bzy_vec_reserve");
+		if (map_direct)
+		{
+			/* Value element: set the length and fill data[i] directly in the loop --
+			   no per-element capacity check or push call (a flat array store). The
+			   fresh result has head 0, so phys == index. */
+			cg_emit(cg,"    mov rax, [rbp - %d]", s_res);
+			cg_emit(cg,"    mov rcx, [rbp - %d]", s_len);
+			cg_emit(cg,"    mov [rax + 24], rcx");      /* length = source length. */
+		}
+	}
+
 	cg_emit(cg,"    mov qword [rbp - %d], 0", s_idx);
 
 	int top = cg_label(cg), end = cg_label(cg);
@@ -3801,47 +3885,80 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov [rbp - %d], rax", s_elem);
 	}
 
-	/* Call the closure: arg0 = closure (env), then the element (preceded by the
-	   accumulator for reduce). cg_place_args marshals int/float into the right
-	   registers from the staged block. */
-	int ab = cg_scratch_alloc(cg, 32);
-	int total = is_reduce ? 3 : 2;
-	TypeKind slot_kind[3];
-	slot_kind[0] = TY_OBJECT;
-	cg_emit(cg,"    mov rax, [rbp - %d]", s_clo);
-	cg_emit(cg,"    mov [rbp - %d], rax", ab);
-	if (is_reduce)
+	if (do_inline)
 	{
-		slot_kind[1] = ut;
-		slot_kind[2] = et;
-		cg_emit(cg,"    mov rax, [rbp - %d]", s_acc);
-		cg_emit(cg,"    mov [rbp - %d], rax", ab-8);
-		cg_emit(cg,"    mov rax, [rbp - %d]", s_elem);
-		cg_emit(cg,"    mov [rbp - %d], rax", ab-16);
+		/* Inlined lambda body: reads the element (and accumulator) from their
+		   scratch slots and captures from their enclosing homes; result in
+		   rax / xmm0, exactly where the indirect call would leave it. */
+		cg_expr(cg,tt,ibody);
 	}
 	else
 	{
-		slot_kind[1] = et;
-		cg_emit(cg,"    mov rax, [rbp - %d]", s_elem);
-		cg_emit(cg,"    mov [rbp - %d], rax", ab-8);
+		/* Call the closure: arg0 = closure (env), then the element (preceded by the
+		   accumulator for reduce). cg_place_args marshals int/float into the right
+		   registers from the staged block. */
+		int ab = cg_scratch_alloc(cg, 32);
+		int total = is_reduce ? 3 : 2;
+		TypeKind slot_kind[3];
+		slot_kind[0] = TY_OBJECT;
+		cg_emit(cg,"    mov rax, [rbp - %d]", s_clo);
+		cg_emit(cg,"    mov [rbp - %d], rax", ab);
+		if (is_reduce)
+		{
+			slot_kind[1] = ut;
+			slot_kind[2] = et;
+			cg_emit(cg,"    mov rax, [rbp - %d]", s_acc);
+			cg_emit(cg,"    mov [rbp - %d], rax", ab-8);
+			cg_emit(cg,"    mov rax, [rbp - %d]", s_elem);
+			cg_emit(cg,"    mov [rbp - %d], rax", ab-16);
+		}
+		else
+		{
+			slot_kind[1] = et;
+			cg_emit(cg,"    mov rax, [rbp - %d]", s_elem);
+			cg_emit(cg,"    mov [rbp - %d], rax", ab-8);
+		}
+
+		cg_place_args(cg, slot_kind, total, ab, 0, 0);
+		cg_emit(cg,"    mov rax, [rbp - %d]", ab);
+		cg_emit(cg,"    mov rax, [rax + 24]");          /* Code pointer. */
+		cg_emit(cg,"    call rax");                     /* Result -> rax / xmm0. */
+		cg_scratch_free(cg, 32);
 	}
 
-	cg_place_args(cg, slot_kind, total, ab, 0, 0);
-	cg_emit(cg,"    mov rax, [rbp - %d]", ab);
-	cg_emit(cg,"    mov rax, [rax + 24]");              /* Code pointer. */
-	cg_emit(cg,"    call rax");                         /* Result -> rax / xmm0. */
-	cg_scratch_free(cg, 32);
-
-	if (is_map)
+	if (map_direct)
 	{
 		if (ty_is_float(et))
 		{
 			cg_emit(cg,"    movq rax, xmm0");
 		}
 
+		/* Direct indexed store into the pre-sized result (head 0, phys == index):
+		   data[index] = value, no capacity check, no length bump. */
+		cg_emit(cg,"    mov rcx, [rbp - %d]", s_res);
+		cg_emit(cg,"    mov rcx, [rcx + 48]");             /* data array ptr. */
+		cg_emit(cg,"    mov r8, [rbp - %d]", s_idx);
+		cg_emit(cg,"    mov [rcx + r8*8 + 32], rax");      /* data[index] = value. */
+	}
+	else if (is_map)
+	{
+		/* Managed-element map: bzy_vec_push_back retains the value into the result
+		   (the capacity is pre-reserved, so this never grows). An owned body result
+		   is released after the retain so its temporary +1 does not leak. */
+		int result_owned = do_inline ? expr_is_owned(litlam->lam->body_expr) : 1;
+		if (result_owned)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", s_acc);   /* Preserve for release. */
+		}
+
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg,1));
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_res);
 		cg_aligned_call(cg,"bzy_vec_push_back");
+		if (result_owned)
+		{
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_acc);
+			cg_release_rcx(cg);
+		}
 	}
 	else if (is_filter)
 	{
@@ -3875,8 +3992,11 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    jmp .L%d", top);
 	cg_emit(cg,".L%d:", end);
 
-	cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_clo);   /* Release the closure. */
-	cg_release_rcx(cg);
+	if (!do_inline)
+	{
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg,0), s_clo);   /* Release the closure. */
+		cg_release_rcx(cg);
+	}
 
 	if (builds)
 	{
@@ -3912,6 +4032,19 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 			|| strcmp(nm,"forEach")==0 || strcmp(nm,"reduce")==0)
 	{
 		cg_combinator(cg,tt,e);
+		return;
+	}
+
+	if (strcmp(nm,"reserve")==0)
+	{
+		cg_expr(cg,tt,e->lhs);                       /* Receiver -> rax. */
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
+		cg_expr(cg,tt,e->args[0]);                   /* Capacity -> rax. */
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+		cg_aligned_call(cg,"bzy_vec_reserve");
+		cg_scratch_free(cg, 16);
 		return;
 	}
 
@@ -11036,6 +11169,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_to_bool");
 	cg_emit(cg,"extern bzy_number_check");
 	cg_emit(cg,"extern bzy_vec_new");
+	cg_emit(cg,"extern bzy_vec_reserve");
 	cg_emit(cg,"extern bzy_vec_len");
 	cg_emit(cg,"extern bzy_vec_push_back");
 	cg_emit(cg,"extern bzy_vec_push_front");

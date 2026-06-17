@@ -2990,6 +2990,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_INT;
 			}
+			else if (strcmp(nm,"reserve")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"Reserve(capacity) needs an integer.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
 			else
 			{
 				die(e->line,"Unknown collection method: ",nm);
@@ -4159,10 +4168,314 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	}
 }
 
+/* ---- Combinator desugaring ----------------------------------------------------
+   A statement-level collection combinator over a literal expression-body lambda is
+   rewritten into an equivalent `foreach` loop before resolution, so the loop flows
+   through the same hoisting + register promotion a hand-written loop gets (the
+   closure path, cg_combinator, stays for nested-expression uses and function-value
+   arguments). For example:
+
+       sum = xs.reduce(0, (acc, x) => acc + (x + base));
+   becomes
+       sum = 0;
+       foreach (T __cbN in xs) { sum = sum + (__cbN + base); }
+
+   map/filter build a fresh List and add per element; forEach (expression body)
+   drops the result. Captures stay ordinary in-scope reads (base above); the
+   element parameter is renamed to a fresh loop variable so it never clashes. */
+
+static int g_desugar_seq;
+
+static void ident_rename(Expr *e, const char *from, const char *to)
+{
+	if (!e)
+	{
+		return;
+	}
+
+	if (e->kind == EX_IDENT && strcmp(e->name, from) == 0)
+	{
+		snprintf(e->name, sizeof(e->name), "%s", to);
+	}
+
+	ident_rename(e->lhs, from, to);
+	ident_rename(e->rhs, from, to);
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		ident_rename(e->args[i], from, to);
+	}
+}
+
+static Expr *mk_ident(const char *name, int line)
+{
+	Expr *e = expr_new(EX_IDENT, line);
+	snprintf(e->name, sizeof(e->name), "%s", name);
+	return e;
+}
+
+static Expr *mk_new_list(TypeRef T, int line)
+{
+	Expr *e = expr_new(EX_NEWGEN, line);
+	memset(&e->type, 0, sizeof(e->type));
+	e->type.kind = TY_GENERIC;
+	snprintf(e->type.class_name, sizeof(e->type.class_name), "List");
+	e->type.elem = typeref_box(T);
+	return e;
+}
+
+/* Replace b->stmts[i] with the k statements in out[], growing the array as needed. */
+static void block_splice(Block *b, int i, Stmt **out, int k)
+{
+	int need = b->count - 1 + k;
+	if (need > b->cap)
+	{
+		int nc = b->cap > 0 ? b->cap : 4;
+		while (nc < need)
+		{
+			nc *= 2;
+		}
+
+		Stmt **n = calloc(nc, sizeof(Stmt*));
+		memcpy(n, b->stmts, b->count * sizeof(Stmt*));
+		b->stmts = n;
+		b->cap = nc;
+	}
+
+	for (int j = b->count - 1; j > i; j--)
+	{
+		b->stmts[j + (k - 1)] = b->stmts[j];
+	}
+
+	for (int j = 0; j < k; j++)
+	{
+		b->stmts[i + j] = out[j];
+	}
+
+	b->count = need;
+}
+
+/* If statement s is a desugarable statement-level combinator, write the equivalent
+   statements into out[] (at most 2) and return their count; else return 0. */
+static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
+{
+	Expr *C = NULL, *target = NULL;
+	int is_vardecl = 0;
+	if (s->kind == ST_EXPR)
+	{
+		C = s->expr;
+	}
+	else if (s->kind == ST_ASSIGN)
+	{
+		C = s->value;
+		target = s->target;
+	}
+	else if (s->kind == ST_VARDECL)
+	{
+		C = s->decl_init;
+		is_vardecl = 1;
+	}
+	else
+	{
+		return 0;
+	}
+
+	if (!C || C->kind != EX_METHOD_CALL)
+	{
+		return 0;
+	}
+
+	const char *nm = C->name;
+	int is_filter = strcmp(nm,"filter")==0;
+	int is_foreach = strcmp(nm,"forEach")==0, is_reduce = strcmp(nm,"reduce")==0;
+	int is_map = 0;   /* map keeps the cg_combinator path (a presized indexed fill). */
+	if (!(is_filter || is_foreach || is_reduce))
+	{
+		return 0;
+	}
+
+	/* forEach is a void statement; the others must be the whole right-hand side and
+	   assign to a plain name. */
+	if (is_foreach && s->kind != ST_EXPR)
+	{
+		return 0;
+	}
+
+	if (!is_foreach && s->kind == ST_EXPR)
+	{
+		return 0;
+	}
+
+	if (s->kind == ST_ASSIGN && target->kind != EX_IDENT)
+	{
+		return 0;
+	}
+
+	int lam_idx = is_reduce ? 1 : 0;
+	if (C->arg_count <= lam_idx || C->args[lam_idx]->kind != EX_LAMBDA)
+	{
+		return 0;
+	}
+
+	LambdaInfo *lam = C->args[lam_idx]->lam;
+	if (lam->is_block)
+	{
+		return 0;   /* Expression body only; a block body keeps the closure path. */
+	}
+
+	/* Element type from the receiver (resolve a clone so the foreach resolves the
+	   original exactly once). */
+	Expr *rc = expr_clone(C->lhs);
+	resolve_expr(st, rc, tc);
+	if (rc->type.kind != TY_GENERIC || !rc->type.elem)
+	{
+		return 0;
+	}
+
+	const char *tmpl = rc->type.class_name;
+	if (strcmp(tmpl,"Box")==0 || strcmp(tmpl,"Set")==0 || strcmp(tmpl,"PriorityQueue")==0
+			|| strcmp(tmpl,"TreeSet")==0 || strcmp(tmpl,"TreeMap")==0)
+	{
+		return 0;
+	}
+
+	TypeRef T = typeref_deepcopy(rc->type.elem);
+	int line = s->line;
+
+	char xv[32];
+	snprintf(xv, sizeof(xv), "__cb%d", g_desugar_seq++);
+	const char *elemParam = is_reduce ? lam->params[1].name : lam->params[0].name;
+
+	char sink[64];
+	if (is_vardecl)
+	{
+		snprintf(sink, sizeof(sink), "%s", s->decl_name);
+	}
+	else if (target)
+	{
+		snprintf(sink, sizeof(sink), "%s", target->name);
+	}
+	else
+	{
+		sink[0] = '\0';
+	}
+
+	Stmt *fe = stmt_new(ST_FOREACH, line);
+	fe->decl_type = T;
+	snprintf(fe->decl_name, sizeof(fe->decl_name), "%s", xv);
+	fe->fe_val_type.kind = TY_VOID;
+	fe->fe_val_name[0] = '\0';
+	fe->expr = C->lhs;
+	fe->then_blk = block_new();
+
+	int n = 0;
+
+	/* The shared initializer: `sink = <init>` as a vardecl or an assignment. */
+	if (!is_foreach)
+	{
+		Expr *init = is_reduce ? C->args[0] : mk_new_list(T, line);
+		if (is_vardecl)
+		{
+			Stmt *vd = stmt_new(ST_VARDECL, line);
+			vd->decl_type = s->decl_type;
+			snprintf(vd->decl_name, sizeof(vd->decl_name), "%s", s->decl_name);
+			vd->decl_init = init;
+			out[n++] = vd;
+		}
+		else
+		{
+			Stmt *as = stmt_new(ST_ASSIGN, line);
+			as->target = mk_ident(sink, line);
+			as->value = init;
+			out[n++] = as;
+		}
+
+		/* Pre-size the result to the source length so the fill never reallocates
+		   (only when the receiver is a plain name -- reading its `size` twice is
+		   then side-effect free). */
+		if ((is_map || is_filter) && C->lhs->kind == EX_IDENT)
+		{
+			Expr *sz = expr_new(EX_FIELD, line);
+			snprintf(sz->name, sizeof(sz->name), "size");
+			sz->lhs = expr_clone(C->lhs);
+			Expr *rv = expr_new(EX_METHOD_CALL, line);
+			snprintf(rv->name, sizeof(rv->name), "reserve");
+			rv->lhs = mk_ident(sink, line);
+			expr_add_arg(rv, sz);
+			Stmt *rs = stmt_new(ST_EXPR, line);
+			rs->expr = rv;
+			out[n++] = rs;
+		}
+	}
+
+	if (is_reduce)
+	{
+		Expr *body = expr_clone(lam->body_expr);
+		ident_rename(body, lam->params[0].name, sink);   /* acc -> sink. */
+		ident_rename(body, elemParam, xv);               /* x   -> loop var. */
+		Stmt *bs = stmt_new(ST_ASSIGN, line);
+		bs->target = mk_ident(sink, line);
+		bs->value = body;
+		block_push(fe->then_blk, bs);
+	}
+	else if (is_map)
+	{
+		Expr *body = expr_clone(lam->body_expr);
+		ident_rename(body, elemParam, xv);
+		Expr *add = expr_new(EX_METHOD_CALL, line);
+		snprintf(add->name, sizeof(add->name), "add");
+		add->lhs = mk_ident(sink, line);
+		expr_add_arg(add, body);
+		Stmt *es = stmt_new(ST_EXPR, line);
+		es->expr = add;
+		block_push(fe->then_blk, es);
+	}
+	else if (is_filter)
+	{
+		Expr *body = expr_clone(lam->body_expr);
+		ident_rename(body, elemParam, xv);
+		Expr *add = expr_new(EX_METHOD_CALL, line);
+		snprintf(add->name, sizeof(add->name), "add");
+		add->lhs = mk_ident(sink, line);
+		expr_add_arg(add, mk_ident(xv, line));
+		Stmt *es = stmt_new(ST_EXPR, line);
+		es->expr = add;
+		Stmt *iff = stmt_new(ST_IF, line);
+		iff->cond = body;
+		iff->then_blk = block_new();
+		block_push(iff->then_blk, es);
+		block_push(fe->then_blk, iff);
+	}
+	else   /* forEach, expression body. */
+	{
+		Expr *body = expr_clone(lam->body_expr);
+		ident_rename(body, lam->params[0].name, xv);
+		Stmt *es = stmt_new(ST_EXPR, line);
+		es->expr = body;
+		block_push(fe->then_blk, es);
+	}
+
+	out[n++] = fe;
+	return n;
+}
+
 static void resolve_block(SymTable *st, Block *b, const char *tc)
 {
 	for (int i=0; i<b->count; i++)
 	{
+		Stmt *out[3];
+		int k = desugar_combinator(st, b->stmts[i], tc, out);
+		if (k > 0)
+		{
+			block_splice(b, i, out, k);
+			for (int j = 0; j < k; j++)
+			{
+				resolve_stmt(st, b->stmts[i + j], tc);
+			}
+
+			i += k - 1;
+			continue;
+		}
+
 		resolve_stmt(st,b->stmts[i],tc);
 	}
 }
@@ -4212,6 +4525,14 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 			c = frame_expr_depth(e->args[i], depth_out, args_out);
 			if (c > ch) { ch = c; }
 		}
+	}
+
+	/* An expression-body lambda may be inlined into the enclosing frame at a
+	   combinator call site, so its body's temps count here too. */
+	if (e->kind == EX_LAMBDA && e->lam && !e->lam->is_block)
+	{
+		c = frame_expr_depth(e->lam->body_expr, depth_out, args_out);
+		if (c > ch) { ch = c; }
 	}
 
 	int d = leaf ? 0 : (1 + ch);
@@ -4288,6 +4609,14 @@ static int frame_scratch_bytes(Expr *e, int *max_out)
 			c = frame_scratch_bytes(e->args[i], max_out);
 			if (c > child) { child = c; }
 		}
+	}
+
+	/* An expression-body lambda may be inlined into the enclosing frame at a
+	   combinator call site, so its body's scratch counts here too. */
+	if (e->kind == EX_LAMBDA && e->lam && !e->lam->is_block)
+	{
+		c = frame_scratch_bytes(e->lam->body_expr, max_out);
+		if (c > child) { child = c; }
 	}
 
 	int total = frame_node_block(e) + child;
@@ -4724,6 +5053,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 {
 	g_lam_count = 0;     /* Reset the lambda registry: a process may compile more than once (the test harness). */
 	g_lambda_seq = 0;
+	g_desugar_seq = 0;
 	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
 
 	for (int i=0; i<unit_count; i++)
