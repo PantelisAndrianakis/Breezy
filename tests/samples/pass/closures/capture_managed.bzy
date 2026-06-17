@@ -1,0 +1,17 @@
+// A closure that captures a managed reference (a List) and mutates the captured
+// collection's target through the closure. A separate captured-free string proves
+// an unrelated managed local survives alongside the closure's environment.
+
+void main()
+{
+	List<int> sink = new List<int>();
+	string tag = "ok";
+
+	(int)->void push = v => { sink.add(v); };   // Captures sink by reference value.
+	push(7);
+	push(9);
+
+	print(sink.size);     // 2.
+	print(sink.get(1));   // 9.
+	print(tag);           // ok.
+}

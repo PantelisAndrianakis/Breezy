@@ -1,0 +1,13 @@
+// Non-capturing lambdas: a zero-parameter () -> int and a (int)->int that close
+// over nothing. Each lowers to a process-lifetime singleton (allocated once), so
+// repeated evaluation reuses the same closure object.
+
+void main()
+{
+	() -> int answer = () => 42;
+	(int)->int inc = x => x + 1;
+
+	print(answer());   // 42.
+	print(inc(41));    // 42.
+	print(inc(inc(40)));   // 42.
+}

@@ -148,6 +148,11 @@ check pqueue      tests/samples/pass/collections/pqueue_order.bzy $'4\n1\n1\n2\n
 check treemap     tests/samples/pass/collections/treemap_order.bzy $'3\nb\n10\n30\n20\n30\nfalse\n2\n10\n30\n3\n1\n5\n3\n3\n2\n5\n9\n2'
 check closures_escape tests/samples/pass/closures/escape_and_store.bzy $'15\n105\n6'
 check closures_combinators tests/samples/pass/closures/combinators.bzy $'11\n2\n15'
+check closures_noncapturing tests/samples/pass/closures/noncapturing.bzy $'42\n42\n42'
+check closures_capture_managed tests/samples/pass/closures/capture_managed.bzy $'2\n9\nok'
+# Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
+# optional runtime translation unit, so nothing to add to the nobloat forbidden list.
+check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'
 check_fail map_float tests/samples/fail/collections/map_float.bzy
 check_fail pia_type tests/samples/fail/collections/put_if_absent_type.bzy
 check incdec      tests/samples/pass/basics/incdec.bzy    $'42\n40'

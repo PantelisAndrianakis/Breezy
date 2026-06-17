@@ -1,0 +1,25 @@
+// A reference cycle through a closure: an object holds a closure that captures
+// that same object (object -> fn -> closure env -> object). After the only root
+// drops, the cycle keeps both alive under plain reference counting; the closure's
+// per-lambda typeinfo lets the cycle collector trace the captured object and
+// reclaim the whole cycle.
+
+class Holder
+{
+	int k;
+	(int)->int fn;
+}
+
+void makeCycle()
+{
+	Holder h = new Holder();
+	h.k = 5;
+	h.fn = x => x + h.k;   // The closure captures h -> cycle with h.fn.
+}
+
+void main()
+{
+	makeCycle();
+	collectCycles();
+	print(liveCount());   // 0.
+}

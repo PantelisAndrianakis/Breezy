@@ -98,6 +98,22 @@ static void walk_expr(Expr *e)
 	case EX_UNARY:
 		walk_expr(e->lhs);
 		break;
+	case EX_LAMBDA:
+		/* A closure captures enclosing locals by value into a heap environment that
+		   may outlive the frame (or form a reference cycle with the captured object,
+		   reclaimed only by the cycle collector). An object captured this way must be
+		   heap-allocated and reference-counted, never a frame-local stack object. */
+		if (e->lam)
+		{
+			for (int i=0; i<e->lam->cap_count; i++)
+			{
+				if (e->lam->caps[i].type.kind==TY_OBJECT)
+				{
+					esc_add(e->lam->caps[i].src_offset);
+				}
+			}
+		}
+		break;
 	default:
 		break;
 	}
