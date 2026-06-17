@@ -854,6 +854,22 @@ static void test_network_udp_resolves(void)
 	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* datagram.port -> int. */
 }
 
+static void test_lambda_resolve_capture(void)
+{
+	/* base is captured by value; x is the parameter, its type inferred from the
+	   (int)->int target. */
+	Func *f = build1("void m() { int base = 10; (int)->int g = x => x + base; }")->funcs[0];
+	Expr *lam = f->body->stmts[1]->decl_init;
+	ASSERT_INT(lam->kind, EX_LAMBDA);
+	ASSERT_INT(lam->type.kind, TY_FUNC);
+	ASSERT_INT(lam->lam->param_count, 1);
+	ASSERT_INT(lam->lam->params[0].type.kind, TY_INT);   /* inferred from the target. */
+	ASSERT_INT(lam->lam->cap_count, 1);
+	ASSERT_STR(lam->lam->caps[0].name, "base");
+	ASSERT_INT(lam->lam->caps[0].type.kind, TY_INT);
+	ASSERT_INT(lam->lam->caps[0].env_offset, 32);        /* first capture sits past the 32-byte header. */
+}
+
 int main(void)
 {
 	printf("Resolver tests\n");
@@ -931,6 +947,7 @@ int main(void)
 	RUN(test_logger_resolves);
 	RUN(test_string_parse_types);
 	RUN(test_null_resolves);
+	RUN(test_lambda_resolve_capture);
 	SUMMARY();
 	return 0;
 }

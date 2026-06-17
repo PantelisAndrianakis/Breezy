@@ -223,6 +223,7 @@ struct Expr
 	int      anno_overload;   /* Resolver: index of the selected overload (ctor/method/func) within its set; default 0. */
 	int      is_func_addr;    /* FFI: this arg is a bare function name passed as a C function pointer (its address). */
 	int      anno_indirect;   /* Resolver: EX_CALL through a function value (closure), not a named function. */
+	int      anno_capture;    /* Resolver: EX_IDENT that reads a captured var from the closure env (anno_int = env byte offset). */
 	LambdaInfo *lam;          /* EX_LAMBDA side-data. */
 };
 

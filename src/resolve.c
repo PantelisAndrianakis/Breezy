@@ -17,6 +17,9 @@ static TypeTable *g_types;
 static const TypeRef *g_ret;   /* Return type of the function being resolved. */
 static int g_loop_depth;       /* >0 inside a while/for/foreach body; gates continue. */
 static int g_break_depth;      /* >0 inside a loop OR switch body; gates break. */
+static SymTable *g_lam_enc;    /* Enclosing scope while resolving a lambda body (NULL outside one). */
+static LambdaInfo *g_cur_lam;  /* Lambda whose body is currently being resolved (for capture recording). */
+static int g_lambda_seq;       /* Monotonic id for synthetic lambda body labels. */
 
 static void die(int line, const char *msg, const char *arg)
 {
@@ -1047,6 +1050,52 @@ static void resolve_random(Expr *e)
 }
 
 static void resolve_expr(SymTable *st, Expr *e, const char *this_class);
+static void resolve_block(SymTable *st, Block *b, const char *tc);
+static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc);
+
+/* Resolve an expression that may be a lambda against an expected function type:
+   a lambda gets its parameter types inferred from `expected` and its captures
+   collected; anything else resolves normally (the expected type is unused). */
+static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const char *tc)
+{
+	if (e->kind == EX_LAMBDA)
+	{
+		resolve_lambda(st, e, expected, tc);
+	}
+	else
+	{
+		resolve_expr(st, e, tc);
+	}
+}
+
+static LambdaCap *lam_find_cap(LambdaInfo *l, const char *name)
+{
+	for (int i = 0; i < l->cap_count; i++)
+	{
+		if (strcmp(l->caps[i].name, name) == 0)
+		{
+			return &l->caps[i];
+		}
+	}
+
+	return NULL;
+}
+
+static LambdaCap *lam_add_cap(LambdaInfo *l, const char *name, TypeRef type, int src_off)
+{
+	if (l->cap_count >= (int)(sizeof(l->caps)/sizeof(l->caps[0])))
+	{
+		die(0,"Too many captured variables in a lambda.",NULL);
+	}
+
+	LambdaCap *c = &l->caps[l->cap_count++];
+	snprintf(c->name,sizeof(c->name),"%s",name);
+	c->type = type;
+	c->src_offset = src_off;
+	c->is_managed = ty_is_managed(type.kind);
+	c->env_offset = 32 + (l->cap_count - 1) * 8;   /* Env header is 32 bytes; captures follow. */
+	return c;
+}
 
 /* A malloc'd array of the call's resolved argument types, for overload_select.
    Leaked deliberately (the compiler is short-lived); avoids a fixed arg cap. */
@@ -1299,6 +1348,29 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_IDENT:
 	{
 		Symbol *s=sym_find(st,e->name);
+		if (!s && g_cur_lam)
+		{
+			/* Inside a lambda body, a name not bound by a parameter/local that
+			   names an enclosing local is captured BY VALUE into the closure env. */
+			LambdaCap *c = lam_find_cap(g_cur_lam, e->name);
+			if (!c)
+			{
+				Symbol *encs = g_lam_enc ? sym_find(g_lam_enc, e->name) : NULL;
+				if (encs)
+				{
+					c = lam_add_cap(g_cur_lam, e->name, encs->type, encs->offset);
+				}
+			}
+
+			if (c)
+			{
+				e->type = c->type;
+				e->anno_capture = 1;
+				e->anno_int = c->env_offset;
+				break;
+			}
+		}
+
 		if (!s)
 		{
 			/* Not a local or parameter. Inside a method, a bare name may refer
@@ -1345,6 +1417,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		e->anno_int=s->offset;
 		break;
 	}
+	case EX_LAMBDA:
+		resolve_lambda(st, e, NULL, tc);   /* No target type here: params must be annotated. */
+		break;
 	case EX_NEW:
 	{
 		if (strcmp(e->name,"StringBuilder")!=0 && !types_find_class(g_types,e->name))
@@ -3404,6 +3479,94 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 static void resolve_block(SymTable *st, Block *b, const char *tc);
 
+/* Resolve a lambda literal against an optional expected function type. Infers
+   omitted parameter types from `expected`, resolves the body in the lambda's own
+   scope (so it gets its own frame), collects by-value captures of enclosing
+   locals, and types the lambda as the satisfied TY_FUNC signature. */
+static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc)
+{
+	LambdaInfo *lam = e->lam;
+	int has_expected = expected && expected->kind == TY_FUNC;
+
+	if (has_expected && expected->targ_count != lam->param_count)
+	{
+		die(e->line,"Lambda parameter count does not match the expected function type.",NULL);
+	}
+
+	for (int i = 0; i < lam->param_count; i++)
+	{
+		if (!lam->params[i].has_type)
+		{
+			if (!has_expected)
+			{
+				die(e->line,"Lambda parameter needs a type annotation (no target function type to infer from): ",lam->params[i].name);
+			}
+
+			lam->params[i].type = *expected->targs[i];
+			lam->params[i].has_type = 1;
+		}
+	}
+
+	/* Resolve the body in a fresh scope seeded with the parameters; an enclosing
+	   local referenced inside becomes a capture (recorded against g_cur_lam). */
+	SymTable lst;
+	sym_init(&lst);
+	for (int i = 0; i < lam->param_count; i++)
+	{
+		sym_add(&lst, lam->params[i].name, lam->params[i].type);
+	}
+
+	SymTable *save_enc = g_lam_enc;
+	LambdaInfo *save_lam = g_cur_lam;
+	g_lam_enc = st;
+	g_cur_lam = lam;
+	if (lam->is_block)
+	{
+		resolve_block(&lst, lam->body_block, tc);
+	}
+	else
+	{
+		resolve_expr(&lst, lam->body_expr, tc);
+	}
+
+	g_lam_enc = save_enc;
+	g_cur_lam = save_lam;
+
+	/* Build the satisfied signature (elem = return, targs = params). */
+	TypeRef sig;
+	memset(&sig,0,sizeof(sig));
+	sig.kind = TY_FUNC;
+	for (int i = 0; i < lam->param_count; i++)
+	{
+		typeref_add_targ(&sig, lam->params[i].type);
+	}
+
+	if (has_expected)
+	{
+		sig.elem = expected->elem;
+		if (!lam->is_block && !assignable(expected->elem, &lam->body_expr->type))
+		{
+			die(e->line,"Lambda body type does not match the expected return type.",NULL);
+		}
+	}
+	else
+	{
+		TypeRef ret;
+		memset(&ret,0,sizeof(ret));
+		ret.kind = TY_VOID;
+		if (!lam->is_block)
+		{
+			ret = lam->body_expr->type;
+		}
+
+		sig.elem = typeref_box(ret);
+	}
+
+	lam->sig = sig;
+	e->type = sig;
+	snprintf(lam->label,sizeof(lam->label),"__lambda_%d",g_lambda_seq++);
+}
+
 static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 {
 	switch (s->kind)
@@ -3419,7 +3582,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		if (s->decl_init)
 		{
-			resolve_expr(st,s->decl_init,tc);
+			resolve_value(st,s->decl_init,&s->decl_type,tc);
 			if (!assignable(&s->decl_type, &s->decl_init->type))
 			{
 				die(s->line,"Initializer type does not match; add a cast.",NULL);
@@ -3437,7 +3600,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		}
 
 		resolve_expr(st,s->target,tc);
-		resolve_expr(st,s->value,tc);
+		resolve_value(st,s->value,&s->target->type,tc);
 		if (!assignable(&s->target->type, &s->value->type))
 		{
 			die(s->line,"Assigned value type does not match; add a cast.",NULL);
@@ -3472,7 +3635,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_RETURN:
 		if (s->ret_val)
 		{
-			resolve_expr(st,s->ret_val,tc);
+			resolve_value(st,s->ret_val,g_ret,tc);
 			if (!assignable(g_ret, &s->ret_val->type))
 			{
 				die(s->line,"Return type does not match; add a cast.",NULL);
