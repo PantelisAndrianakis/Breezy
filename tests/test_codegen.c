@@ -1439,6 +1439,17 @@ static void test_pqueue_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_pq_size") != NULL, 1);
 }
 
+static void test_lambda_lowers_to_closure_object(void)
+{
+	/* A capturing lambda emits a body label, allocates the closure object, stores
+	   the code pointer at +24, and seeds the captured value from the env (+32). */
+	emit("void main() { int base; base = 10; (int)->int f; f = x => x + base; }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "__lambda_0:") != NULL, 1);          /* body label. */
+	ASSERT_INT(strstr(g_asm, "bzy_alloc") != NULL, 1);            /* env allocation. */
+	ASSERT_INT(strstr(g_asm, "[rax + 24], rcx") != NULL, 1);      /* code pointer slot. */
+	ASSERT_INT(strstr(g_asm, "[rax + 32]") != NULL, 1);           /* capture seeded from env. */
+}
+
 static void test_treemap_lowers(void)
 {
 	/* TreeMap construction lowers to bzy_btree_new; the methods to bzy_btree_*. */
@@ -1632,6 +1643,7 @@ int main(void)
 	RUN(test_glsurface_lowers);
 	RUN(test_mappedfile_lowers);
 	RUN(test_pqueue_lowers);
+	RUN(test_lambda_lowers_to_closure_object);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
 	RUN(test_cycle_acyclic_program);

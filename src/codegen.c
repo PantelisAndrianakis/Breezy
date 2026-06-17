@@ -1,5 +1,6 @@
 #include "codegen.h"
 #include "grow.h"
+#include "resolve.h"
 #include "symtable.h"
 #include "lexer.h"
 #include "enums.h"
@@ -6022,6 +6023,62 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		}
 
 		break;
+	case EX_LAMBDA:
+	{
+		/* Build the closure object: [vtable | rc | gcinfo | code_ptr@24 | caps@32+].
+		   bzy_alloc zeroes it and sets rc=1 + the gcinfo class nibble; the captures
+		   are snapshotted from the enclosing frame (managed ones retained). */
+		LambdaInfo *lam = e->lam;
+		int cc = lam->cap_count;
+		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 0), 32 + cc * 8);
+		cg_aligned_call(cg,"bzy_alloc");
+		int b = cg_scratch_alloc(cg, 16);
+		cg_emit(cg,"    mov [rbp - %d], rax", b);
+		cg_emit(cg,"    lea rcx, [rel __%s_vt]", lam->label);
+		cg_emit(cg,"    mov [rax], rcx");                  /* vtable -> typeinfo descriptor. */
+		cg_emit(cg,"    lea rcx, [rel %s]", lam->label);
+		cg_emit(cg,"    mov [rax + 24], rcx");             /* code pointer. */
+		for (int i = 0; i < cc; i++)
+		{
+			LambdaCap *c = &lam->caps[i];
+			if (ty_is_float(c->type.kind))
+			{
+				const char *xr = (c->type.kind==TY_DOUBLE) ? cg_local_xmm(cg, c->src_offset) : NULL;
+				if (xr)
+				{
+					cg_emit(cg,"    movq rax, %s", xr);
+				}
+				else
+				{
+					cg_emit(cg,"    mov rax, [rbp - %d]", c->src_offset);
+				}
+			}
+			else
+			{
+				const char *r = cg_local_reg(cg, c->src_offset);
+				if (r)
+				{
+					cg_emit(cg,"    mov rax, %s", r);
+				}
+				else
+				{
+					cg_emit(cg,"    mov rax, [rbp - %d]", c->src_offset);
+				}
+			}
+
+			if (c->is_managed)
+			{
+				cg_retain_rax(cg);                         /* The env owns a reference. */
+			}
+
+			cg_emit(cg,"    mov rdx, [rbp - %d]", b);       /* Reload closure (retain may clobber). */
+			cg_emit(cg,"    mov [rdx + %d], rax", c->env_offset);
+		}
+
+		cg_emit(cg,"    mov rax, [rbp - %d]", b);           /* Result: the closure object. */
+		cg_scratch_free(cg, 16);
+		break;
+	}
 	case EX_INDEX:
 	{
 		if (e->anno_shared_gate)
@@ -9695,7 +9752,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	/* Experimental IR backend: a free (non-method) function that lowers cleanly
 	   is emitted from IR instead of the syntax-directed path. Gated by BZY_IR and
 	   guarded by ir_eligible; a NULL lowering falls through to the emitter. */
-	if (bzy_ir_enabled() && this_class == NULL && ir_eligible(f))
+	if (bzy_ir_enabled() && this_class == NULL && !f->is_lambda && ir_eligible(f))
 	{
 		IRFunc *irf = ir_lower_func(f, tt);
 		if (irf)
@@ -9924,6 +9981,18 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	for (int i=0; i<f->obj_local_count; i++)
 	{
 		cg_emit(cg,"    mov qword [rbp - %d], 0", f->obj_local_offsets[i]);
+	}
+
+	/* Lambda body: seed each captured local from the closure environment (arg0,
+	   spilled to [rbp-8]) before any user statement reads it. */
+	if (f->is_lambda)
+	{
+		for (int i=0; i<f->cap_count; i++)
+		{
+			cg_emit(cg,"    mov rax, [rbp - 8]");
+			cg_emit(cg,"    mov rax, [rax + %d]", f->cap_env_off[i]);
+			cg_emit(cg,"    mov [rbp - %d], rax", f->cap_local_off[i]);
+		}
 	}
 
 	/* Class-load: construct the enum singletons once, before any user statement. */
@@ -10865,6 +10934,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		cg_emit_blocking_thunk(cg, cg->blocking_thunks[i]);
 	}
 
+	for (int i=0; i<bzy_lambda_count(); i++)   /* synthesized lambda body functions (in .text). */
+	{
+		LambdaInfo *lam = bzy_lambda_at(i);
+		cg_emit_func(cg, tt, lam->label, lam->sf, NULL);
+	}
+
 	cg_emit_enum_init(cg,tt);   /* __enum_init (constructs the singletons), still in .text. */
 	cg_emit_static_init(cg,tt,units,unit_count);   /* __static_init (runs field initializers). */
 
@@ -10873,6 +10948,38 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<tt->class_count; i++)
 	{
 		cg_emit_vtable(cg,tt->classes[i]);
+	}
+
+	/* Per-lambda closure descriptors: a type info {finalizer=0, managed-capture
+	   count, managed-capture offsets...} whose pointer lands one word before the
+	   vtable label, so the ARC/cycle machinery reaches captured references exactly
+	   as it reaches a class's managed fields. */
+	for (int i=0; i<bzy_lambda_count(); i++)
+	{
+		LambdaInfo *lam = bzy_lambda_at(i);
+		int nman = 0;
+		for (int k=0; k<lam->cap_count; k++)
+		{
+			if (lam->caps[k].is_managed)
+			{
+				nman++;
+			}
+		}
+
+		cg_emit(cg,"__%s_ti:", lam->label);
+		cg_emit(cg,"    dq 0");           /* Finalizer: none (ARC releases declared captures). */
+		cg_emit(cg,"    dq %d", nman);    /* Managed-capture count. */
+		for (int k=0; k<lam->cap_count; k++)
+		{
+			if (lam->caps[k].is_managed)
+			{
+				cg_emit(cg,"    dq %d", lam->caps[k].env_offset);
+			}
+		}
+
+		cg_emit(cg,"    dq __%s_ti", lam->label);   /* Descriptor pointer at vtable-8. */
+		cg_emit(cg,"__%s_vt:", lam->label);
+		cg_emit(cg,"    dq 0");           /* No methods; the slot exists only to anchor the label. */
 	}
 
 	cg_emit(cg,"__bzy_vtable_parents:");           /* (child vtable, parent vtable) pairs for is-a. */

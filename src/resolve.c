@@ -1359,14 +1359,19 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				if (encs)
 				{
 					c = lam_add_cap(g_cur_lam, e->name, encs->type, encs->offset);
+					/* Give the capture a real slot in the body's frame; a prologue
+					   seeds it from the env object so every read path (including the
+					   binary-op leaf fusion) just reads a normal local. `st` here is
+					   the body's own symbol table. */
+					Symbol *ls = sym_add(st, e->name, encs->type);
+					c->local_slot = ls->offset;
 				}
 			}
 
 			if (c)
 			{
 				e->type = c->type;
-				e->anno_capture = 1;
-				e->anno_int = c->env_offset;
+				e->anno_int = c->local_slot;
 				break;
 			}
 		}
@@ -3479,16 +3484,37 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 static void resolve_block(SymTable *st, Block *b, const char *tc);
 
-/* Resolve a lambda literal against an optional expected function type. Infers
-   omitted parameter types from `expected`, resolves the body in the lambda's own
-   scope (so it gets its own frame), collects by-value captures of enclosing
-   locals, and types the lambda as the satisfied TY_FUNC signature. */
+/* Registry of every lambda's synthesized body, for the codegen driver to emit. */
+#define LAMBDA_MAX 4096
+static LambdaInfo *g_lams[LAMBDA_MAX];
+static int g_lam_count;
+
+int bzy_lambda_count(void)
+{
+	return g_lam_count;
+}
+
+LambdaInfo *bzy_lambda_at(int i)
+{
+	return g_lams[i];
+}
+
+/* Resolve a lambda literal against the expected function type from its context.
+   Infers omitted parameter types from the target, then synthesizes a body
+   function (env pointer as arg0, then the lambda parameters) and resolves it
+   through the normal function pipeline so it gets a frame and the full analysis
+   passes. Captures of enclosing locals are recorded by the EX_IDENT hook while
+   that body resolves (g_cur_lam set, g_lam_enc = the enclosing scope). */
 static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc)
 {
+	(void)tc;
 	LambdaInfo *lam = e->lam;
-	int has_expected = expected && expected->kind == TY_FUNC;
+	if (!expected || expected->kind != TY_FUNC)
+	{
+		die(e->line,"A lambda needs a known function type from its context (assign it to a (P)->R variable, pass it where one is expected, or return it).",NULL);
+	}
 
-	if (has_expected && expected->targ_count != lam->param_count)
+	if (expected->targ_count != lam->param_count)
 	{
 		die(e->line,"Lambda parameter count does not match the expected function type.",NULL);
 	}
@@ -3497,42 +3523,12 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 	{
 		if (!lam->params[i].has_type)
 		{
-			if (!has_expected)
-			{
-				die(e->line,"Lambda parameter needs a type annotation (no target function type to infer from): ",lam->params[i].name);
-			}
-
 			lam->params[i].type = *expected->targs[i];
 			lam->params[i].has_type = 1;
 		}
 	}
 
-	/* Resolve the body in a fresh scope seeded with the parameters; an enclosing
-	   local referenced inside becomes a capture (recorded against g_cur_lam). */
-	SymTable lst;
-	sym_init(&lst);
-	for (int i = 0; i < lam->param_count; i++)
-	{
-		sym_add(&lst, lam->params[i].name, lam->params[i].type);
-	}
-
-	SymTable *save_enc = g_lam_enc;
-	LambdaInfo *save_lam = g_cur_lam;
-	g_lam_enc = st;
-	g_cur_lam = lam;
-	if (lam->is_block)
-	{
-		resolve_block(&lst, lam->body_block, tc);
-	}
-	else
-	{
-		resolve_expr(&lst, lam->body_expr, tc);
-	}
-
-	g_lam_enc = save_enc;
-	g_cur_lam = save_lam;
-
-	/* Build the satisfied signature (elem = return, targs = params). */
+	/* The satisfied signature + a unique body label. */
 	TypeRef sig;
 	memset(&sig,0,sizeof(sig));
 	sig.kind = TY_FUNC;
@@ -3541,30 +3537,80 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 		typeref_add_targ(&sig, lam->params[i].type);
 	}
 
-	if (has_expected)
-	{
-		sig.elem = expected->elem;
-		if (!lam->is_block && !assignable(expected->elem, &lam->body_expr->type))
-		{
-			die(e->line,"Lambda body type does not match the expected return type.",NULL);
-		}
-	}
-	else
-	{
-		TypeRef ret;
-		memset(&ret,0,sizeof(ret));
-		ret.kind = TY_VOID;
-		if (!lam->is_block)
-		{
-			ret = lam->body_expr->type;
-		}
-
-		sig.elem = typeref_box(ret);
-	}
-
+	sig.elem = expected->elem;
 	lam->sig = sig;
 	e->type = sig;
 	snprintf(lam->label,sizeof(lam->label),"__lambda_%d",g_lambda_seq++);
+
+	/* Synthesize the body function: env arg0, then the parameters. */
+	Func *sf = func_new();
+	snprintf(sf->name,sizeof(sf->name),"%s",lam->label);
+	sf->is_lambda = 1;
+	sf->ret_type = *expected->elem;
+	Param *envp = func_add_param(sf);
+	snprintf(envp->name,sizeof(envp->name),"__env");
+	memset(&envp->type,0,sizeof(envp->type));
+	envp->type.kind = TY_LONG;   /* Raw closure pointer; never ARC-managed as a parameter. */
+	for (int i = 0; i < lam->param_count; i++)
+	{
+		Param *pp = func_add_param(sf);
+		snprintf(pp->name,sizeof(pp->name),"%s",lam->params[i].name);
+		pp->type = lam->params[i].type;
+	}
+
+	if (lam->is_block)
+	{
+		sf->body = lam->body_block;
+	}
+	else
+	{
+		Block *b = block_new();
+		Stmt *s;
+		if (expected->elem->kind == TY_VOID)
+		{
+			s = stmt_new(ST_EXPR, e->line);
+			s->expr = lam->body_expr;
+		}
+		else
+		{
+			s = stmt_new(ST_RETURN, e->line);
+			s->ret_val = lam->body_expr;
+		}
+
+		block_push(b, s);
+		sf->body = b;
+	}
+
+	/* Resolve + analyze the body. Save the resolver state resolve_func clobbers
+	   (this runs nested inside the enclosing function's resolution). */
+	SymTable *save_enc = g_lam_enc;
+	LambdaInfo *save_lam = g_cur_lam;
+	const TypeRef *save_ret = g_ret;
+	int save_loop = g_loop_depth, save_brk = g_break_depth;
+	g_lam_enc = st;
+	g_cur_lam = lam;
+	resolve_func(g_types, sf, NULL);
+	g_lam_enc = save_enc;
+	g_cur_lam = save_lam;
+	g_ret = save_ret;
+	g_loop_depth = save_loop;
+	g_break_depth = save_brk;
+
+	/* Hand the capture seed list to codegen's body prologue. */
+	sf->cap_count = lam->cap_count;
+	for (int i = 0; i < lam->cap_count; i++)
+	{
+		sf->cap_env_off[i] = lam->caps[i].env_offset;
+		sf->cap_local_off[i] = lam->caps[i].local_slot;
+	}
+
+	lam->sf = sf;
+	if (g_lam_count >= LAMBDA_MAX)
+	{
+		die(e->line,"Too many lambdas in one program.",NULL);
+	}
+
+	g_lams[g_lam_count++] = lam;
 }
 
 static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
@@ -4462,7 +4508,11 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	p5_scan_block(f->body,f);   /* P5: recognize string self-accumulation loops (annotation only). */
 	frame_annotate(f);
 	constprop_annotate(f);   /* Rewrite single-assignment literal-scalar reads to the literal (frees their registers). */
-	promote_annotate(f);   /* Choose scalar locals to keep in r12..r15 (codegen consults the map). */
+	if (!f->is_lambda)
+	{
+		promote_annotate(f);   /* Choose scalar locals to keep in r12..r15 (codegen consults the map). A lambda's captures have no AST definition (a prologue seeds their slots from env), so promotion would read an unloaded register -- keep lambda bodies on the stack. */
+	}
+
 	nonneg_annotate(f);   /* Flag divides with a provably non-negative dividend. */
 	bce_annotate(f);   /* Flag array indexes provably in [0, length) so codegen drops the check. */
 }

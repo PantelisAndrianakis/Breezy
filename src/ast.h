@@ -177,8 +177,9 @@ typedef struct LambdaCap
 {
 	char    name[64];         /* Enclosing local captured by value. */
 	TypeRef type;
-	int     src_offset;       /* Resolver: stack slot of the source local. */
+	int     src_offset;       /* Resolver: stack slot of the source local (enclosing frame). */
 	int     env_offset;       /* Codegen: byte offset of this capture in the env object. */
+	int     local_slot;       /* Resolver: stack slot inside the body, seeded from env at entry. */
 	int     is_managed;       /* 1 if the captured value is a managed reference. */
 } LambdaCap;
 
@@ -193,6 +194,7 @@ typedef struct LambdaInfo
 	int         cap_count;
 	char        label[64];    /* Resolver: synthetic body label (__lambda_N). */
 	TypeRef     sig;          /* Resolver: the TY_FUNC signature this lambda satisfies. */
+	struct Func *sf;          /* Resolver: the synthesized body function (env arg0 + params). */
 } LambdaInfo;
 
 typedef struct Expr Expr;
@@ -272,7 +274,7 @@ typedef struct
 	char name[64];
 	Expr *def;   /* Default value (a literal) used when the argument is omitted, or NULL. */
 } Param;
-typedef struct
+typedef struct Func
 {
 	TypeRef ret_type;
 	char name[64];
@@ -285,6 +287,10 @@ typedef struct
 	int     is_variadic;      /* FFI: trailing `...` — a variadic C function (e.g. printf/snprintf). */
 	int     is_dynamic;       /* FFI: `extern dynamic` — address resolved at run time via the registered resolver. */
 	int     is_static;        /* Static method: no `this`, called via the class name. */
+	int     is_lambda;        /* Synthesized lambda body (env arg0); kept off the IR path. */
+	int     cap_count;        /* Lambda body: captures seeded from env at entry. */
+	int     cap_env_off[32];  /* Lambda body: byte offset of each capture in the env object. */
+	int     cap_local_off[32];/* Lambda body: stack slot each capture is copied into. */
 	int     frame_size;       /* Resolver. */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
