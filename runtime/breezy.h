@@ -131,6 +131,14 @@ int64_t bzy_entry_val(void *e);    /* Value (managed -> +1 owned). */
 typedef int (*bzy_cmp_fn)(int64_t, int64_t);
 bzy_cmp_fn bzy_order_cmp_for(int64_t elem_kind);   /* Primitive comparator by elem_kind; NULL for objects (4). */
 
+/* PriorityQueue<T>: binary min-heap (own TU runtime/pqueue.c). poll/peek return
+   an owned managed value (like bzy_map_get). obj_cmp = vtable thunk or NULL. */
+void   *bzy_pq_new(int64_t elem_kind, void *obj_cmp);
+void    bzy_pq_add(void *o, int64_t v);
+int64_t bzy_pq_poll(void *o);
+int64_t bzy_pq_peek(void *o);
+int64_t bzy_pq_size(void *o);
+
 void   *bzy_vec_new(int64_t elem_kind);          /* Owned (+1). 0 int,1 float,2 double,3 string,4 object. */
 int64_t bzy_vec_len(void *v);
 void    bzy_vec_push_back(void *v, int64_t val); /* Retains a managed element. */
