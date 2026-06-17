@@ -160,8 +160,40 @@ static inline TypeKind ty_to_unsigned(TypeKind k)
 typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
-	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL
+	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL, EX_LAMBDA
 } ExprKind;
+
+/* Lambda literal (EX_LAMBDA) side-data, kept off the Expr hot struct. A lambda
+   lowers to a synthetic function body (taking its closure environment as a hidden
+   arg0) plus a closure-object allocation at the literal site. */
+typedef struct LambdaParam
+{
+	char    name[64];
+	TypeRef type;             /* Valid when has_type; else inferred at resolve. */
+	int     has_type;
+} LambdaParam;
+
+typedef struct LambdaCap
+{
+	char    name[64];         /* Enclosing local captured by value. */
+	TypeRef type;
+	int     src_offset;       /* Resolver: stack slot of the source local. */
+	int     env_offset;       /* Codegen: byte offset of this capture in the env object. */
+	int     is_managed;       /* 1 if the captured value is a managed reference. */
+} LambdaCap;
+
+typedef struct LambdaInfo
+{
+	LambdaParam params[16];
+	int         param_count;
+	int         is_block;     /* 1: body is a Block; 0: body is a single expression. */
+	struct Expr  *body_expr;
+	struct Block *body_block;
+	LambdaCap   caps[32];
+	int         cap_count;
+	char        label[64];    /* Resolver: synthetic body label (__lambda_N). */
+	TypeRef     sig;          /* Resolver: the TY_FUNC signature this lambda satisfies. */
+} LambdaInfo;
 
 typedef struct Expr Expr;
 struct Expr
@@ -190,6 +222,8 @@ struct Expr
 	int      anno_shared_gate;/* Resolver: EX_INDEX on a managed element of a maybe-shared array -> SHARED-bit gated access (owned result). */
 	int      anno_overload;   /* Resolver: index of the selected overload (ctor/method/func) within its set; default 0. */
 	int      is_func_addr;    /* FFI: this arg is a bare function name passed as a C function pointer (its address). */
+	int      anno_indirect;   /* Resolver: EX_CALL through a function value (closure), not a named function. */
+	LambdaInfo *lam;          /* EX_LAMBDA side-data. */
 };
 
 typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN } StmtKind;
@@ -353,6 +387,8 @@ typedef struct
 
 void   ast_free_all(void);
 Expr  *expr_new(ExprKind kind, int line);
+LambdaInfo *lambda_new(void);
+void   lambda_add_param(LambdaInfo *l, const char *name, int has_type, TypeRef type);
 TypeRef *typeref_box(TypeRef t);
 void     typeref_add_targ(TypeRef *f, TypeRef t);   /* Append a param type to a TY_FUNC signature. */
 Stmt  *stmt_new(StmtKind kind, int line);

@@ -36,6 +36,23 @@ Expr *expr_new(ExprKind kind, int line)
 	e->line=line;
 	return e;
 }
+LambdaInfo *lambda_new(void)
+{
+	return track(calloc(1,sizeof(LambdaInfo)));
+}
+void lambda_add_param(LambdaInfo *l, const char *name, int has_type, TypeRef type)
+{
+	if (l->param_count >= (int)(sizeof(l->params)/sizeof(l->params[0])))
+	{
+		fprintf(stderr,"Parser: too many lambda parameters (max %d).\n",
+		        (int)(sizeof(l->params)/sizeof(l->params[0])));
+		exit(1);
+	}
+	LambdaParam *pm = &l->params[l->param_count++];
+	snprintf(pm->name,sizeof(pm->name),"%s",name);
+	pm->has_type = has_type;
+	pm->type = type;
+}
 TypeRef *typeref_box(TypeRef t)
 {
 	TypeRef *p = track(calloc(1,sizeof(TypeRef)));

@@ -82,6 +82,9 @@ static int   parse_args(Parser *p, Expr *e);
 static int   parse_type(Parser *p, TypeRef *out);
 static int   parse_base_type(Parser *p, TypeRef *out);
 static int   scalar_type_kind(TokenType t, TypeKind *out);
+static Block *parse_block(Parser *p);
+static Expr *parse_lambda(Parser *p);
+static int   looks_like_lambda(Parser *p);
 
 Expr *parse_expr(Parser *p)
 {
@@ -291,7 +294,8 @@ static Expr *parse_unary(Parser *p)
 		e->lhs=parse_unary(p);
 		return e;
 	}
-	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID)
+	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID
+			&& !looks_like_lambda(p))   /* (int n) => ... is a lambda, not a cast. */
 	{
 		int line=p->cur.line;
 		advance(p);                 /* Consume '('. */
@@ -400,9 +404,128 @@ static int is_namespace(const char *name)
 	return strcmp(name,"Math")==0 || strcmp(name,"Clock")==0 || strcmp(name,"Random")==0 || strcmp(name,"Regex")==0 || strcmp(name,"File")==0 || strcmp(name,"System")==0 || strcmp(name,"Network")==0 || strcmp(name,"Graphics")==0 || strcmp(name,"Ffi")==0 || strcmp(name,"Log")==0;
 }
 
+/* A '(' opens a lambda parameter list (rather than a grouped expression) iff the
+   token after the matching ')' is '=>'. Scans a parser copy, non-destructive. */
+static int looks_like_lambda(Parser *p)
+{
+	if (p->cur.type != TOKEN_LPAREN)
+	{
+		return 0;
+	}
+
+	Parser t = *p;
+	int depth = 0;
+	for (;;)
+	{
+		if (t.cur.type == TOKEN_EOF)
+		{
+			return 0;
+		}
+
+		if (t.cur.type == TOKEN_LPAREN)
+		{
+			depth++;
+		}
+		else if (t.cur.type == TOKEN_RPAREN)
+		{
+			if (--depth == 0)
+			{
+				advance(&t);
+				return t.cur.type == TOKEN_FATARROW;
+			}
+		}
+
+		advance(&t);
+	}
+}
+
+/* True if the next lambda parameter carries an explicit type annotation (vs a
+   bare inferred name). */
+static int lambda_param_typed(Parser *p)
+{
+	TypeKind k;
+	if (scalar_type_kind(p->cur.type,&k))
+	{
+		return 1;
+	}
+
+	if (check(p,TOKEN_STRING) || check(p,TOKEN_MAP) || check(p,TOKEN_CHANNEL) || check(p,TOKEN_LPAREN))
+	{
+		return 1;   /* string / map<> / channel<> / (P)->R param type. */
+	}
+
+	if (check(p,TOKEN_IDENT)
+			&& (p->peek.type==TOKEN_IDENT || p->peek.type==TOKEN_LT || p->peek.type==TOKEN_LBRACKET))
+	{
+		return 1;   /* Type name / generic / array, followed by the param name. */
+	}
+
+	return 0;
+}
+
+/* Lambda literal: `name => body` or `(p, ...) => body`, where body is a single
+   expression or a `{ ... }` block. Parameter types are optional (inferred from
+   the expected function type at resolve). */
+static Expr *parse_lambda(Parser *p)
+{
+	Expr *e = expr_new(EX_LAMBDA, p->cur.line);
+	e->lam = lambda_new();
+	if (check(p,TOKEN_IDENT))
+	{
+		TypeRef none;
+		memset(&none,0,sizeof(none));
+		lambda_add_param(e->lam, p->cur.text, 0, none);
+		advance(p);
+	}
+	else
+	{
+		expect(p,TOKEN_LPAREN);
+		if (!check(p,TOKEN_RPAREN))
+		{
+			do
+			{
+				TypeRef pt;
+				memset(&pt,0,sizeof(pt));
+				int has = 0;
+				if (lambda_param_typed(p))
+				{
+					parse_type(p,&pt);
+					has = 1;
+				}
+
+				Token nm = expect(p,TOKEN_IDENT);
+				lambda_add_param(e->lam, nm.text, has, pt);
+			}
+			while (match(p,TOKEN_COMMA));
+		}
+
+		expect(p,TOKEN_RPAREN);
+	}
+
+	expect(p,TOKEN_FATARROW);
+	if (check(p,TOKEN_LBRACE))
+	{
+		e->lam->is_block = 1;
+		e->lam->body_block = parse_block(p);
+	}
+	else
+	{
+		e->lam->is_block = 0;
+		e->lam->body_expr = parse_expr(p);
+	}
+
+	return e;
+}
+
 static Expr *parse_primary(Parser *p)
 {
 	int line = p->cur.line;
+	if ((check(p,TOKEN_IDENT) && p->peek.type==TOKEN_FATARROW)
+			|| (check(p,TOKEN_LPAREN) && looks_like_lambda(p)))
+	{
+		return parse_lambda(p);
+	}
+
 	if (check(p,TOKEN_INT_LIT))
 	{
 		Expr *e=expr_new(EX_INT,line);

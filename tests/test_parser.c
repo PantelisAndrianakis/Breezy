@@ -455,6 +455,31 @@ static void test_arrow_fn_type_decl(void)
 	ASSERT_INT(t2->targ_count, 0);
 }
 
+static void test_lambda_parses(void)
+{
+	Expr *e = parse_str("x => x * 2");
+	ASSERT_INT(e->kind, EX_LAMBDA);
+	ASSERT_INT(e->lam->param_count, 1);
+	ASSERT_STR(e->lam->params[0].name, "x");
+	ASSERT_INT(e->lam->is_block, 0);
+	ASSERT_INT(e->lam->body_expr->kind, EX_BINARY);
+
+	Expr *e2 = parse_str("(a, b) => { return a + b; }");
+	ASSERT_INT(e2->kind, EX_LAMBDA);
+	ASSERT_INT(e2->lam->param_count, 2);
+	ASSERT_STR(e2->lam->params[1].name, "b");
+	ASSERT_INT(e2->lam->is_block, 1);
+
+	Expr *e3 = parse_str("() => 0");
+	ASSERT_INT(e3->kind, EX_LAMBDA);
+	ASSERT_INT(e3->lam->param_count, 0);
+
+	Expr *e4 = parse_str("(int n) => n + 1");      /* explicitly typed param. */
+	ASSERT_INT(e4->kind, EX_LAMBDA);
+	ASSERT_INT(e4->lam->params[0].has_type, 1);
+	ASSERT_INT(e4->lam->params[0].type.kind, TY_INT);
+}
+
 static void test_new_map(void)
 {
 	Expr *e = parse_str("new map<int,int>()");
@@ -715,6 +740,7 @@ int main(void)
 	RUN(test_array_type_decls);
 	RUN(test_map_type_decl);
 	RUN(test_arrow_fn_type_decl);
+	RUN(test_lambda_parses);
 	RUN(test_new_map);
 	RUN(test_incdec_parse);
 	RUN(test_break_continue_stmt);
