@@ -819,6 +819,23 @@ static void resolve_xml(Expr *e)
 	die(e->line,"Unknown Xml method: ",m);
 }
 
+static void resolve_json(Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Json.". */
+	if (strcmp(m,"parse")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Json.parse(text) takes one string.",NULL);
+		}
+
+		e->type.kind = TY_JSONVALUE;
+		return;
+	}
+
+	die(e->line,"Unknown Json method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -3516,6 +3533,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Xml.",4)==0)
 		{
 			resolve_xml(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Json.",5)==0)
+		{
+			resolve_json(e);
 			break;
 		}
 

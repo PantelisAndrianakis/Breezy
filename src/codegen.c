@@ -5538,6 +5538,44 @@ static void cg_xml(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 }
 
+/* Json.parse(text) -> JsonValue. Lowers to bzy_json_parse(text); a post-call
+   bzy_json_check throws a catchable JsonException on malformed input (the
+   bzy_xml_check copy), preserving the node result. */
+static void cg_json(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Json.". */
+	if (strcmp(m,"parse")!=0)
+	{
+		fprintf(stderr,"Codegen: unknown Json method '%s'\n", m);
+		exit(1);
+	}
+
+	cg_expr(cg,tt,e->args[0]);                   /* text -> rax. */
+	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+	int owned = expr_is_owned(e->args[0]);
+	if (owned)
+	{
+		cg_emit(cg,"    mov [rbp - %d], %s", cg->val_save, cg_iarg(cg, 0));   /* Save text for release. */
+	}
+
+	cg_aligned_call(cg,"bzy_json_parse");        /* Owned root JsonValue -> rax (NULL on error). */
+	if (owned)
+	{
+		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
+		cg_temp_push(cg);
+		cg_release_rcx(cg);
+		cg_temp_pop(cg);
+	}
+
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve the node across the check. */
+	int jk = cg_label(cg);
+	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), jk);
+	cg_emit(cg,".L%d:", jk);
+	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+	cg_aligned_call(cg,"bzy_json_check");
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
 static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 4;   /* After "Log.". */
@@ -7113,6 +7151,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Xml.",4)==0)
 		{
 			cg_xml(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Json.",5)==0)
+		{
+			cg_json(cg,tt,e);
 		}
 		else
 		{
@@ -11360,6 +11402,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_xml_has_attr");
 	cg_emit(cg,"extern bzy_xml_attr_name_at");
 	cg_emit(cg,"extern bzy_xml_descendants");
+	cg_emit(cg,"extern bzy_json_parse");
+	cg_emit(cg,"extern bzy_json_check");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
@@ -11386,6 +11430,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"global __vtable_IOException");        /* Referenced by the runtime bzy_io_check. */
 	cg_emit(cg,"global __vtable_NumberFormatException");   /* Referenced by the runtime bzy_number_check. */
 	cg_emit(cg,"global __vtable_XmlException");            /* Referenced by the runtime bzy_xml_check. */
+	cg_emit(cg,"global __vtable_JsonException");           /* Referenced by the runtime bzy_json_check. */
 	for (int i=0; i<unit_count; i++)   /* FFI: declare each extern C symbol for the linker. */
 	{
 		for (int k=0; k<units[i]->func_count; k++)

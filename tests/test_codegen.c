@@ -1479,6 +1479,13 @@ static void test_xml_parse_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_xml_check") != NULL, 1);   /* malformed -> XmlException. */
 }
 
+static void test_json_parse_lowers(void)
+{
+	emit("void main(){ JsonValue v = Json.parse(\"[1,2]\"); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_json_parse") != NULL, 1);   /* the parse call. */
+	ASSERT_INT(strstr(g_asm, "bzy_json_check") != NULL, 1);   /* malformed -> JsonException. */
+}
+
 static void test_xml_fields_lower(void)
 {
 	emit("void main(){ XmlNode r = Xml.parse(\"<a x='1'>hi</a>\"); print(r.name); print(r.text); print(r.attrCount); }", TARGET_LINUX);
@@ -1700,6 +1707,7 @@ int main(void)
 	RUN(test_noncapturing_singleton_and_func_value);
 	RUN(test_combinator_lowers_to_loop);
 	RUN(test_xml_parse_lowers);
+	RUN(test_json_parse_lowers);
 	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);

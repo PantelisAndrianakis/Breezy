@@ -11,6 +11,11 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Emitted per-program by codegen; bzy_json_check stamps a thrown JsonException
+   with it (the bzy_number_check pattern). */
+extern char __vtable_JsonException[];
+extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
+
 /* JsonValue layout: vtable|rc|gcinfo|kind@24|payload_managed@32|payload_scalar@40. */
 #define J_KIND 24
 #define J_MAN  32
@@ -415,4 +420,42 @@ void *bzy_json_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t
 	}
 
 	return root;
+}
+
+/* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
+
+static __thread const char *g_json_error;   /* Set by the runtime; consumed by bzy_json_check. */
+
+/* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error
+   message buffered for the codegen-emitted bzy_json_check at the call site. */
+void *bzy_json_parse(void *src)
+{
+	const char *err = NULL;
+	int64_t line = 0, col = 0;
+	void *root = bzy_json_parse_impl(src, &err, &line, &col);
+	if (err)
+	{
+		static __thread char buf[192];
+		snprintf(buf, sizeof buf, "JSON parse error at line %lld, column %lld: %s",
+				 (long long)line, (long long)col, err);
+		g_json_error = buf;
+		return NULL;
+	}
+
+	return root;
+}
+
+void bzy_json_check(int64_t pc, int64_t frame)
+{
+	if (!g_json_error)
+	{
+		return;
+	}
+
+	void *msg = bzy_str_new(g_json_error, (int64_t)strlen(g_json_error));
+	g_json_error = NULL;
+	void *exc = bzy_alloc(32);
+	*(void**)exc = (void*)__vtable_JsonException;
+	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
+	bzy_throw(exc, pc, frame);                  /* Never returns. */
 }
