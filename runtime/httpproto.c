@@ -319,6 +319,48 @@ static void *parse_request(Reader *r, int *was_eof)
 	return node;
 }
 
+/* Parse one response: VERSION SP STATUS SP REASON CRLF, headers, body. Returns an
+   owned HttpResponse, NULL on a clean boundary EOF (*was_eof=1), or NULL with
+   r->err set on a malformed message. */
+static void *parse_response(Reader *r, int *was_eof)
+{
+	*was_eof = 0;
+	int64_t cr = rd_find_crlf(r, 0);
+	if (cr < 0)
+	{
+		if (r->len == 0) { *was_eof = 1; return NULL; }
+		r->err = "Unterminated status line.";
+		return NULL;
+	}
+
+	int64_t sp1 = -1, sp2 = -1;
+	for (int64_t i = 0; i < cr; i++)
+	{
+		if (r->buf[i] == ' ')
+		{
+			if (sp1 < 0) { sp1 = i; }
+			else { sp2 = i; break; }
+		}
+	}
+
+	if (sp1 < 0) { r->err = "Malformed status line."; return NULL; }
+	int64_t rs = sp2 >= 0 ? sp2 + 1 : cr;   /* Reason may be empty (no second space). */
+
+	void *node = resp_new();
+	*(int64_t*)((char*)node + H_STATUS) = strtoll(r->buf + sp1 + 1, NULL, 10);
+	HSET(node, H_REASON, bzy_str_new(r->buf + rs, cr - rs));
+	r->pos = cr + 2;
+
+	Hdrs h = { 0 };
+	if (!parse_headers(r, &h)) { hdr_free(&h); bzy_release(node); return NULL; }
+	hdr_store(node, &h);
+
+	void *body = parse_body(r, node);
+	if (!body) { bzy_release(node); return NULL; }
+	HSET(node, H_BODY, body);
+	return node;
+}
+
 /* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
 
 extern char __vtable_HttpException[];
@@ -337,6 +379,18 @@ void *bzy_http_read_request(void *sock)
 	void *node = parse_request(&r, &was_eof);
 	free(r.buf);
 	if (!node && !was_eof) { g_http_error = r.err ? r.err : "Malformed HTTP request."; }
+	return node;
+}
+
+/* Read one response off the socket (the client mirror of bzy_http_read_request). */
+void *bzy_http_read_response(void *sock)
+{
+	Reader r = { 0 };
+	r.sock = sock;
+	int was_eof = 0;
+	void *node = parse_response(&r, &was_eof);
+	free(r.buf);
+	if (!node && !was_eof) { g_http_error = r.err ? r.err : "Malformed HTTP response."; }
 	return node;
 }
 

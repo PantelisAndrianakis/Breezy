@@ -927,6 +927,17 @@ static void resolve_http(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"readResponse")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_SOCKET)
+		{
+			die(e->line,"Http.readResponse(socket) takes one Socket.",NULL);
+		}
+
+		e->type.kind = TY_HTTPRESPONSE;
+		return;
+	}
+
 	die(e->line,"Unknown Http method: ",m);
 }
 
@@ -1986,6 +1997,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_HTTPRESPONSE)
+		{
+			if (strcmp(e->name,"status")==0)      { e->type.kind=TY_INT;    e->anno_int=24; }
+			else if (strcmp(e->name,"reason")==0) { e->type.kind=TY_STRING; e->anno_int=32; }
+			else if (strcmp(e->name,"body")==0)   { e->type.kind=TY_STRING; e->anno_int=56; }
+			else { die(e->line,"Unknown HttpResponse field: ",e->name); }
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{
@@ -2852,7 +2872,52 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (e->lhs->type.kind==TY_HTTPRESPONSE)
 		{
 			resolve_args(st,e,tc);
-			if (strcmp(e->name,"setHeader")==0)
+			if (strcmp(e->name,"header")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpResponse.header(name) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"hasHeader")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpResponse.hasHeader(name) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"headerNames")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"HttpResponse.headerNames() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_STRING;
+				e->type.kind=TY_GENERIC;
+				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
+				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"bodyBytes")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"HttpResponse.bodyBytes() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_BYTE;
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"setHeader")==0)
 			{
 				if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || e->args[1]->type.kind!=TY_STRING)
 				{

@@ -1,0 +1,23 @@
+void serve(Listener l)
+{
+	Socket c = l.accept();
+	HttpRequest r = Http.readRequest(c);
+	HttpResponse out = Http.response(200);
+	out.setHeader("Content-Type", "application/json");
+	out.setBody("{\"ok\":1}");
+	out.send(c);
+	c.close();
+}
+
+void main()
+{
+	Listener l = Network.listen(18084);
+	spawn serve(l);
+	Socket s = Network.connect("127.0.0.1", 18084);
+	Http.request("GET", "/").send(s);
+	HttpResponse r = Http.readResponse(s);
+	print(r.status);                  // 200.
+	print(r.header("Content-Type"));  // application/json.
+	print(r.body);                    // {"ok":1}.
+	s.close();
+}

@@ -5721,7 +5721,8 @@ static void cg_http(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	if (strcmp(m,"readRequest")!=0)
+	int is_resp = strcmp(m,"readResponse")==0;
+	if (!is_resp && strcmp(m,"readRequest")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown Http method '%s'\n", m);
 		exit(1);
@@ -5735,7 +5736,7 @@ static void cg_http(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov [rbp - %d], %s", cg->val_save, cg_iarg(cg, 0));
 	}
 
-	cg_aligned_call(cg,"bzy_http_read_request"); /* Owned HttpRequest -> rax (NULL at EOF). */
+	cg_aligned_call(cg, is_resp ? "bzy_http_read_response" : "bzy_http_read_request"); /* Owned message -> rax (NULL at EOF). */
 	if (owned)
 	{
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->val_save);
@@ -11657,6 +11658,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_of_object");
 	cg_emit(cg,"extern bzy_json_stringify");
 	cg_emit(cg,"extern bzy_http_read_request");
+	cg_emit(cg,"extern bzy_http_read_response");
 	cg_emit(cg,"extern bzy_http_check");
 	cg_emit(cg,"extern bzy_http_header");
 	cg_emit(cg,"extern bzy_http_has_header");
