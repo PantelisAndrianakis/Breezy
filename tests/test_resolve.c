@@ -414,6 +414,12 @@ static void test_xmlnode_type(void)
 	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_XMLNODE);
 }
 
+static void test_jsonvalue_type(void)
+{
+	Func *f = build1("void main() { JsonValue v; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_JSONVALUE);
+}
+
 static void test_concat_is_string(void)
 {
 	Func *f = build1("void main() { string s; s = \"a\" + \"b\"; }")->funcs[0];
@@ -905,6 +911,7 @@ int main(void)
 	RUN(test_float_compare_is_bool);
 	RUN(test_string_literal_type);
 	RUN(test_xmlnode_type);
+	RUN(test_jsonvalue_type);
 	RUN(test_concat_is_string);
 	RUN(test_length_is_int);
 	RUN(test_newarray_type);

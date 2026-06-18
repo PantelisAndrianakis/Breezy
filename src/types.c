@@ -120,6 +120,19 @@ void types_register_builtins(TypeTable *tt)
 	xe->object_size = 32;
 	xe->vtable_size = 0;
 	xe->method_count = 0;
+
+	ClassInfo *je = tt_add_class(tt);
+	memset(je, 0, sizeof(*je));
+	je->fields = grow_reserve(je->fields, 1, &je->fields_cap, sizeof(FieldInfo));
+	strcpy(je->name, "JsonException");
+	je->parent = c;                      /* Subclass of Exception. */
+	strcpy(je->fields[0].name, "message");
+	je->fields[0].type.kind = TY_STRING;
+	je->fields[0].offset = 24;
+	je->field_count = 1;
+	je->object_size = 32;
+	je->vtable_size = 0;
+	je->method_count = 0;
 }
 
 ClassInfo *types_find_class(TypeTable *tt, const char *name)
