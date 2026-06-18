@@ -2582,6 +2582,38 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				e->type.kind=TY_DOUBLE;
 			}
+			else if (strcmp(e->name,"get")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"JsonValue.get(key) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_JSONVALUE;
+			}
+			else if (strcmp(e->name,"has")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"JsonValue.has(key) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"keys")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"JsonValue.keys() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_STRING;
+				e->type.kind=TY_GENERIC;
+				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
+				e->type.elem=typeref_box(el);
+			}
 			else
 			{
 				die(e->line,"Unknown JsonValue method: ",e->name);

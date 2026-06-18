@@ -530,3 +530,55 @@ int64_t bzy_json_as_bool(void *v)
 	json_type_fail("asBool() on a non-bool JSON value.");
 	return 0;
 }
+
+/* ---- forgiving object navigation -------------------------------------------- */
+
+/* A process-lifetime shared JK_NULL node. get() on a missing key / non-object
+   returns it (+1) so navigation chains never crash. */
+static void *g_json_null;
+
+static void *json_null_retained(void)
+{
+	/* ponytail: single-init race on first use is benign -- a duplicate singleton
+	   is just another valid JK_NULL node; both live forever by design. */
+	if (!g_json_null) { g_json_null = jv_new(JK_NULL); }
+	bzy_retain(g_json_null);
+	return g_json_null;
+}
+
+/* The value at `key` (owned +1) for an object; a shared null value for a missing
+   key or a non-object receiver. */
+void *bzy_json_get(void *v, void *key)
+{
+	if (JKIND(v) == JK_OBJ)
+	{
+		int64_t hit = bzy_map_get(JGET_MAN(v), (int64_t)key);   /* Retains a managed value. */
+		if (hit) { return (void*)hit; }
+	}
+
+	return json_null_retained();
+}
+
+/* 1 if the receiver is an object with `key` present (distinguishes an absent key
+   from a present null), else 0. */
+int64_t bzy_json_has(void *v, void *key)
+{
+	if (JKIND(v) == JK_OBJ) { return bzy_map_has(JGET_MAN(v), (int64_t)key); }
+	return 0;
+}
+
+/* An owned (+1) List<string> of the object's keys; an empty list for a non-object. */
+void *bzy_json_keys(void *v)
+{
+	void *list = bzy_vec_new(3);   /* String elements. */
+	if (JKIND(v) == JK_OBJ)
+	{
+		void *m = JGET_MAN(v);
+		for (int64_t s = bzy_map_iter(m, 0); s >= 0; s = bzy_map_iter(m, s + 1))
+		{
+			bzy_vec_push_back(list, bzy_map_key_at(m, s));   /* Borrowed key; push retains. */
+		}
+	}
+
+	return list;
+}

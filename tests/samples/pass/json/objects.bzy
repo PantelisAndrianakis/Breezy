@@ -1,0 +1,11 @@
+void main()
+{
+	JsonValue v = Json.parse("{\"a\":1,\"b\":{\"c\":2}}");
+	print(v.get("a").asLong());            // 1.
+	print(v.get("b").get("c").asLong());   // 2.
+	print(v.get("missing").isNull());      // true (forgiving).
+	print(v.get("missing").get("x").isNull());  // true (chains safe).
+	print(v.has("a"));                     // true.
+	print(v.has("missing"));               // false.
+	print(v.keys().size);                  // 2.
+}

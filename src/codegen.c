@@ -5595,6 +5595,9 @@ static void cg_json_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(n,"asLong")==0   ? "bzy_json_as_long" :
 		strcmp(n,"asDouble")==0 ? "bzy_json_as_double" :
 		strcmp(n,"asBool")==0   ? "bzy_json_as_bool" :
+		strcmp(n,"get")==0      ? "bzy_json_get" :
+		strcmp(n,"has")==0      ? "bzy_json_has" :
+		strcmp(n,"keys")==0     ? "bzy_json_keys" :
 		NULL;
 	if (!fn)
 	{
@@ -5602,8 +5605,14 @@ static void cg_json_method(Codegen *cg, TypeTable *tt, Expr *e)
 		exit(1);
 	}
 
-	cg_call_with_args(cg,tt,fn,e->lhs,NULL,0,0,
-					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), NULL, 0, 0);
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), ps, e->arg_count, 0);
 
 	int is_extract = strcmp(n,"asString")==0 || strcmp(n,"asLong")==0
 					 || strcmp(n,"asDouble")==0 || strcmp(n,"asBool")==0;
@@ -11478,6 +11487,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_as_double");
 	cg_emit(cg,"extern bzy_json_as_string");
 	cg_emit(cg,"extern bzy_json_as_bool");
+	cg_emit(cg,"extern bzy_json_get");
+	cg_emit(cg,"extern bzy_json_has");
+	cg_emit(cg,"extern bzy_json_keys");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
