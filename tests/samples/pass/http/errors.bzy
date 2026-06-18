@@ -1,0 +1,19 @@
+void serve(Listener l)
+{
+	Socket c = l.accept();
+	int caught = 0;
+	try { HttpRequest r = Http.readRequest(c); print(r.method); }
+	catch (HttpException e) { caught = 1; }
+	print(caught);   // 1.
+	c.close();
+}
+
+void main()
+{
+	Listener l = Network.listen(18086);
+	spawn serve(l);
+	Socket s = Network.connect("127.0.0.1", 18086);
+	s.writeText("NOT-HTTP nonsense no crlf line here just bytes");
+	s.close();                  // Close mid-line -> the start line never completes.
+	System.sleep(200);
+}
