@@ -77,6 +77,11 @@ typedef struct Worker
 	Deque     dq;
 	Breeze   *inj_head, *inj_tail;   /* Foreign-producer injection (MPSC under inj_lock). */
 	bzy_mutex inj_lock;
+	Breeze   *runnext;               /* Direct-handoff slot: a breeze woken by a channel rendezvous
+	                                    on THIS worker runs next here, without nudging a stealer -
+	                                    keeps a ping-pong pair local instead of bouncing cross-worker.
+	                                    Owner-only (set in bzy_sched_wake, taken in find_work, both on
+	                                    this worker thread); thieves never read it, so no atomics. */
 } Worker;
 
 static CLArray *cl_array_new(int64_t cap)
@@ -385,6 +390,7 @@ void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => aut
 		cl_init(&g_workers[i].dq);
 		g_workers[i].inj_head = NULL;
 		g_workers[i].inj_tail = NULL;
+		g_workers[i].runnext = NULL;
 		bzy_mutex_init(&g_workers[i].inj_lock);
 	}
 
@@ -513,9 +519,29 @@ void bzy_sched_park_unlock(void *lock)   /* Park, then have the scheduler releas
 	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again, on this worker; stealing rebalances. */
+void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again via the direct-handoff slot. */
 {
-	enqueue_on(t_wid, (Breeze*)breeze);
+	/* Direct handoff: place the woken breeze in this worker's runnext so it runs
+	   next HERE when the current breeze parks/yields, with no wake_one() nudge -
+	   the partner in a channel ping-pong stays on one worker instead of being
+	   stolen onto an idle sibling (a cross-worker inject + futex + cache bounce
+	   per round-trip). Any breeze already in runnext is displaced to the deque via
+	   the normal enqueue (which DOES nudge), so at most one breeze is owner-pinned
+	   and nothing strands: the current breeze always yields eventually, and
+	   find_work then takes runnext. Owner-thread only, so a plain store is safe. */
+	if (t_is_worker)
+	{
+		Breeze *prev = g_workers[t_wid].runnext;
+		g_workers[t_wid].runnext = (Breeze*)breeze;
+		if (prev)
+		{
+			enqueue_on(t_wid, prev);
+		}
+
+		return;
+	}
+
+	enqueue_on(t_wid, (Breeze*)breeze);   /* Not on a worker (rare): fall back to the deque. */
 }
 
 void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread (e.g. an offload worker). */
@@ -558,6 +584,13 @@ void bzy_yield(void)
    injection queue. NULL if none anywhere. */
 static Breeze *find_work(void)
 {
+	Breeze *rn = g_workers[t_wid].runnext;   /* Direct-handoff partner runs before anything else. */
+	if (rn)
+	{
+		g_workers[t_wid].runnext = NULL;
+		return rn;
+	}
+
 	Breeze *b = cl_take(&g_workers[t_wid].dq);
 	if (b)
 	{
