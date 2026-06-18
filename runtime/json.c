@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 /* Emitted per-program by codegen; bzy_json_check stamps a thrown JsonException
    with it (the bzy_number_check pattern). */
@@ -676,4 +677,109 @@ void *bzy_json_of_object(void *map)
 	bzy_retain(map);
 	JSET_MAN(v, map);
 	return v;
+}
+
+/* ---- serializer (compact RFC 8259) ------------------------------------------ */
+
+/* Emit a JSON string literal: quotes + the escapes "" \\ \n \t \r \b \f, other
+   control bytes as \uXXXX, raw UTF-8 otherwise. */
+static void json_escape_string(TextBuf *t, void *s)
+{
+	const char *p = bzy_str_data(s);
+	int64_t n = bzy_str_len(s);
+	tb_push(t, "\"", 1);
+	for (int64_t i = 0; i < n; i++)
+	{
+		unsigned char c = (unsigned char)p[i];
+		switch (c)
+		{
+			case '"':  tb_push(t, "\\\"", 2); break;
+			case '\\': tb_push(t, "\\\\", 2); break;
+			case '\n': tb_push(t, "\\n", 2); break;
+			case '\t': tb_push(t, "\\t", 2); break;
+			case '\r': tb_push(t, "\\r", 2); break;
+			case '\b': tb_push(t, "\\b", 2); break;
+			case '\f': tb_push(t, "\\f", 2); break;
+			default:
+				if (c < 0x20) { char u[8]; int k = snprintf(u, sizeof u, "\\u%04x", c); tb_push(t, u, (size_t)k); }
+				else { tb_push(t, (char*)&p[i], 1); }
+		}
+	}
+
+	tb_push(t, "\"", 1);
+}
+
+/* Walk v into the buffer. A non-finite double sets the error (the post-call
+   bzy_json_check then throws); once set, the walk unwinds without appending. */
+static void serialize_value(TextBuf *t, void *v)
+{
+	if (g_json_error) { return; }
+
+	switch (JKIND(v))
+	{
+		case JK_NULL: tb_push(t, "null", 4); break;
+		case JK_BOOL: if (JSCA(v)) { tb_push(t, "true", 4); } else { tb_push(t, "false", 5); } break;
+		case JK_INT:
+		{
+			char b[32];
+			int k = snprintf(b, sizeof b, "%lld", (long long)JSCA(v));
+			tb_push(t, b, (size_t)k);
+			break;
+		}
+		case JK_DBL:
+		{
+			union { double d; int64_t i; } u;
+			u.i = JSCA(v);
+			if (!isfinite(u.d)) { json_type_fail("Cannot stringify a non-finite number."); return; }
+			void *s = bzy_str_from_f64(u.d);   /* Breezy's canonical double text (matches print). */
+			tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s));
+			bzy_release(s);
+			break;
+		}
+		case JK_STR: json_escape_string(t, JGET_MAN(v)); break;
+		case JK_ARR:
+		{
+			void *l = JGET_MAN(v);
+			int64_t n = l ? *(int64_t*)((char*)l + 24) : 0;
+			void *data = l ? *(void**)((char*)l + 48) : NULL;
+			tb_push(t, "[", 1);
+			for (int64_t i = 0; i < n; i++)
+			{
+				if (i) { tb_push(t, ",", 1); }
+				serialize_value(t, ((void**)((char*)data + 32))[i]);
+				if (g_json_error) { return; }
+			}
+
+			tb_push(t, "]", 1);
+			break;
+		}
+		default:   /* JK_OBJ. */
+		{
+			void *m = JGET_MAN(v);
+			tb_push(t, "{", 1);
+			int first = 1;
+			for (int64_t s = bzy_map_iter(m, 0); s >= 0; s = bzy_map_iter(m, s + 1))
+			{
+				if (!first) { tb_push(t, ",", 1); }
+				first = 0;
+				json_escape_string(t, (void*)bzy_map_key_at(m, s));
+				tb_push(t, ":", 1);
+				serialize_value(t, (void*)bzy_map_val_at(m, s));
+				if (g_json_error) { return; }
+			}
+
+			tb_push(t, "}", 1);
+			break;
+		}
+	}
+}
+
+/* Json.stringify(v) -> an owned (+1) compact JSON string. */
+void *bzy_json_stringify(void *v)
+{
+	TextBuf t = { 0 };
+	serialize_value(&t, v);
+	void *out = bzy_str_new(t.data ? t.data : "", (int64_t)t.len);
+	free(t.data);
+	return out;
 }

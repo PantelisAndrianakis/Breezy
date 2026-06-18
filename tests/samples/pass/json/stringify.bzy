@@ -1,0 +1,14 @@
+void main()
+{
+	// Round-trip: parse then stringify then re-parse, compare a field.
+	JsonValue v = Json.parse("{\"name\":\"Ada\",\"age\":36,\"tags\":[\"a\",\"b\"]}");
+	string out = Json.stringify(v);
+	JsonValue again = Json.parse(out);
+	print(again.get("name").asString());   // Ada.
+	print(again.get("age").asLong());       // 36.
+	print(again.get("tags").size);          // 2.
+
+	JsonValue arr = Json.of(36);
+	print(Json.stringify(arr));             // 36.
+	print(Json.stringify(Json.of("x\"y"))); // "x\"y"  (escaped).
+}

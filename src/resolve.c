@@ -844,6 +844,17 @@ static void resolve_json(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"stringify")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_JSONVALUE)
+		{
+			die(e->line,"Json.stringify(value) takes one JsonValue.",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+		return;
+	}
+
 	if (strcmp(m,"of")==0)
 	{
 		if (e->arg_count!=1)

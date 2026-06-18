@@ -5567,6 +5567,21 @@ static void cg_json(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"stringify")==0)                 /* JsonValue -> compact string; non-finite throws. */
+	{
+		TypeRef ps[1];
+		ps[0]=e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_json_stringify",NULL,e->args,1,0,1,0,ps,1,0);   /* Owned string -> rax. */
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve across the check. */
+		int sk = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), sk);
+		cg_emit(cg,".L%d:", sk);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_json_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
 	if (strcmp(m,"parse")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown Json method '%s'\n", m);
@@ -11534,6 +11549,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_null");
 	cg_emit(cg,"extern bzy_json_of_array");
 	cg_emit(cg,"extern bzy_json_of_object");
+	cg_emit(cg,"extern bzy_json_stringify");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
