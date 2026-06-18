@@ -17,6 +17,7 @@
 void cg_init(Codegen *cg, FILE *out)
 {
 	cg->out=out;
+	cg->last_line[0]='\0';
 	cg->label_count=0;
 	cg->fpk_count=0;
 	cg->fpk=NULL;
@@ -62,11 +63,41 @@ void cg_init(Codegen *cg, FILE *out)
 
 void cg_emit(Codegen *cg, const char *fmt, ...)
 {
+	char line[256];
 	va_list ap;
 	va_start(ap,fmt);
-	vfprintf(cg->out,fmt,ap);
+	int n = vsnprintf(line,sizeof line,fmt,ap);
 	va_end(ap);
-	fputc('\n',cg->out);
+
+	/* Spill-reload peephole: a `mov REG, [rbp - N]` immediately after a
+	   `mov [rbp - N], REG` (same REG, same slot) is a redundant reload -- the store
+	   left REG holding the value, so drop it. Provably safe: the two lines are the
+	   tail of one instruction and the head of the next with nothing between, and any
+	   intervening instruction becomes last_line and breaks the match (so a later
+	   clobber + reload is never dropped). Cuts the spilled-temp store/reload churn
+	   the IR backend emits in register-pressured loops. */
+	if (n > 0 && (size_t)n < sizeof line)
+	{
+		int s_off, l_off;
+		char s_reg[24], l_reg[24];
+		if (sscanf(line, "    mov %23[^,], [rbp - %d]", l_reg, &l_off) == 2
+			&& sscanf(cg->last_line, "    mov [rbp - %d], %23s", &s_off, s_reg) == 2
+			&& s_off == l_off && strcmp(s_reg, l_reg) == 0)
+		{
+			return;   /* Skip the redundant reload; last_line stays the store. */
+		}
+	}
+
+	fputs(line, cg->out);
+	fputc('\n', cg->out);
+	if ((size_t)n < sizeof line)
+	{
+		memcpy(cg->last_line, line, (size_t)n + 1);
+	}
+	else
+	{
+		cg->last_line[0] = '\0';   /* Truncated/oversized line: no peephole across it. */
+	}
 }
 
 int  cg_label(Codegen *cg)

@@ -12,6 +12,7 @@ typedef enum { TARGET_WINDOWS, TARGET_LINUX } Target;
 typedef struct
 {
 	FILE *out;
+	char last_line[256];   /* The previous emitted line, for cg_emit's spill-reload peephole. */
 	int label_count;
 	Target target;     /* Emission target ABI/format (Win64 vs System V AMD64). */
 	int sp_save;       /* The rbp offset holding the saved rsp across a runtime call. */
