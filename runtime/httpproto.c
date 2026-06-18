@@ -319,16 +319,36 @@ static void *parse_request(Reader *r, int *was_eof)
 	return node;
 }
 
-/* Exported so the not-yet-written Breezy entry (Task 3) references it -- keeps the
-   parser + helpers reachable (no unused-static warnings) until then. */
-void *bzy_http_parse_request_reader(void *sock, int *was_eof, const char **err)
+/* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
+
+extern char __vtable_HttpException[];
+extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
+
+static __thread const char *g_http_error;   /* Set by the runtime; consumed by bzy_http_check. */
+
+/* Read one request off the socket. Returns the owned HttpRequest, or NULL: a clean
+   boundary EOF leaves g_http_error unset (Breezy sees null); a malformed message
+   buffers the error for the codegen-emitted bzy_http_check at the call site. */
+void *bzy_http_read_request(void *sock)
 {
 	Reader r = { 0 };
 	r.sock = sock;
-	void *node = parse_request(&r, was_eof);
-	*err = r.err;
+	int was_eof = 0;
+	void *node = parse_request(&r, &was_eof);
 	free(r.buf);
+	if (!node && !was_eof) { g_http_error = r.err ? r.err : "Malformed HTTP request."; }
 	return node;
+}
+
+void bzy_http_check(int64_t pc, int64_t frame)
+{
+	if (!g_http_error) { return; }
+	void *msg = bzy_str_new(g_http_error, (int64_t)strlen(g_http_error));
+	g_http_error = NULL;
+	void *exc = bzy_alloc(32);
+	*(void**)exc = (void*)__vtable_HttpException;
+	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
+	bzy_throw(exc, pc, frame);                  /* Never returns. */
 }
 
 /* Touch resp_new so the response vtable path is not flagged unused before Task 7. */

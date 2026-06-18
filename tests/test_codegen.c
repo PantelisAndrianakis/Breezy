@@ -1482,8 +1482,15 @@ static void test_xml_parse_lowers(void)
 static void test_json_parse_lowers(void)
 {
 	emit("void main(){ JsonValue v = Json.parse(\"[1,2]\"); }", TARGET_LINUX);
-	ASSERT_INT(strstr(g_asm, "bzy_json_parse") != NULL, 1);   /* the parse call. */
-	ASSERT_INT(strstr(g_asm, "bzy_json_check") != NULL, 1);   /* malformed -> JsonException. */
+	ASSERT_INT(strstr(g_asm, "bzy_json_parse") != NULL, 1);   /* The parse call. */
+	ASSERT_INT(strstr(g_asm, "bzy_json_check") != NULL, 1);   /* malformed -> JsonException */
+}
+
+static void test_http_read_request_lowers(void)
+{
+	emit("void main(){ Listener l = Network.listen(9999); Socket c = l.accept(); HttpRequest r = Http.readRequest(c); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_http_read_request") != NULL, 1);   /* The read call. */
+	ASSERT_INT(strstr(g_asm, "bzy_http_check") != NULL, 1);          /* malformed -> HttpException */
 }
 
 static void test_xml_fields_lower(void)
@@ -1708,6 +1715,7 @@ int main(void)
 	RUN(test_combinator_lowers_to_loop);
 	RUN(test_xml_parse_lowers);
 	RUN(test_json_parse_lowers);
+	RUN(test_http_read_request_lowers);
 	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);

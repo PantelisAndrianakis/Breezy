@@ -879,6 +879,23 @@ static void resolve_json(Expr *e)
 	die(e->line,"Unknown Json method: ",m);
 }
 
+static void resolve_http(Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Http.". */
+	if (strcmp(m,"readRequest")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_SOCKET)
+		{
+			die(e->line,"Http.readRequest(socket) takes one Socket.",NULL);
+		}
+
+		e->type.kind = TY_HTTPREQUEST;
+		return;
+	}
+
+	die(e->line,"Unknown Http method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -3704,6 +3721,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Json.",5)==0)
 		{
 			resolve_json(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Http.",5)==0)
+		{
+			resolve_http(e);
 			break;
 		}
 
