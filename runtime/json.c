@@ -17,15 +17,22 @@
 extern char __vtable_JsonException[];
 extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
-/* JsonValue layout: vtable|rc|gcinfo|kind@24|payload_managed@32|payload_scalar@40. */
+/* JsonValue layout: vtable|rc|gcinfo|kind@24|payload_managed@32|payload_scalar@40.
+   For an object node @32 is the keys string[] and @40 the parallel values
+   JsonValue[] (a second managed slot, traced by the object typeinfo); for every
+   other kind @40 is a plain scalar word. Objects use parallel arrays + a linear
+   key scan rather than a hash map -- for the small objects JSON documents are
+   built from, that is fewer allocations and no per-key hashing. */
 #define J_KIND 24
 #define J_MAN  32
 #define J_SCA  40
+#define J_VALS 40   /* Object values array (aliases the scalar slot; objects never carry a scalar). */
 #define J_SIZE 48
 enum { JK_NULL = 0, JK_BOOL = 1, JK_INT = 2, JK_DBL = 3, JK_STR = 4, JK_ARR = 5, JK_OBJ = 6 };
 
 #define JSET_MAN(v, p) (*(void**)((char*)(v) + J_MAN) = (void*)(p))
 #define JGET_MAN(v)    (*(void**)((char*)(v) + J_MAN))
+#define JGET_VALS(v)   (*(void**)((char*)(v) + J_VALS))
 #define JKIND(v)       (*(int64_t*)((char*)(v) + J_KIND))
 #define JSCA(v)        (*(int64_t*)((char*)(v) + J_SCA))
 
@@ -35,6 +42,12 @@ enum { JK_NULL = 0, JK_BOOL = 1, JK_INT = 2, JK_DBL = 3, JK_STR = 4, JK_ARR = 5,
 static int64_t g_json_ti[3] = { 0, 1, J_MAN };
 static int64_t g_json_vt[2];
 static int     g_json_vt_built;
+
+/* Object-node typeinfo: {finalizer=0, child_count=2, keys @32, values @40} -- the
+   one node kind with two managed children. */
+static int64_t g_json_obj_ti[4] = { 0, 2, J_MAN, J_VALS };
+static int64_t g_json_obj_vt[2];
+static int     g_json_obj_vt_built;
 
 static void *json_vtable(void)
 {
@@ -47,12 +60,39 @@ static void *json_vtable(void)
 	return &g_json_vt[1];   /* The object stores this; [stored-8] == &g_json_ti[0]. */
 }
 
+static void *json_obj_vtable(void)
+{
+	if (!g_json_obj_vt_built)
+	{
+		g_json_obj_vt[0] = (int64_t)&g_json_obj_ti[0];
+		g_json_obj_vt_built = 1;
+	}
+
+	return &g_json_obj_vt[1];
+}
+
 static void *jv_new(int kind)
 {
 	void *v = bzy_alloc(J_SIZE);            /* Zeroed; rc=1; gcinfo set by alloc. */
 	*(void**)v = json_vtable();
 	JKIND(v) = kind;
 	return v;
+}
+
+/* A JK_OBJ node with the two-child object typeinfo; keys/values left NULL. */
+static void *jv_new_obj(void)
+{
+	void *v = bzy_alloc(J_SIZE);
+	*(void**)v = json_obj_vtable();
+	JKIND(v) = JK_OBJ;
+	return v;
+}
+
+/* Store an owned (+1) pointer into a managed array slot (data begins at +32),
+   transferring ownership to the array (its SPAN typeinfo releases the slot). */
+static void arr_set(void *arr, int64_t i, void *p)
+{
+	((void**)((char*)arr + 32))[i] = p;
 }
 
 /* Store a double's bit pattern into the scalar slot (and read it back). */
@@ -301,41 +341,91 @@ static void *parse_array(Scan *s)
 	return v;
 }
 
-/* Parse a JSON object at '{'. Returns an owned (+1) JK_OBJ node whose payload is
-   a map<string,JsonValue>, or NULL with the error set. Duplicate keys last-wins. */
+/* A growable temp list of owned key/value pointers for one object, with
+   last-wins dedup on insert (objects are tiny, so the linear scan is cheap). */
+typedef struct { void **keys; void **vals; int count, cap; } ObjTmp;
+
+static void obj_push(ObjTmp *o, void *key, void *val)
+{
+	for (int i = 0; i < o->count; i++)
+	{
+		if (bzy_str_eq(o->keys[i], key))     /* Duplicate key: last value wins. */
+		{
+			bzy_release(o->keys[i]);          /* Drop the new key copy and the old value. */
+			bzy_release(o->vals[i]);
+			o->keys[i] = key;
+			o->vals[i] = val;
+			return;
+		}
+	}
+
+	if (o->count >= o->cap)
+	{
+		o->cap = o->cap ? o->cap * 2 : 8;
+		o->keys = (void**)realloc(o->keys, o->cap * sizeof(void*));
+		o->vals = (void**)realloc(o->vals, o->cap * sizeof(void*));
+	}
+
+	o->keys[o->count] = key;
+	o->vals[o->count] = val;
+	o->count++;
+}
+
+static void obj_free(ObjTmp *o)
+{
+	for (int i = 0; i < o->count; i++) { bzy_release(o->keys[i]); bzy_release(o->vals[i]); }
+	free(o->keys);
+	free(o->vals);
+}
+
+/* Parse a JSON object at '{'. Returns an owned (+1) JK_OBJ node holding parallel
+   keys/values arrays, or NULL with the error set. Duplicate keys: last wins. */
 static void *parse_object(Scan *s)
 {
 	advance(s);   /* '{'. */
-	void *m = bzy_map_new(1, 1);   /* String keys, managed values. */
+	ObjTmp o = { 0 };
 	skip_ws(s);
-	if (peek(s) == '}') { advance(s); void *v = jv_new(JK_OBJ); JSET_MAN(v, m); return v; }
+	if (peek(s) == '}') { advance(s); return jv_new_obj(); }
 
 	for (;;)
 	{
 		skip_ws(s);
-		if (peek(s) != '"') { bzy_release(m); fail(s, "Expected a string key."); return NULL; }
+		if (peek(s) != '"') { obj_free(&o); fail(s, "Expected a string key."); return NULL; }
 		void *key = parse_string(s);
-		if (s->err) { bzy_release(m); return NULL; }
+		if (s->err) { obj_free(&o); return NULL; }
 		skip_ws(s);
-		if (peek(s) != ':') { bzy_release(key); bzy_release(m); fail(s, "Expected ':' after key."); return NULL; }
+		if (peek(s) != ':') { bzy_release(key); obj_free(&o); fail(s, "Expected ':' after key."); return NULL; }
 		advance(s);
 		void *val = parse_value(s);
-		if (s->err) { bzy_release(key); bzy_release(m); return NULL; }
-		bzy_map_put(m, (int64_t)key, (int64_t)val);   /* Retains both. */
-		bzy_release(key);
-		bzy_release(val);
+		if (s->err) { bzy_release(key); obj_free(&o); return NULL; }
+		obj_push(&o, key, val);   /* Transfers the owned key + value. */
 		skip_ws(s);
 		int c = peek(s);
 		if (c == ',') { advance(s); continue; }
 		if (c == '}') { advance(s); break; }
-		bzy_release(m);
+		obj_free(&o);
 		fail(s, "Expected ',' or '}' in object.");
 		return NULL;
 	}
 
-	void *v = jv_new(JK_OBJ);
-	JSET_MAN(v, m);
-	return v;
+	void *node = jv_new_obj();
+	if (o.count > 0)
+	{
+		void *names = bzy_array_new(o.count, 1);
+		void *vals  = bzy_array_new(o.count, 1);
+		for (int i = 0; i < o.count; i++)
+		{
+			arr_set(names, i, o.keys[i]);   /* Transfer owned into the arrays. */
+			arr_set(vals,  i, o.vals[i]);
+		}
+
+		JSET_MAN(node, names);
+		*(void**)((char*)node + J_VALS) = vals;
+	}
+
+	free(o.keys);   /* The slots' ownership moved to the arrays; free only the temp spines. */
+	free(o.vals);
+	return node;
 }
 
 /* Parse one JSON value: dispatch on the first non-whitespace byte. Returns an
@@ -547,14 +637,34 @@ static void *json_null_retained(void)
 	return g_json_null;
 }
 
+/* The index of `key` in an object's keys array, or -1. */
+static int64_t obj_index(void *v, void *key)
+{
+	void *names = JGET_MAN(v);
+	if (!names) { return -1; }
+	int64_t n = *(int64_t*)((char*)names + 24);   /* length@24. */
+	void **slots = (void**)((char*)names + 32);
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (bzy_str_eq(slots[i], key)) { return i; }
+	}
+
+	return -1;
+}
+
 /* The value at `key` (owned +1) for an object; a shared null value for a missing
    key or a non-object receiver. */
 void *bzy_json_get(void *v, void *key)
 {
 	if (JKIND(v) == JK_OBJ)
 	{
-		int64_t hit = bzy_map_get(JGET_MAN(v), (int64_t)key);   /* Retains a managed value. */
-		if (hit) { return (void*)hit; }
+		int64_t i = obj_index(v, key);
+		if (i >= 0)
+		{
+			void *val = ((void**)((char*)JGET_VALS(v) + 32))[i];
+			bzy_retain(val);
+			return val;
+		}
 	}
 
 	return json_null_retained();
@@ -564,7 +674,7 @@ void *bzy_json_get(void *v, void *key)
    from a present null), else 0. */
 int64_t bzy_json_has(void *v, void *key)
 {
-	if (JKIND(v) == JK_OBJ) { return bzy_map_has(JGET_MAN(v), (int64_t)key); }
+	if (JKIND(v) == JK_OBJ) { return obj_index(v, key) >= 0; }
 	return 0;
 }
 
@@ -574,10 +684,12 @@ void *bzy_json_keys(void *v)
 	void *list = bzy_vec_new(3);   /* String elements. */
 	if (JKIND(v) == JK_OBJ)
 	{
-		void *m = JGET_MAN(v);
-		for (int64_t s = bzy_map_iter(m, 0); s >= 0; s = bzy_map_iter(m, s + 1))
+		void *names = JGET_MAN(v);
+		int64_t n = names ? *(int64_t*)((char*)names + 24) : 0;
+		void **slots = names ? (void**)((char*)names + 32) : NULL;
+		for (int64_t i = 0; i < n; i++)
 		{
-			bzy_vec_push_back(list, bzy_map_key_at(m, s));   /* Borrowed key; push retains. */
+			bzy_vec_push_back(list, (int64_t)slots[i]);   /* Borrowed key; push retains. */
 		}
 	}
 
@@ -623,7 +735,7 @@ int64_t bzy_json_size(void *v)
 {
 	int64_t k = JKIND(v);
 	if (k == JK_ARR) { void *l = JGET_MAN(v); return l ? *(int64_t*)((char*)l + 24) : 0; }
-	if (k == JK_OBJ) { void *m = JGET_MAN(v); return m ? bzy_map_len(m) : 0; }
+	if (k == JK_OBJ) { void *names = JGET_MAN(v); return names ? *(int64_t*)((char*)names + 24) : 0; }
 	return 0;
 }
 
@@ -673,10 +785,29 @@ void *bzy_json_of_array(void *list)
 
 void *bzy_json_of_object(void *map)
 {
-	void *v = jv_new(JK_OBJ);
-	bzy_retain(map);
-	JSET_MAN(v, map);
-	return v;
+	void *node = jv_new_obj();
+	int64_t cnt = bzy_map_len(map);
+	if (cnt > 0)
+	{
+		void *names = bzy_array_new(cnt, 1);
+		void *vals  = bzy_array_new(cnt, 1);
+		int64_t i = 0;
+		for (int64_t s = bzy_map_iter(map, 0); s >= 0 && i < cnt; s = bzy_map_iter(map, s + 1))
+		{
+			void *k = (void*)bzy_map_key_at(map, s);   /* Borrowed. */
+			void *vv = (void*)bzy_map_val_at(map, s);
+			bzy_retain(k);
+			bzy_retain(vv);
+			arr_set(names, i, k);
+			arr_set(vals,  i, vv);
+			i++;
+		}
+
+		JSET_MAN(node, names);
+		*(void**)((char*)node + J_VALS) = vals;
+	}
+
+	return node;
 }
 
 /* ---- serializer (compact RFC 8259) ------------------------------------------ */
@@ -755,16 +886,18 @@ static void serialize_value(TextBuf *t, void *v)
 		}
 		default:   /* JK_OBJ. */
 		{
-			void *m = JGET_MAN(v);
+			void *names = JGET_MAN(v);
+			void *vals = JGET_VALS(v);
+			int64_t nm = names ? *(int64_t*)((char*)names + 24) : 0;
+			void **ks = names ? (void**)((char*)names + 32) : NULL;
+			void **vs = vals ? (void**)((char*)vals + 32) : NULL;
 			tb_push(t, "{", 1);
-			int first = 1;
-			for (int64_t s = bzy_map_iter(m, 0); s >= 0; s = bzy_map_iter(m, s + 1))
+			for (int64_t i = 0; i < nm; i++)
 			{
-				if (!first) { tb_push(t, ",", 1); }
-				first = 0;
-				json_escape_string(t, (void*)bzy_map_key_at(m, s));
+				if (i) { tb_push(t, ",", 1); }
+				json_escape_string(t, ks[i]);
 				tb_push(t, ":", 1);
-				serialize_value(t, (void*)bzy_map_val_at(m, s));
+				serialize_value(t, vs[i]);
 				if (g_json_error) { return; }
 			}
 
