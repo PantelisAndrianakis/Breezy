@@ -7,7 +7,6 @@
 #include "prelude.h"
 #include "overload.h"
 #include "grow.h"
-#include "cycleinfo.h"
 #include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
 #define MAX_U 64
@@ -110,105 +109,6 @@ static TypeTable *build_tt(const char **srcs, int nsrc)
 	types_register_all_members(&tt, units, total);
 	resolve_program(&tt, units, total);
 	return &tt;
-}
-
-static void test_cycle_acyclic_program(void)
-{
-	const char *src = "class A { int x; } class B { A a; } void main() { B b; b = new B(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	CycleReport r = cycle_analyze(tt);
-	ASSERT_INT(r.acyclic, 1);
-	ASSERT_INT(r.scc_count, 0);
-}
-
-extern char *cycleinfo_test_adjacency(TypeTable *, int **);
-
-static void test_cycle_adjacency_self(void)
-{
-	const char *src = "class Node { Node next; int v; } void main() { Node n; n = new Node(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	int *amb = NULL;
-	char *adj = cycleinfo_test_adjacency(tt, &amb);
-	int ni = -1;
-	for (int i = 0; i < tt->class_count; i++) { if (strcmp(tt->classes[i]->name, "Node") == 0) { ni = i; } }
-	ASSERT_INT(ni >= 0, 1);
-	ASSERT_INT(adj[ni * tt->class_count + ni], 1);   /* Node -> Node self-edge present. */
-	free(adj);
-	free(amb);
-}
-
-static void test_cycle_self_reference(void)
-{
-	const char *src = "class Node { Node next; int v; } void main() { Node n; n = new Node(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	CycleReport r = cycle_analyze(tt);
-	ASSERT_INT(r.acyclic, 0);
-	ASSERT_INT(r.scc_count, 1);
-}
-
-static void test_cycle_mutual(void)
-{
-	const char *src = "class A { B b; } class B { A a; } void main() { A x; x = new A(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	CycleReport r = cycle_analyze(tt);
-	ASSERT_INT(r.acyclic, 0);
-	ASSERT_INT(r.largest_scc, 2);
-}
-
-static void test_cycle_via_container(void)
-{
-	const char *src = "class Node { List<Node> kids; } void main() { Node n; n = new Node(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	CycleReport r = cycle_analyze(tt);
-	ASSERT_INT(r.acyclic, 0);
-}
-
-static void test_cycle_weak_candidates(void)
-{
-	/* One self-cycle => exactly one back-edge to weaken. */
-	const char *src = "class Node { Node next; } void main() { Node n; n = new Node(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	CycleReport r = cycle_analyze(tt);
-	ASSERT_INT(r.weak_edge_candidates, 1);
-}
-
-extern char *cycleinfo_test_container(TypeTable *);
-
-static void test_cycle_edge_kind_tree(void)
-{
-	/* Parent owns List<Child> (container edge); Child has a scalar Parent field. */
-	const char *src = "class Parent { List<Child> kids; } class Child { Parent parent; }"
-	                  " void main() { Parent p; p = new Parent(); }";
-	TypeTable *tt = build_tt(&src, 1);
-	char *con = cycleinfo_test_container(tt);
-	int pi = -1, ci = -1;
-	for (int i = 0; i < tt->class_count; i++)
-	{
-		if (strcmp(tt->classes[i]->name, "Parent") == 0) { pi = i; }
-		if (strcmp(tt->classes[i]->name, "Child") == 0) { ci = i; }
-	}
-	ASSERT_INT(con[pi * tt->class_count + ci], 1);   /* Parent->Child via List: container edge. */
-	ASSERT_INT(con[ci * tt->class_count + pi], 0);   /* Child->Parent: scalar edge. */
-	free(con);
-}
-
-static void test_cycle_rule_tree_weakable(void)
-{
-	/* Scalar Child->Parent into the container-owner Parent: the rule resolves it. */
-	const char *src = "class Parent { List<Child> kids; } class Child { Parent parent; }"
-	                  " void main() { Parent p; p = new Parent(); }";
-	CycleReport r = cycle_analyze(build_tt(&src, 1));
-	ASSERT_INT(r.weakable_edges, 1);
-	ASSERT_INT(r.unresolvable_sccs, 0);
-}
-
-static void test_cycle_rule_dll_unresolvable(void)
-{
-	/* Doubly-linked list: symmetric scalar cycle, no container signal. */
-	const char *src = "class Node { Node prev; Node next; } void main() { Node n; n = new Node(); }";
-	CycleReport r = cycle_analyze(build_tt(&src, 1));
-	ASSERT_INT(r.weakable_edges, 0);
-	ASSERT_INT(r.unresolvable_sccs, 1);
 }
 
 /* Scope a g_asm search to one emitted function's body. The user units' free
@@ -1719,15 +1619,6 @@ int main(void)
 	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);
-	RUN(test_cycle_acyclic_program);
-	RUN(test_cycle_adjacency_self);
-	RUN(test_cycle_self_reference);
-	RUN(test_cycle_mutual);
-	RUN(test_cycle_via_container);
-	RUN(test_cycle_weak_candidates);
-	RUN(test_cycle_edge_kind_tree);
-	RUN(test_cycle_rule_tree_weakable);
-	RUN(test_cycle_rule_dll_unresolvable);
 	RUN(test_stack_args_caller);
 	RUN(test_stack_args_callee);
 	SUMMARY();

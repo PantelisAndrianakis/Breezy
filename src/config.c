@@ -111,9 +111,14 @@ static void parse_string_value(const char *val, char *out, int out_size)
 	out[len] = '\0';
 }
 
-void config_parse_app(const char *text, AppConfig *app)
+/* Scan an INI-style body line by line. Within the named section header (e.g.
+   "[app]"), each `key = value` line is trimmed and handed to `fn(key, val, ctx)`.
+   Comments (#), blanks, and lines outside the section are skipped. */
+static void config_scan(const char *text, const char *section,
+                        void (*fn)(const char *, const char *, void *), void *ctx)
 {
-	int in_app = 0;
+	size_t seclen = strlen(section);
+	int in_section = 0;
 	const char *p = text;
 	while (*p)
 	{
@@ -123,85 +128,6 @@ void config_parse_app(const char *text, AppConfig *app)
 		{
 			line[n++] = *p++;
 		}
-		line[n] = '\0';
-		if (*p == '\n')
-		{
-			p++;
-		}
-
-		char *s = line;
-		while (*s == ' ' || *s == '\t' || *s == '\r')
-		{
-			s++;
-		}
-
-		if (*s == '#' || *s == '\0')
-		{
-			continue;
-		}
-
-		if (*s == '[')
-		{
-			in_app = (strncmp(s, "[app]", 5) == 0);
-			continue;
-		}
-
-		if (!in_app)
-		{
-			continue;
-		}
-
-		char *eq = strchr(s, '=');
-		if (!eq)
-		{
-			continue;
-		}
-
-		*eq = '\0';
-		char *key_end = eq;
-		while (key_end > s && (key_end[-1] == ' ' || key_end[-1] == '\t'))
-		{
-			key_end--;
-		}
-		*key_end = '\0';
-		const char *val = eq + 1;
-
-		if (strcmp(s, "name") == 0)
-		{
-			parse_string_value(val, app->name, CFG_APP_STR_LEN);
-		}
-		else if (strcmp(s, "version") == 0)
-		{
-			parse_string_value(val, app->version, CFG_APP_STR_LEN);
-		}
-		else if (strcmp(s, "description") == 0)
-		{
-			parse_string_value(val, app->description, CFG_APP_STR_LEN);
-		}
-		else if (strcmp(s, "author") == 0)
-		{
-			parse_string_value(val, app->author, CFG_APP_STR_LEN);
-		}
-		else if (strcmp(s, "icon") == 0)
-		{
-			parse_string_value(val, app->icon, CFG_PATH_LEN);
-		}
-	}
-}
-
-void config_parse_links(const char *text, LinkConfig *cfg)
-{
-	int in_link = 0;
-	const char *p = text;
-	while (*p)
-	{
-		char line[1024];
-		int n = 0;
-		while (*p && *p != '\n' && n < (int)sizeof(line) - 1)
-		{
-			line[n++] = *p++;
-		}
-
 		line[n] = '\0';
 		if (*p == '\n')
 		{
@@ -222,11 +148,11 @@ void config_parse_links(const char *text, LinkConfig *cfg)
 
 		if (*s == '[')
 		{
-			in_link = (strncmp(s, "[link]", 6) == 0);
+			in_section = (strncmp(s, section, seclen) == 0);
 			continue;
 		}
 
-		if (!in_link)
+		if (!in_section)
 		{
 			continue;
 		}
@@ -243,18 +169,57 @@ void config_parse_links(const char *text, LinkConfig *cfg)
 		{
 			key_end--;
 		}
-
 		*key_end = '\0';
-		const char *val = eq + 1;
-		if (strcmp(s, "libs") == 0)
-		{
-			parse_string_array(val, &cfg->libs, CFG_LIB_LEN, &cfg->nlibs, &cfg->libs_cap);
-		}
-		else if (strcmp(s, "lib_paths") == 0)
-		{
-			parse_string_array(val, &cfg->lib_paths, CFG_PATH_LEN, &cfg->nlib_paths, &cfg->lib_paths_cap);
-		}
+		fn(s, eq + 1, ctx);
 	}
+}
+
+static void app_kv(const char *key, const char *val, void *ctx)
+{
+	AppConfig *app = ctx;
+	if (strcmp(key, "name") == 0)
+	{
+		parse_string_value(val, app->name, CFG_APP_STR_LEN);
+	}
+	else if (strcmp(key, "version") == 0)
+	{
+		parse_string_value(val, app->version, CFG_APP_STR_LEN);
+	}
+	else if (strcmp(key, "description") == 0)
+	{
+		parse_string_value(val, app->description, CFG_APP_STR_LEN);
+	}
+	else if (strcmp(key, "author") == 0)
+	{
+		parse_string_value(val, app->author, CFG_APP_STR_LEN);
+	}
+	else if (strcmp(key, "icon") == 0)
+	{
+		parse_string_value(val, app->icon, CFG_PATH_LEN);
+	}
+}
+
+static void link_kv(const char *key, const char *val, void *ctx)
+{
+	LinkConfig *cfg = ctx;
+	if (strcmp(key, "libs") == 0)
+	{
+		parse_string_array(val, &cfg->libs, CFG_LIB_LEN, &cfg->nlibs, &cfg->libs_cap);
+	}
+	else if (strcmp(key, "lib_paths") == 0)
+	{
+		parse_string_array(val, &cfg->lib_paths, CFG_PATH_LEN, &cfg->nlib_paths, &cfg->lib_paths_cap);
+	}
+}
+
+void config_parse_app(const char *text, AppConfig *app)
+{
+	config_scan(text, "[app]", app_kv, app);
+}
+
+void config_parse_links(const char *text, LinkConfig *cfg)
+{
+	config_scan(text, "[link]", link_kv, cfg);
 }
 
 void config_load(const char *src_arg, LinkConfig *link, AppConfig *app)
