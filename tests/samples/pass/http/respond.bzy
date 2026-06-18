@@ -1,0 +1,20 @@
+void serve(Listener l)
+{
+	Socket c = l.accept();
+	HttpRequest r = Http.readRequest(c);
+	Http.respond(c, 200, "pong");
+	c.close();
+}
+
+void main()
+{
+	Listener l = Network.listen(18082);
+	spawn serve(l);
+	Socket s = Network.connect("127.0.0.1", 18082);
+	s.writeText("GET /ping HTTP/1.1\r\n\r\n");
+	string resp = s.readText(1024);             // Raw bytes of the response.
+	print(resp.startsWith("HTTP/1.1 200"));     // true.
+	print(resp.contains("Content-Length: 4"));  // true.
+	print(resp.endsWith("pong"));               // true.
+	s.close();
+}

@@ -385,8 +385,183 @@ void *bzy_http_body_bytes(void *node)
 	return bzy_str_to_bytes(HGET(node, H_BODY));
 }
 
-/* Touch resp_new so the response vtable path is not flagged unused before Task 7. */
-void *bzy_http_new_response_stub(void)
+/* ---- builders + serializer -------------------------------------------------- */
+
+typedef struct { char *data; size_t len, cap; } TextBuf;
+
+static void tb_push(TextBuf *t, const char *bytes, size_t n)
 {
-	return resp_new();
+	if (t->len + n > t->cap)
+	{
+		size_t nc = t->cap ? t->cap : 256;
+		while (nc < t->len + n) { nc *= 2; }
+		t->data = (char*)realloc(t->data, nc);
+		t->cap = nc;
+	}
+
+	memcpy(t->data + t->len, bytes, n);
+	t->len += n;
+}
+
+static void tb_str(TextBuf *t, void *s) { tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s)); }
+
+static const char *status_reason(int64_t code)
+{
+	switch (code)
+	{
+		case 200: return "OK";
+		case 201: return "Created";
+		case 204: return "No Content";
+		case 301: return "Moved Permanently";
+		case 302: return "Found";
+		case 304: return "Not Modified";
+		case 400: return "Bad Request";
+		case 401: return "Unauthorized";
+		case 403: return "Forbidden";
+		case 404: return "Not Found";
+		case 405: return "Method Not Allowed";
+		case 500: return "Internal Server Error";
+		case 503: return "Service Unavailable";
+		default:  return "Status";
+	}
+}
+
+/* Build a response node: status set, reason auto, no headers/body yet. */
+void *bzy_http_response(int64_t status)
+{
+	void *n = resp_new();
+	*(int64_t*)((char*)n + H_STATUS) = status;
+	const char *re = status_reason(status);
+	HSET(n, H_REASON, bzy_str_new(re, (int64_t)strlen(re)));
+	return n;
+}
+
+/* Build a request node: method/path set (retained), HTTP/1.1, empty body. */
+void *bzy_http_request(void *method, void *path)
+{
+	void *n = req_new();
+	bzy_retain(method);
+	bzy_retain(path);
+	HSET(n, H_METHOD, method);
+	HSET(n, H_PATH, path);
+	HSET(n, H_VERSION, bzy_str_new("HTTP/1.1", 8));
+	HSET(n, H_BODY, bzy_str_new("", 0));
+	return n;
+}
+
+/* Set or (case-insensitively) replace a header on a built node. */
+void bzy_http_set_header(void *node, void *name, void *val)
+{
+	int64_t i = hdr_index(node, name);
+	if (i >= 0)
+	{
+		void **vslots = (void**)((char*)HGET(node, H_HVALS) + 32);
+		bzy_release(vslots[i]);
+		bzy_retain(val);
+		vslots[i] = val;
+		return;
+	}
+
+	void *on = HGET(node, H_HNAMES), *ov = HGET(node, H_HVALS);
+	int64_t cnt = on ? *(int64_t*)((char*)on + 24) : 0;
+	void *nn = bzy_array_new(cnt + 1, 1), *nv = bzy_array_new(cnt + 1, 1);
+	for (int64_t k = 0; k < cnt; k++)
+	{
+		void *kn = ((void**)((char*)on + 32))[k]; bzy_retain(kn); arr_set(nn, k, kn);
+		void *kv = ((void**)((char*)ov + 32))[k]; bzy_retain(kv); arr_set(nv, k, kv);
+	}
+
+	bzy_retain(name); arr_set(nn, cnt, name);
+	bzy_retain(val);  arr_set(nv, cnt, val);
+	HSET(node, H_HNAMES, nn);
+	HSET(node, H_HVALS, nv);
+	if (on) { bzy_release(on); }
+	if (ov) { bzy_release(ov); }
+}
+
+/* Set the body of a built node (retains). */
+void bzy_http_set_body(void *node, void *str)
+{
+	void *old = HGET(node, H_BODY);
+	bzy_retain(str);
+	HSET(node, H_BODY, str);
+	if (old) { bzy_release(old); }
+}
+
+/* Append the node's headers to the buffer, skipping any Content-Length (derived). */
+static void emit_headers(TextBuf *t, void *node)
+{
+	void *names = HGET(node, H_HNAMES);
+	if (!names) { return; }
+	int64_t n = *(int64_t*)((char*)names + 24);
+	void **ns = (void**)((char*)names + 32);
+	void **vs = (void**)((char*)HGET(node, H_HVALS) + 32);
+	void *kcl = bzy_str_new("Content-Length", 14);
+	int64_t skip = hdr_index(node, kcl);
+	bzy_release(kcl);
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (i == skip) { continue; }
+		tb_str(t, ns[i]);
+		tb_push(t, ": ", 2);
+		tb_str(t, vs[i]);
+		tb_push(t, "\r\n", 2);
+	}
+}
+
+/* Append "Content-Length: <bodylen>\r\n\r\n" + the body. */
+static void emit_body(TextBuf *t, void *node)
+{
+	void *body = HGET(node, H_BODY);
+	int64_t blen = body ? bzy_str_len(body) : 0;
+	char cl[48];
+	int k = snprintf(cl, sizeof cl, "Content-Length: %lld\r\n\r\n", (long long)blen);
+	tb_push(t, cl, (size_t)k);
+	if (blen > 0) { tb_str(t, body); }
+}
+
+/* Serialize a response (status line + headers + Content-Length + body) and write
+   it with one socket send. */
+int64_t bzy_http_send_response(void *sock, void *node)
+{
+	TextBuf t = { 0 };
+	char line[64];
+	int k = snprintf(line, sizeof line, "HTTP/1.1 %lld ", (long long)*(int64_t*)((char*)node + H_STATUS));
+	tb_push(&t, line, (size_t)k);
+	tb_str(&t, HGET(node, H_REASON));
+	tb_push(&t, "\r\n", 2);
+	emit_headers(&t, node);
+	emit_body(&t, node);
+	int64_t rc = bzy_sock_send_all(sock, t.data ? t.data : "", (int64_t)t.len);
+	free(t.data);
+	return rc;
+}
+
+/* Serialize a request (request line + headers + Content-Length + body), one send. */
+int64_t bzy_http_send_request(void *sock, void *node)
+{
+	TextBuf t = { 0 };
+	tb_str(&t, HGET(node, H_METHOD));
+	tb_push(&t, " ", 1);
+	tb_str(&t, HGET(node, H_PATH));
+	tb_push(&t, " HTTP/1.1\r\n", 11);
+	emit_headers(&t, node);
+	emit_body(&t, node);
+	int64_t rc = bzy_sock_send_all(sock, t.data ? t.data : "", (int64_t)t.len);
+	free(t.data);
+	return rc;
+}
+
+/* respond(): the one-call quick path = response(status) + text/plain + body + send. */
+void bzy_http_respond(void *sock, int64_t status, void *body)
+{
+	void *n = bzy_http_response(status);
+	void *ct = bzy_str_new("Content-Type", 12);
+	void *tp = bzy_str_new("text/plain; charset=utf-8", 25);
+	bzy_http_set_header(n, ct, tp);
+	bzy_release(ct);
+	bzy_release(tp);
+	bzy_http_set_body(n, body);
+	bzy_http_send_response(sock, n);
+	bzy_release(n);
 }

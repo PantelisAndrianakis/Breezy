@@ -893,6 +893,29 @@ static void resolve_http(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"respond")==0)
+	{
+		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_SOCKET
+			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Http.respond(socket, status, body) takes a Socket, an int, and a string.",NULL);
+		}
+
+		e->type.kind = TY_VOID;
+		return;
+	}
+
+	if (strcmp(m,"response")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"Http.response(status) takes one int.",NULL);
+		}
+
+		e->type.kind = TY_HTTPRESPONSE;
+		return;
+	}
+
 	die(e->line,"Unknown Http method: ",m);
 }
 
@@ -2783,6 +2806,44 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown HttpRequest method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_HTTPRESPONSE)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"setHeader")==0)
+			{
+				if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || e->args[1]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpResponse.setHeader(name, value) takes two strings.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"setBody")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpResponse.setBody(body) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"send")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_SOCKET)
+				{
+					die(e->line,"HttpResponse.send(socket) takes one Socket.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown HttpResponse method: ",e->name);
 			}
 
 			break;

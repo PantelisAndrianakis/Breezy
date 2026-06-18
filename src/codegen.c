@@ -5691,6 +5691,27 @@ static void cg_json_method(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_http(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 5;   /* After "Http.". */
+
+	if (strcmp(m,"respond")==0)                  /* (Socket, status, body) -> void. */
+	{
+		TypeRef ps[3];
+		ps[0]=e->args[0]->type;
+		memset(&ps[1],0,sizeof(ps[1]));
+		ps[1].kind=TY_LONG;
+		ps[2]=e->args[2]->type;
+		cg_call_with_args(cg,tt,"bzy_http_respond",NULL,e->args,3,0,0,0,ps,3,0);
+		return;
+	}
+
+	if (strcmp(m,"response")==0)                  /* (status) -> HttpResponse. */
+	{
+		TypeRef ps[1];
+		memset(&ps[0],0,sizeof(ps[0]));
+		ps[0].kind=TY_LONG;
+		cg_call_with_args(cg,tt,"bzy_http_response",NULL,e->args,1,0,1,0,ps,1,0);
+		return;
+	}
+
 	if (strcmp(m,"readRequest")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown Http method '%s'\n", m);
@@ -5733,6 +5754,9 @@ static void cg_http_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(n,"hasHeader")==0   ? "bzy_http_has_header" :
 		strcmp(n,"headerNames")==0 ? "bzy_http_header_names" :
 		strcmp(n,"bodyBytes")==0   ? "bzy_http_body_bytes" :
+		strcmp(n,"setHeader")==0   ? "bzy_http_set_header" :
+		strcmp(n,"setBody")==0     ? "bzy_http_set_body" :
+		strcmp(n,"send")==0        ? (e->lhs->type.kind==TY_HTTPRESPONSE ? "bzy_http_send_response" : "bzy_http_send_request") :
 		NULL;
 	if (!fn)
 	{
@@ -11629,6 +11653,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_http_has_header");
 	cg_emit(cg,"extern bzy_http_header_names");
 	cg_emit(cg,"extern bzy_http_body_bytes");
+	cg_emit(cg,"extern bzy_http_respond");
+	cg_emit(cg,"extern bzy_http_response");
+	cg_emit(cg,"extern bzy_http_set_header");
+	cg_emit(cg,"extern bzy_http_set_body");
+	cg_emit(cg,"extern bzy_http_send_response");
+	cg_emit(cg,"extern bzy_http_send_request");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
