@@ -5598,6 +5598,8 @@ static void cg_json_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(n,"get")==0      ? "bzy_json_get" :
 		strcmp(n,"has")==0      ? "bzy_json_has" :
 		strcmp(n,"keys")==0     ? "bzy_json_keys" :
+		strcmp(n,"items")==0    ? "bzy_json_items" :
+		strcmp(n,"at")==0       ? "bzy_json_at" :
 		NULL;
 	if (!fn)
 	{
@@ -5615,7 +5617,8 @@ static void cg_json_method(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), ps, e->arg_count, 0);
 
 	int is_extract = strcmp(n,"asString")==0 || strcmp(n,"asLong")==0
-					 || strcmp(n,"asDouble")==0 || strcmp(n,"asBool")==0;
+					 || strcmp(n,"asDouble")==0 || strcmp(n,"asBool")==0
+					 || strcmp(n,"at")==0;
 	if (is_extract)
 	{
 		int fp = ty_is_float(e->type.kind);
@@ -6912,6 +6915,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				cg_temp_pop(cg);
 			}
 
+			break;
+		}
+
+		/* JsonValue.size is kind-dependent (array length / object key count), so it
+		   lowers to a runtime call rather than a raw offset load. */
+		if (e->lhs->type.kind==TY_JSONVALUE)
+		{
+			cg_call_with_args(cg,tt,"bzy_json_size",e->lhs,NULL,0,0,0,0,NULL,0,0);
 			break;
 		}
 
@@ -11490,6 +11501,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_get");
 	cg_emit(cg,"extern bzy_json_has");
 	cg_emit(cg,"extern bzy_json_keys");
+	cg_emit(cg,"extern bzy_json_items");
+	cg_emit(cg,"extern bzy_json_at");
+	cg_emit(cg,"extern bzy_json_size");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");

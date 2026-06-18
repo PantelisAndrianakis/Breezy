@@ -157,6 +157,7 @@ check xml_descendants tests/samples/pass/xml/descendants.bzy $'3\n3'
 check xml_malformed tests/samples/pass/xml/malformed.bzy $'caught'
 check json_scalars tests/samples/pass/json/scalars.bzy $'42\n3.5\nhi\ntrue\ntrue\ntrue\nnumber\nstring\ntrue'
 check json_objects tests/samples/pass/json/objects.bzy $'1\n2\ntrue\ntrue\ntrue\nfalse\n2'
+check json_arrays tests/samples/pass/json/arrays.bzy $'3\n20\n60'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'

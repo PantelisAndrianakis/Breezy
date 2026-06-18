@@ -582,3 +582,46 @@ void *bzy_json_keys(void *v)
 
 	return list;
 }
+
+/* ---- array navigation ------------------------------------------------------- */
+
+/* The array's elements as an owned (+1) List<JsonValue>; an empty list for a
+   non-array (so .items().forEach is always safe). */
+void *bzy_json_items(void *v)
+{
+	if (JKIND(v) == JK_ARR) { void *l = JGET_MAN(v); bzy_retain(l); return l; }
+	return bzy_vec_new(4);   /* Object elements. */
+}
+
+/* The element at index i (owned +1); OOB or a non-array sets the error for the
+   post-call bzy_json_check (returns a null value as the unused placeholder). */
+void *bzy_json_at(void *v, int64_t i)
+{
+	if (JKIND(v) == JK_ARR)
+	{
+		void *l = JGET_MAN(v);
+		int64_t n = *(int64_t*)((char*)l + 24);   /* length@24. */
+		void *data = *(void**)((char*)l + 48);    /* data array@48. */
+		if (i >= 0 && i < n && data)
+		{
+			void *el = ((void**)((char*)data + 32))[i];   /* Borrowed slot. */
+			bzy_retain(el);
+			return el;
+		}
+
+		json_type_fail("at() index out of range.");
+		return json_null_retained();
+	}
+
+	json_type_fail("at() on a non-array JSON value.");
+	return json_null_retained();
+}
+
+/* Element count (array) or key count (object); 0 for any other kind. */
+int64_t bzy_json_size(void *v)
+{
+	int64_t k = JKIND(v);
+	if (k == JK_ARR) { void *l = JGET_MAN(v); return l ? *(int64_t*)((char*)l + 24) : 0; }
+	if (k == JK_OBJ) { void *m = JGET_MAN(v); return m ? bzy_map_len(m) : 0; }
+	return 0;
+}

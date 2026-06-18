@@ -1340,7 +1340,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	{
 		const char *tmpl=e->type.class_name;
 		TypeKind ek=e->type.elem->kind;
-		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT || ek==TY_FUNC || ek==TY_XMLNODE;
+		int scalar_or_obj = ty_is_int(ek) || ty_is_float(ek) || ek==TY_BOOL || ek==TY_STRING || ek==TY_OBJECT || ek==TY_FUNC || ek==TY_XMLNODE || ek==TY_JSONVALUE;
 		if (!scalar_or_obj)
 		{
 			die(e->line,"Collection element must be a scalar, string, or object.",NULL);
@@ -1860,6 +1860,23 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown XmlNode field: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_JSONVALUE)
+		{
+			if (strcmp(e->name,"size")==0)
+			{
+				/* Array length / object key count -- kind-dependent, so codegen
+				   lowers it to a bzy_json_size call (not a raw offset load). */
+				e->type.kind=TY_INT;
+				e->anno_int=0;
+			}
+			else
+			{
+				die(e->line,"Unknown JsonValue field: ",e->name);
 			}
 
 			break;
@@ -2613,6 +2630,29 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				e->type.kind=TY_GENERIC;
 				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
 				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"items")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"JsonValue.items() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_JSONVALUE;
+				e->type.kind=TY_GENERIC;
+				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
+				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"at")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"JsonValue.at(index) takes one integer.",NULL);
+				}
+
+				e->type.kind=TY_JSONVALUE;
 			}
 			else
 			{

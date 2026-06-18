@@ -1,0 +1,8 @@
+void main()
+{
+	JsonValue v = Json.parse("[10,20,30]");
+	print(v.size);                  // 3.
+	print(v.at(1).asLong());        // 20.
+	long sum = v.items().reduce(0, (acc, e) => acc + e.asLong());
+	print(sum);                     // 60.
+}
