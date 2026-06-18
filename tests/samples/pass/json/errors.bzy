@@ -1,0 +1,11 @@
+void main()
+{
+	int caught = 0;
+	try { long x = Json.parse("\"hi\"").asLong(); print(x); }   // String -> asLong: throws.
+	catch (JsonException e) { caught = caught + 1; }
+
+	try { JsonValue v = Json.parse("{bad}"); print("no"); }      // Malformed: throws.
+	catch (JsonException e) { caught = caught + 1; }
+
+	print(caught);   // 2.
+}

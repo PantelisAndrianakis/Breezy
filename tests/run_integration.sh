@@ -160,6 +160,7 @@ check json_objects tests/samples/pass/json/objects.bzy $'1\n2\ntrue\ntrue\ntrue\
 check json_arrays tests/samples/pass/json/arrays.bzy $'3\n20\n60'
 check json_build tests/samples/pass/json/build.bzy $'42\nhi\ntrue\ntrue\n2\n1'
 check json_stringify tests/samples/pass/json/stringify.bzy $'Ada\n36\n2\n36\n"x\\"y"'
+check json_errors tests/samples/pass/json/errors.bzy $'2'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'
@@ -423,7 +424,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue btree xml; do
+    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue btree xml json; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
