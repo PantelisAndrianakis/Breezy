@@ -165,6 +165,7 @@ check http_request tests/samples/pass/http/request.bzy $'POST\n/items\napplicati
 check http_respond tests/samples/pass/http/respond.bzy $'true\ntrue\ntrue'
 check http_client_send tests/samples/pass/http/client_send.bzy $'PUT\n/v/9\nabc\nhello'
 check http_client_roundtrip tests/samples/pass/http/client_roundtrip.bzy $'200\napplication/json\n{"ok":1}'
+check http_chunked_keepalive tests/samples/pass/http/chunked_keepalive.bzy $'HelloWorld\n/two\ntrue\ntrue'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'

@@ -1,0 +1,25 @@
+void serve(Listener l)
+{
+	Socket c = l.accept();
+	HttpRequest a = Http.readRequest(c);   // Chunked body.
+	print(a.body);                          // HelloWorld.
+	Http.respond(c, 200, "1");
+	HttpRequest b = Http.readRequest(c);   // Second request, same connection.
+	print(b.path);                          // /two.
+	Http.respond(c, 200, "2");
+	c.close();
+}
+
+void main()
+{
+	Listener l = Network.listen(18085);
+	spawn serve(l);
+	Socket s = Network.connect("127.0.0.1", 18085);
+	s.writeText("POST /one HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n5\r\nWorld\r\n0\r\n\r\n");
+	string r1 = s.readText(1024);
+	s.writeText("GET /two HTTP/1.1\r\n\r\n");
+	string r2 = s.readText(1024);
+	print(r1.contains("200"));              // true.
+	print(r2.contains("200"));              // true.
+	s.close();
+}
