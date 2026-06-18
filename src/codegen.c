@@ -5576,6 +5576,65 @@ static void cg_json(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 }
 
+/* JsonValue accessors. Kind tests + type() never throw; the strict asX()
+   extractors set the shared error on a wrong kind, so a post-call bzy_json_check
+   throws JsonException (the str.toX number-check pattern). All current methods
+   are zero-arg on the receiver. */
+static void cg_json_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn =
+		strcmp(n,"isNull")==0   ? "bzy_json_is_null" :
+		strcmp(n,"isBool")==0   ? "bzy_json_is_bool" :
+		strcmp(n,"isNumber")==0 ? "bzy_json_is_number" :
+		strcmp(n,"isString")==0 ? "bzy_json_is_string" :
+		strcmp(n,"isArray")==0  ? "bzy_json_is_array" :
+		strcmp(n,"isObject")==0 ? "bzy_json_is_object" :
+		strcmp(n,"type")==0     ? "bzy_json_type_name" :
+		strcmp(n,"asString")==0 ? "bzy_json_as_string" :
+		strcmp(n,"asLong")==0   ? "bzy_json_as_long" :
+		strcmp(n,"asDouble")==0 ? "bzy_json_as_double" :
+		strcmp(n,"asBool")==0   ? "bzy_json_as_bool" :
+		NULL;
+	if (!fn)
+	{
+		fprintf(stderr,"Codegen: unknown JsonValue method '%s'\n", n);
+		exit(1);
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,NULL,0,0,
+					  ty_is_managed(e->type.kind), ty_is_float(e->type.kind), NULL, 0, 0);
+
+	int is_extract = strcmp(n,"asString")==0 || strcmp(n,"asLong")==0
+					 || strcmp(n,"asDouble")==0 || strcmp(n,"asBool")==0;
+	if (is_extract)
+	{
+		int fp = ty_is_float(e->type.kind);
+		if (fp)
+		{
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", cg->fp_save);
+		}
+		else
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		}
+
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_json_check");
+		if (fp)
+		{
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", cg->fp_save);
+		}
+		else
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
+}
+
 static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 4;   /* After "Log.". */
@@ -6988,6 +7047,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_XMLNODE)
 		{
 			cg_xml_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_JSONVALUE)
+		{
+			cg_json_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_MAPPEDFILE)
 		{
@@ -11404,6 +11467,17 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_xml_descendants");
 	cg_emit(cg,"extern bzy_json_parse");
 	cg_emit(cg,"extern bzy_json_check");
+	cg_emit(cg,"extern bzy_json_is_null");
+	cg_emit(cg,"extern bzy_json_is_bool");
+	cg_emit(cg,"extern bzy_json_is_number");
+	cg_emit(cg,"extern bzy_json_is_string");
+	cg_emit(cg,"extern bzy_json_is_array");
+	cg_emit(cg,"extern bzy_json_is_object");
+	cg_emit(cg,"extern bzy_json_type_name");
+	cg_emit(cg,"extern bzy_json_as_long");
+	cg_emit(cg,"extern bzy_json_as_double");
+	cg_emit(cg,"extern bzy_json_as_string");
+	cg_emit(cg,"extern bzy_json_as_bool");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");

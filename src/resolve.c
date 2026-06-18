@@ -2540,6 +2540,56 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_JSONVALUE)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"isNull")==0 || strcmp(e->name,"isBool")==0
+				|| strcmp(e->name,"isNumber")==0 || strcmp(e->name,"isString")==0
+				|| strcmp(e->name,"isArray")==0 || strcmp(e->name,"isObject")==0
+				|| strcmp(e->name,"asBool")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"JsonValue.",e->name);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"type")==0 || strcmp(e->name,"asString")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"JsonValue.",e->name);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"asLong")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"JsonValue.asLong() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"asDouble")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"JsonValue.asDouble() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_DOUBLE;
+			}
+			else
+			{
+				die(e->line,"Unknown JsonValue method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_FILECHANNEL)
 		{
 			resolve_args(st,e,tc);

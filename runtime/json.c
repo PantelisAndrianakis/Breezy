@@ -459,3 +459,74 @@ void bzy_json_check(int64_t pc, int64_t frame)
 	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
 	bzy_throw(exc, pc, frame);                  /* Never returns. */
 }
+
+/* Buffer a strict-extraction type-mismatch message for the next bzy_json_check
+   (shared with the parse path's error slot). */
+static void json_type_fail(const char *msg)
+{
+	if (!g_json_error)
+	{
+		g_json_error = msg;
+	}
+}
+
+/* ---- kind tests (never throw) ----------------------------------------------- */
+
+int64_t bzy_json_is_null(void *v)   { return JKIND(v) == JK_NULL; }
+int64_t bzy_json_is_bool(void *v)   { return JKIND(v) == JK_BOOL; }
+int64_t bzy_json_is_number(void *v) { int64_t k = JKIND(v); return k == JK_INT || k == JK_DBL; }
+int64_t bzy_json_is_string(void *v) { return JKIND(v) == JK_STR; }
+int64_t bzy_json_is_array(void *v)  { return JKIND(v) == JK_ARR; }
+int64_t bzy_json_is_object(void *v) { return JKIND(v) == JK_OBJ; }
+
+/* An owned (+1) string naming the kind. */
+void *bzy_json_type_name(void *v)
+{
+	const char *t;
+	switch (JKIND(v))
+	{
+		case JK_NULL: t = "null"; break;
+		case JK_BOOL: t = "bool"; break;
+		case JK_INT:  t = "number"; break;
+		case JK_DBL:  t = "number"; break;
+		case JK_STR:  t = "string"; break;
+		case JK_ARR:  t = "array"; break;
+		default:      t = "object"; break;
+	}
+
+	return bzy_str_new(t, (int64_t)strlen(t));
+}
+
+/* ---- scalar extraction (strict: a wrong kind sets the error for bzy_json_check) */
+
+int64_t bzy_json_as_long(void *v)
+{
+	int64_t k = JKIND(v);
+	if (k == JK_INT) { return JSCA(v); }
+	if (k == JK_DBL) { union { double d; int64_t i; } u; u.i = JSCA(v); return (int64_t)u.d; }
+	json_type_fail("asLong() on a non-number JSON value.");
+	return 0;
+}
+
+double bzy_json_as_double(void *v)
+{
+	int64_t k = JKIND(v);
+	if (k == JK_DBL) { union { double d; int64_t i; } u; u.i = JSCA(v); return u.d; }
+	if (k == JK_INT) { return (double)JSCA(v); }
+	json_type_fail("asDouble() on a non-number JSON value.");
+	return 0.0;
+}
+
+void *bzy_json_as_string(void *v)
+{
+	if (JKIND(v) == JK_STR) { void *s = JGET_MAN(v); bzy_retain(s); return s; }
+	json_type_fail("asString() on a non-string JSON value.");
+	return bzy_str_new("", 0);
+}
+
+int64_t bzy_json_as_bool(void *v)
+{
+	if (JKIND(v) == JK_BOOL) { return JSCA(v); }
+	json_type_fail("asBool() on a non-bool JSON value.");
+	return 0;
+}

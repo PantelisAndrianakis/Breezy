@@ -1,0 +1,12 @@
+void main()
+{
+	print(Json.parse("42").asLong());      // 42.
+	print(Json.parse("3.5").asDouble());   // 3.5.
+	print(Json.parse("\"hi\"").asString()); // hi.
+	print(Json.parse("true").asBool());    // true.
+	print(Json.parse("null").isNull());    // true.
+	print(Json.parse("42").isNumber());    // true.
+	print(Json.parse("42").type());        // number.
+	print(Json.parse("\"hi\"").type());    // string.
+	print(Json.parse("[1,2]").isArray());  // true.
+}
