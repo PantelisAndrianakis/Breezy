@@ -75,6 +75,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [Random](stdlib/random.md) | The fast `xoshiro256**` pseudo-random number generator. |
 | [Regex](stdlib/regex.md) | The linear-time, ReDoS-safe `Regex` engine. |
 | [XML](stdlib/xml.md) | `Xml.parse` - read XML into a node tree, traversed with collections + closures. |
+| [JSON](stdlib/json.md) | `Json.parse` / `Json.stringify` / `Json.of` - read + write JSON via a `JsonValue` tree. |
 | [File](stdlib/file.md) | The `File` namespace - filesystem work with `IOException`. |
 | [System](stdlib/system.md) | The `System` namespace - launching OS commands, reading arguments. |
 | [Desktop](stdlib/desktop.md) | The `Desktop` GUI - GTK-backed windows, controls, listeners (Windows + Linux KDE). |

@@ -4,7 +4,8 @@
 string into a tree of `XmlNode` values; you navigate that tree with the ordinary
 [collection combinators](../types/collections.md) and [closures](../types/functions.md),
 so there is no separate query language to learn. Reading is the whole story here —
-the reader does not write XML.
+the reader does not write XML. For the sibling reader/writer that also serializes,
+see [JSON](json.md).
 
 ← [Back to the guide](../guide.md)
 
@@ -122,4 +123,4 @@ object.
 
 ---
 
-← [Back to the guide](../guide.md) · [Generic collections](../types/collections.md) · [First-class functions](../types/functions.md)
+← [Back to the guide](../guide.md) · [JSON](json.md) · [Generic collections](../types/collections.md) · [First-class functions](../types/functions.md)
