@@ -1,0 +1,21 @@
+void serve(Listener l)
+{
+	Socket c = l.accept();
+	HttpRequest r = Http.readRequest(c);
+	print(r.method);                 // POST.
+	print(r.path);                   // /items.
+	print(r.header("Content-Type")); // application/json.
+	print(r.hasHeader("X-Missing")); // false.
+	print(r.body);                   // {"id":7}.
+	c.close();
+}
+
+void main()
+{
+	Listener l = Network.listen(18081);
+	spawn serve(l);
+	Socket s = Network.connect("127.0.0.1", 18081);
+	s.writeText("POST /items HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 8\r\n\r\n{\"id\":7}");
+	System.sleep(200);
+	s.close();
+}

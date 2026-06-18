@@ -351,6 +351,40 @@ void bzy_http_check(int64_t pc, int64_t frame)
 	bzy_throw(exc, pc, frame);                  /* Never returns. */
 }
 
+/* ---- shared message accessors (work on a request or a response node) -------- */
+
+/* The header value for `name` (owned +1), or an owned empty string if absent (CI). */
+void *bzy_http_header(void *node, void *name)
+{
+	int64_t i = hdr_index(node, name);
+	if (i < 0) { return bzy_str_new("", 0); }
+	void *v = hdr_val_at(node, i);
+	bzy_retain(v);
+	return v;
+}
+
+int64_t bzy_http_has_header(void *node, void *name)
+{
+	return hdr_index(node, name) >= 0;
+}
+
+/* An owned (+1) List<string> of the header names, in received order. */
+void *bzy_http_header_names(void *node)
+{
+	void *list = bzy_vec_new(3);   /* String elements. */
+	void *names = HGET(node, H_HNAMES);
+	int64_t n = names ? *(int64_t*)((char*)names + 24) : 0;
+	void **slots = names ? (void**)((char*)names + 32) : NULL;
+	for (int64_t i = 0; i < n; i++) { bzy_vec_push_back(list, (int64_t)slots[i]); }
+	return list;
+}
+
+/* An owned (+1) byte[] copy of the body. */
+void *bzy_http_body_bytes(void *node)
+{
+	return bzy_str_to_bytes(HGET(node, H_BODY));
+}
+
 /* Touch resp_new so the response vtable path is not flagged unused before Task 7. */
 void *bzy_http_new_response_stub(void)
 {

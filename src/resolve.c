@@ -1942,6 +1942,16 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_HTTPREQUEST)
+		{
+			if (strcmp(e->name,"method")==0)       { e->type.kind=TY_STRING; e->anno_int=24; }
+			else if (strcmp(e->name,"path")==0)    { e->type.kind=TY_STRING; e->anno_int=32; }
+			else if (strcmp(e->name,"body")==0)    { e->type.kind=TY_STRING; e->anno_int=56; }
+			else if (strcmp(e->name,"version")==0) { e->type.kind=TY_STRING; e->anno_int=64; }
+			else { die(e->line,"Unknown HttpRequest field: ",e->name); }
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c)
 		{
@@ -2717,6 +2727,62 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown JsonValue method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_HTTPREQUEST)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"header")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpRequest.header(name) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"hasHeader")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpRequest.hasHeader(name) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_BOOL;
+			}
+			else if (strcmp(e->name,"headerNames")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"HttpRequest.headerNames() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_STRING;
+				e->type.kind=TY_GENERIC;
+				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
+				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"bodyBytes")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"HttpRequest.bodyBytes() takes no arguments.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_BYTE;
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);
+			}
+			else
+			{
+				die(e->line,"Unknown HttpRequest method: ",e->name);
 			}
 
 			break;

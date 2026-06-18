@@ -161,6 +161,7 @@ check json_arrays tests/samples/pass/json/arrays.bzy $'3\n20\n60'
 check json_build tests/samples/pass/json/build.bzy $'42\nhi\ntrue\ntrue\n2\n1'
 check json_stringify tests/samples/pass/json/stringify.bzy $'Ada\n36\n2\n36\n"x\\"y"'
 check json_errors tests/samples/pass/json/errors.bzy $'2'
+check http_request tests/samples/pass/http/request.bzy $'POST\n/items\napplication/json\nfalse\n{"id":7}'
 # Closures emit fully inline (object + per-lambda typeinfo in codegen data) -- no
 # optional runtime translation unit, so nothing to add to the nobloat forbidden list.
 check closures_cycle tests/samples/pass/closures/cycle.bzy $'0'

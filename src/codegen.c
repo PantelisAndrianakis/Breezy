@@ -5723,6 +5723,33 @@ static void cg_http(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 }
 
+/* HttpRequest/HttpResponse accessor methods (header/hasHeader/headerNames/
+   bodyBytes; the builder setHeader/setBody/send arrive in Tasks 5-7). None throw. */
+static void cg_http_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn =
+		strcmp(n,"header")==0      ? "bzy_http_header" :
+		strcmp(n,"hasHeader")==0   ? "bzy_http_has_header" :
+		strcmp(n,"headerNames")==0 ? "bzy_http_header_names" :
+		strcmp(n,"bodyBytes")==0   ? "bzy_http_body_bytes" :
+		NULL;
+	if (!fn)
+	{
+		fprintf(stderr,"Codegen: unknown HTTP method '%s'\n", n);
+		exit(1);
+	}
+
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
+}
+
 static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 4;   /* After "Log.". */
@@ -7147,6 +7174,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_JSONVALUE)
 		{
 			cg_json_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_HTTPREQUEST || e->lhs->type.kind==TY_HTTPRESPONSE)
+		{
+			cg_http_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_MAPPEDFILE)
 		{
@@ -11594,6 +11625,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_stringify");
 	cg_emit(cg,"extern bzy_http_read_request");
 	cg_emit(cg,"extern bzy_http_check");
+	cg_emit(cg,"extern bzy_http_header");
+	cg_emit(cg,"extern bzy_http_has_header");
+	cg_emit(cg,"extern bzy_http_header_names");
+	cg_emit(cg,"extern bzy_http_body_bytes");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
