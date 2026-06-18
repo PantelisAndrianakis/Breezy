@@ -41,6 +41,8 @@ void handle(Socket c)
 
 `Network.listen(port)` returns a `Listener`; `accept()` yields a `Socket` per client. Pair this with one [breeze](../concurrency/breezes.md) per connection and the [zone model](../concurrency/zone-model.md) for a service that scales across cores.
 
+> **Speaking HTTP?** Wrap the same `Socket` with the [`Http`](../stdlib/http.md) codec - `Http.readRequest(c)` / `Http.respond(c, status, body)` on the server, `Http.request(...).send(s)` / `Http.readResponse(s)` on the client - to parse and build HTTP/1.1 messages over this transport.
+
 ---
 
 ## IPv6 and dual-stack - automatic
