@@ -472,6 +472,22 @@ void *bzy_sched_current(void)      /* Opaque handle to the running breeze (for w
 	return t_running;
 }
 
+/* True if the current worker already has other runnable breezes on its own
+   deque. A spin-before-park caller (socket recv) consults this: when ready work
+   exists - e.g. a peer handler that must run to produce our reply - hogging the
+   core with a spin starves it, so the caller should park immediately and yield.
+   A racy read of top/bottom is fine; this is a scheduling hint, not a barrier. */
+int bzy_sched_local_runnable(void)
+{
+	if (!t_is_worker)
+	{
+		return 0;
+	}
+
+	Deque *d = &g_workers[t_wid].dq;
+	return (d->bottom - d->top) > 0;
+}
+
 /* Abort if called from within a foreign callback: parking/throwing there would
    corrupt the live C stack frame the callback runs inside. Fail loud, not silent. */
 static void bzy_callback_guard(const char *op)

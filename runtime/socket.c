@@ -4,6 +4,38 @@
 #include <string.h>
 #include <stdio.h>       /* snprintf. */
 
+/* Spin-before-park for the request/response read path. On loopback (and any
+   low-latency peer) a co-located breeze typically replies within microseconds,
+   so a blocking recv that parks on the first EAGAIN pays a full reactor round-
+   trip - register + coroutine park + reactor wake + re-dispatch, two context
+   switches - for a response that was about to arrive. Probing the non-blocking
+   socket a bounded number of times first keeps the common case entirely in
+   userspace. Only the infinite-blocking read (timeout_ms < 0, the ping-pong
+   pattern) spins; a timed read keeps its exact budget. Tunable via
+   BZY_RECV_SPIN (probe count; 0 disables) for A/B benching. */
+#define BZY_RECV_SPIN_DEFAULT 24
+#define BZY_RECV_SPIN_PAUSES  24
+
+static inline void bzy_sock_pause(void)
+{
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+	__builtin_ia32_pause();
+#endif
+}
+
+static int recv_spin_probes(void)
+{
+	static int cached = -1;
+	if (cached < 0)
+	{
+		const char *e = getenv("BZY_RECV_SPIN");
+		cached = e ? atoi(e) : BZY_RECV_SPIN_DEFAULT;
+		if (cached < 0) { cached = 0; }
+	}
+
+	return cached;
+}
+
 #ifdef _WIN32
 #include <mswsock.h>     /* AcceptEx / ConnectEx / GetAcceptExSockaddrs. */
 
@@ -317,6 +349,23 @@ void *bzy_socket_connect(void *host, int64_t port)
 /* One WSARecv into buf. timeout_ms<0 = infinite. Returns bytes (0=EOF), -1 err, -2 timeout. */
 static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 {
+	/* Spin-before-park: probe the non-blocking (FIONBIO) socket a bounded number
+	   of times before the WSARecv + IOCP park, so a loopback reply that lands
+	   within microseconds is taken without the async round-trip. Infinite-blocking
+	   read only; a timed read keeps its exact budget. */
+	if (timeout_ms < 0)
+	{
+		int spin = recv_spin_probes();
+		for (int i = 0; i < spin && !bzy_sched_local_runnable(); i++)
+		{
+			int pn = recv(SK_FD(s), buf, max, 0);
+			if (pn > 0) { return pn; }
+			if (pn == 0) { return 0; }
+			if (WSAGetLastError() != WSAEWOULDBLOCK) { return -1; }
+			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++) { bzy_sock_pause(); }
+		}
+	}
+
 	WSABUF wb;
 	wb.buf = buf;
 	wb.len = (ULONG)max;
@@ -776,6 +825,7 @@ void *bzy_socket_connect(void *host, int64_t port)
 static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 {
 	PollDesc *pd = SK_POLL(s);
+	int spin = (timeout_ms < 0) ? recv_spin_probes() : 0;   /* Spin only the infinite-blocking ping-pong read. */
 	for (;;)
 	{
 		bzy_poll_reset(pd, BZY_POLL_READ);            /* Clear stale readiness first. */
@@ -793,6 +843,20 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 		if (errno != EAGAIN && errno != EWOULDBLOCK)
 		{
 			return -1;
+		}
+
+		if (spin > 0 && !bzy_sched_local_runnable())
+		{
+			/* Re-probe a few times before parking: a loopback reply usually lands
+			   within this window, saving the reactor park + rewake round-trip. The
+			   reset+recv at the loop top is the readiness re-check, so bzy_poll_arm
+			   still catches an edge that arrives during the spin - no lost wakeup.
+			   Gated on an empty local deque: if this worker has other ready breezes
+			   (e.g. the peer handler whose CPU work produces our reply), spinning
+			   would starve them, so park immediately and let them run. */
+			spin--;
+			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++) { bzy_sock_pause(); }
+			continue;
 		}
 
 		int r = bzy_poll_wait(pd, (int)SK_FD(s), BZY_POLL_READ, timeout_ms);

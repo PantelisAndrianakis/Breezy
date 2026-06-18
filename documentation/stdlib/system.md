@@ -169,6 +169,7 @@ int cores = System.cpuCount();     // Build masks portably.
 - **`System.rawMode(on)` / `System.mouseMode(on)` auto-restore** the terminal at exit and on Ctrl+C, are idempotent, and are no-ops on a non-terminal stdin.
 - **`System.pollKey()` / `System.pollMouse()` never block** - each returns its next event or `-1`; they share one input stream, so drain both each tick until both return `-1`.
 - **`System.affinity(mask)` pins the worker thread, not the breeze** - returns `false` on failure and is a no-op for an empty mask; pair with a dedicated worker for deterministic pinning.
+- **`BZY_RECV_SPIN` tunes the socket-read spin-before-park** - a blocking read probes the socket this many times (default 24) before parking on the reactor, so a loopback reply that lands within microseconds is taken without a context switch. The spin is skipped automatically when the worker has other ready breezes (so it never starves a peer handler). Set `BZY_RECV_SPIN=0` to disable. Helps tight request/response loops with a cheap-to-produce reply; a reply that needs heavy CPU on the peer falls through to a normal park.
 - **Cross-platform:** Windows launches via `cmd /c` (`CreateProcess`), Linux via `/bin/sh -c` (`fork`/`exec`). The same code runs on both. No output capture, stdin, or timeout yet.
 
 ---
