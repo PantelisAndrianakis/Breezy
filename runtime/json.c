@@ -625,3 +625,55 @@ int64_t bzy_json_size(void *v)
 	if (k == JK_OBJ) { void *m = JGET_MAN(v); return m ? bzy_map_len(m) : 0; }
 	return 0;
 }
+
+/* ---- Json.of lifters (each returns an owned +1 JsonValue) -------------------- */
+
+void *bzy_json_of_long(int64_t n)
+{
+	void *v = jv_new(JK_INT);
+	JSCA(v) = n;
+	return v;
+}
+
+void *bzy_json_of_double(double d)
+{
+	void *v = jv_new(JK_DBL);
+	jv_set_double(v, d);
+	return v;
+}
+
+void *bzy_json_of_string(void *s)
+{
+	void *v = jv_new(JK_STR);
+	bzy_retain(s);
+	JSET_MAN(v, s);
+	return v;
+}
+
+void *bzy_json_of_bool(int64_t b)
+{
+	void *v = jv_new(JK_BOOL);
+	JSCA(v) = b ? 1 : 0;
+	return v;
+}
+
+void *bzy_json_null(void)
+{
+	return json_null_retained();
+}
+
+void *bzy_json_of_array(void *list)
+{
+	void *v = jv_new(JK_ARR);
+	bzy_retain(list);
+	JSET_MAN(v, list);
+	return v;
+}
+
+void *bzy_json_of_object(void *map)
+{
+	void *v = jv_new(JK_OBJ);
+	bzy_retain(map);
+	JSET_MAN(v, map);
+	return v;
+}

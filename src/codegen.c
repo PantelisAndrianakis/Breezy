@@ -5544,6 +5544,29 @@ static void cg_xml(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_json(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 5;   /* After "Json.". */
+
+	if (strcmp(m,"ofNull")==0)                   /* Zero-arg; owned null JsonValue. */
+	{
+		cg_aligned_call(cg,"bzy_json_null");
+		return;
+	}
+
+	if (strcmp(m,"of")==0)                        /* Lift one Breezy value (overload on arg type). */
+	{
+		TypeKind ak = e->args[0]->type.kind;
+		const char *fn = ty_is_int(ak)                  ? "bzy_json_of_long" :
+						 (ak==TY_DOUBLE || ak==TY_FLOAT) ? "bzy_json_of_double" :
+						 ak==TY_STRING                   ? "bzy_json_of_string" :
+						 ak==TY_BOOL                     ? "bzy_json_of_bool" :
+						 ak==TY_GENERIC                  ? "bzy_json_of_array" :
+						 "bzy_json_of_object";          /* TY_MAP. */
+		TypeRef ps[1];
+		memset(&ps[0],0,sizeof(ps[0]));
+		ps[0].kind = ty_is_int(ak) ? TY_LONG : (ak==TY_FLOAT ? TY_DOUBLE : ak);
+		cg_call_with_args(cg,tt,fn,NULL,e->args,1,0,1,0,ps,1,0);   /* Owned JsonValue -> rax. */
+		return;
+	}
+
 	if (strcmp(m,"parse")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown Json method '%s'\n", m);
@@ -11504,6 +11527,13 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_items");
 	cg_emit(cg,"extern bzy_json_at");
 	cg_emit(cg,"extern bzy_json_size");
+	cg_emit(cg,"extern bzy_json_of_long");
+	cg_emit(cg,"extern bzy_json_of_double");
+	cg_emit(cg,"extern bzy_json_of_string");
+	cg_emit(cg,"extern bzy_json_of_bool");
+	cg_emit(cg,"extern bzy_json_null");
+	cg_emit(cg,"extern bzy_json_of_array");
+	cg_emit(cg,"extern bzy_json_of_object");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");

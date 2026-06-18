@@ -833,6 +833,38 @@ static void resolve_json(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"ofNull")==0)
+	{
+		if (e->arg_count!=0)
+		{
+			die(e->line,"Json.ofNull() takes no arguments.",NULL);
+		}
+
+		e->type.kind = TY_JSONVALUE;
+		return;
+	}
+
+	if (strcmp(m,"of")==0)
+	{
+		if (e->arg_count!=1)
+		{
+			die(e->line,"Json.of(value) takes one argument.",NULL);
+		}
+
+		TypeKind ak = e->args[0]->type.kind;
+		int ok = ty_is_int(ak) || ak==TY_DOUBLE || ak==TY_FLOAT || ak==TY_STRING || ak==TY_BOOL
+				 || (ak==TY_GENERIC && strcmp(e->args[0]->type.class_name,"List")==0
+					 && e->args[0]->type.elem && e->args[0]->type.elem->kind==TY_JSONVALUE)
+				 || ak==TY_MAP;
+		if (!ok)
+		{
+			die(e->line,"Json.of accepts a number, string, bool, List<JsonValue>, or map<string,JsonValue>.",NULL);
+		}
+
+		e->type.kind = TY_JSONVALUE;
+		return;
+	}
+
 	die(e->line,"Unknown Json method: ",m);
 }
 

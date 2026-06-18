@@ -1,0 +1,18 @@
+void main()
+{
+	JsonValue a = Json.of(42);
+	JsonValue b = Json.of("hi");
+	JsonValue c = Json.of(true);
+	JsonValue n = Json.ofNull();
+	print(a.asLong());    // 42.
+	print(b.asString());  // hi.
+	print(c.asBool());    // true.
+	print(n.isNull());    // true.
+
+	List<JsonValue> arr = new List<JsonValue>();
+	arr.add(Json.of(1));
+	arr.add(Json.of(2));
+	JsonValue ja = Json.of(arr);
+	print(ja.size);       // 2.
+	print(ja.at(0).asLong());  // 1.
+}
