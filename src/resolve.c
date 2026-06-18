@@ -916,6 +916,17 @@ static void resolve_http(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"request")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || e->args[1]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Http.request(method, path) takes two strings.",NULL);
+		}
+
+		e->type.kind = TY_HTTPREQUEST;
+		return;
+	}
+
 	die(e->line,"Unknown Http method: ",m);
 }
 
@@ -2802,6 +2813,33 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				el.kind=TY_BYTE;
 				e->type.kind=TY_ARRAY;
 				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"setHeader")==0)
+			{
+				if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || e->args[1]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpRequest.setHeader(name, value) takes two strings.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"setBody")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"HttpRequest.setBody(body) takes one string.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"send")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_SOCKET)
+				{
+					die(e->line,"HttpRequest.send(socket) takes one Socket.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
 			}
 			else
 			{

@@ -1,0 +1,24 @@
+void serve(Listener l)
+{
+	Socket c = l.accept();
+	HttpRequest r = Http.readRequest(c);
+	print(r.method);          // PUT.
+	print(r.path);            // /v/9.
+	print(r.header("X-Tag")); // abc.
+	print(r.body);            // hello.
+	Http.respond(c, 204, "");
+	c.close();
+}
+
+void main()
+{
+	Listener l = Network.listen(18083);
+	spawn serve(l);
+	Socket s = Network.connect("127.0.0.1", 18083);
+	HttpRequest q = Http.request("PUT", "/v/9");
+	q.setHeader("X-Tag", "abc");
+	q.setBody("hello");
+	q.send(s);
+	System.sleep(200);
+	s.close();
+}

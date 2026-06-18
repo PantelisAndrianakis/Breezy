@@ -5712,6 +5712,15 @@ static void cg_http(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"request")==0)                   /* (method, path) -> HttpRequest. */
+	{
+		TypeRef ps[2];
+		ps[0]=e->args[0]->type;
+		ps[1]=e->args[1]->type;
+		cg_call_with_args(cg,tt,"bzy_http_request",NULL,e->args,2,0,1,0,ps,2,0);
+		return;
+	}
+
 	if (strcmp(m,"readRequest")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown Http method '%s'\n", m);
@@ -5764,7 +5773,7 @@ static void cg_http_method(Codegen *cg, TypeTable *tt, Expr *e)
 		exit(1);
 	}
 
-	TypeRef ps[1];
+	TypeRef ps[2];
 	for (int i=0; i<e->arg_count; i++)
 	{
 		ps[i]=e->args[i]->type;
@@ -11655,6 +11664,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_http_body_bytes");
 	cg_emit(cg,"extern bzy_http_respond");
 	cg_emit(cg,"extern bzy_http_response");
+	cg_emit(cg,"extern bzy_http_request");
 	cg_emit(cg,"extern bzy_http_set_header");
 	cg_emit(cg,"extern bzy_http_set_body");
 	cg_emit(cg,"extern bzy_http_send_response");

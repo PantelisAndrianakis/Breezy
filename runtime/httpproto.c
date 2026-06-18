@@ -521,8 +521,8 @@ static void emit_body(TextBuf *t, void *node)
 }
 
 /* Serialize a response (status line + headers + Content-Length + body) and write
-   it with one socket send. */
-int64_t bzy_http_send_response(void *sock, void *node)
+   it with one socket send. The node is the method receiver (arg 0). */
+int64_t bzy_http_send_response(void *node, void *sock)
 {
 	TextBuf t = { 0 };
 	char line[64];
@@ -537,8 +537,9 @@ int64_t bzy_http_send_response(void *sock, void *node)
 	return rc;
 }
 
-/* Serialize a request (request line + headers + Content-Length + body), one send. */
-int64_t bzy_http_send_request(void *sock, void *node)
+/* Serialize a request (request line + headers + Content-Length + body), one send.
+   The node is the method receiver (arg 0). */
+int64_t bzy_http_send_request(void *node, void *sock)
 {
 	TextBuf t = { 0 };
 	tb_str(&t, HGET(node, H_METHOD));
@@ -562,6 +563,6 @@ void bzy_http_respond(void *sock, int64_t status, void *body)
 	bzy_release(ct);
 	bzy_release(tp);
 	bzy_http_set_body(n, body);
-	bzy_http_send_response(sock, n);
+	bzy_http_send_response(n, sock);
 	bzy_release(n);
 }
