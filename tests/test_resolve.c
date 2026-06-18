@@ -420,6 +420,18 @@ static void test_jsonvalue_type(void)
 	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_JSONVALUE);
 }
 
+static void test_httprequest_type(void)
+{
+	Func *f = build1("void main() { HttpRequest r; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_HTTPREQUEST);
+}
+
+static void test_httpresponse_type(void)
+{
+	Func *f = build1("void main() { HttpResponse r; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_HTTPRESPONSE);
+}
+
 static void test_concat_is_string(void)
 {
 	Func *f = build1("void main() { string s; s = \"a\" + \"b\"; }")->funcs[0];
@@ -912,6 +924,8 @@ int main(void)
 	RUN(test_string_literal_type);
 	RUN(test_xmlnode_type);
 	RUN(test_jsonvalue_type);
+	RUN(test_httprequest_type);
+	RUN(test_httpresponse_type);
 	RUN(test_concat_is_string);
 	RUN(test_length_is_int);
 	RUN(test_newarray_type);

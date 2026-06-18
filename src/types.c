@@ -133,6 +133,19 @@ void types_register_builtins(TypeTable *tt)
 	je->object_size = 32;
 	je->vtable_size = 0;
 	je->method_count = 0;
+
+	ClassInfo *he = tt_add_class(tt);
+	memset(he, 0, sizeof(*he));
+	he->fields = grow_reserve(he->fields, 1, &he->fields_cap, sizeof(FieldInfo));
+	strcpy(he->name, "HttpException");
+	he->parent = c;                      /* Subclass of Exception. */
+	strcpy(he->fields[0].name, "message");
+	he->fields[0].type.kind = TY_STRING;
+	he->fields[0].offset = 24;
+	he->field_count = 1;
+	he->object_size = 32;
+	he->vtable_size = 0;
+	he->method_count = 0;
 }
 
 ClassInfo *types_find_class(TypeTable *tt, const char *name)
