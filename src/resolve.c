@@ -1468,6 +1468,28 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_INDEX:
 		resolve_expr(st,e->lhs,tc);
 		resolve_expr(st,e->rhs,tc);
+		if (e->lhs->type.kind==TY_GENERIC && strcmp(e->lhs->type.class_name,"List")==0)
+		{
+			/* List subscript read: rewrite `list[i]` into `list.get(i)` so it reuses
+			   the existing (ring-aware, bounds-checked, managed-safe) get lowering.
+			   A `list[i] = v` target is rewritten to set() one level up, in ST_ASSIGN,
+			   before this rvalue path is ever reached. */
+			if (!ty_is_int(e->rhs->type.kind))
+			{
+				die(e->line,"List index must be an integer.",NULL);
+			}
+
+			Expr *idx = e->rhs;
+			e->kind = EX_METHOD_CALL;
+			snprintf(e->name, sizeof e->name, "get");
+			e->rhs = NULL;
+			e->args = NULL;
+			e->arg_count = 0;
+			expr_add_arg(e, idx);
+			resolve_expr(st, e, tc);   /* Resolve as the method call (sets e->type = elem). */
+			break;
+		}
+
 		if (e->lhs->type.kind!=TY_ARRAY)
 		{
 			die(e->line,"Indexing a non-array.",NULL);
@@ -4399,6 +4421,27 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (s->target->kind==EX_FIELD && s->target->lhs->kind==EX_IDENT && enum_is(s->target->lhs->name))
 		{
 			die(s->line,"Enum constants are immutable.",NULL);
+		}
+
+		if (s->target->kind==EX_INDEX)
+		{
+			/* A List subscript store `list[i] = v` becomes `list.set(i, v)`. Resolve
+			   the receiver to learn its type; only List rewrites (arrays keep the
+			   native indexed store). The receiver is a plain lvalue base, so the
+			   re-resolve on the array fall-through is idempotent. */
+			resolve_expr(st,s->target->lhs,tc);
+			if (s->target->lhs->type.kind==TY_GENERIC && strcmp(s->target->lhs->type.class_name,"List")==0)
+			{
+				Expr *call = expr_new(EX_METHOD_CALL, s->line);
+				call->lhs = s->target->lhs;
+				snprintf(call->name, sizeof call->name, "set");
+				expr_add_arg(call, s->target->rhs);   /* index. */
+				expr_add_arg(call, s->value);          /* value (type-checked by set's resolve). */
+				s->kind = ST_EXPR;
+				s->expr = call;
+				resolve_expr(st, s->expr, tc);
+				break;
+			}
 		}
 
 		resolve_expr(st,s->target,tc);

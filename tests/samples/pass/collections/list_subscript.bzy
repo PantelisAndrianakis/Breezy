@@ -1,0 +1,21 @@
+// List subscript: `list[i]` reads and `list[i] = v` writes lower to the same
+// ring-aware, bounds-checked get/set the named methods use. addFirst rotates the
+// ring head, so the later subscripts only stay correct if `[i]` respects the head
+// offset (phys = (head + i) & (cap - 1)), not a flat index.
+void main()
+{
+	List<int> l;
+	l = new List<int>();
+	l.add(10);
+	l.add(20);
+	l.add(30);
+	l[1] = 99;               // write through the subscript.
+	print(l[0]);             // 10
+	print(l[1]);             // 99
+	print(l[0] + l[2]);      // 40 (two reads in one expression)
+	l.addFirst(7);           // head moves; logical order is now 7,10,99,30.
+	print(l[0]);             // 7  (subscript follows the ring head)
+	l[0] = 5;
+	print(l[0]);             // 5
+	print(l[3]);             // 30
+}

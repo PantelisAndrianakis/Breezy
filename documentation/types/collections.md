@@ -34,6 +34,9 @@ nums.add(30);
 print(nums.size);          // 3.
 print(nums.contains(20));  // true.
 
+nums[1] = 99;              // Subscript write: same as nums.set(1, 99).
+print(nums[1]);            // 99. Subscript read: same as nums.get(1).
+
 int sum = 0;
 foreach (int n in nums)
 {

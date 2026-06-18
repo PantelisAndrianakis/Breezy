@@ -189,6 +189,7 @@ check list_int    tests/samples/pass/collections/list_int.bzy     $'3\n99\n2\nfa
 check list_get_front tests/samples/pass/collections/list_get_front.bzy $'1\n10\n20'
 check_abort list_get_oob tests/samples/fail/collections/list_get_oob.bzy
 check list_set_front tests/samples/pass/collections/list_set_front.bzy $'100\n5\n400'
+check list_subscript tests/samples/pass/collections/list_subscript.bzy $'10\n99\n40\n7\n5\n30'
 check_abort list_set_oob tests/samples/fail/collections/list_set_oob.bzy
 check stack_queue tests/samples/pass/collections/stack_queue.bzy  $'2\n2\n1\n7\n7\n8'
 check deque       tests/samples/pass/collections/deque.bzy        $'1\n3\n1\n3\n1'
