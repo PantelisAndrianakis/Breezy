@@ -245,6 +245,7 @@ static void cg_store_local_fp(Codegen *cg, int off, TypeKind k)
 static void cg_load_scalar_into(Codegen *cg, TypeKind k, const char *mem, const char *r64, const char *r32);
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static void cg_extend_reg(Codegen *cg, TypeKind k);
+static int cg_hoist_expr_ok(Expr *e);
 
 /* In-place arithmetic op support: the two-operand register ops we lower directly
    onto a promoted target register. Shifts (<<,>>) and div/mod are excluded. */
@@ -3880,6 +3881,64 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov rcx, [rbp - %d]", s_len);
 			cg_emit(cg,"    mov [rax + 24], rcx");      /* length = source length. */
 		}
+	}
+
+	/* Optimized value-map fill. The generic loop below reloads the source/result
+	   structs and keeps the index in memory every iteration, because the inlined
+	   body may clobber any scratch register. When the body is call-free
+	   (cg_hoist_expr_ok), it preserves r8-r11, so the source and result data
+	   pointers stay hoisted and the index lives in r10 across the whole loop - the
+	   same loop quality a desugared foreach gets. A head==0 fast path drops the
+	   ring arithmetic (the plain-List case); the rare ring source keeps it. Only
+	   for a value source AND value result (rax-carried), un-nested in an outer
+	   hoist (r8-r11 free). */
+	if (do_inline && map_direct && cg->hoist_n == 0 && ibody
+		&& !ty_is_float(et)
+		&& e->type.elem && !ty_is_float(e->type.elem->kind) && !ty_is_managed(e->type.elem->kind)
+		&& cg_hoist_expr_ok(ibody))
+	{
+		int floop = cg_label(cg), rloop = cg_label(cg), fend = cg_label(cg);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s_coll);
+		cg_emit(cg,"    mov r8, [rdx + 48]");           /* source data ptr (hoisted). */
+		cg_emit(cg,"    mov rcx, [rdx + 40]");           /* head. */
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s_res);
+		cg_emit(cg,"    mov r9, [rdx + 48]");           /* result data ptr (head 0, hoisted). */
+		cg_emit(cg,"    xor r10, r10");                  /* index = 0 (hoisted). */
+		cg_emit(cg,"    test rcx, rcx");
+		cg_emit(cg,"    jnz .L%d", rloop);
+
+		/* head == 0: phys == index, flat source and result. */
+		cg_emit(cg,".L%d:", floop);
+		cg_emit(cg,"    cmp r10, [rbp - %d]", s_len);
+		cg_emit(cg,"    jge .L%d", fend);
+		cg_emit(cg,"    mov rax, [r8 + r10*8 + 32]");
+		cg_emit(cg,"    mov [rbp - %d], rax", s_elem);
+		cg_expr(cg, tt, ibody);                          /* result -> rax; r8/r9/r10 preserved. */
+		cg_emit(cg,"    mov [r9 + r10*8 + 32], rax");
+		cg_emit(cg,"    inc r10");
+		cg_emit(cg,"    jmp .L%d", floop);
+
+		/* head != 0: ring source phys = (head + i) & (cap - 1); result stays flat. */
+		cg_emit(cg,".L%d:", rloop);
+		cg_emit(cg,"    cmp r10, [rbp - %d]", s_len);
+		cg_emit(cg,"    jge .L%d", fend);
+		cg_emit(cg,"    mov rdx, [rbp - %d]", s_coll);
+		cg_emit(cg,"    mov rcx, r10");
+		cg_emit(cg,"    add rcx, [rdx + 40]");           /* + head. */
+		cg_emit(cg,"    mov rax, [rdx + 32]");           /* cap. */
+		cg_emit(cg,"    dec rax");
+		cg_emit(cg,"    and rcx, rax");                  /* phys. */
+		cg_emit(cg,"    mov rax, [r8 + rcx*8 + 32]");
+		cg_emit(cg,"    mov [rbp - %d], rax", s_elem);
+		cg_expr(cg, tt, ibody);
+		cg_emit(cg,"    mov [r9 + r10*8 + 32], rax");
+		cg_emit(cg,"    inc r10");
+		cg_emit(cg,"    jmp .L%d", rloop);
+
+		cg_emit(cg,".L%d:", fend);
+		cg_emit(cg,"    mov rax, [rbp - %d]", s_res);    /* Result list (builds). */
+		cg_scratch_free(cg, 64);
+		return;
 	}
 
 	cg_emit(cg,"    mov qword [rbp - %d], 0", s_idx);
