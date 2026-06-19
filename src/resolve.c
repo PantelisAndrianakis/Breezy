@@ -216,7 +216,7 @@ static void resolve_math(Expr *e)
 
 	if (strcmp(m,"sqrt")==0 || strcmp(m,"floor")==0 || strcmp(m,"ceil")==0
 			|| strcmp(m,"round")==0 || strcmp(m,"toRadians")==0
-			|| strcmp(m,"cos")==0 || strcmp(m,"tan")==0 || strcmp(m,"exp")==0)
+			|| strcmp(m,"sin")==0 || strcmp(m,"cos")==0 || strcmp(m,"tan")==0 || strcmp(m,"exp")==0)
 	{
 		if (e->arg_count!=1)
 		{

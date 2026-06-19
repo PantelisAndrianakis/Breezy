@@ -5210,7 +5210,7 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	if (strcmp(m,"cos")==0 || strcmp(m,"tan")==0 || strcmp(m,"exp")==0)
+	if (strcmp(m,"sin")==0 || strcmp(m,"cos")==0 || strcmp(m,"tan")==0 || strcmp(m,"exp")==0)
 	{
 		cg_to_double(cg,tt,e->args[0]);
 		cg_aligned_call(cg,m);              /* Arg already in xmm0; result in xmm0. */
@@ -11672,6 +11672,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_btree_keys");
 	cg_emit(cg,"extern bzy_btree_values");
 	cg_emit(cg,"extern bzy_btree_entries");
+	cg_emit(cg,"extern sin");
 	cg_emit(cg,"extern cos");
 	cg_emit(cg,"extern tan");
 	cg_emit(cg,"extern exp");

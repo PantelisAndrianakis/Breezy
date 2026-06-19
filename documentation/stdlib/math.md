@@ -29,7 +29,7 @@ print(Math.pow(2.0, 10.0));           // 1024.
 
 **Via libm (transcendental):**
 
-`cos`, `tan`, `exp`, `pow`.
+`sin`, `cos`, `tan`, `exp`, `pow`.
 
 `min`, `max`, `clamp`, and `abs` operate on integers as well as floating point - the integer forms stay on the integer unit and never touch floating point, so `Math.max(3, 7)` is exact integer work.
 
@@ -40,7 +40,7 @@ print(Math.pow(2.0, 10.0));           // 1024.
 - **`Math` is static** - call `Math.fn(...)`, never construct it.
 - **Integer `min`/`max`/`clamp`/`abs` stay integer** - no float conversion.
 - **Pass floating-point arguments to the float functions** (`Math.sqrt(16.0)`, not `Math.sqrt(16)`).
-- **Use `toRadians` to convert degrees** before `cos`/`tan`, which expect radians.
+- **Use `toRadians` to convert degrees** before `sin`/`cos`/`tan`, which expect radians.
 
 ---
 
