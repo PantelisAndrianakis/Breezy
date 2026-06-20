@@ -239,9 +239,9 @@ static void scan_expr(Expr *e, int depth, Ctx *c)
 		bump(e->anno_int, depth, c);
 	}
 
-	/* A double or packed f64x2 local read is a candidate for XMM (xmm2..5)
-	   promotion: both live in a full caller-saved xmm over a call-free interval. */
-	if (e->kind == EX_IDENT && (e->type.kind == TY_DOUBLE || e->type.kind == TY_F64X2) && e->anno_int > 0)
+	/* A double or any packed SIMD local read is a candidate for XMM (xmm2..5)
+	   promotion: all live in a full caller-saved xmm over a call-free interval. */
+	if (e->kind == EX_IDENT && (e->type.kind == TY_DOUBLE || ty_is_simd(e->type.kind)) && e->anno_int > 0)
 	{
 		fbump(e->anno_int, depth, c);
 	}
@@ -318,7 +318,7 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 		bump(s->decl_offset, depth, c);
 	}
 
-	if (s->kind == ST_VARDECL && (s->decl_type.kind == TY_DOUBLE || s->decl_type.kind == TY_F64X2) && s->decl_offset > 0)
+	if (s->kind == ST_VARDECL && (s->decl_type.kind == TY_DOUBLE || ty_is_simd(s->decl_type.kind)) && s->decl_offset > 0)
 	{
 		fbump(s->decl_offset, depth, c);
 	}

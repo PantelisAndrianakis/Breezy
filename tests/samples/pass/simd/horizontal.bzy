@@ -1,0 +1,17 @@
+// Horizontal reductions (sum, dot) and element-wise min/max, both widths.
+void main()
+{
+	f64x2 a = Simd.pack(3.0, 4.0);
+	f64x2 b = Simd.pack(5.0, 6.0);
+	print(Simd.sum(a));        // 7
+	print(Simd.dot(a, b));     // 39
+	f64x2 mn = Simd.min(a, b);
+	print(Simd.x(mn));         // 3
+	f64x2 mx = Simd.max(a, b);
+	print(Simd.y(mx));         // 6
+
+	f32x4 c = Simd.pack(1.0, 2.0, 3.0, 4.0);
+	f32x4 d = Simd.pack(2.0, 2.0, 2.0, 2.0);
+	print(Simd.sum(c));        // 10
+	print(Simd.dot(c, d));     // 20
+}

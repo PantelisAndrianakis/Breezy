@@ -20,7 +20,7 @@ static const struct
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
 	{"ulong",TOKEN_ULONG},{"bool",TOKEN_BOOL},
-	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"f64x2",TOKEN_F64X2},{"string",TOKEN_STRING},
+	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"f64x2",TOKEN_F64X2},{"f32x4",TOKEN_F32X4},{"i32x4",TOKEN_I32X4},{"string",TOKEN_STRING},
 	{"map",TOKEN_MAP},{"channel",TOKEN_CHANNEL},
 	{"and",TOKEN_AND},{"or",TOKEN_OR},{"xor",TOKEN_XOR},{"not",TOKEN_NOT},
 	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{"null",TOKEN_NULL},{NULL,0}

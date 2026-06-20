@@ -750,6 +750,12 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 	case TOKEN_F64X2:
 		*out=TY_F64X2;
 		return 1;
+	case TOKEN_F32X4:
+		*out=TY_F32X4;
+		return 1;
+	case TOKEN_I32X4:
+		*out=TY_I32X4;
+		return 1;
 	default:
 		return 0;
 	}

@@ -755,62 +755,146 @@ static void resolve_memory(Expr *e)
 	die(e->line,"Unknown Memory method: ",m);
 }
 
+/* The scalar lane kind of a SIMD vector type. */
+static TypeKind simd_lane_kind(TypeKind v)
+{
+	if (v==TY_F64X2) { return TY_DOUBLE; }
+	if (v==TY_I32X4) { return TY_INT; }
+	return TY_FLOAT;   /* f32x4. */
+}
+
 static void resolve_simd(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "Simd.". */
 	if (strcmp(m,"pack")==0)
 	{
-		if (e->arg_count!=2 || !ty_is_float(e->args[0]->type.kind) || !ty_is_float(e->args[1]->type.kind))
+		/* All-float lanes: two -> f64x2, four -> f32x4. All-int lanes: four -> i32x4. */
+		int all_float = 1, all_int = 1;
+		for (int i=0; i<e->arg_count; i++)
 		{
-			die(e->line,"Simd.pack(x, y) takes two floating-point lane values.",NULL);
+			if (!ty_is_float(e->args[i]->type.kind)) { all_float=0; }
+			if (!ty_is_int(e->args[i]->type.kind)) { all_int=0; }
 		}
 
-		e->type.kind=TY_F64X2;
+		if (e->arg_count==2 && all_float)
+		{
+			e->type.kind=TY_F64X2;
+			return;
+		}
+
+		if (e->arg_count==4 && all_float)
+		{
+			e->type.kind=TY_F32X4;
+			return;
+		}
+
+		if (e->arg_count==4 && all_int)
+		{
+			e->type.kind=TY_I32X4;
+			return;
+		}
+
+		die(e->line,"Simd.pack takes two floats (f64x2), four floats (f32x4), or four ints (i32x4).",NULL);
+	}
+
+	if (strcmp(m,"x")==0 || strcmp(m,"y")==0 || strcmp(m,"z")==0 || strcmp(m,"w")==0)
+	{
+		int two_lane = strcmp(m,"x")==0 || strcmp(m,"y")==0;
+		int four_lane = e->arg_count==1 && (e->args[0]->type.kind==TY_F32X4 || e->args[0]->type.kind==TY_I32X4);
+		if (e->arg_count!=1 || !ty_is_simd(e->args[0]->type.kind) || (!two_lane && !four_lane))
+		{
+			die(e->line,"Simd.x/y take any vector; Simd.z/w take f32x4 or i32x4.",NULL);
+		}
+
+		e->type.kind = simd_lane_kind(e->args[0]->type.kind);
 		return;
 	}
 
-	if (strcmp(m,"x")==0 || strcmp(m,"y")==0)
+	if (strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0 || strcmp(m,"div")==0
+		|| strcmp(m,"min")==0 || strcmp(m,"max")==0)
 	{
-		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_F64X2)
+		if (e->arg_count!=2 || !ty_is_simd(e->args[0]->type.kind)
+			|| e->args[0]->type.kind!=e->args[1]->type.kind)
 		{
-			die(e->line,"Simd.x/y(v) takes one f64x2 value.",NULL);
+			die(e->line,"Simd.add/sub/mul/div/min/max(a, b) takes two vectors of the same type.",NULL);
 		}
 
-		e->type.kind=TY_DOUBLE;
+		if (strcmp(m,"div")==0 && e->args[0]->type.kind==TY_I32X4)
+		{
+			die(e->line,"Simd.div is not supported for i32x4 (no packed integer divide).",NULL);
+		}
+
+		e->type.kind=e->args[0]->type.kind;
 		return;
 	}
 
-	if (strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0 || strcmp(m,"div")==0)
+	/* Horizontal reductions: sum all lanes, or the dot product of two vectors,
+	   collapsing to a scalar of the lane type. */
+	if (strcmp(m,"sum")==0)
 	{
-		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_F64X2 || e->args[1]->type.kind!=TY_F64X2)
+		if (e->arg_count!=1 || !ty_is_simd(e->args[0]->type.kind))
 		{
-			die(e->line,"Simd.add/sub/mul/div(a, b) takes two f64x2 values.",NULL);
+			die(e->line,"Simd.sum(v) takes one vector.",NULL);
 		}
 
-		e->type.kind=TY_F64X2;
+		e->type.kind = simd_lane_kind(e->args[0]->type.kind);
+		return;
+	}
+
+	if (strcmp(m,"dot")==0)
+	{
+		if (e->arg_count!=2 || !ty_is_simd(e->args[0]->type.kind)
+			|| e->args[0]->type.kind!=e->args[1]->type.kind)
+		{
+			die(e->line,"Simd.dot(a, b) takes two vectors of the same type.",NULL);
+		}
+
+		e->type.kind = simd_lane_kind(e->args[0]->type.kind);
 		return;
 	}
 
 	if (strcmp(m,"load")==0)
 	{
-		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_ARRAY
-			|| !e->args[0]->type.elem || e->args[0]->type.elem->kind!=TY_DOUBLE
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
 			|| !ty_is_int(e->args[1]->type.kind))
 		{
-			die(e->line,"Simd.load(double[] a, int i) loads lanes i and i+1.",NULL);
+			die(e->line,"Simd.load(a, i) loads a packed lane group from double[] or float[].",NULL);
 		}
 
-		e->type.kind=TY_F64X2;
+		TypeKind ek = e->args[0]->type.elem->kind;
+		if (ek==TY_DOUBLE)
+		{
+			e->type.kind=TY_F64X2;       /* Lanes i, i+1. */
+		}
+		else if (ek==TY_FLOAT)
+		{
+			e->type.kind=TY_F32X4;       /* Lanes i..i+3. */
+		}
+		else if (ek==TY_INT)
+		{
+			e->type.kind=TY_I32X4;       /* Lanes i..i+3. */
+		}
+		else
+		{
+			die(e->line,"Simd.load needs a double[] (f64x2), float[] (f32x4), or int[] (i32x4).",NULL);
+		}
+
 		return;
 	}
 
 	if (strcmp(m,"store")==0)
 	{
-		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY
-			|| !e->args[0]->type.elem || e->args[0]->type.elem->kind!=TY_DOUBLE
-			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_F64X2)
+		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
+			|| !ty_is_int(e->args[1]->type.kind) || !ty_is_simd(e->args[2]->type.kind))
 		{
-			die(e->line,"Simd.store(double[] a, int i, f64x2 v) stores lanes i and i+1.",NULL);
+			die(e->line,"Simd.store(a, i, v) stores a packed lane group into double[] or float[].",NULL);
+		}
+
+		TypeKind ek = e->args[0]->type.elem->kind;
+		TypeKind vk = e->args[2]->type.kind;
+		if (!((ek==TY_DOUBLE && vk==TY_F64X2) || (ek==TY_FLOAT && vk==TY_F32X4) || (ek==TY_INT && vk==TY_I32X4)))
+		{
+			die(e->line,"Simd.store: vector type must match the array element type.",NULL);
 		}
 
 		e->type.kind=TY_VOID;

@@ -1,13 +1,17 @@
 # SIMD vector types
 
 Fixed-width packed numeric values that live in a single SSE register instead of
-being spread across scalar slots. The first type is `f64x2`: two packed `double`
-lanes (low lane `x`, high lane `y`) held in one 128-bit xmm register.
+being spread across scalar slots:
 
-A `f64x2` is a value, not a heap object — it occupies a 16-byte stack slot and is
+- `f64x2` — two packed `double` lanes (`x`, `y`).
+- `f32x4` — four packed `float` lanes (`x`, `y`, `z`, `w`).
+- `i32x4` — four packed `int` lanes (`x`, `y`, `z`, `w`).
+
+A vector is a value, not a heap object — it occupies a 16-byte stack slot and is
 never reference-counted. It is constructed and consumed through the `Simd`
 namespace; it does not flow through `print`, string concatenation, or the scalar
-arithmetic operators (lane access yields ordinary `double`s for that).
+arithmetic operators (lane access yields an ordinary `double`/`float`/`int` for
+that). `i32x4` has no `div` (there is no packed integer divide instruction).
 
 ## Constructing and reading lanes
 
@@ -26,13 +30,22 @@ void main()
 | Call | Result | Meaning |
 |------|--------|---------|
 | `Simd.pack(x, y)` | `f64x2` | Pack two floating-point values into the low and high lanes. |
-| `Simd.x(v)` | `double` | The low lane. |
-| `Simd.y(v)` | `double` | The high lane. |
+| `Simd.pack(x, y, z, w)` | `f32x4`/`i32x4` | Pack four floats (`f32x4`) or four ints (`i32x4`) into the four lanes. |
+| `Simd.x(v)` | `double`/`float` | Lane 0. |
+| `Simd.y(v)` | `double`/`float` | Lane 1. |
+| `Simd.z(v)` | `float` | Lane 2 (`f32x4` only). |
+| `Simd.w(v)` | `float` | Lane 3 (`f32x4` only). |
+
+`Simd.pack` and the lane accessors pick the vector type by arity: two lanes give
+an `f64x2`, four give an `f32x4`. The element-wise and load/store calls below
+work on either type.
 
 ## Element-wise arithmetic
 
-Each call operates on both lanes at once (one SSE instruction), returning a new
-`f64x2`.
+Each call operates on every lane at once (one SSE instruction), returning a new
+vector of the same type — `addpd`/`mulpd`… for `f64x2`, `addps`/`mulps`… for
+`f32x4`, `paddd`/`pmulld`/`pminsd`/`pmaxsd` for `i32x4`. `i32x4` supports
+`add`/`sub`/`mul`/`min`/`max` but not `div`.
 
 ```breezy
 void main()
@@ -54,19 +67,41 @@ void main()
 | `Simd.sub(a, b)` | `subpd` | Per-lane difference. |
 | `Simd.mul(a, b)` | `mulpd` | Per-lane product. |
 | `Simd.div(a, b)` | `divpd` | Per-lane quotient. |
+| `Simd.min(a, b)` | `minpd` | Per-lane minimum. |
+| `Simd.max(a, b)` | `maxpd` | Per-lane maximum. |
 
-## Packed array load and store
+## Horizontal reductions
 
-`Simd.load`/`Simd.store` move two adjacent `double[]` elements as one packed
-value. These are raw packed primitives: they read or write lanes `i` and `i+1`
-in a single 16-byte move and do **not** bounds-check — the caller guarantees both
-indices are in range (typically by striding an even loop over an even-length
-array).
+Collapse a vector to a single scalar of its lane type.
 
 | Call | Result | Meaning |
 |------|--------|---------|
-| `Simd.load(a, i)` | `f64x2` | Load lanes `i`, `i+1` of `double[] a`. |
-| `Simd.store(a, i, v)` | — | Store `v` into lanes `i`, `i+1` of `double[] a`. |
+| `Simd.sum(v)` | `double`/`float` | Sum of all lanes. |
+| `Simd.dot(a, b)` | `double`/`float` | Sum of the per-lane products (`a·b`). |
+
+```breezy
+f32x4 a = Simd.pack(1.0, 2.0, 3.0, 4.0);
+f32x4 b = Simd.pack(2.0, 2.0, 2.0, 2.0);
+print(Simd.sum(a));      // 10
+print(Simd.dot(a, b));   // 20
+```
+
+For a reduction over a long array, an in-place packed accumulator beats
+`Simd.dot` per element — accumulate packed products in a loop, then `Simd.sum`
+(or `Simd.x + Simd.y`) the accumulator once at the end.
+
+## Packed array load and store
+
+`Simd.load`/`Simd.store` move one packed lane group to or from an array in a
+single 16-byte op — two elements for a `double[]` (`f64x2`), four for a `float[]`
+(`f32x4`). These are raw packed primitives: they do **not** bounds-check, so the
+caller guarantees the whole lane group is in range (typically by striding the
+loop in steps of the lane count over an array sized to a multiple of it).
+
+| Call | Result | Meaning |
+|------|--------|---------|
+| `Simd.load(a, i)` | `f64x2`/`f32x4` | Load the lane group starting at index `i` of `double[]`/`float[] a`. |
+| `Simd.store(a, i, v)` | — | Store `v` into the lane group starting at index `i`. |
 
 A dot product accumulates packed products; a register-promoted `f64x2`
 accumulator carries the reduction in an xmm register with no per-iteration
@@ -86,6 +121,7 @@ dot = Simd.x(acc) + Simd.y(acc);
 
 ## Status
 
-`f64x2` construction, lane access, element-wise `add`/`sub`/`mul`/`div`, and
-packed `load`/`store` ship today (Domain 2a). Wider types (`f32x4`, `f64x4`,
-integer vectors) follow in later parts.
+`f64x2`, `f32x4`, and `i32x4` construction, lane access, element-wise
+`add`/`sub`/`mul`/`div` (no `div` for `i32x4`), `min`/`max`, packed `load`/`store`,
+and horizontal `sum`/`dot` ship today (Domain 2a + 2b). Wider 256-bit AVX types
+(`f64x4`, `i32x8`) follow in a later part (2c).

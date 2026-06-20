@@ -9,6 +9,8 @@ typedef enum
 	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* Unsigned. */
 	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only. */
 	TY_F64X2,                                 /* SIMD: two packed f64 lanes in one xmm (16-byte value). */
+	TY_F32X4,                                 /* SIMD: four packed f32 lanes in one xmm (16-byte value). */
+	TY_I32X4,                                 /* SIMD: four packed i32 lanes in one xmm (16-byte value). */
 	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array. */
 	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map. */
 	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object. */
@@ -73,6 +75,8 @@ static inline int ty_bits(TypeKind k)
 	case TY_DOUBLE:
 		return 64;
 	case TY_F64X2:
+	case TY_F32X4:
+	case TY_I32X4:
 		return 128;
 	case TY_ARRAY:
 	case TY_MAP:
@@ -138,7 +142,7 @@ static inline int ty_is_float(TypeKind k)
    scalar double codegen (movsd, cvtss2sd, promotion) never touches them. */
 static inline int ty_is_simd(TypeKind k)
 {
-	return k == TY_F64X2;
+	return k == TY_F64X2 || k == TY_F32X4 || k == TY_I32X4;
 }
 
 /* True for ARC-managed, heap, 8-byte-pointer kinds (objects and strings). Use

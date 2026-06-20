@@ -6525,8 +6525,24 @@ static void cg_memory(Codegen *cg, TypeTable *tt, Expr *e)
 static int cg_simd_xmm0_safe(Expr *e)
 {
 	return (e->kind==EX_CALL && strncmp(e->name,"Simd.",5)==0 && strcmp(e->name+5,"load")==0)
-		   || (e->kind==EX_IDENT && e->type.kind==TY_F64X2 && e->anno_int > 0);
+		   || (e->kind==EX_IDENT && ty_is_simd(e->type.kind) && e->anno_int > 0);
 }
+
+/* The packed-op instruction suffix for a SIMD kind: "pd" for f64x2, "ps" for
+   f32x4. So addpd vs addps, mulpd vs mulps, etc. */
+static const char *cg_simd_sfx(TypeKind k)
+{
+	return k==TY_F32X4 ? "ps" : "pd";
+}
+
+/* Element kind a Simd.load/store addresses for its array (double, float, or int),
+   which sets the index stride (8 for double, 4 for float/int). */
+static TypeKind cg_simd_elem_kind(Expr *arr)
+{
+	return (arr->type.elem) ? arr->type.elem->kind : TY_DOUBLE;
+}
+
+static const char *cg_simd_op(const char *m, TypeKind k, char *buf);
 
 /* In-place packed accumulate: `T = Simd.<op>(T, P)` (or the commutative
    `Simd.add/mul(P, T)`) where T is a register-promoted f64x2 local. Emits the
@@ -6535,7 +6551,7 @@ static int cg_simd_xmm0_safe(Expr *e)
    tight in-place chain Go's scalar accumulator does. Returns 1 if it emitted. */
 static int cg_try_simd_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 {
-	if (target->kind != EX_IDENT || target->type.kind != TY_F64X2 || target->anno_int <= 0)
+	if (target->kind != EX_IDENT || !ty_is_simd(target->type.kind) || target->anno_int <= 0)
 	{
 		return 0;
 	}
@@ -6547,16 +6563,16 @@ static int cg_try_simd_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *v
 	}
 
 	const char *m = value->name + 5;
-	const char *op = strcmp(m,"add")==0 ? "addpd"
-					 : strcmp(m,"sub")==0 ? "subpd"
-					 : strcmp(m,"mul")==0 ? "mulpd"
-					 : strcmp(m,"div")==0 ? "divpd" : NULL;
-	if (!op || value->arg_count != 2)
+	if (value->arg_count != 2
+		|| !(strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0
+			 || strcmp(m,"div")==0 || strcmp(m,"min")==0 || strcmp(m,"max")==0))
 	{
 		return 0;
 	}
 
-	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0;
+	char op[8];
+	cg_simd_op(m, target->type.kind, op);
+	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0 || strcmp(m,"min")==0 || strcmp(m,"max")==0;
 	int lhs_is_t = value->args[0]->kind==EX_IDENT && value->args[0]->anno_int==target->anno_int;
 	int rhs_is_t = value->args[1]->kind==EX_IDENT && value->args[1]->anno_int==target->anno_int;
 
@@ -6588,15 +6604,97 @@ static void cg_simd_load_into(Codegen *cg, TypeTable *tt, Expr *e, int reg)
 		return;
 	}
 
-	/* Simd.load(a, i): &a[i] in rbx, then a packed load into the target. */
+	/* Simd.load(a, i): &a[i] in rbx, then a packed load into the target. The
+	   fabricated index uses the array element kind so the stride is right (8 for
+	   double[], 4 for float[]). */
 	Expr ie = {0};
 	ie.kind = EX_INDEX;
 	ie.lhs = e->args[0];
 	ie.rhs = e->args[1];
-	ie.type.kind = TY_DOUBLE;
-	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees lanes i, i+1 in range. */
+	ie.type.kind = cg_simd_elem_kind(e->args[0]);
+	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees the lane group is in range. */
 	cg_index_addr(cg,tt,&ie);
-	cg_emit(cg,"    movupd xmm%d, [rbx]", reg);
+	cg_emit(cg,"    movups xmm%d, [rbx]", reg);
+}
+
+/* Combine two packed operands with `op`, leaving the result vector in xmm0. The
+   spill-free fast paths apply when one operand is xmm0-safe (loads straight into
+   xmm1); otherwise the lhs is spilled so a nested rhs can reuse xmm0/xmm1. */
+static void cg_simd_combine(Codegen *cg, TypeTable *tt, Expr *a, Expr *b, const char *op, int commutative)
+{
+	if (cg_simd_xmm0_safe(b))
+	{
+		cg_expr(cg,tt,a);                       /* lhs -> xmm0. */
+		cg_simd_load_into(cg,tt,b,1);           /* rhs -> xmm1 (xmm0 preserved). */
+		cg_emit(cg,"    %s xmm0, xmm1", op);
+		return;
+	}
+
+	if (commutative && cg_simd_xmm0_safe(a))
+	{
+		cg_expr(cg,tt,b);                       /* rhs -> xmm0. */
+		cg_simd_load_into(cg,tt,a,1);           /* lhs -> xmm1; op is commutative. */
+		cg_emit(cg,"    %s xmm0, xmm1", op);
+		return;
+	}
+
+	int sb = cg_scratch_alloc(cg, 16);
+	cg_expr(cg,tt,a);                           /* a -> xmm0. */
+	cg_emit(cg,"    movups [rbp - %d], xmm0", sb);
+	cg_expr(cg,tt,b);                           /* b -> xmm0. */
+	cg_emit(cg,"    movaps xmm1, xmm0");
+	cg_emit(cg,"    movups xmm0, [rbp - %d]", sb);
+	cg_scratch_free(cg, 16);
+	cg_emit(cg,"    %s xmm0, xmm1", op);
+}
+
+/* Horizontally reduce the packed vector in xmm0 to a scalar. Float results land
+   in xmm0's low lane (x+y for f64x2, x+y+z+w for f32x4); the i32x4 sum lands in
+   eax. */
+static void cg_simd_hreduce(Codegen *cg, TypeKind k)
+{
+	if (k==TY_I32X4)
+	{
+		cg_emit(cg,"    phaddd xmm0, xmm0");    /* (x+y, z+w, x+y, z+w). */
+		cg_emit(cg,"    phaddd xmm0, xmm0");    /* low lane = x+y+z+w. */
+		cg_emit(cg,"    movd eax, xmm0");       /* Scalar int result in eax. */
+		return;
+	}
+
+	if (k==TY_F32X4)
+	{
+		cg_emit(cg,"    haddps xmm0, xmm0");    /* (x+y, z+w, x+y, z+w). */
+		cg_emit(cg,"    haddps xmm0, xmm0");    /* low lane = x+y+z+w. */
+		return;
+	}
+
+	cg_emit(cg,"    movaps xmm1, xmm0");
+	cg_emit(cg,"    unpckhpd xmm1, xmm1");   /* xmm1 low = y. */
+	cg_emit(cg,"    addsd xmm0, xmm1");      /* low lane = x+y. */
+}
+
+/* The packed mnemonic for a Simd op name + a vector kind. Float vectors get the
+   ss/sd-style suffix (addps/mulpd/…); i32x4 gets the integer packed ops
+   (paddd/psubd/pmulld/pminsd/pmaxsd). Caller passes a buffer of at least 8 bytes. */
+static const char *cg_simd_op(const char *m, TypeKind k, char *buf)
+{
+	if (k==TY_I32X4)
+	{
+		const char *iop = strcmp(m,"add")==0 ? "paddd"
+						  : strcmp(m,"sub")==0 ? "psubd"
+						  : strcmp(m,"mul")==0 ? "pmulld"
+						  : strcmp(m,"min")==0 ? "pminsd" : "pmaxsd";
+		snprintf(buf, 8, "%s", iop);
+		return buf;
+	}
+
+	const char *base = strcmp(m,"add")==0 ? "add"
+					   : strcmp(m,"sub")==0 ? "sub"
+					   : strcmp(m,"mul")==0 ? "mul"
+					   : strcmp(m,"div")==0 ? "div"
+					   : strcmp(m,"min")==0 ? "min" : "max";
+	snprintf(buf, 8, "%s%s", base, cg_simd_sfx(k));
+	return buf;
 }
 
 /* Simd.* builtins. A packed f64x2 result lives in the full xmm0 (low lane = x,
@@ -6606,43 +6704,96 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 	const char *m = e->name + 5;   /* After "Simd.". */
 	if (strcmp(m,"pack")==0)
 	{
+		if (e->type.kind==TY_F64X2)
+		{
+			int b = cg_scratch_alloc(cg, 16);
+			cg_to_double(cg,tt,e->args[0]);                  /* x -> xmm0. */
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
+			cg_to_double(cg,tt,e->args[1]);                  /* y -> xmm0. */
+			cg_emit(cg,"    movaps xmm1, xmm0");             /* xmm1 low = y. */
+			cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+			cg_scratch_free(cg, 16);
+			cg_emit(cg,"    unpcklpd xmm0, xmm1");           /* xmm0 = [x | y]. */
+			return;
+		}
+
+		if (e->type.kind==TY_I32X4)
+		{
+			/* i32x4: lay four int lanes into a 16-byte scratch, then one load. */
+			int b = cg_scratch_alloc(cg, 16);
+			for (int i=0; i<4; i++)
+			{
+				cg_expr(cg,tt,e->args[i]);                   /* lane i (int) -> eax. */
+				cg_emit(cg,"    mov dword [rbp - %d], eax", b - i*4);
+			}
+
+			cg_emit(cg,"    movups xmm0, [rbp - %d]", b);
+			cg_scratch_free(cg, 16);
+			return;
+		}
+
+		/* f32x4: lay the four float lanes into a 16-byte scratch, then one load. */
 		int b = cg_scratch_alloc(cg, 16);
-		cg_to_double(cg,tt,e->args[0]);                  /* x -> xmm0. */
-		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
-		cg_to_double(cg,tt,e->args[1]);                  /* y -> xmm0. */
-		cg_emit(cg,"    movaps xmm1, xmm0");             /* xmm1 low = y. */
-		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+		for (int i=0; i<4; i++)
+		{
+			cg_expr(cg,tt,e->args[i]);                       /* lane i -> xmm0 low. */
+			if (e->args[i]->type.kind==TY_DOUBLE)
+			{
+				cg_emit(cg,"    cvtsd2ss xmm0, xmm0");        /* Narrow a double lane to float. */
+			}
+
+			cg_emit(cg,"    movss dword [rbp - %d], xmm0", b - i*4);
+		}
+
+		cg_emit(cg,"    movups xmm0, [rbp - %d]", b);
 		cg_scratch_free(cg, 16);
-		cg_emit(cg,"    unpcklpd xmm0, xmm1");           /* xmm0 = [x | y]. */
 		return;
 	}
 
-	if (strcmp(m,"x")==0)
+	if (strcmp(m,"x")==0 || strcmp(m,"y")==0 || strcmp(m,"z")==0 || strcmp(m,"w")==0)
 	{
-		cg_expr(cg,tt,e->args[0]);                       /* Packed value -> xmm0; low lane already = x. */
-		return;
-	}
+		cg_expr(cg,tt,e->args[0]);                       /* Packed value -> xmm0. */
+		int lane = strcmp(m,"x")==0 ? 0 : strcmp(m,"y")==0 ? 1 : strcmp(m,"z")==0 ? 2 : 3;
 
-	if (strcmp(m,"y")==0)
-	{
-		cg_expr(cg,tt,e->args[0]);
-		cg_emit(cg,"    unpckhpd xmm0, xmm0");            /* Move the high lane into the low half. */
+		if (e->args[0]->type.kind==TY_I32X4)
+		{
+			if (lane != 0)
+			{
+				cg_emit(cg,"    pshufd xmm0, xmm0, %d", lane);   /* Bring int lane into lane 0. */
+			}
+
+			cg_emit(cg,"    movd eax, xmm0");                    /* Scalar int lane -> eax. */
+			return;
+		}
+
+		if (e->args[0]->type.kind==TY_F64X2)
+		{
+			if (lane==1)
+			{
+				cg_emit(cg,"    unpckhpd xmm0, xmm0");           /* High f64 lane into the low half. */
+			}
+		}
+		else if (lane != 0)
+		{
+			cg_emit(cg,"    shufps xmm0, xmm0, %d", lane);       /* Bring f32 lane into lane 0. */
+		}
+
 		return;
 	}
 
 	if (strcmp(m,"load")==0)
 	{
-		/* Address of element i via a fabricated arr[i] index (bounds-checks lane i;
-		   lane i+1 is read by the 16-byte movupd and is the caller's responsibility,
-		   like any explicit packed primitive). */
+		/* Address of element i via a fabricated arr[i] index. The packed load reads
+		   the whole lane group; the caller guarantees it is in range (raw primitive,
+		   so anno_index_safe skips the bounds check). */
 		Expr ie = {0};
 		ie.kind = EX_INDEX;
 		ie.lhs = e->args[0];
 		ie.rhs = e->args[1];
-		ie.type.kind = TY_DOUBLE;
-	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees lanes i, i+1 in range. */
+		ie.type.kind = cg_simd_elem_kind(e->args[0]);
+		ie.anno_index_safe = 1;
 		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
-		cg_emit(cg,"    movupd xmm0, [rbx]");
+		cg_emit(cg,"    movups xmm0, [rbx]");
 		return;
 	}
 
@@ -6650,54 +6801,44 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		int b = cg_scratch_alloc(cg, 16);
 		cg_expr(cg,tt,e->args[2]);                       /* v -> xmm0. */
-		cg_emit(cg,"    movupd [rbp - %d], xmm0", b);     /* Park v across the address computation. */
+		cg_emit(cg,"    movups [rbp - %d], xmm0", b);     /* Park v across the address computation. */
 		Expr ie = {0};
 		ie.kind = EX_INDEX;
 		ie.lhs = e->args[0];
 		ie.rhs = e->args[1];
-		ie.type.kind = TY_DOUBLE;
-	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees lanes i, i+1 in range. */
+		ie.type.kind = cg_simd_elem_kind(e->args[0]);
+		ie.anno_index_safe = 1;
 		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
-		cg_emit(cg,"    movupd xmm1, [rbp - %d]", b);
+		cg_emit(cg,"    movups xmm1, [rbp - %d]", b);
 		cg_scratch_free(cg, 16);
-		cg_emit(cg,"    movupd [rbx], xmm1");
+		cg_emit(cg,"    movups [rbx], xmm1");
 		return;
 	}
 
-	/* Element-wise add/sub/mul/div: both operands are packed f64x2 values. */
-	const char *op = strcmp(m,"add")==0 ? "addpd"
-					 : strcmp(m,"sub")==0 ? "subpd"
-					 : strcmp(m,"mul")==0 ? "mulpd" : "divpd";
-	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0;
-
-	/* Spill-free fast paths: when one operand is xmm0-safe it loads straight into
-	   xmm1 with no scratch round-trip. This collapses a multiply-accumulate chain
-	   (acc = add(acc, mul(load, load))) to pure register/packed-load traffic. */
-	if (cg_simd_xmm0_safe(e->args[1]))
+	if (strcmp(m,"sum")==0)
 	{
-		cg_expr(cg,tt,e->args[0]);                       /* lhs -> xmm0. */
-		cg_simd_load_into(cg,tt,e->args[1],1);           /* rhs -> xmm1 (xmm0 preserved). */
-		cg_emit(cg,"    %s xmm0, xmm1", op);
+		cg_expr(cg,tt,e->args[0]);                       /* Vector -> xmm0. */
+		cg_simd_hreduce(cg, e->args[0]->type.kind);
 		return;
 	}
 
-	if (commutative && cg_simd_xmm0_safe(e->args[0]))
+	if (strcmp(m,"dot")==0)
 	{
-		cg_expr(cg,tt,e->args[1]);                       /* rhs -> xmm0. */
-		cg_simd_load_into(cg,tt,e->args[0],1);           /* lhs -> xmm1; op is commutative. */
-		cg_emit(cg,"    %s xmm0, xmm1", op);
+		TypeKind vk = e->args[0]->type.kind;
+		char mul[8];
+		cg_simd_op("mul", vk, mul);                          /* mulpd/mulps/pmulld. */
+		cg_simd_combine(cg,tt,e->args[0],e->args[1],mul,1);   /* a*b vector -> xmm0. */
+		cg_simd_hreduce(cg, vk);
 		return;
 	}
 
-	/* Generic: spill the evaluated lhs so a nested rhs can reuse xmm0/xmm1. */
-	int b = cg_scratch_alloc(cg, 16);
-	cg_expr(cg,tt,e->args[0]);                           /* a -> xmm0. */
-	cg_emit(cg,"    movupd [rbp - %d], xmm0", b);
-	cg_expr(cg,tt,e->args[1]);                           /* b -> xmm0. */
-	cg_emit(cg,"    movapd xmm1, xmm0");
-	cg_emit(cg,"    movupd xmm0, [rbp - %d]", b);
-	cg_scratch_free(cg, 16);
-	cg_emit(cg,"    %s xmm0, xmm1", op);
+	/* Element-wise add/sub/mul/div/min/max on two packed vectors of e->type.kind.
+	   add/mul/min/max are commutative; the in-place accumulate (cg_try_simd_inplace)
+	   already handled the hot reduction case before reaching here. */
+	char op[8];
+	cg_simd_op(m, e->type.kind, op);
+	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0 || strcmp(m,"min")==0 || strcmp(m,"max")==0;
+	cg_simd_combine(cg,tt,e->args[0],e->args[1],op,commutative);
 }
 
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)

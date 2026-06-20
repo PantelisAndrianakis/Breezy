@@ -65,6 +65,9 @@ check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
 check simd_pack   tests/samples/pass/simd/pack_lanes.bzy    $'3.5\n7.25\n10.75'
 check simd_elemop tests/samples/pass/simd/elementwise.bzy   $'4.5\n10\n4.5\n16\n2\n4'
 check simd_dot    tests/samples/pass/simd/dot_load.bzy       $'72\n3\n10'
+check simd_f32x4  tests/samples/pass/simd/f32x4.bzy          $'1\n4\n11\n44\n10\n160\n300'
+check simd_hred   tests/samples/pass/simd/horizontal.bzy     $'7\n39\n3\n6\n10\n20'
+check simd_i32x4  tests/samples/pass/simd/i32x4.bzy          $'1\n40\n11\n44\n10\n300\n10\n160\n300'
 check arith       tests/samples/pass/basics/arith.bzy      "14"
 check system_rt   tests/samples/pass/system/realtime_io.bzy $'-1\n-1'
 check system_affinity tests/samples/pass/system/affinity.bzy $'true\ntrue'
