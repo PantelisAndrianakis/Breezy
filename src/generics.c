@@ -358,6 +358,28 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 		subst_func(c->ctors[i],t,targs);
 	}
 
+	/* Parametric inheritance (extends Base<T>): substitute the parent's type args
+	   with this instance's concrete args, instantiate that concrete parent, and
+	   point at it. The parent instance is registered the same way, so the usual
+	   parent-first registration fixpoint orders the layouts. */
+	if (t->has_parent && t->parent_targ_count > 0)
+	{
+		TypeRef storage[8];
+		struct TypeRef *pt[8];
+		int pn = t->parent_targ_count < 8 ? t->parent_targ_count : 8;
+		for (int i=0; i<pn; i++)
+		{
+			storage[i] = *t->parent_targs[i];
+			subst_typeref(&storage[i], t, targs);
+			pt[i] = &storage[i];
+		}
+
+		char pname[128];
+		ensure_instance(t->parent_name, pt, pn, line, pname);
+		strcpy(c->parent_name, pname);
+		c->parent_targ_count = 0;
+	}
+
 	Unit *u=unit_new();
 	unit_add_class(u,c);
 	g_instances = grow_ensure(g_instances, g_instance_count, &g_instance_cap, sizeof(*g_instances));

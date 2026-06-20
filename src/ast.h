@@ -351,6 +351,9 @@ typedef struct
 	int is_record;            /* `record`: final class with compiler-synthesized hashCode/equals. */
 	char parent_name[64];
 	int has_parent;
+	struct TypeRef **parent_targs;  /* Parametric inheritance: type args on the parent, e.g.
+	                                   `extends Box<T>`. NULL/0 for a non-generic parent. */
+	int parent_targ_count;
 	char (*implements)[64];   /* Interface names this class implements. Grown at parse. */
 	int implements_count;
 	int implements_cap;

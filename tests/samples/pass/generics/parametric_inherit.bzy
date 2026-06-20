@@ -1,0 +1,33 @@
+// Parametric inheritance: a generic class extends a generic parent, passing its
+// own type parameter through. Each instantiation monomorphizes both layers
+// (Tagged$int extends Holder$int), so the inherited field and method work and a
+// subclass value is usable as the parent type.
+class Holder<T>
+{
+	T v;
+	Holder(T x) { this.v = x; }
+	T get() { return this.v; }
+}
+
+class Tagged<T> extends Holder<T>
+{
+	int tag;
+	Tagged(T x) { this.v = x; this.tag = 7; }
+	int label() { return this.tag; }
+}
+
+void main()
+{
+	Tagged<int> li;
+	li = new Tagged<int>(42);
+	print(li.get());     // 42  -- inherited method on inherited field.
+	print(li.label());   // 7
+
+	Tagged<string> ls;
+	ls = new Tagged<string>("hi");
+	print(ls.get());     // hi  -- a distinct instantiation.
+
+	Holder<int> h;
+	h = li;              // Subclass value as the parent type.
+	print(h.get());      // 42
+}

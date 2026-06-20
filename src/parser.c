@@ -1986,6 +1986,20 @@ static ClassDecl *parse_class(Parser *p)
 		Token par=expect(p,TOKEN_IDENT);
 		strcpy(c->parent_name,par.text);
 		c->has_parent=1;
+		if (check(p,TOKEN_LT))           /* Parametric inheritance: extends Base<args>. */
+		{
+			advance(p);                  /* '<' */
+			int pcap=0;
+			do
+			{
+				TypeRef *tr=calloc(1,sizeof(TypeRef));
+				parse_type(p,tr);
+				c->parent_targs=grow_ensure(c->parent_targs,c->parent_targ_count,&pcap,sizeof(*c->parent_targs));
+				c->parent_targs[c->parent_targ_count++]=tr;
+			}
+			while (match(p,TOKEN_COMMA));
+			expect_gt(p);
+		}
 	}
 
 	if (match(p,TOKEN_IMPLEMENTS))

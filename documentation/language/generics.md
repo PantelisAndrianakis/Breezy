@@ -115,6 +115,43 @@ Now `Announcer<Dog>` works because `Dog` implements `Speaker`; a type that does 
 
 ---
 
+## Parametric inheritance
+
+A generic class can **extend another generic class**, forwarding its type
+parameter to the parent. Each instantiation monomorphizes both layers
+independently:
+
+```breezy
+class Holder<T>
+{
+	T v;
+	Holder(T x) { this.v = x; }
+	T get() { return this.v; }
+}
+
+class Tagged<T> extends Holder<T>   // Pass T through to the parent.
+{
+	int tag;
+	Tagged(T x) { this.v = x; this.tag = 7; }
+}
+
+void main()
+{
+	Tagged<int> t = new Tagged<int>(42);
+	print(t.get());          // 42  -- inherited from Holder<int>.
+
+	Holder<int> h = t;       // A subclass value is usable as the parent type.
+	print(h.get());          // 42
+}
+```
+
+`Tagged<int>` synthesizes `Tagged$int` extending `Holder$int`; `Tagged<string>`
+synthesizes a separate `Tagged$string` extending `Holder$string`. The parent
+instantiation is created automatically, and the usual field/method inheritance
+and [virtual dispatch](classes.md) apply across the two monomorphized layers.
+
+---
+
 ## How it performs: monomorphization
 
 Breezy generics are **monomorphized**. For each concrete instantiation, the compiler synthesizes one ordinary class - `Box$int`, `Pair$int$string`, `Announcer$Dog` - exactly as if you had written it by hand. The consequences:
