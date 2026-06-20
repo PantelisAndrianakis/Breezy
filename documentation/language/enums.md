@@ -163,13 +163,18 @@ void main()
 	print(s.name());      // Circle
 	print(t.ordinal());   // 1
 
-	match (t)             // Dispatch on the variant.
+	match (t)             // Dispatch on the variant and bind its fields.
 	{
-		Circle => print("round");
-		Rect   => print("boxy");
+		Circle(r)  => print(r);
+		Rect(w, h) => print(w + h);
 	}
 }
 ```
+
+A `match` arm may **bind the variant's payload** by naming it positionally -
+`Circle(r)` binds `r` to the circle's radius, `Rect(w, h)` binds both sides -
+and those names are ordinary locals scoped to the arm. The bind list must match
+the variant's fields exactly; binding a plain (non-payload) constant is an error.
 
 A variant is built with arguments (`Shape.Circle(2.0)`); naming it bare is an
 error. Each variant lowers to its own subclass (`Shape$Circle`) carrying its

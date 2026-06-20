@@ -77,6 +77,7 @@ are entirely compile-time — there is **no run-time cost** over a hand-written
   will not compile.
 - **No fall-through and no `break`.** Each arm is self-contained.
 - **Arms are a single statement or a `{ }` block.**
+- **Arms can bind a [payload variant](enums.md#payload-variants-sum-types)'s fields** by naming them positionally: `Circle(r) => print(r)`.
 
 ---
 

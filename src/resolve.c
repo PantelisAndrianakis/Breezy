@@ -4414,6 +4414,99 @@ static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc
 	}
 }
 
+/* Lower payload binds in a `match`: for each arm `Variant(a, b) => ...`, splice
+   in, right after the case marker, a tag-narrowing local and one field-read local
+   per bind, so the arm body sees ordinary typed locals. Reuses the existing
+   vardecl + field-read codegen (including ARC) - no special arm machinery.
+       Variant(a, b) =>           __mvN = subject;   (is_narrow: base -> subclass)
+                                  TA a = __mvN.f0;
+                                  TB b = __mvN.f1;
+   Runs once, before the arm bodies resolve, while case labels are still IDENTs. */
+static int g_match_bind_seq = 0;
+
+static void inject_match_binds(Stmt *sw, const char *enum_name)
+{
+	Block *b = sw->then_blk;
+	int any = 0;
+	for (int i = 0; i < b->count; i++)
+	{
+		if (b->stmts[i]->kind == ST_CASE && b->stmts[i]->case_bind_count > 0)
+		{
+			any = 1;
+			break;
+		}
+	}
+
+	if (!any)
+	{
+		return;
+	}
+
+	Block *nb = block_new();
+	for (int i = 0; i < b->count; i++)
+	{
+		Stmt *c = b->stmts[i];
+		block_push(nb, c);
+		if (c->kind != ST_CASE || c->case_bind_count == 0)
+		{
+			continue;
+		}
+
+		const char *label = c->value->name;   /* Still an IDENT before the ordinal rewrite. */
+		const char *vclass = enum_variant_class(enum_name, label);
+		if (!vclass)
+		{
+			die(c->line, "Cannot bind payload fields: not a payload variant: ", label);
+		}
+
+		ClassInfo *vc = types_find_class(g_types, vclass);
+		FieldInfo *pf[8];
+		int pn = 0;
+		for (int f = 0; f < vc->field_count; f++)
+		{
+			if (strcmp(vc->fields[f].name, "__ordinal") != 0
+					&& strcmp(vc->fields[f].name, "__name") != 0)
+			{
+				if (pn < 8)
+				{
+					pf[pn++] = &vc->fields[f];
+				}
+			}
+		}
+
+		if (c->case_bind_count != pn)
+		{
+			die(c->line, "Wrong number of payload binds for variant: ", label);
+		}
+
+		char mv[64];
+		snprintf(mv, sizeof(mv), "__mv%d", g_match_bind_seq++);
+		Stmt *nd = stmt_new(ST_VARDECL, c->line);
+		nd->is_narrow = 1;
+		nd->decl_type.kind = TY_OBJECT;
+		strcpy(nd->decl_type.class_name, vclass);
+		snprintf(nd->decl_name, sizeof(nd->decl_name), "%s", mv);
+		nd->decl_init = expr_clone(sw->cond);
+		block_push(nb, nd);
+
+		for (int k = 0; k < pn; k++)
+		{
+			Stmt *bd = stmt_new(ST_VARDECL, c->line);
+			bd->decl_type = pf[k]->type;
+			snprintf(bd->decl_name, sizeof(bd->decl_name), "%s", c->case_binds[k]);
+			Expr *recv = expr_new(EX_IDENT, c->line);
+			snprintf(recv->name, sizeof(recv->name), "%s", mv);
+			Expr *fld = expr_new(EX_FIELD, c->line);
+			snprintf(fld->name, sizeof(fld->name), "%s", pf[k]->name);
+			fld->lhs = recv;
+			bd->decl_init = fld;
+			block_push(nb, bd);
+		}
+	}
+
+	sw->then_blk = nb;
+}
+
 static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 {
 	switch (s->kind)
@@ -4430,7 +4523,10 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (s->decl_init)
 		{
 			resolve_value(st,s->decl_init,&s->decl_type,tc);
-			if (!assignable(&s->decl_type, &s->decl_init->type))
+			/* A match-arm narrowing (is_narrow) assigns the base-enum subject into a
+			   variant-subclass local; the matched tag guarantees the dynamic type, so
+			   the normal downcast rejection is skipped. */
+			if (!s->is_narrow && !assignable(&s->decl_type, &s->decl_init->type))
 			{
 				die(s->line,"Initializer type does not match; add a cast.",NULL);
 			}
@@ -4611,6 +4707,11 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		TypeKind ck=s->cond->type.kind;
 		int is_enum_switch = (ck==TY_OBJECT && enum_is(s->cond->type.class_name));
 		int is_string_switch = (ck==TY_STRING);
+		/* Splice payload binds into match arms before the arm bodies resolve. */
+		if (s->is_match && is_enum_switch)
+		{
+			inject_match_binds(s, s->cond->type.class_name);
+		}
 		/* Permitted operands: integers, bool, enum, string. Floats are rejected
 		   (exact-equality matching is unsafe for floating point, as in Java). */
 		if (!ty_is_int(ck) && ck!=TY_BOOL && !is_enum_switch && !is_string_switch)

@@ -1421,6 +1421,27 @@ static Stmt *parse_match(Parser *p)
 		{
 			Stmt *c=stmt_new(ST_CASE,cl);
 			c->value=parse_case_const(p);
+			/* Optional payload binds: Circle(r) / Rect(w, h). */
+			if (check(p,TOKEN_LPAREN))
+			{
+				advance(p);
+				c->case_binds=calloc(8,sizeof(*c->case_binds));
+				if (!check(p,TOKEN_RPAREN))
+				{
+					do
+					{
+						Token b=expect(p,TOKEN_IDENT);
+						if (c->case_bind_count<8)
+						{
+							strcpy(c->case_binds[c->case_bind_count++],b.text);
+						}
+					}
+					while (match(p,TOKEN_COMMA));
+				}
+
+				expect(p,TOKEN_RPAREN);
+			}
+
 			expect(p,TOKEN_FATARROW);
 			block_push(s->then_blk,c);
 		}

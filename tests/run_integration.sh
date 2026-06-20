@@ -273,7 +273,7 @@ check enum_basic tests/samples/pass/enums/proj_enum_basic $'1\nGREEN\n255\n255\n
 check enum_body  tests/samples/pass/enums/proj_enum_body  $'7\n7\n42\nADD\nOp'
 check enum_switch tests/samples/pass/enums/proj_enum_switch $'2'
 check enum_match  tests/samples/pass/enums/proj_enum_match  $'2\n20\n9'
-check enum_payload tests/samples/pass/enums/proj_enum_payload $'0\nCircle\n1\n200'
+check enum_payload tests/samples/pass/enums/proj_enum_payload $'0\nCircle\n1\n7'
 check switch_string tests/samples/pass/control-flow/switch_string.bzy $'2'
 check switch_bool   tests/samples/pass/control-flow/switch_bool.bzy   $'20'
 check switch_long   tests/samples/pass/control-flow/switch_long.bzy   $'20\n30'
@@ -285,6 +285,8 @@ check_fail enum_extends    tests/samples/fail/enums/enum_extends.bzy
 check_fail enum_bad_label  tests/samples/fail/enums/enum_switch_label.bzy
 check_fail enum_match_nonexhaustive tests/samples/fail/enums/enum_match_nonexhaustive.bzy
 check_fail enum_payload_noargs tests/samples/fail/enums/enum_payload_noargs.bzy
+check_fail enum_bind_arity tests/samples/fail/enums/enum_bind_arity.bzy
+check_fail enum_bind_nonpayload tests/samples/fail/enums/enum_bind_nonpayload.bzy
 check record_basic tests/samples/pass/records/record_basic.bzy $'3\n4'
 check_fail record_extends tests/samples/fail/records/proj_record_extends
 check record_methods tests/samples/pass/records/record_methods.bzy $'true\nfalse\ntrue'

@@ -268,6 +268,10 @@ struct Stmt
 	Expr    *ret_val;         /* ST_RETURN (may be NULL). */
 	Expr    *expr;            /* ST_EXPR. */
 	int      is_match;        /* ST_SWITCH built from `match`: exhaustiveness enforced, arms auto-break. */
+	int      is_narrow;       /* ST_VARDECL: a match-arm tag-narrowing (base enum -> variant subclass);
+	                            skip the downcast assignability check, the matched tag guarantees it. */
+	char   (*case_binds)[64]; /* ST_CASE: positional payload bind names, e.g. Circle(r) -> {"r"}. */
+	int      case_bind_count;
 	Stmt    *accum_stmt;      /* P5: the recognized `s = s + ...` body statement, or NULL. */
 	int      accum_sb_offset; /* P5: frame slot for the lowering StringBuilder (0 = not lowered). */
 };

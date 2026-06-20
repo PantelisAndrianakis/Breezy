@@ -1,0 +1,17 @@
+// Only payload variants carry fields to bind; a plain singleton constant cannot
+// be bound.
+enum Color
+{
+	RED,
+	GREEN;
+}
+
+void main()
+{
+	Color c = Color.RED;
+	match (c)
+	{
+		RED(x) => print(0);
+		GREEN  => print(1);
+	}
+}

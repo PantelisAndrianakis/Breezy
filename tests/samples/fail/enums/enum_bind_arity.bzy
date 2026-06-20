@@ -1,0 +1,17 @@
+// A match bind must list exactly the variant's payload fields; Circle has one,
+// not two.
+enum Shape
+{
+	Circle(double r),
+	Rect(double w, double h);
+}
+
+void main()
+{
+	Shape s = Shape.Circle(1.0);
+	match (s)
+	{
+		Circle(a, b) => print(0);
+		Rect(w, h)   => print(1);
+	}
+}
