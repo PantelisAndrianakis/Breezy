@@ -240,7 +240,7 @@ struct Expr
 	LambdaInfo *lam;          /* EX_LAMBDA side-data. */
 };
 
-typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN, ST_SELECT } StmtKind;
+typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN, ST_SELECT, ST_ASM } StmtKind;
 
 /* One arm of a `select`. A receive arm binds the value (`v = ch.receive() => ...`);
    a send arm delivers a value (`ch.send(x) => ...`). */
@@ -288,6 +288,8 @@ struct Stmt
 	int      case_bind_count;
 	SelectArm *sel_arms;      /* ST_SELECT: the send/receive arms. */
 	int      sel_arm_count;   /* ST_SELECT: arm count (else_blk holds the default body, or NULL). */
+	char   (*asm_lines)[256]; /* ST_ASM: raw assembly lines, emitted verbatim. */
+	int      asm_line_count;
 	Stmt    *accum_stmt;      /* P5: the recognized `s = s + ...` body statement, or NULL. */
 	int      accum_sb_offset; /* P5: frame slot for the lowering StringBuilder (0 = not lowered). */
 };

@@ -9,6 +9,7 @@ typedef enum
 	TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT,             /* Switch. */
 	TOKEN_MATCH,                                         /* `match`: exhaustive, fallthrough-free switch over enums. */
 	TOKEN_SELECT,                                        /* `select`: multiplex over channel send/receive. */
+	TOKEN_ASM,                                           /* `asm`: inline assembly escape hatch. */
 	TOKEN_CLASS, TOKEN_EXTENDS, TOKEN_NEW, TOKEN_THIS,
 	TOKEN_RECORD,                                       /* `record` declaration: final class with synthesized hashCode/equals. */
 	TOKEN_INTERFACE, TOKEN_IMPLEMENTS,                   /* Interfaces. */

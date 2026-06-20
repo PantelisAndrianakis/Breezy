@@ -1,0 +1,16 @@
+// The asm block emits each string verbatim into the generated assembly. The
+// programmer owns register and frame discipline; this sequence is balanced
+// (rax saved and restored), so it does not disturb the surrounding code.
+void main()
+{
+	int x;
+	x = 5;
+	asm
+	{
+		"push rax";
+		"xor rax, rax";
+		"pop rax";
+		"nop";
+	}
+	print(x);     // 5
+}

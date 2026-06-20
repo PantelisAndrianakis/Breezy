@@ -4787,6 +4787,8 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"Continue outside a loop.",NULL);
 		}
 		break;
+	case ST_ASM:
+		break;   /* Opaque verbatim assembly: nothing to resolve. */
 	case ST_FOR:
 		resolve_stmt(st,s->for_init,tc);
 		resolve_expr(st,s->cond,tc);

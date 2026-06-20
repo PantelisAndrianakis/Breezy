@@ -10249,6 +10249,13 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	case ST_SELECT:
 		cg_select(cg,tt,f,s,in_main);
 		break;
+	case ST_ASM:
+		for (int i=0; i<s->asm_line_count; i++)
+		{
+			cg_emit(cg,"    %s", s->asm_lines[i]);   /* Verbatim escape hatch. */
+		}
+
+		break;
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;   /* Emitted by cg_switch, never reached here. */

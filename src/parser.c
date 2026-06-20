@@ -1474,6 +1474,30 @@ static Stmt *parse_match(Parser *p)
 	return s;
 }
 
+/* asm { "raw line"; "raw line"; ... } - each string literal is emitted verbatim
+   into the generated assembly. An escape hatch: the programmer is responsible for
+   register and frame discipline. */
+static Stmt *parse_asm(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                       /* Consume 'asm'. */
+	Stmt *s=stmt_new(ST_ASM,line);
+	expect(p,TOKEN_LBRACE);
+	int cap=0;
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		Token t=expect(p,TOKEN_STR_LIT);
+		s->asm_lines=grow_ensure(s->asm_lines,s->asm_line_count,&cap,sizeof(*s->asm_lines));
+		strncpy(s->asm_lines[s->asm_line_count],t.text,255);
+		s->asm_lines[s->asm_line_count][255]='\0';
+		s->asm_line_count++;
+		match(p,TOKEN_SEMICOLON);      /* Optional ';' between lines. */
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return s;
+}
+
 /* One arm body: a `{ block }` or a single statement, always returned as a Block. */
 static Block *parse_arm_body(Parser *p)
 {
@@ -1751,6 +1775,10 @@ static Stmt *parse_statement(Parser *p)
 	if (check(p,TOKEN_SELECT))
 	{
 		return parse_select(p);
+	}
+	if (check(p,TOKEN_ASM))
+	{
+		return parse_asm(p);
 	}
 	if (check(p,TOKEN_RETURN))
 	{

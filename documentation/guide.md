@@ -25,6 +25,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [Allman braces & style](language/allman-braces.md) | The official brace and formatting style. |
 | [Control flow](language/control-flow.md) | `if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, `return`. |
 | [Exceptions](language/exceptions.md) | `throw`/`try`/`catch`, the exception hierarchy, is-a matching, zero-cost-when-not-thrown. |
+| [Inline assembly](language/inline-asm.md) | The `asm { ... }` escape hatch - raw x86-64 emitted verbatim; you own register discipline. |
 
 ## 2. The type system
 

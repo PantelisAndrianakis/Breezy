@@ -61,6 +61,7 @@ check_throws() {
 }
 echo "Integration tests"
 check minimal     tests/samples/pass/basics/minimal.bzy    "0"
+check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
 check arith       tests/samples/pass/basics/arith.bzy      "14"
 check system_rt   tests/samples/pass/system/realtime_io.bzy $'-1\n-1'
 check system_affinity tests/samples/pass/system/affinity.bzy $'true\ntrue'
