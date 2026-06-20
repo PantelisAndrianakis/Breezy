@@ -213,6 +213,16 @@ void bzy_mmap_copy_into(void *m, void *dst, int64_t srcOff, int64_t n)
 	memcpy((char*)dst + 32, (char*)c->base + srcOff, (size_t)n);   /* Packed byte[] payload at +32. No syscall. */
 }
 
+/* The reverse of copy_into: bulk-write a byte[] into the region at dstOff. */
+void bzy_mmap_copy_from(void *m, void *src, int64_t dstOff, int64_t n)
+{
+	MmapCtrl *c = MF_CTRL(m);
+	int64_t len = MF_CLOSED(m) ? 0 : c->len;
+	int64_t srclen = bzy_array_len(src);
+	if (n < 0 || dstOff < 0 || dstOff + n > len || n > srclen) { bzy_oob_abort(dstOff, len); }
+	memcpy((char*)c->base + dstOff, (char*)src + 32, (size_t)n);   /* Packed byte[] payload at +32. */
+}
+
 /* flush: offloaded (blocks), mirrors filechannel sync's result-code pattern. */
 typedef struct { MmapCtrl *c; int err; } FlushCtx;
 

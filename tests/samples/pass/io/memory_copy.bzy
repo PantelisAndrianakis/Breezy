@@ -1,0 +1,25 @@
+// copyFrom writes a byte[] into a mapped region; copyInto reads it back. Works on
+// anonymous regions and file mappings alike.
+void main()
+{
+	MappedFile m;
+	m = Memory.alloc(16);
+
+	byte[] src;
+	src = new byte[4];
+	src[0] = (byte)10;
+	src[1] = (byte)20;
+	src[2] = (byte)30;
+	src[3] = (byte)40;
+	m.copyFrom(src, 2, 4);          // Write 4 bytes at offset 2.
+
+	print(m.getByte(2));           // 10
+	print(m.getByte(5));           // 40
+
+	byte[] back;
+	back = new byte[4];
+	m.copyInto(back, 2, 4);        // Read them back.
+	print(back[0]);               // 10
+	print(back[3]);               // 40
+	m.close();
+}

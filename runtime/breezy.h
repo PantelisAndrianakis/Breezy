@@ -360,6 +360,7 @@ void    bzy_mmap_put_byte(void *m, int64_t i, int64_t v);
 void    bzy_mmap_put_int(void *m, int64_t i, int64_t v);
 void    bzy_mmap_put_long(void *m, int64_t i, int64_t v);
 void    bzy_mmap_copy_into(void *m, void *dst, int64_t srcOff, int64_t n);
+void    bzy_mmap_copy_from(void *m, void *src, int64_t dstOff, int64_t n);
 void    bzy_mmap_flush(void *m);             /* msync/FlushViewOfFile+FlushFileBuffers; parks; throws on error. */
 void    bzy_mmap_close(void *m);             /* Unmap + close mapping; idempotent. */
 

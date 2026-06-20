@@ -6119,6 +6119,7 @@ static void cg_mappedfile_method(Codegen *cg, TypeTable *tt, Expr *e)
 	else if (strcmp(n,"putInt")==0)     { fn = "bzy_mmap_put_int"; }
 	else if (strcmp(n,"putLong")==0)    { fn = "bzy_mmap_put_long"; }
 	else if (strcmp(n,"copyInto")==0)   { fn = "bzy_mmap_copy_into"; }
+	else if (strcmp(n,"copyFrom")==0)   { fn = "bzy_mmap_copy_from"; }
 	else if (strcmp(n,"flush")==0)      { fn = "bzy_mmap_flush"; fallible = 1; }
 	else                                { fn = "bzy_mmap_close"; }
 
@@ -11732,6 +11733,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_mmap_put_int");
 	cg_emit(cg,"extern bzy_mmap_put_long");
 	cg_emit(cg,"extern bzy_mmap_copy_into");
+	cg_emit(cg,"extern bzy_mmap_copy_from");
 	cg_emit(cg,"extern bzy_mmap_flush");
 	cg_emit(cg,"extern bzy_mmap_close");
 	cg_emit(cg,"extern bzy_filewriter_open");

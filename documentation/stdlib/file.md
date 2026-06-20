@@ -119,6 +119,8 @@ c.close();
 - `putByte(off, v)`, `putInt(off, v)`, `putLong(off, v)` - write one.
 - `copyInto(byte[] dst, srcOffset, len)` - bulk-copy mapped bytes into a `byte[]`
   off the page cache (no `read()` syscall).
+- `copyFrom(byte[] src, dstOffset, len)` - the reverse: bulk-write a `byte[]` into
+  the region at `dstOffset`.
 - `flush()` - force dirty pages to disk (`msync` / `FlushViewOfFile` +
   `FlushFileBuffers`); parks the breeze on the offload pool. Throws on error.
 - `close()` - unmap and release; idempotent.

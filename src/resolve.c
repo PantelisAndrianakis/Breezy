@@ -3220,6 +3220,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				}
 				e->type.kind=TY_VOID;
 			}
+			else if (strcmp(e->name,"copyFrom")==0)
+			{
+				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY
+					|| !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
+				{
+					die(e->line,"MappedFile.copyFrom(byte[] src, dstOffset, len) takes a byte[] and two integers.",NULL);
+				}
+				e->type.kind=TY_VOID;
+			}
 			else if (strcmp(e->name,"flush")==0)
 			{
 				if (e->arg_count!=0) { die(e->line,"MappedFile.flush() takes no arguments.",NULL); }
