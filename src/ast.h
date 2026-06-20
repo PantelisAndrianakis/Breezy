@@ -367,6 +367,13 @@ typedef struct
 	int   arg_count;
 	Func *overrides[8];       /* Per-constant method override bodies (empty if none). */
 	int   override_count;
+	/* Payload variant (sum type): the constant declares its own typed fields,
+	   e.g. `Circle(double r)`. payload_count>0 marks a constructible variant
+	   (Shape.Circle(2.0) builds a fresh instance) rather than a singleton
+	   constant. The fields become a subclass `Enum$Const` with a synthesized
+	   constructor that sets __ordinal/__name and stores the payload. */
+	Field payload[8];
+	int   payload_count;
 } EnumConstant;
 
 typedef struct

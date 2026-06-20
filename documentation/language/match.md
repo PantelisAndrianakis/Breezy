@@ -80,4 +80,4 @@ are entirely compile-time — there is **no run-time cost** over a hand-written
 
 ---
 
-← [Enums](enums.md) · [Back to the guide](../guide.md) · Next: [Control flow](control-flow.md)
+← [Enums](enums.md) · [Back to the guide](../guide.md) · Next: [Static members](static-members.md)

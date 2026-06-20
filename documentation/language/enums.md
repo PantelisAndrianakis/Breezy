@@ -156,4 +156,4 @@ Enums lower to ordinary classes: each constant becomes a singleton object constr
 
 ---
 
-← [Generics](generics.md) · [Back to the guide](../guide.md) · Next: [Static members](static-members.md)
+← [Generics](generics.md) · [Back to the guide](../guide.md) · Next: [Match](match.md)

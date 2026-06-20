@@ -136,6 +136,18 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 			}
 		}
 
+		/* Payload variants (sum types) parse but do not yet lower: the singleton
+		   construction model here builds one instance per constant at startup,
+		   which does not fit a per-call constructible variant. Lowering lands in
+		   a follow-up; reject for now with a clear message instead of
+		   mis-compiling. */
+		if (k->payload_count>0)
+		{
+			fprintf(stderr,"Enum '%s': payload-carrying variant '%s' is not supported yet.\n",
+					e->name,k->name);
+			exit(1);
+		}
+
 		if (k->arg_count!=ctor_argc)
 		{
 			fprintf(stderr,"Enum '%s': constant '%s' passes %d argument(s), constructor takes %d.\n",

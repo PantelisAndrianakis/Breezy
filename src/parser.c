@@ -1965,6 +1965,32 @@ static ClassDecl *parse_class(Parser *p)
 	return c;
 }
 
+/* True when the token stream after a variant's '(' opens a typed parameter
+   (`double r`, `Tree left`, `List<int> xs`, `int[] a`) rather than a value
+   argument (`255`, `FOO`). Distinguishes a payload variant `Circle(double r)`
+   from a singleton-constant argument list `RED(255, 0, 0)`. */
+static int variant_is_payload(Parser *p)
+{
+	TypeKind k;
+	if (scalar_type_kind(p->cur.type,&k))
+	{
+		return 1;
+	}
+
+	if (check(p,TOKEN_STRING) || check(p,TOKEN_MAP) || check(p,TOKEN_CHANNEL))
+	{
+		return 1;
+	}
+
+	if (check(p,TOKEN_IDENT)
+			&& (p->peek.type==TOKEN_IDENT || p->peek.type==TOKEN_LBRACKET || p->peek.type==TOKEN_LT))
+	{
+		return 1;
+	}
+
+	return 0;
+}
+
 /* enum Name [implements I, J] { CONST [ (args) ] [ { overrides } ] (, CONST)*
    [ ; shared-fields-and-methods ] }. Modeled on parse_class for the members. */
 static EnumDecl *parse_enum(Parser *p)
@@ -2004,16 +2030,39 @@ static EnumDecl *parse_enum(Parser *p)
 			{
 				if (!check(p,TOKEN_RPAREN))
 				{
-					do
+					if (variant_is_payload(p))
 					{
-						if (c->arg_count>=8)
+						/* Payload variant: typed fields become a constructible
+						   subclass (a sum-type case). */
+						do
 						{
-							fprintf(stderr,"Too many constant arguments.\n");
-							exit(1);
+							if (c->payload_count>=8)
+							{
+								fprintf(stderr,"Too many variant fields.\n");
+								exit(1);
+							}
+							Param pm;
+							memset(&pm,0,sizeof(pm));
+							parse_one_param(p,&pm);
+							Field *fld=&c->payload[c->payload_count++];
+							fld->type=pm.type;
+							strcpy(fld->name,pm.name);
 						}
-						c->args[c->arg_count++]=parse_expr(p);
+						while (match(p,TOKEN_COMMA));
 					}
-					while (match(p,TOKEN_COMMA));
+					else
+					{
+						do
+						{
+							if (c->arg_count>=8)
+							{
+								fprintf(stderr,"Too many constant arguments.\n");
+								exit(1);
+							}
+							c->args[c->arg_count++]=parse_expr(p);
+						}
+						while (match(p,TOKEN_COMMA));
+					}
 				}
 
 				expect(p,TOKEN_RPAREN);

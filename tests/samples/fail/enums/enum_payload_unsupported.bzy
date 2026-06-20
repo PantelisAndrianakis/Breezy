@@ -1,0 +1,11 @@
+// Payload-carrying variants parse but do not lower yet; rejected with a clear
+// message until sum-type construction lands (plan Domain 1a-ii).
+enum Shape
+{
+	Circle(double r),
+	Rect(double w, double h);
+}
+
+void main()
+{
+}

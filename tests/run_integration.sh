@@ -283,6 +283,7 @@ check_fail enum_arity      tests/samples/fail/enums/enum_arity.bzy
 check_fail enum_extends    tests/samples/fail/enums/enum_extends.bzy
 check_fail enum_bad_label  tests/samples/fail/enums/enum_switch_label.bzy
 check_fail enum_match_nonexhaustive tests/samples/fail/enums/enum_match_nonexhaustive.bzy
+check_fail enum_payload_unsupported tests/samples/fail/enums/enum_payload_unsupported.bzy
 check record_basic tests/samples/pass/records/record_basic.bzy $'3\n4'
 check_fail record_extends tests/samples/fail/records/proj_record_extends
 check record_methods tests/samples/pass/records/record_methods.bzy $'true\nfalse\ntrue'
