@@ -17,6 +17,7 @@ typedef struct
 	int  *const_payload;           /* 1 if this constant is a payload variant (constructed per
 	                                  call via Enum$Const(...), not a startup singleton). */
 	int  type_param_count;         /* >0 for a generic enum (enum Name<T>). */
+	int  *const_payload_n;         /* Number of payload fields per constant (0 = a zero-field variant). */
 } EnumInfo;
 
 /* Lower every EnumDecl: synthesize the base class (+ per-constant subclasses for
@@ -36,6 +37,7 @@ int          enum_is_generic(const char *en);                      /* 1 if the e
    base-variant + suffix (Wrap$Of -> Wrap$Of$int). */
 void         enum_register_instance(const char *inst, const char *base, const char *suffix);
 int          enum_const_is_payload(const char *en, const char *c); /* 1 if constant c is a payload variant. */
+int          enum_variant_field_count(const char *en, const char *c); /* Payload field count, or -1 if not a variant. */
 const char  *enum_variant_class(const char *en, const char *c);    /* "Enum$C" for a payload variant, else NULL. */
 int          enum_total(void);
 const EnumInfo *enum_at(int i);

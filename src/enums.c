@@ -171,8 +171,10 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 		class_add_method(c,func_clone(k->overrides[i]));
 	}
 
-	if (k->payload_count>0)
+	if (k->payload_count>0 || e->type_param_count>0)
 	{
+		/* Payload variant, or any constant of a generic enum: a constructible
+		   subclass. Zero-field (None) just gets the ordinal/name-stamping ctor. */
 		for (int i=0; i<k->payload_count; i++)
 		{
 			Field *ff=class_add_field(c);
@@ -215,6 +217,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 		info->const_args  = cc ? calloc((size_t)cc, sizeof(*info->const_args))  : NULL;
 		info->const_argc  = cc ? calloc((size_t)cc, sizeof(*info->const_argc))  : NULL;
 		info->const_payload = cc ? calloc((size_t)cc, sizeof(*info->const_payload)) : NULL;
+		info->const_payload_n = cc ? calloc((size_t)cc, sizeof(*info->const_payload_n)) : NULL;
 	}
 
 	/* Base class first (a parent must register before its subclasses). */
@@ -235,24 +238,14 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 			}
 		}
 
-		/* A generic enum's constants are constructed per call (no per-instantiation
-		   singleton exists), so they must carry a payload for now. A zero-field
-		   variant (e.g. Option's None) needs construction-site type inference,
-		   which is a later addition. */
-		if (e->type_param_count>0 && k->payload_count==0)
-		{
-			fprintf(stderr,"Enum '%s': a generic enum's constant '%s' must carry a payload (zero-field variants not supported yet).\n",
-					e->name,k->name);
-			exit(1);
-		}
-
 		strcpy(info->const_name[i],k->name);
+		info->const_payload_n[i]=k->payload_count;
 
-		/* Payload variant: a constructible sum-type case. It always becomes a
-		   subclass `Enum$Const` (with its own fields + synthesized constructor)
-		   and is built per call, not stamped as a startup singleton, so it
-		   carries no singleton args. */
-		if (k->payload_count>0)
+		/* Constructible variant: a payload variant (Some(T v)), or - in a generic
+		   enum - any constant, since a generic enum has no per-instantiation
+		   singleton, so even a zero-field constant (None) becomes a constructible
+		   subclass `Enum$Const` built per use. */
+		if (k->payload_count>0 || e->type_param_count>0)
 		{
 			info->const_payload[i]=1;
 			info->const_argc[i]=0;
@@ -379,6 +372,7 @@ void enum_register_instance(const char *inst, const char *base, const char *suff
 	char (*bname)[64]=b->const_name;
 	char (*bclass)[64]=b->const_class;
 	int *bpay=b->const_payload;
+	int *bpayn=b->const_payload_n;
 
 	g_enums=grow_ensure(g_enums,g_enum_count,&g_enum_cap,sizeof(*g_enums));
 	EnumInfo *info=&g_enums[g_enum_count++];
@@ -391,10 +385,12 @@ void enum_register_instance(const char *inst, const char *base, const char *suff
 	info->const_args    = cc ? calloc((size_t)cc,sizeof(*info->const_args))    : NULL;
 	info->const_argc    = cc ? calloc((size_t)cc,sizeof(*info->const_argc))    : NULL;
 	info->const_payload = cc ? calloc((size_t)cc,sizeof(*info->const_payload)) : NULL;
+	info->const_payload_n = cc ? calloc((size_t)cc,sizeof(*info->const_payload_n)) : NULL;
 	for (int i=0; i<cc; i++)
 	{
 		strcpy(info->const_name[i],bname[i]);
 		info->const_payload[i]=bpay[i];
+		info->const_payload_n[i]=bpayn?bpayn[i]:0;
 		if (bpay[i])
 		{
 			snprintf(info->const_class[i],64,"%s%s",bclass[i],suffix);   /* Wrap$Of -> Wrap$Of$int. */
@@ -404,6 +400,25 @@ void enum_register_instance(const char *inst, const char *base, const char *suff
 			strcpy(info->const_class[i],inst);
 		}
 	}
+}
+
+int enum_variant_field_count(const char *en, const char *c)
+{
+	const EnumInfo *e=find_enum(en);
+	if (!e || !e->const_payload_n)
+	{
+		return -1;
+	}
+
+	for (int i=0; i<e->constant_count; i++)
+	{
+		if (strcmp(e->const_name[i],c)==0)
+		{
+			return e->const_payload[i] ? e->const_payload_n[i] : -1;
+		}
+	}
+
+	return -1;
 }
 
 int enum_is_generic(const char *en)

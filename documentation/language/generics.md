@@ -125,14 +125,27 @@ independently:
 class Holder<T>
 {
 	T v;
-	Holder(T x) { this.v = x; }
-	T get() { return this.v; }
+
+	Holder(T x)
+	{
+		this.v = x;
+	}
+
+	T get()
+	{
+		return this.v;
+	}
 }
 
 class Tagged<T> extends Holder<T>   // Pass T through to the parent.
 {
 	int tag;
-	Tagged(T x) { this.v = x; this.tag = 7; }
+
+	Tagged(T x)
+	{
+		this.v = x;
+		this.tag = 7;
+	}
 }
 
 void main()

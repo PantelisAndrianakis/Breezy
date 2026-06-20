@@ -201,10 +201,16 @@ enum Wrap<T>
 void main()
 {
 	Wrap<int> wi = Wrap.Of(9);
-	match (wi) { Of(x) => print(x); }     // 9
+	match (wi)
+	{
+		Of(x) => print(x);     // 9
+	}
 
 	Wrap<string> ws = Wrap.Of("hi");
-	match (ws) { Of(x) => print(x); }     // hi
+	match (ws)
+	{
+		Of(x) => print(x);     // hi
+	}
 }
 ```
 
@@ -217,9 +223,31 @@ local, a field, a return, or an argument - so the concrete type is known:
 Wrap<int> w = Wrap.Of(9);   // The declared type fixes T = int.
 ```
 
-Two limits apply for now: every constant must carry a payload (a zero-field
-variant in a generic enum, like an `Option`'s `None`, is not yet supported), and
-construction needs that surrounding typed context.
+A generic enum may also mix payload and **zero-field** variants - the shape of an
+`Option`:
+
+```breezy
+enum Option<T>
+{
+	Some(T v),
+	None;
+}
+
+void main()
+{
+	Option<int> a = Option.Some(5);
+	Option<int> b = Option.None;       // Bare; the declared type fixes T.
+
+	match (a)
+	{
+		Some(x) => print(x);           // 5
+		None    => print(0);
+	}
+}
+```
+
+One limit applies for now: construction needs the surrounding typed context (a
+typed local, field, return, or argument) so the concrete type is known.
 
 ---
 

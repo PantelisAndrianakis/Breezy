@@ -1265,6 +1265,30 @@ static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const 
 		}
 	}
 
+	/* Bare zero-field generic variant in a typed context (Option<int> x = Option.None):
+	   construct Option$None$int from the expected base instance. */
+	if (e->kind == EX_FIELD && e->lhs && e->lhs->kind == EX_IDENT
+			&& enum_is(e->lhs->name) && enum_is_generic(e->lhs->name)
+			&& enum_const_is_payload(e->lhs->name, e->name)
+			&& enum_variant_field_count(e->lhs->name, e->name) == 0
+			&& expected && expected->kind == TY_OBJECT)
+	{
+		const char *base = e->lhs->name;
+		const char *inst = expected->class_name;
+		size_t bl = strlen(base);
+		if (strncmp(inst, base, bl) == 0 && inst[bl] == '$')
+		{
+			const char *vt = enum_variant_class(base, e->name);
+			char concrete[160];
+			snprintf(concrete, sizeof(concrete), "%s%s", vt, inst + bl);
+			Expr *nw = expr_new(EX_NEW, e->line);
+			snprintf(nw->name, sizeof(nw->name), "%s", concrete);
+			resolve_expr(st, nw, tc);
+			*e = *nw;
+			return;
+		}
+	}
+
 	resolve_expr(st, e, tc);
 }
 
@@ -1886,6 +1910,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 			if (enum_const_is_payload(e->lhs->name,e->name))
 			{
+				if (enum_variant_field_count(e->lhs->name,e->name)==0)
+				{
+					die(e->line,"Zero-field variant needs a typed context, e.g. Option<int> x = Enum.Variant: ",e->name);
+				}
+
 				die(e->line,"Payload variant needs arguments, e.g. Enum.Variant(...): ",e->name);
 			}
 

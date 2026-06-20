@@ -4,13 +4,26 @@ void main()
 {
 	Wrap<int> wi;
 	wi = Wrap.Of(9);
-	match (wi) { Of(x) => print(x); }        // 9
+	match (wi)
+	{
+		Of(x) => print(x);        // 9
+	}
 
 	Wrap<string> ws;
 	ws = Wrap.Of("hi");
-	match (ws) { Of(x) => print(x); }        // hi
+	match (ws)
+	{
+		Of(x) => print(x);        // hi
+	}
 
 	Pair2<int, string> p;
 	p = Pair2.Both(1, "x");
-	match (p) { Both(a, b) => { print(a); print(b); } }   // 1, x
+	match (p)
+	{
+		Both(a, b) =>
+		{
+			print(a);
+			print(b);             // 1, x
+		}
+	}
 }

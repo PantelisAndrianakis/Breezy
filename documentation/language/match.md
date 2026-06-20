@@ -21,16 +21,35 @@ A subject in parentheses, then one arm per line: a constant label (or `default`)
 `=>`, and either a single statement or a `{ ... }` block.
 
 ```breezy
-enum Color { RED(255,0,0), GREEN(0,255,0), BLUE(0,0,255); int r; int g; int b;
-	Color(int r,int g,int b){ this.r=r; this.g=g; this.b=b; } }
+enum Color
+{
+	RED(255, 0, 0),
+	GREEN(0, 255, 0),
+	BLUE(0, 0, 255);
+
+	int r;
+	int g;
+	int b;
+
+	Color(int r, int g, int b)
+	{
+		this.r = r;
+		this.g = g;
+		this.b = b;
+	}
+}
 
 void describe(Color c)
 {
 	match (c)
 	{
-		RED   => print("warm");
-		GREEN => { print("cool"); print("calm"); }   // Block arm.
-		BLUE  => print("cool");
+		RED => print("warm");
+		GREEN =>
+		{
+			print("cool");
+			print("calm");
+		}
+		BLUE => print("cool");
 	}
 }
 ```

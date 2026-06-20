@@ -1,0 +1,21 @@
+// A generic enum mixing a payload variant (Some) and a zero-field variant (None)
+// - the shape of Option<T>. None is built bare in a typed context.
+void main()
+{
+	Option<int> a;
+	a = Option.Some(5);
+
+	Option<int> b;
+	b = Option.None;
+
+	match (a)
+	{
+		Some(x) => print(x);
+		None    => print(0);
+	}
+	match (b)
+	{
+		Some(x) => print(x);
+		None    => print(0);
+	}
+}
