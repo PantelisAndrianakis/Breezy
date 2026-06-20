@@ -351,6 +351,7 @@ void  bzy_filechannel_close(void *ch);
 int64_t bzy_filechannel_lock(void *ch);      /* Exclusive advisory whole-file lock; parks; 1 ok, 0 fail. */
 void    bzy_filechannel_unlock(void *ch);    /* Release the advisory lock (best-effort). */
 void   *bzy_mmap_map(void *fc);              /* Owned MappedFile; throws if empty/unmappable. */
+void   *bzy_memory_map(int64_t bytes);       /* Owned anonymous MappedFile region (zero-filled). */
 int64_t bzy_mmap_size(void *m);
 int64_t bzy_mmap_get_byte(void *m, int64_t i);
 int64_t bzy_mmap_get_int(void *m, int64_t i);

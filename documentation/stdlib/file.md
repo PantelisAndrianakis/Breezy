@@ -127,6 +127,22 @@ Offsets are **bounds-checked** - an out-of-range index aborts with the same
 message as an array subscript. Values are **native-endian**: a file written and
 read on the same architecture round-trips exactly.
 
+### Anonymous memory: `Memory.alloc`
+
+`Memory.alloc(bytes)` returns a `MappedFile` backed by **anonymous memory** - a
+zero-filled, page-aligned region not tied to any file. It is the same object with
+the same accessors, useful as a raw scratch buffer or arena:
+
+```breezy
+MappedFile m = Memory.alloc(64);   // 64 zeroed bytes.
+m.putInt(0, 123);
+print(m.getInt(0));                // 123
+m.close();                         // Release (munmap / UnmapViewOfFile).
+```
+
+- `Memory.alloc(bytes) -> MappedFile` - a zero-filled anonymous region of
+  `bytes` bytes (must be positive). `flush()` is a no-op (there is no file).
+
 **Concurrency:** mapped bytes are not ARC objects, so overlapping writes from
 multiple breezes are **not** auto-synchronized the way a shared container is.
 Use a single writer, or coordinate with your own lock / `FileChannel.lock()`.

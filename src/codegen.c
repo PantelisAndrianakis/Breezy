@@ -6479,6 +6479,14 @@ static void cg_system(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
+static void cg_memory(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	/* Memory.map(bytes) -> owned anonymous MappedFile region in rax. */
+	cg_expr(cg,tt,e->args[0]);
+	cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+	cg_aligned_call(cg,"bzy_memory_map");
+}
+
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Clock.". */
@@ -7449,6 +7457,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Network.",8)==0)
 		{
 			cg_network(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Memory.",7)==0)
+		{
+			cg_memory(cg,tt,e);
 		}
 		else if (strncmp(e->name,"Graphics.",9)==0)
 		{
@@ -11711,6 +11723,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_filechannel_lock");
 	cg_emit(cg,"extern bzy_filechannel_unlock");
 	cg_emit(cg,"extern bzy_mmap_map");
+	cg_emit(cg,"extern bzy_memory_map");
 	cg_emit(cg,"extern bzy_mmap_size");
 	cg_emit(cg,"extern bzy_mmap_get_byte");
 	cg_emit(cg,"extern bzy_mmap_get_int");

@@ -104,6 +104,47 @@ void *bzy_mmap_map(void *fc)
 	return o;
 }
 
+/* Anonymous memory region: a zero-filled, page-aligned MappedFile not backed by
+   any file. Linux uses MAP_ANONYMOUS; Windows a page-file-backed file mapping
+   (INVALID_HANDLE_VALUE), so the same MappedFile object, accessors, and teardown
+   apply. src = -1 marks it anonymous (flush has nothing to sync to disk). */
+void *bzy_memory_map(int64_t bytes)
+{
+	if (bytes <= 0) { bzy_io_fail("Memory.map: size must be positive."); return NULL; }
+
+#ifdef _WIN32
+	HANDLE map = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+	                                (DWORD)((uint64_t)bytes >> 32), (DWORD)((uint64_t)bytes & 0xffffffffu), NULL);
+	if (!map) { bzy_io_fail("Memory.map: CreateFileMapping failed."); return NULL; }
+	void *base = MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, (SIZE_T)bytes);
+	if (!base) { CloseHandle(map); bzy_io_fail("Memory.map: MapViewOfFile failed."); return NULL; }
+	void *win_map = (void*)map;
+#else
+	void *base = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (base == MAP_FAILED) { bzy_io_fail("Memory.map: mmap failed."); return NULL; }
+	void *win_map = NULL;
+#endif
+
+	MmapCtrl *c = (MmapCtrl*)calloc(1, sizeof(MmapCtrl));
+	if (!c)
+	{
+#ifdef _WIN32
+		UnmapViewOfFile(base); CloseHandle((HANDLE)win_map);
+#else
+		munmap(base, (size_t)bytes);
+#endif
+		bzy_io_fail("Memory.map: out of memory."); return NULL;
+	}
+	c->base = base; c->len = bytes; c->win_map = win_map; c->src = -1;
+
+	void *o = bzy_alloc(40);
+	*(void**)o = mf_vtable();
+	MF_CTRL(o) = c;
+	MF_CLOSED(o) = 0;
+	bzy_share_crosscore(o);
+	return o;
+}
+
 int64_t bzy_mmap_size(void *m)
 {
 	if (MF_CLOSED(m)) { return 0; }
@@ -189,6 +230,7 @@ static void mmap_flush_run(void *p)
 void bzy_mmap_flush(void *m)
 {
 	if (MF_CLOSED(m)) { bzy_io_fail("MappedFile.flush: map is closed."); return; }
+	if (MF_CTRL(m)->src < 0) { return; }   /* Anonymous region: nothing to sync to disk. */
 	FlushCtx f = { MF_CTRL(m), 0 };
 	bzy_offload_run(mmap_flush_run, &f);
 	if (f.err) { bzy_io_fail("MappedFile.flush: could not flush to disk."); }

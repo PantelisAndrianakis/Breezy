@@ -379,6 +379,7 @@ check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
 check filechannel   tests/samples/pass/io/filechannel.bzy    $'10'
 check filelock      tests/samples/pass/io/filelock.bzy       $'true\n10'
 check mmap          tests/samples/pass/io/mmap_roundtrip.bzy 'mmap-ok'
+check memory_alloc  tests/samples/pass/io/memory_alloc.bzy $'123\n9999\n7\n64'
 check readinto      tests/samples/pass/io/readinto.bzy       $'4 65 68\n4 71 74'
 check filewriter    tests/samples/pass/io/filewriter.bzy     $'102'
 check logger        tests/samples/pass/io/logger.bzy         $'200'

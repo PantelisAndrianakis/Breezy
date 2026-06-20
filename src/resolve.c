@@ -738,6 +738,23 @@ static void resolve_network(Expr *e)
 	die(e->line,"Unknown Network method: ",m);
 }
 
+static void resolve_memory(Expr *e)
+{
+	const char *m = e->name + 7;   /* After "Memory.". */
+	if (strcmp(m,"alloc")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"Memory.alloc(bytes) takes one integer size.",NULL);
+		}
+
+		e->type.kind=TY_MAPPEDFILE;
+		return;
+	}
+
+	die(e->line,"Unknown Memory method: ",m);
+}
+
 static void resolve_graphics(Expr *e)
 {
 	const char *m = e->name + 9;   /* After "Graphics.". */
@@ -4035,6 +4052,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Network.",8)==0)
 		{
 			resolve_network(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Memory.",7)==0)
+		{
+			resolve_memory(e);
 			break;
 		}
 

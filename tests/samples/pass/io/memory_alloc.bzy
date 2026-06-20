@@ -1,0 +1,15 @@
+// Memory.alloc(bytes) returns an anonymous, zero-filled memory region - a
+// MappedFile not backed by any file. Same accessors as a file mapping.
+void main()
+{
+	MappedFile m;
+	m = Memory.alloc(64);
+	m.putInt(0, 123);
+	m.putLong(8, 9999);
+	m.putByte(20, 7);
+	print(m.getInt(0));     // 123
+	print(m.getLong(8));    // 9999
+	print(m.getByte(20));   // 7
+	print(m.size());        // 64
+	m.close();
+}
