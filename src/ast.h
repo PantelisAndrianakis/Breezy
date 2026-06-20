@@ -170,7 +170,8 @@ static inline TypeKind ty_to_unsigned(TypeKind k)
 typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
-	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL, EX_LAMBDA
+	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL, EX_LAMBDA,
+	EX_TRYOP        /* `operand?`: unwrap Some/Ok, else early-return None/Err. Operand in lhs. */
 } ExprKind;
 
 /* Lambda literal (EX_LAMBDA) side-data, kept off the Expr hot struct. A lambda

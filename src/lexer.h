@@ -37,7 +37,8 @@ typedef enum
 	TOKEN_AND, TOKEN_OR, TOKEN_XOR, TOKEN_NOT,           /* and && | or || | xor | not ! */
 	TOKEN_ASSIGN, TOKEN_EQ, TOKEN_NEQ, TOKEN_LT, TOKEN_GT, TOKEN_LTE, TOKEN_GTE,
 	TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE, TOKEN_RBRACE,
-	TOKEN_SEMICOLON, TOKEN_COMMA, TOKEN_DOT, TOKEN_COLON
+	TOKEN_SEMICOLON, TOKEN_COMMA, TOKEN_DOT, TOKEN_COLON,
+	TOKEN_QUESTION                                       /* `?` propagation operator (Option/Result). */
 } TokenType;
 
 typedef struct

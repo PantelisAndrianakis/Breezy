@@ -1431,6 +1431,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_NULL:
 		e->type.kind=TY_NULL;
 		break;
+	case EX_TRYOP:
+		/* A top-level `expr?` is desugared in resolve_block; reaching here means a
+		   nested use, which is not supported yet. */
+		die(e->line,"'?' is supported only at the top of a variable initializer or assignment for now.",NULL);
+		break;
 	case EX_FLOAT:
 		e->type.kind = (e->int_suffix[0]=='f') ? TY_FLOAT : TY_DOUBLE;
 		break;
@@ -5324,10 +5329,143 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	return n;
 }
 
+/* The `?` operand slot of a statement, if its top-level value is `expr?`:
+   a variable initializer or an assignment RHS. */
+static Expr **tryop_slot(Stmt *s)
+{
+	if (s->kind==ST_VARDECL && s->decl_init && s->decl_init->kind==EX_TRYOP)
+	{
+		return &s->decl_init;
+	}
+
+	if (s->kind==ST_ASSIGN && s->value && s->value->kind==EX_TRYOP)
+	{
+		return &s->value;
+	}
+
+	return NULL;
+}
+
+static int g_tryop_seq = 0;
+
+/* Desugar `Type v = expr?;` (and the assignment form) into:
+       OperandType __q = expr;
+       if (__q.ordinal() != 0) { return __q; }   // None/Err: propagate.
+       OkVariant __qs = __q;                       // tag-narrow to Some/Ok.
+       Type v = __qs.<payload>;                     // unwrap.
+   Reuses if/return ARC and the match-bind narrowing; `?` itself never reaches
+   codegen. Returns the replacement statement count (0 if not a `?` statement). */
+static int desugar_tryop(SymTable *st, Stmt *s, const char *tc, Stmt **out)
+{
+	Expr **slot = tryop_slot(s);
+	if (!slot)
+	{
+		return 0;
+	}
+
+	Expr *operand = (*slot)->lhs;
+	resolve_expr(st, operand, tc);
+	const char *ot = operand->type.class_name;
+	int isenum = operand->type.kind==TY_OBJECT
+				 && (strncmp(ot,"Option$",7)==0 || strncmp(ot,"Result$",7)==0);
+	if (!isenum)
+	{
+		die(s->line,"'?' applies to an Option or Result value.",NULL);
+	}
+
+	if (!g_ret || g_ret->kind!=TY_OBJECT || strcmp(g_ret->class_name,ot)!=0)
+	{
+		die(s->line,"'?' requires the enclosing function to return the same Option/Result type.",NULL);
+	}
+
+	const char *okclass = enum_variant_class(ot, enum_const_name(ot,0));   /* Some/Ok variant. */
+	ClassInfo *vc = types_find_class(g_types, okclass);
+	const char *payload = NULL;
+	for (int i=0; i<vc->field_count; i++)
+	{
+		if (strcmp(vc->fields[i].name,"__ordinal")!=0 && strcmp(vc->fields[i].name,"__name")!=0)
+		{
+			payload = vc->fields[i].name;
+			break;
+		}
+	}
+
+	if (!payload)
+	{
+		die(s->line,"'?' on a variant that carries no value.",NULL);
+	}
+
+	char pn[32], sn[32];
+	snprintf(pn,sizeof(pn),"__q%d",g_tryop_seq);
+	snprintf(sn,sizeof(sn),"__qs%d",g_tryop_seq);
+	g_tryop_seq++;
+
+	Stmt *d0 = stmt_new(ST_VARDECL, s->line);
+	d0->decl_type = operand->type;
+	snprintf(d0->decl_name,sizeof(d0->decl_name),"%s",pn);
+	d0->decl_init = operand;
+
+	Stmt *d1 = stmt_new(ST_IF, s->line);
+	Expr *ord = expr_new(EX_METHOD_CALL, s->line);
+	strcpy(ord->name,"ordinal");
+	Expr *pid1 = expr_new(EX_IDENT, s->line);
+	strcpy(pid1->name,pn);
+	ord->lhs = pid1;
+	Expr *zero = expr_new(EX_INT, s->line);
+	zero->int_val = 0;
+	Expr *cond = expr_new(EX_BINARY, s->line);
+	cond->op = TOKEN_NEQ;
+	cond->lhs = ord;
+	cond->rhs = zero;
+	d1->cond = cond;
+	d1->then_blk = block_new();
+	Stmt *ret = stmt_new(ST_RETURN, s->line);
+	Expr *pidr = expr_new(EX_IDENT, s->line);
+	strcpy(pidr->name,pn);
+	ret->ret_val = pidr;
+	block_push(d1->then_blk, ret);
+
+	Stmt *d2 = stmt_new(ST_VARDECL, s->line);
+	d2->is_narrow = 1;
+	d2->decl_type.kind = TY_OBJECT;
+	strcpy(d2->decl_type.class_name, okclass);
+	snprintf(d2->decl_name,sizeof(d2->decl_name),"%s",sn);
+	Expr *pid2 = expr_new(EX_IDENT, s->line);
+	strcpy(pid2->name,pn);
+	d2->decl_init = pid2;
+
+	Expr *sid = expr_new(EX_IDENT, s->line);
+	strcpy(sid->name,sn);
+	Expr *fld = expr_new(EX_FIELD, s->line);
+	strcpy(fld->name,payload);
+	fld->lhs = sid;
+	*slot = fld;
+
+	out[0]=d0;
+	out[1]=d1;
+	out[2]=d2;
+	out[3]=s;
+	return 4;
+}
+
 static void resolve_block(SymTable *st, Block *b, const char *tc)
 {
 	for (int i=0; i<b->count; i++)
 	{
+		Stmt *tout[4];
+		int tk = desugar_tryop(st, b->stmts[i], tc, tout);
+		if (tk > 0)
+		{
+			block_splice(b, i, tout, tk);
+			for (int j = 0; j < tk; j++)
+			{
+				resolve_stmt(st, b->stmts[i + j], tc);
+			}
+
+			i += tk - 1;
+			continue;
+		}
+
 		Stmt *out[3];
 		int k = desugar_combinator(st, b->stmts[i], tc, out);
 		if (k > 0)

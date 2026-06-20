@@ -1,0 +1,35 @@
+// The `?` operator: unwrap Ok/Some, or early-return Err/None from a function that
+// returns the same Result/Option type.
+Result<int, string> parse(int x)
+{
+	if (x < 0)
+	{
+		return Result.Err("neg");
+	}
+	return Result.Ok(x);
+}
+
+Result<int, string> doubleIt(int x)
+{
+	int n = parse(x)?;          // Err -> returns "neg"; Ok -> unwraps the value.
+	return Result.Ok(n + n);
+}
+
+void main()
+{
+	Result<int, string> a;
+	a = doubleIt(5);
+	match (a)
+	{
+		Ok(v)  => print(v);     // 10
+		Err(e) => print(e);
+	}
+
+	Result<int, string> b;
+	b = doubleIt(-1);
+	match (b)
+	{
+		Ok(v)  => print(v);
+		Err(e) => print(e);     // neg
+	}
+}

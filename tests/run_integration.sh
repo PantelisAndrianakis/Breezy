@@ -292,6 +292,7 @@ check generic_enum_decl tests/samples/pass/enums/generic_enum_decl.bzy $'1'
 check generic_enum tests/samples/pass/enums/proj_generic_enum $'9\nhi\n1\nx'
 check option_enum tests/samples/pass/enums/proj_option $'5\n0'
 check option_result tests/samples/pass/stdlib/option_result.bzy $'5\n-1\n42\nbad'
+check try_propagate tests/samples/pass/stdlib/try_propagate.bzy $'10\nneg'
 check record_basic tests/samples/pass/records/record_basic.bzy $'3\n4'
 check_fail record_extends tests/samples/fail/records/proj_record_extends
 check record_methods tests/samples/pass/records/record_methods.bzy $'true\nfalse\ntrue'

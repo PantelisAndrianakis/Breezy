@@ -64,6 +64,40 @@ match (parsed)
 
 ---
 
+## `?` - propagate the failure
+
+The `?` operator unwraps the success case or **returns the failure early** from
+the enclosing function. `value?` evaluates to the inner value when the operand is
+`Ok`/`Some`; when it is `Err`/`None`, the function returns that failure
+immediately. The enclosing function must return the same `Result`/`Option` type.
+
+```breezy
+Result<int, string> doubleIt(int x)
+{
+	int n = parse(x)?;          // Err -> return it now; Ok -> bind n to the value.
+	return Result.Ok(n + n);
+}
+```
+
+Without `?`, that is the verbose match-and-return:
+
+```breezy
+Result<int, string> r = parse(x);
+
+int n;
+match (r)
+{
+	Ok(v)  => n = v;
+	Err(e) => return Result.Err(e);
+}
+```
+
+For now `?` is used at the top of a variable initializer or assignment
+(`int n = parse(x)?;`), and the enclosing function returns the same
+`Result`/`Option` type as the operand.
+
+---
+
 ## Rules & gotchas
 
 - **No import needed** - both are always in scope.

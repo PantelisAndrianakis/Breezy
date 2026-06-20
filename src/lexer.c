@@ -378,6 +378,9 @@ Token lexer_next(Lexer *l)
 	case ':':
 		t.type = TOKEN_COLON;
 		return t;
+	case '?':
+		t.type = TOKEN_QUESTION;
+		return t;
 	case '.':
 		if (isdigit((unsigned char)peek_ch(l)))
 		{

@@ -394,6 +394,14 @@ static Expr *parse_postfix(Parser *p)
 		pe->lhs=e;
 		e=pe;
 	}
+	while (check(p,TOKEN_QUESTION))   /* `operand?` propagation (Option/Result). */
+	{
+		int line=p->cur.line;
+		advance(p);
+		Expr *t=expr_new(EX_TRYOP,line);
+		t->lhs=e;
+		e=t;
+	}
 	return e;
 }
 
