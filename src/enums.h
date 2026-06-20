@@ -14,6 +14,8 @@ typedef struct
 	char (*const_class)[64];       /* Instantiated class: "Color" or "Color$RED". */
 	Expr *(*const_args)[8];        /* Per-constant ctor args (AST pointers; inner [8] kept). */
 	int  *const_argc;
+	int  *const_payload;           /* 1 if this constant is a payload variant (constructed per
+	                                  call via Enum$Const(...), not a startup singleton). */
 } EnumInfo;
 
 /* Lower every EnumDecl: synthesize the base class (+ per-constant subclasses for
@@ -26,6 +28,8 @@ int          enum_is(const char *name);                   /* 1 if name is an enu
 int          enum_ordinal(const char *en, const char *c); /* ordinal or -1. */
 int          enum_count_of(const char *en);
 const char  *enum_const_name(const char *en, int idx);
+int          enum_const_is_payload(const char *en, const char *c); /* 1 if constant c is a payload variant. */
+const char  *enum_variant_class(const char *en, const char *c);    /* "Enum$C" for a payload variant, else NULL. */
 int          enum_total(void);
 const EnumInfo *enum_at(int i);
 

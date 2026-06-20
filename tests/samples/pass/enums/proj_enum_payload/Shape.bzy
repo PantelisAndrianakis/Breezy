@@ -1,0 +1,7 @@
+// A payload-carrying enum (sum type): each variant declares its own typed
+// fields and is constructed per call, e.g. Shape.Circle(2.0).
+enum Shape
+{
+	Circle(double r),
+	Rect(double w, double h);
+}

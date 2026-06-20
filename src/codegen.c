@@ -11264,6 +11264,11 @@ static void cg_emit_enum_init(Codegen *cg, TypeTable *tt)
 		const EnumInfo *e=enum_at(i);
 		for (int k=0; k<e->constant_count; k++)
 		{
+			if (e->const_payload && e->const_payload[k])
+			{
+				continue;   /* Payload variant: constructed per call, not a startup singleton. */
+			}
+
 			Expr tmp;
 			memset(&tmp,0,sizeof(tmp));
 			tmp.kind=EX_NEW;
@@ -11302,6 +11307,11 @@ static void cg_emit_enum_data(Codegen *cg)
 		const EnumInfo *e=enum_at(i);
 		for (int k=0; k<e->constant_count; k++)
 		{
+			if (e->const_payload && e->const_payload[k])
+			{
+				continue;   /* No singleton slot/name for a payload variant. */
+			}
+
 			cg_emit(cg,"__enum_%s_%s: dq 0", e->name, e->const_name[k]);
 			fprintf(cg->out,"__enumname_%s_%s: db ", e->name, e->const_name[k]);
 			for (const char *p=e->const_name[k]; *p; p++)

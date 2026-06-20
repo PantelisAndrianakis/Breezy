@@ -141,9 +141,50 @@ switch (c)
 
 ---
 
+## Payload variants (sum types)
+
+A constant may instead declare its own **typed fields** in the parentheses,
+making it a *variant* that is constructed per use rather than a shared
+singleton. This turns the enum into a **sum type** - a value that is exactly one
+of several shapes, each carrying its own data.
+
+```breezy
+enum Shape
+{
+	Circle(double r),
+	Rect(double w, double h);
+}
+
+void main()
+{
+	Shape s = Shape.Circle(2.0);     // Build a fresh Circle.
+	Shape t = Shape.Rect(3.0, 4.0);  // ...or a Rect.
+
+	print(s.name());      // Circle
+	print(t.ordinal());   // 1
+
+	match (t)             // Dispatch on the variant.
+	{
+		Circle => print("round");
+		Rect   => print("boxy");
+	}
+}
+```
+
+A variant is built with arguments (`Shape.Circle(2.0)`); naming it bare is an
+error. Each variant lowers to its own subclass (`Shape$Circle`) carrying its
+fields, so a non-escaping variant is **stack-allocated** like any other object -
+no heap, no reference counting - and `name()`/`ordinal()`/`match` work exactly
+as for plain constants.
+
+> A payload enum and singleton constants are different uses of the same `enum`:
+> bare names (`RED`) are singletons; `Name(type field, ...)` declares a variant.
+
+---
+
 ## How it performs
 
-Enums lower to ordinary classes: each constant becomes a singleton object constructed once at program start, and per-constant bodies become subclasses. Dispatch is therefore the same zero-overhead [virtual call](classes.md#virtual-dispatch-polymorphism) as any method - there is no special run-time machinery.
+Enums lower to ordinary classes: each constant becomes a singleton object constructed once at program start, and per-constant bodies become subclasses. Dispatch is therefore the same zero-overhead [virtual call](classes.md#virtual-dispatch-polymorphism) as any method - there is no special run-time machinery. A [payload variant](#payload-variants-sum-types) is built on demand through its own subclass constructor and rides the same escape-analysis [stack allocation](../memory/automatic-memory.md) as any short-lived object.
 
 ---
 

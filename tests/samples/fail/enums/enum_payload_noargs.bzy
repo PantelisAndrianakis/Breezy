@@ -1,0 +1,13 @@
+// A payload variant is constructed with arguments, e.g. Shape.Circle(2.0);
+// naming it bare is rejected.
+enum Shape
+{
+	Circle(double r),
+	Rect(double w, double h);
+}
+
+void main()
+{
+	Shape s = Shape.Circle;
+	print(0);
+}

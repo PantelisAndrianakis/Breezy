@@ -1,0 +1,17 @@
+void main()
+{
+	Shape s = Shape.Circle(2.0);
+	print(s.ordinal());   // 0
+	print(s.name());      // Circle
+
+	Shape t = Shape.Rect(3.0, 4.0);
+	print(t.ordinal());   // 1
+
+	// A payload enum dispatches in match by its variant tag (field binding is a
+	// later addition; this proves construction + tag dispatch).
+	match (t)
+	{
+		Circle => print(100);
+		Rect   => print(200);
+	}
+}

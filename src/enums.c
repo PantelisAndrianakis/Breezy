@@ -65,10 +65,62 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 	return c;
 }
 
+/* One `this.<field> = <value>` assignment in a synthesized constructor body. */
+static Stmt *variant_assign(const char *field, Expr *value)
+{
+	Expr *recv=expr_new(EX_THIS,0);
+	Expr *fld=expr_new(EX_FIELD,0);
+	strcpy(fld->name,field);
+	fld->lhs=recv;
+	Stmt *s=stmt_new(ST_ASSIGN,0);
+	s->target=fld;
+	s->value=value;
+	return s;
+}
+
+/* The constructor synthesized for a payload variant: parameters are the variant's
+   declared fields, and the body stamps the hidden __ordinal/__name and stores
+   each field, so `new Enum$Const(args)` builds a fully-formed instance. */
+static Func *make_variant_ctor(const EnumConstant *k, int ord, const char *mangled)
+{
+	Func *f=func_new();
+	f->ret_type.kind=TY_VOID;
+	strcpy(f->name,mangled);
+	for (int i=0; i<k->payload_count; i++)
+	{
+		Param *pm=func_add_param(f);
+		pm->type=k->payload[i].type;
+		strcpy(pm->name,k->payload[i].name);
+	}
+
+	f->body=block_new();
+
+	Expr *ordv=expr_new(EX_INT,0);
+	ordv->int_val=ord;
+	ordv->type.kind=TY_INT;
+	block_push(f->body,variant_assign("__ordinal",ordv));
+
+	Expr *namev=expr_new(EX_STR,0);
+	strcpy(namev->str_val,k->name);
+	namev->type.kind=TY_STRING;
+	block_push(f->body,variant_assign("__name",namev));
+
+	for (int i=0; i<k->payload_count; i++)
+	{
+		Expr *v=expr_new(EX_IDENT,0);
+		strcpy(v->name,k->payload[i].name);
+		block_push(f->body,variant_assign(k->payload[i].name,v));
+	}
+
+	return f;
+}
+
 /* A per-constant subclass: extends the base, overrides the listed methods, and
-   carries a copy of the enum constructor so `new Enum$CONST(args)` initializes
-   the inherited fields the same way the base does. */
-static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *k, const char *mangled)
+   carries a constructor. For an ordinary constant that is a copy of the enum
+   constructor (so `new Enum$CONST(args)` initializes the inherited fields the
+   same way the base does); for a payload variant it is the synthesized
+   field-storing constructor and the variant's own fields are added here. */
+static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *k, int ord, const char *mangled)
 {
 	ClassDecl *c=class_new();
 	strcpy(c->name,mangled);
@@ -86,11 +138,23 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 		class_add_method(c,func_clone(k->overrides[i]));
 	}
 
-	if (e->ctor)
+	if (k->payload_count>0)
+	{
+		for (int i=0; i<k->payload_count; i++)
+		{
+			Field *ff=class_add_field(c);
+			*ff=k->payload[i];
+		}
+
+		class_add_ctor(c,make_variant_ctor(k,ord,mangled));
+		c->ctor=c->ctors[0];
+	}
+	else if (e->ctor)
 	{
 		class_add_ctor(c,func_clone(e->ctor));
 		c->ctor=c->ctors[0];
 	}
+
 	return c;
 }
 
@@ -116,6 +180,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 		info->const_class = cc ? calloc((size_t)cc, sizeof(*info->const_class)) : NULL;
 		info->const_args  = cc ? calloc((size_t)cc, sizeof(*info->const_args))  : NULL;
 		info->const_argc  = cc ? calloc((size_t)cc, sizeof(*info->const_argc))  : NULL;
+		info->const_payload = cc ? calloc((size_t)cc, sizeof(*info->const_payload)) : NULL;
 	}
 
 	/* Base class first (a parent must register before its subclasses). */
@@ -136,16 +201,24 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 			}
 		}
 
-		/* Payload variants (sum types) parse but do not yet lower: the singleton
-		   construction model here builds one instance per constant at startup,
-		   which does not fit a per-call constructible variant. Lowering lands in
-		   a follow-up; reject for now with a clear message instead of
-		   mis-compiling. */
+		strcpy(info->const_name[i],k->name);
+
+		/* Payload variant: a constructible sum-type case. It always becomes a
+		   subclass `Enum$Const` (with its own fields + synthesized constructor)
+		   and is built per call, not stamped as a startup singleton, so it
+		   carries no singleton args. */
 		if (k->payload_count>0)
 		{
-			fprintf(stderr,"Enum '%s': payload-carrying variant '%s' is not supported yet.\n",
-					e->name,k->name);
-			exit(1);
+			info->const_payload[i]=1;
+			info->const_argc[i]=0;
+			char mangled[128];
+			snprintf(mangled,sizeof(mangled),"%s$%s",e->name,k->name);
+			strcpy(info->const_class[i],mangled);
+			*units = grow_ensure(*units, *total, cap, sizeof(**units));
+			Unit *su=unit_new();
+			unit_add_class(su, make_constant_subclass(e,k,i,mangled));
+			(*units)[(*total)++]=su;
+			continue;
 		}
 
 		if (k->arg_count!=ctor_argc)
@@ -155,7 +228,6 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 			exit(1);
 		}
 
-		strcpy(info->const_name[i],k->name);
 		info->const_argc[i]=k->arg_count;
 		for (int a=0; a<k->arg_count; a++)
 		{
@@ -169,7 +241,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 			strcpy(info->const_class[i],mangled);
 			*units = grow_ensure(*units, *total, cap, sizeof(**units));
 			Unit *su=unit_new();
-			unit_add_class(su, make_constant_subclass(e,k,mangled));
+			unit_add_class(su, make_constant_subclass(e,k,i,mangled));
 			(*units)[(*total)++]=su;
 		}
 		else
@@ -246,6 +318,44 @@ const char *enum_const_name(const char *en, int idx)
 	}
 
 	return e->const_name[idx];
+}
+
+int enum_const_is_payload(const char *en, const char *c)
+{
+	const EnumInfo *e=find_enum(en);
+	if (!e || !e->const_payload)
+	{
+		return 0;
+	}
+
+	for (int i=0; i<e->constant_count; i++)
+	{
+		if (strcmp(e->const_name[i],c)==0)
+		{
+			return e->const_payload[i];
+		}
+	}
+
+	return 0;
+}
+
+const char *enum_variant_class(const char *en, const char *c)
+{
+	const EnumInfo *e=find_enum(en);
+	if (!e || !e->const_payload)
+	{
+		return NULL;
+	}
+
+	for (int i=0; i<e->constant_count; i++)
+	{
+		if (strcmp(e->const_name[i],c)==0)
+		{
+			return e->const_payload[i] ? e->const_class[i] : NULL;
+		}
+	}
+
+	return NULL;
 }
 
 int enum_total(void)

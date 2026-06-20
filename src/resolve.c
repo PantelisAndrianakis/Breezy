@@ -1854,6 +1854,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"No such enum constant: ",e->name);
 			}
 
+			if (enum_const_is_payload(e->lhs->name,e->name))
+			{
+				die(e->line,"Payload variant needs arguments, e.g. Enum.Variant(...): ",e->name);
+			}
+
 			e->type.kind=TY_OBJECT;
 			strcpy(e->type.class_name,e->lhs->name);
 			break;
@@ -2050,6 +2055,24 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		   enum type name, not a variable; codegen re-detects via enum_is. */
 		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
 		{
+			/* Payload variant construction (Shape.Circle(2.0)): rewrite to
+			   `new Shape$Circle(2.0)`, which builds a fresh instance typed as the
+			   variant subclass (is-a the base enum, so assignable/matchable). */
+			if (enum_const_is_payload(e->lhs->name,e->name))
+			{
+				const char *vc=enum_variant_class(e->lhs->name,e->name);
+				Expr *nw=expr_new(EX_NEW,e->line);
+				strcpy(nw->name,vc);
+				for (int a=0; a<e->arg_count; a++)
+				{
+					expr_add_arg(nw,e->args[a]);
+				}
+
+				resolve_expr(st,nw,tc);
+				*e=*nw;
+				break;
+			}
+
 			resolve_args(st,e,tc);
 			if (strcmp(e->name,"values")==0)
 			{
