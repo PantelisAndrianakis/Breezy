@@ -8,6 +8,7 @@ being spread across scalar slots:
 - `i32x4` — four packed `int` lanes (`x`, `y`, `z`, `w`).
 - `f64x4` — four packed `double` lanes in a 256-bit AVX register (`x`, `y`, `z`, `w`).
 - `f32x8` — eight packed `float` lanes in a 256-bit AVX register.
+- `i32x8` — eight packed `int` lanes in a 256-bit AVX2 register.
 
 A vector is a value, not a heap object — it occupies a 16-byte stack slot and is
 never reference-counted. It is constructed and consumed through the `Simd`
@@ -132,8 +133,8 @@ ops, `sum`/`dot`) dispatches by the value's type. `f32x8` lanes 0–3 read with
 | Call | Result | Meaning |
 |------|--------|---------|
 | `Simd.pack256(a, b, c, d)` | `f64x4` | Pack four doubles. |
-| `Simd.pack256(a..h)` | `f32x8` | Pack eight floats. |
-| `Simd.load256(a, i)` | `f64x4`/`f32x8` | Load the packed group at `i` of a `double[]`/`float[]`. |
+| `Simd.pack256(a..h)` | `f32x8`/`i32x8` | Pack eight floats (`f32x8`) or eight ints (`i32x8`). |
+| `Simd.load256(a, i)` | `f64x4`/`f32x8`/`i32x8` | Load the packed group at `i` of a `double[]`/`float[]`/`int[]`. |
 | `Simd.store256(a, i, v)` | — | Store `v` into the packed group at `i`. |
 
 ```breezy
@@ -142,16 +143,17 @@ f64x4 b = Simd.load256(arr, i);
 double s = Simd.sum(Simd.mul(a, b));   // four-lane dot of one block
 ```
 
-Element ops lower to the VEX-encoded AVX forms (`vaddpd`/`vmulpd`/…). `f64x4`
-requires a CPU with AVX: a program that uses it checks for AVX support once at
-startup and aborts with a clear message on a CPU without it, rather than faulting
-on the first 256-bit instruction. A program that uses no 256-bit type carries
-none of this. (There is no scalar fallback — an AVX program needs AVX to run.)
+Element ops lower to the VEX-encoded AVX forms (`vaddpd`/`vmulps`/`vpaddd`/…).
+A 256-bit program checks for the required CPU feature once at startup and aborts
+with a clear message if absent, rather than faulting on the first wide
+instruction: `f64x4`/`f32x8` need AVX, the integer `i32x8` needs AVX2. A program
+that uses no 256-bit type carries none of this. (There is no scalar fallback — a
+256-bit program needs the feature to run.)
 
 ## Status
 
-`f64x2`, `f32x4`, `i32x4`, and 256-bit `f64x4`/`f32x8` construction, lane access,
-element-wise `add`/`sub`/`mul`/`div` (no `div` for `i32x4`), `min`/`max`, packed
-`load`/`store`, and horizontal `sum`/`dot` ship today (Domain 2a + 2b + 2c). The
-AVX startup guard aborts cleanly on a non-AVX CPU. Remaining: the AVX2 integer
-type `i32x8`.
+The full vector set ships today (Domain 2 complete): 128-bit `f64x2`/`f32x4`/`i32x4`
+and 256-bit `f64x4`/`f32x8`/`i32x8`, with construction, lane access, element-wise
+`add`/`sub`/`mul`/`div` (no `div` for integer vectors), `min`/`max`, packed
+`load`/`store`, and horizontal `sum`/`dot`. The startup guard aborts cleanly on a
+CPU lacking the required AVX/AVX2 feature.

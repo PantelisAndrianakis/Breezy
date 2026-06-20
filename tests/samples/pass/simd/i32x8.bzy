@@ -1,0 +1,23 @@
+// i32x8: eight packed int32 lanes in a 256-bit AVX2 register. pack256 with eight
+// int args; element ops via vpaddd/vpmulld/etc; horizontal sum/dot; int[] I/O.
+void main()
+{
+	i32x8 a = Simd.pack256(1, 2, 3, 4, 5, 6, 7, 8);
+	i32x8 b = Simd.pack256(2, 2, 2, 2, 2, 2, 2, 2);
+
+	print(Simd.x(a));        // 1
+	print(Simd.w(a));        // 4
+	print(Simd.sum(a));      // 36
+	print(Simd.dot(a, b));   // 72
+
+	i32x8 s = Simd.add(a, b);
+	print(Simd.x(s));        // 3
+
+	int[] out = new int[8];
+	Simd.store256(out, 0, Simd.mul(a, b));
+	print(out[0]);           // 2
+	print(out[7]);           // 16
+
+	i32x8 v = Simd.load256(out, 0);
+	print(Simd.sum(v));      // 72
+}

@@ -12,7 +12,18 @@ void bzy_require_avx(void)
 	__builtin_cpu_init();
 	if (!__builtin_cpu_supports("avx"))
 	{
-		fputs("This program uses 256-bit SIMD (f64x4) but the CPU does not support AVX.\n", stderr);
+		fputs("This program uses 256-bit SIMD (f64x4/f32x8) but the CPU does not support AVX.\n", stderr);
+		exit(1);
+	}
+}
+
+/* As above, but for the 256-bit integer type (i32x8), whose packed ops need AVX2. */
+void bzy_require_avx2(void)
+{
+	__builtin_cpu_init();
+	if (!__builtin_cpu_supports("avx2"))
+	{
+		fputs("This program uses 256-bit integer SIMD (i32x8) but the CPU does not support AVX2.\n", stderr);
 		exit(1);
 	}
 }

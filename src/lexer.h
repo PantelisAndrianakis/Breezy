@@ -21,7 +21,7 @@ typedef enum
 	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* Unsigned width keywords. */
 	TOKEN_BOOL, TOKEN_TRUE, TOKEN_FALSE,                 /* Bool type + literals. */
 	TOKEN_NULL,                                          /* `null` literal (managed bottom). */
-	TOKEN_FLOAT, TOKEN_DOUBLE, TOKEN_F64X2, TOKEN_F32X4, TOKEN_I32X4, TOKEN_F64X4, TOKEN_F32X8, TOKEN_FLOAT_LIT,  /* Float/double + SIMD vector types + literal. */
+	TOKEN_FLOAT, TOKEN_DOUBLE, TOKEN_F64X2, TOKEN_F32X4, TOKEN_I32X4, TOKEN_F64X4, TOKEN_F32X8, TOKEN_I32X8, TOKEN_FLOAT_LIT,  /* Float/double + SIMD vector types + literal. */
 	TOKEN_STR_LIT,                                       /* "..." string literal. */
 	TOKEN_STRING,                                        /* `string` type keyword. */
 	TOKEN_MAP,                                           /* `map` type keyword. */

@@ -13,6 +13,7 @@ typedef enum
 	TY_I32X4,                                 /* SIMD: four packed i32 lanes in one xmm (16-byte value). */
 	TY_F64X4,                                 /* SIMD: four packed f64 lanes in one ymm (32-byte AVX value). */
 	TY_F32X8,                                 /* SIMD: eight packed f32 lanes in one ymm (32-byte AVX value). */
+	TY_I32X8,                                 /* SIMD: eight packed i32 lanes in one ymm (32-byte AVX2 value). */
 	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array. */
 	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map. */
 	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object. */
@@ -82,6 +83,7 @@ static inline int ty_bits(TypeKind k)
 		return 128;
 	case TY_F64X4:
 	case TY_F32X8:
+	case TY_I32X8:
 		return 256;
 	case TY_ARRAY:
 	case TY_MAP:
@@ -147,14 +149,15 @@ static inline int ty_is_float(TypeKind k)
    scalar double codegen (movsd, cvtss2sd, promotion) never touches them. */
 static inline int ty_is_simd(TypeKind k)
 {
-	return k == TY_F64X2 || k == TY_F32X4 || k == TY_I32X4 || k == TY_F64X4 || k == TY_F32X8;
+	return k == TY_F64X2 || k == TY_F32X4 || k == TY_I32X4
+	       || k == TY_F64X4 || k == TY_F32X8 || k == TY_I32X8;
 }
 
 /* The stack-slot / move width of a SIMD value in bytes: 16 for the SSE xmm
    types, 32 for the 256-bit AVX ymm types. */
 static inline int ty_simd_bytes(TypeKind k)
 {
-	return (k == TY_F64X4 || k == TY_F32X8) ? 32 : 16;
+	return (k == TY_F64X4 || k == TY_F32X8 || k == TY_I32X8) ? 32 : 16;
 }
 
 /* True for ARC-managed, heap, 8-byte-pointer kinds (objects and strings). Use

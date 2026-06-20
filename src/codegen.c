@@ -14,9 +14,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Set during resolution when any program expression touches an AVX (f64x4)
-   vector; drives the startup AVX-support guard emitted into bzy_user_main. */
+/* Set during resolution when any program expression touches a 256-bit SIMD
+   vector; drives the startup AVX-support guard. g_program_uses_avx2 is the
+   stronger requirement (the i32x8 integer ops need AVX2, not just AVX). */
 int g_program_uses_avx = 0;
+int g_program_uses_avx2 = 0;
 
 void cg_init(Codegen *cg, FILE *out)
 {
@@ -6720,6 +6722,17 @@ static void cg_simd_combine(Codegen *cg, TypeTable *tt, Expr *a, Expr *b, const 
    in eax. */
 static void cg_simd_hreduce(Codegen *cg, TypeKind k)
 {
+	if (k==TY_I32X8)
+	{
+		cg_emit(cg,"    vextracti128 xmm1, ymm0, 1");   /* xmm1 = high four ints. */
+		cg_emit(cg,"    vzeroupper");
+		cg_emit(cg,"    paddd xmm0, xmm1");              /* four pairwise sums. */
+		cg_emit(cg,"    phaddd xmm0, xmm0");
+		cg_emit(cg,"    phaddd xmm0, xmm0");             /* low lane = sum of all eight. */
+		cg_emit(cg,"    movd eax, xmm0");
+		return;
+	}
+
 	if (k==TY_I32X4)
 	{
 		cg_emit(cg,"    phaddd xmm0, xmm0");    /* (x+y, z+w, x+y, z+w). */
@@ -6766,13 +6779,15 @@ static void cg_simd_hreduce(Codegen *cg, TypeKind k)
    (paddd/psubd/pmulld/pminsd/pmaxsd). Caller passes a buffer of at least 8 bytes. */
 static const char *cg_simd_op(const char *m, TypeKind k, char *buf)
 {
-	if (k==TY_I32X4)
+	if (k==TY_I32X4 || k==TY_I32X8)
 	{
+		/* Packed integer ops: legacy SSE form for i32x4, VEX (vp…) for the 256-bit
+		   i32x8 (which needs AVX2). */
 		const char *iop = strcmp(m,"add")==0 ? "paddd"
 						  : strcmp(m,"sub")==0 ? "psubd"
 						  : strcmp(m,"mul")==0 ? "pmulld"
 						  : strcmp(m,"min")==0 ? "pminsd" : "pmaxsd";
-		snprintf(buf, 8, "%s", iop);
+		snprintf(buf, 8, "%s%s", k==TY_I32X8 ? "v" : "", iop);
 		return buf;
 	}
 
@@ -6842,7 +6857,16 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(m,"pack256")==0)
 	{
 		int b = cg_scratch_alloc(cg, 32);
-		if (e->type.kind==TY_F32X8)
+		if (e->type.kind==TY_I32X8)
+		{
+			/* i32x8: lay eight int lanes into a 32-byte scratch, then one ymm load. */
+			for (int i=0; i<8; i++)
+			{
+				cg_expr(cg,tt,e->args[i]);                /* lane i (int) -> eax. */
+				cg_emit(cg,"    mov dword [rbp - %d], eax", b - i*4);
+			}
+		}
+		else if (e->type.kind==TY_F32X8)
 		{
 			/* f32x8: lay eight float lanes into a 32-byte scratch, then one ymm load. */
 			for (int i=0; i<8; i++)
@@ -6886,6 +6910,19 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 				cg_emit(cg,"    shufps xmm0, xmm0, %d", lane);
 			}
 
+			return;
+		}
+
+		if (e->args[0]->type.kind==TY_I32X8)
+		{
+			/* Int lanes 0-3 from the low 128 bits; lanes 4-7 via store256. */
+			cg_emit(cg,"    vzeroupper");
+			if (lane != 0)
+			{
+				cg_emit(cg,"    pshufd xmm0, xmm0, %d", lane);
+			}
+
+			cg_emit(cg,"    movd eax, xmm0");                    /* Scalar int lane -> eax. */
 			return;
 		}
 
@@ -12661,12 +12698,15 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	   AVX CPU instead of faulting. The `dq` is a strong reference that pulls in the
 	   cpu.c TU; a program with no 256-bit SIMD emits nothing here and links none of
 	   it. Lives in .data so it never shifts the .text the prelude depends on. */
-	if (g_program_uses_avx)
+	if (g_program_uses_avx || g_program_uses_avx2)
 	{
-		cg_emit(cg,"extern bzy_require_avx");
+		/* AVX2 (i32x8) is the stronger check and implies AVX, so a program that
+		   needs it points at the AVX2 helper; otherwise the AVX one. */
+		const char *fn = g_program_uses_avx2 ? "bzy_require_avx2" : "bzy_require_avx";
+		cg_emit(cg,"extern %s", fn);
 		cg_emit(cg,"global __bzy_avx_check");
 		cg_emit(cg,"__bzy_avx_check:");
-		cg_emit(cg,"    dq bzy_require_avx");
+		cg_emit(cg,"    dq %s", fn);
 	}
 
 	for (int i=0; i<tt->class_count; i++)
