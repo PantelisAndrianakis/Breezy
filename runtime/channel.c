@@ -215,9 +215,15 @@ static void *channel_vtable(void)
 
 void *bzy_channel_new(int64_t cap, int64_t elem_managed)
 {
-	if (cap < 1)
+	if (cap < 2)
 	{
-		cap = 1;   /* V1 requires a buffer of at least one slot. */
+		/* The lock-free ring detects "full" by the cell sequence lapping the
+		   enqueue ticket; with a single cell that lap is indistinguishable from
+		   "drained", so a second enqueue would overwrite an undelivered value
+		   instead of reporting full. The minimum effective capacity is therefore
+		   two. (A strict ping-pong keeps only one value in flight, so this floor
+		   never changes its behaviour.) */
+		cap = 2;
 	}
 
 	Channel *c = bzy_alloc(sizeof(Channel));

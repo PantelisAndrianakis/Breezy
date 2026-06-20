@@ -1110,6 +1110,25 @@ static void test_channel_try_send_recv(void)
 	bzy_release(c);
 }
 
+/* A capacity-1 request is floored to 2: the single-cell ring cannot tell "full"
+   from "drained", so it would overwrite an undelivered value. After the floor,
+   fullness is reported correctly and nothing is lost. */
+static void test_channel_cap1_floored(void)
+{
+	void *c = bzy_channel_new(1, 0);
+	int64_t v = -1;
+
+	ASSERT_INT(bzy_channel_try_send(c, 10), 1);
+	ASSERT_INT(bzy_channel_try_send(c, 20), 1);
+	ASSERT_INT(bzy_channel_try_send(c, 30), 0);   /* Full at two; no overwrite. */
+	ASSERT_INT(bzy_channel_try_recv(c, &v), 1);
+	ASSERT_INT(v, 10);                             /* First value intact. */
+	ASSERT_INT(bzy_channel_try_recv(c, &v), 1);
+	ASSERT_INT(v, 20);
+
+	bzy_release(c);
+}
+
 /* The small-object pool must actually recycle: a freed block of a pooled size is
    handed straight back to the next same-size allocation (on this thread), and the
    live count returns to baseline so nothing leaks. */
@@ -1944,6 +1963,7 @@ int main(void)
 	RUN(test_channel_roundtrip);
 	RUN(test_channel_is_shared);
 	RUN(test_channel_try_send_recv);
+	RUN(test_channel_cap1_floored);
 	RUN(test_pool_recycles_block);
 	RUN(test_timer_heap_orders_by_deadline);
 	RUN(test_timer_periodic_coalesces_missed_ticks);

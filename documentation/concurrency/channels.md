@@ -86,7 +86,7 @@ select
 
 ## Rules & gotchas
 
-- **Capacity is fixed at creation:** `new channel<T>(N)`.
+- **Capacity is fixed at creation:** `new channel<T>(N)`. The minimum effective capacity is **2**; a smaller request is rounded up (a strict ping-pong keeps only one value in flight, so this is invisible there).
 - **`select` with a `default` is non-blocking; without one it blocks** (yields and re-polls) until an arm is ready. Each arm is a `recv()` or `send(...)` on a channel, tried in order.
 - **`send` parks when full; `recv` parks when empty** - both yield the breeze, not the OS thread.
 - **A full channel applies backpressure** to the producer, bounding memory use.
