@@ -6512,9 +6512,25 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
-	/* Simd.y: move the high lane into the low half. */
-	cg_expr(cg,tt,e->args[0]);
-	cg_emit(cg,"    unpckhpd xmm0, xmm0");
+	if (strcmp(m,"y")==0)
+	{
+		cg_expr(cg,tt,e->args[0]);
+		cg_emit(cg,"    unpckhpd xmm0, xmm0");            /* Move the high lane into the low half. */
+		return;
+	}
+
+	/* Element-wise add/sub/mul/div: both operands are packed f64x2 values. */
+	const char *op = strcmp(m,"add")==0 ? "addpd"
+					 : strcmp(m,"sub")==0 ? "subpd"
+					 : strcmp(m,"mul")==0 ? "mulpd" : "divpd";
+	int b = cg_scratch_alloc(cg, 16);
+	cg_expr(cg,tt,e->args[0]);                           /* a -> xmm0. */
+	cg_emit(cg,"    movupd [rbp - %d], xmm0", b);
+	cg_expr(cg,tt,e->args[1]);                           /* b -> xmm0. */
+	cg_emit(cg,"    movapd xmm1, xmm0");
+	cg_emit(cg,"    movupd xmm0, [rbp - %d]", b);
+	cg_scratch_free(cg, 16);
+	cg_emit(cg,"    %s xmm0, xmm1", op);
 }
 
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)

@@ -29,8 +29,34 @@ void main()
 | `Simd.x(v)` | `double` | The low lane. |
 | `Simd.y(v)` | `double` | The high lane. |
 
+## Element-wise arithmetic
+
+Each call operates on both lanes at once (one SSE instruction), returning a new
+`f64x2`.
+
+```breezy
+void main()
+{
+	f64x2 a = Simd.pack(3.0, 8.0);
+	f64x2 b = Simd.pack(1.5, 2.0);
+
+	f64x2 s = Simd.add(a, b);   // [4.5, 10]
+	f64x2 p = Simd.mul(a, b);   // [4.5, 16]
+
+	print(Simd.x(s));           // 4.5
+	print(Simd.y(p));           // 16
+}
+```
+
+| Call | Maps to | Meaning |
+|------|---------|---------|
+| `Simd.add(a, b)` | `addpd` | Per-lane sum. |
+| `Simd.sub(a, b)` | `subpd` | Per-lane difference. |
+| `Simd.mul(a, b)` | `mulpd` | Per-lane product. |
+| `Simd.div(a, b)` | `divpd` | Per-lane quotient. |
+
 ## Status
 
-`f64x2` construction and lane access ship today (Domain 2a, part 1). Element-wise
-arithmetic (`add`/`mul`, mapping to `addpd`/`mulpd`) and wider types (`f32x4`,
-`f64x4`, integer vectors) follow in later parts.
+`f64x2` construction, lane access, and element-wise `add`/`sub`/`mul`/`div` ship
+today (Domain 2a, parts 1–2). Wider types (`f32x4`, `f64x4`, integer vectors)
+follow in later parts.

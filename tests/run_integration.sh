@@ -63,6 +63,7 @@ echo "Integration tests"
 check minimal     tests/samples/pass/basics/minimal.bzy    "0"
 check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
 check simd_pack   tests/samples/pass/simd/pack_lanes.bzy    $'3.5\n7.25\n10.75'
+check simd_elemop tests/samples/pass/simd/elementwise.bzy   $'4.5\n10\n4.5\n16\n2\n4'
 check arith       tests/samples/pass/basics/arith.bzy      "14"
 check system_rt   tests/samples/pass/system/realtime_io.bzy $'-1\n-1'
 check system_affinity tests/samples/pass/system/affinity.bzy $'true\ntrue'

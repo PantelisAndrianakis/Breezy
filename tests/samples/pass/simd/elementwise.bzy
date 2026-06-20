@@ -1,0 +1,18 @@
+// f64x2 element-wise arithmetic: add, sub, mul, div across both lanes.
+void main()
+{
+	f64x2 a = Simd.pack(3.0, 8.0);
+	f64x2 b = Simd.pack(1.5, 2.0);
+
+	f64x2 s = Simd.add(a, b);
+	print(Simd.x(s));   // 4.5
+	print(Simd.y(s));   // 10
+
+	f64x2 p = Simd.mul(a, b);
+	print(Simd.x(p));   // 4.5
+	print(Simd.y(p));   // 16
+
+	f64x2 d = Simd.div(a, b);
+	print(Simd.x(d));   // 2
+	print(Simd.y(d));   // 4
+}

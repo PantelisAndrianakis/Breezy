@@ -780,6 +780,17 @@ static void resolve_simd(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0 || strcmp(m,"div")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_F64X2 || e->args[1]->type.kind!=TY_F64X2)
+		{
+			die(e->line,"Simd.add/sub/mul/div(a, b) takes two f64x2 values.",NULL);
+		}
+
+		e->type.kind=TY_F64X2;
+		return;
+	}
+
 	die(e->line,"Unknown Simd method: ",m);
 }
 
