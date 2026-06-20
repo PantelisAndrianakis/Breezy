@@ -1,0 +1,25 @@
+// f64x4: four packed double lanes in a 256-bit AVX register. Width-explicit
+// constructors (pack256/load256/store256) keep it distinct from the four-lane
+// f32x4; lanes/ops/sum/dot dispatch by the value type.
+void main()
+{
+	f64x4 a = Simd.pack256(1.0, 2.0, 3.0, 4.0);
+	f64x4 b = Simd.pack256(10.0, 20.0, 30.0, 40.0);
+
+	print(Simd.x(a));        // 1
+	print(Simd.w(a));        // 4
+
+	f64x4 s = Simd.add(a, b);
+	print(Simd.x(s));        // 11
+	print(Simd.w(s));        // 44
+
+	print(Simd.sum(a));      // 10
+	print(Simd.dot(a, b));   // 300
+
+	double[] out = new double[4];
+	Simd.store256(out, 0, Simd.mul(a, b));
+	print(out[3]);           // 160
+
+	f64x4 v = Simd.load256(out, 0);
+	print(Simd.sum(v));      // 10+40+90+160=300
+}

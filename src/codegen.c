@@ -242,33 +242,60 @@ static void cg_store_local_fp(Codegen *cg, int off, TypeKind k)
 	}
 }
 
-/* Store the packed f64x2 in xmm0 into local `off`: its XMM home if promoted
-   (movaps copies all 128 bits), else its 16-byte stack slot (unaligned). */
-static void cg_store_local_simd(Codegen *cg, int off)
+/* Translate a 128-bit home register name ("xmm2") to its 256-bit alias ("ymm2")
+   into `buf`; the promotion pool reg index is the same physical register. */
+static const char *cg_ymm_alias(const char *xmm, char *buf, int bufsz)
+{
+	snprintf(buf, bufsz, "ymm%s", xmm + 3);   /* After "xmm". */
+	return buf;
+}
+
+/* Store the packed SIMD value in xmm0/ymm0 into local `off` (kind `k`): its
+   register home if promoted (a full-width reg-reg copy), else its 16/32-byte
+   stack slot (unaligned). */
+static void cg_store_local_simd(Codegen *cg, int off, TypeKind k)
 {
 	const char *xr = cg_local_xmm(cg, off);
+	int w256 = (ty_simd_bytes(k) == 32);
 	if (xr)
 	{
-		cg_emit(cg, "    movaps %s, xmm0", xr);
+		if (w256)
+		{
+			char yb[8];
+			cg_emit(cg, "    vmovaps %s, ymm0", cg_ymm_alias(xr, yb, sizeof yb));
+		}
+		else
+		{
+			cg_emit(cg, "    movaps %s, xmm0", xr);
+		}
 	}
 	else
 	{
-		cg_emit(cg, "    movupd [rbp - %d], xmm0", off);
+		cg_emit(cg, w256 ? "    vmovups [rbp - %d], ymm0" : "    movupd [rbp - %d], xmm0", off);
 	}
 }
 
-/* Load packed f64x2 local `off` into xmm`reg`: from its XMM home if promoted,
-   else from its stack slot. */
-static void cg_load_local_simd(Codegen *cg, int off, int reg)
+/* Load packed SIMD local `off` (kind `k`) into xmm`reg`/ymm`reg`: from its
+   register home if promoted, else from its stack slot. */
+static void cg_load_local_simd(Codegen *cg, int off, int reg, TypeKind k)
 {
 	const char *xr = cg_local_xmm(cg, off);
+	int w256 = (ty_simd_bytes(k) == 32);
 	if (xr)
 	{
-		cg_emit(cg, "    movaps xmm%d, %s", reg, xr);
+		if (w256)
+		{
+			char yb[8];
+			cg_emit(cg, "    vmovaps ymm%d, %s", reg, cg_ymm_alias(xr, yb, sizeof yb));
+		}
+		else
+		{
+			cg_emit(cg, "    movaps xmm%d, %s", reg, xr);
+		}
 	}
 	else
 	{
-		cg_emit(cg, "    movupd xmm%d, [rbp - %d]", reg, off);
+		cg_emit(cg, w256 ? "    vmovups ymm%d, [rbp - %d]" : "    movupd xmm%d, [rbp - %d]", reg, off);
 	}
 }
 
@@ -6590,24 +6617,38 @@ static int cg_try_simd_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *v
 		return 0;
 	}
 
-	cg_expr(cg,tt,other);                /* P -> xmm0 (Simd ops touch only xmm0/xmm1). */
-	cg_emit(cg,"    %s %s, xmm0", op, home);
+	cg_expr(cg,tt,other);                /* P -> reg 0 (Simd ops touch only reg 0/1). */
+	if (ty_simd_bytes(target->type.kind) == 32)
+	{
+		char yb[8];
+		const char *yhome = cg_ymm_alias(home, yb, sizeof yb);
+		cg_emit(cg,"    %s %s, %s, ymm0", op, yhome, yhome);   /* vop ymmHome, ymmHome, ymm0. */
+	}
+	else
+	{
+		cg_emit(cg,"    %s %s, xmm0", op, home);
+	}
+
 	return 1;
 }
 
-/* Load such an operand into xmm`reg` (1 or 2). Assumes cg_simd_xmm0_safe(e). */
+/* Load such an operand into reg 1 or 2 (xmm for SSE widths, ymm for f64x4).
+   Assumes cg_simd_xmm0_safe(e). */
 static void cg_simd_load_into(Codegen *cg, TypeTable *tt, Expr *e, int reg)
 {
 	if (e->kind==EX_IDENT)
 	{
-		cg_load_local_simd(cg, e->anno_int, reg);   /* XMM home if promoted, else slot. */
+		cg_load_local_simd(cg, e->anno_int, reg, e->type.kind);   /* Register home if promoted, else slot. */
 		return;
 	}
 
-	/* Simd.load(a, i): packed load into the target. The fabricated index uses the
-	   array element kind so the stride is right (8 for double[], 4 for float/int).
-	   When the base is hoisted and the index register-resident, fold the whole
-	   address into the load operand (movups xmm, [base + iv*stride + 32]); else
+	int w256 = (ty_simd_bytes(e->type.kind) == 32);
+	const char *rw = w256 ? "ymm" : "xmm";
+	const char *mov = w256 ? "vmovups" : "movups";
+
+	/* Simd.load(a, i): packed load. The fabricated index uses the array element
+	   kind so the stride is right. When the base is hoisted and the index
+	   register-resident, fold the whole address into the load operand; else
 	   compute it into rbx first. */
 	Expr ie = {0};
 	ie.kind = EX_INDEX;
@@ -6619,48 +6660,60 @@ static void cg_simd_load_into(Codegen *cg, TypeTable *tt, Expr *e, int reg)
 	char opnd[64];
 	if (cg_index_opnd(cg, &ie, opnd))
 	{
-		cg_emit(cg,"    movups xmm%d, %s", reg, opnd);
+		cg_emit(cg,"    %s %s%d, %s", mov, rw, reg, opnd);
 		return;
 	}
 
 	cg_index_addr(cg,tt,&ie);
-	cg_emit(cg,"    movups xmm%d, [rbx]", reg);
+	cg_emit(cg,"    %s %s%d, [rbx]", mov, rw, reg);
 }
 
-/* Combine two packed operands with `op`, leaving the result vector in xmm0. The
-   spill-free fast paths apply when one operand is xmm0-safe (loads straight into
-   xmm1); otherwise the lhs is spilled so a nested rhs can reuse xmm0/xmm1. */
-static void cg_simd_combine(Codegen *cg, TypeTable *tt, Expr *a, Expr *b, const char *op, int commutative)
+/* Combine two packed operands with `op`, leaving the result vector in reg 0. SSE
+   widths use the two-operand form (op xmm0, xmm1); f64x4 uses the AVX three-
+   operand form (vop ymm0, ymm0, ymm1). The spill-free fast paths apply when one
+   operand is xmm0-safe; otherwise the lhs is spilled so a nested rhs can reuse
+   reg 0/1. `vk` is the (shared) operand vector kind. */
+static void cg_simd_combine(Codegen *cg, TypeTable *tt, Expr *a, Expr *b, const char *op, int commutative, TypeKind vk)
 {
+	int w256 = (ty_simd_bytes(vk) == 32);
+	const char *r0 = w256 ? "ymm0" : "xmm0";
+	const char *r1 = w256 ? "ymm1" : "xmm1";
+
 	if (cg_simd_xmm0_safe(b))
 	{
-		cg_expr(cg,tt,a);                       /* lhs -> xmm0. */
-		cg_simd_load_into(cg,tt,b,1);           /* rhs -> xmm1 (xmm0 preserved). */
-		cg_emit(cg,"    %s xmm0, xmm1", op);
-		return;
+		cg_expr(cg,tt,a);                       /* lhs -> reg 0. */
+		cg_simd_load_into(cg,tt,b,1);           /* rhs -> reg 1 (reg 0 preserved). */
 	}
-
-	if (commutative && cg_simd_xmm0_safe(a))
+	else if (commutative && cg_simd_xmm0_safe(a))
 	{
-		cg_expr(cg,tt,b);                       /* rhs -> xmm0. */
-		cg_simd_load_into(cg,tt,a,1);           /* lhs -> xmm1; op is commutative. */
-		cg_emit(cg,"    %s xmm0, xmm1", op);
-		return;
+		cg_expr(cg,tt,b);                       /* rhs -> reg 0. */
+		cg_simd_load_into(cg,tt,a,1);           /* lhs -> reg 1; op is commutative. */
+	}
+	else
+	{
+		int bytes = ty_simd_bytes(vk);
+		int sb = cg_scratch_alloc(cg, bytes);
+		cg_expr(cg,tt,a);                       /* a -> reg 0. */
+		cg_emit(cg, w256 ? "    vmovups [rbp - %d], ymm0" : "    movups [rbp - %d], xmm0", sb);
+		cg_expr(cg,tt,b);                       /* b -> reg 0. */
+		cg_emit(cg, w256 ? "    vmovaps ymm1, ymm0" : "    movaps xmm1, xmm0");
+		cg_emit(cg, w256 ? "    vmovups ymm0, [rbp - %d]" : "    movups xmm0, [rbp - %d]", sb);
+		cg_scratch_free(cg, bytes);
 	}
 
-	int sb = cg_scratch_alloc(cg, 16);
-	cg_expr(cg,tt,a);                           /* a -> xmm0. */
-	cg_emit(cg,"    movups [rbp - %d], xmm0", sb);
-	cg_expr(cg,tt,b);                           /* b -> xmm0. */
-	cg_emit(cg,"    movaps xmm1, xmm0");
-	cg_emit(cg,"    movups xmm0, [rbp - %d]", sb);
-	cg_scratch_free(cg, 16);
-	cg_emit(cg,"    %s xmm0, xmm1", op);
+	if (w256)
+	{
+		cg_emit(cg,"    %s %s, %s, %s", op, r0, r0, r1);   /* vop ymm0, ymm0, ymm1. */
+	}
+	else
+	{
+		cg_emit(cg,"    %s %s, %s", op, r0, r1);
+	}
 }
 
-/* Horizontally reduce the packed vector in xmm0 to a scalar. Float results land
-   in xmm0's low lane (x+y for f64x2, x+y+z+w for f32x4); the i32x4 sum lands in
-   eax. */
+/* Horizontally reduce the packed vector in reg 0 to a scalar. Float results land
+   in the low lane (x+y for f64x2, x+y+z+w for f32x4/f64x4); the i32x4 sum lands
+   in eax. */
 static void cg_simd_hreduce(Codegen *cg, TypeKind k)
 {
 	if (k==TY_I32X4)
@@ -6675,6 +6728,17 @@ static void cg_simd_hreduce(Codegen *cg, TypeKind k)
 	{
 		cg_emit(cg,"    haddps xmm0, xmm0");    /* (x+y, z+w, x+y, z+w). */
 		cg_emit(cg,"    haddps xmm0, xmm0");    /* low lane = x+y+z+w. */
+		return;
+	}
+
+	if (k==TY_F64X4)
+	{
+		cg_emit(cg,"    vextractf128 xmm1, ymm0, 1");   /* xmm1 = high pair (z, w). */
+		cg_emit(cg,"    vzeroupper");                    /* Done with the upper half. */
+		cg_emit(cg,"    addpd xmm0, xmm1");              /* (x+z, y+w). */
+		cg_emit(cg,"    movaps xmm1, xmm0");
+		cg_emit(cg,"    unpckhpd xmm1, xmm1");           /* xmm1 low = y+w. */
+		cg_emit(cg,"    addsd xmm0, xmm1");              /* low lane = x+y+z+w. */
 		return;
 	}
 
@@ -6703,7 +6767,8 @@ static const char *cg_simd_op(const char *m, TypeKind k, char *buf)
 					   : strcmp(m,"mul")==0 ? "mul"
 					   : strcmp(m,"div")==0 ? "div"
 					   : strcmp(m,"min")==0 ? "min" : "max";
-	snprintf(buf, 8, "%s%s", base, cg_simd_sfx(k));
+	/* f64x4 uses the AVX VEX-encoded form (vaddpd…); SSE widths the legacy form. */
+	snprintf(buf, 8, "%s%s%s", k==TY_F64X4 ? "v" : "", base, cg_simd_sfx(k));
 	return buf;
 }
 
@@ -6760,10 +6825,41 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"pack256")==0)
+	{
+		/* f64x4: lay four double lanes into a 32-byte scratch, then one ymm load. */
+		int b = cg_scratch_alloc(cg, 32);
+		for (int i=0; i<4; i++)
+		{
+			cg_to_double(cg,tt,e->args[i]);              /* lane i -> xmm0 low. */
+			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - i*8);
+		}
+
+		cg_emit(cg,"    vmovups ymm0, [rbp - %d]", b);
+		cg_scratch_free(cg, 32);
+		return;
+	}
+
 	if (strcmp(m,"x")==0 || strcmp(m,"y")==0 || strcmp(m,"z")==0 || strcmp(m,"w")==0)
 	{
-		cg_expr(cg,tt,e->args[0]);                       /* Packed value -> xmm0. */
+		cg_expr(cg,tt,e->args[0]);                       /* Packed value -> reg 0. */
 		int lane = strcmp(m,"x")==0 ? 0 : strcmp(m,"y")==0 ? 1 : strcmp(m,"z")==0 ? 2 : 3;
+
+		if (e->args[0]->type.kind==TY_F64X4)
+		{
+			if (lane >= 2)
+			{
+				cg_emit(cg,"    vextractf128 xmm0, ymm0, 1");   /* xmm0 = (lane2, lane3). */
+			}
+
+			cg_emit(cg,"    vzeroupper");                        /* Back to SSE; avoid the transition penalty. */
+			if (lane & 1)
+			{
+				cg_emit(cg,"    unpckhpd xmm0, xmm0");           /* Odd lane: high of the pair into low. */
+			}
+
+			return;
+		}
 
 		if (e->args[0]->type.kind==TY_I32X4)
 		{
@@ -6846,9 +6942,59 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"load256")==0)
+	{
+		/* f64x4 load: four double lanes (stride 8), one ymm move, folded when the
+		   base is hoisted. */
+		Expr ie = {0};
+		ie.kind = EX_INDEX;
+		ie.lhs = e->args[0];
+		ie.rhs = e->args[1];
+		ie.type.kind = TY_DOUBLE;
+		ie.anno_index_safe = 1;
+		char lopnd[64];
+		if (cg_index_opnd(cg, &ie, lopnd))
+		{
+			cg_emit(cg,"    vmovups ymm0, %s", lopnd);
+		}
+		else
+		{
+			cg_index_addr(cg,tt,&ie);
+			cg_emit(cg,"    vmovups ymm0, [rbx]");
+		}
+
+		return;
+	}
+
+	if (strcmp(m,"store256")==0)
+	{
+		Expr ie = {0};
+		ie.kind = EX_INDEX;
+		ie.lhs = e->args[0];
+		ie.rhs = e->args[1];
+		ie.type.kind = TY_DOUBLE;
+		ie.anno_index_safe = 1;
+		char sopnd[64];
+		if (cg_index_opnd(cg, &ie, sopnd))
+		{
+			cg_expr(cg,tt,e->args[2]);                   /* v -> ymm0. */
+			cg_emit(cg,"    vmovups %s, ymm0", sopnd);
+			return;
+		}
+
+		int b = cg_scratch_alloc(cg, 32);
+		cg_expr(cg,tt,e->args[2]);                       /* v -> ymm0. */
+		cg_emit(cg,"    vmovups [rbp - %d], ymm0", b);
+		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
+		cg_emit(cg,"    vmovups ymm1, [rbp - %d]", b);
+		cg_scratch_free(cg, 32);
+		cg_emit(cg,"    vmovups [rbx], ymm1");
+		return;
+	}
+
 	if (strcmp(m,"sum")==0)
 	{
-		cg_expr(cg,tt,e->args[0]);                       /* Vector -> xmm0. */
+		cg_expr(cg,tt,e->args[0]);                       /* Vector -> reg 0. */
 		cg_simd_hreduce(cg, e->args[0]->type.kind);
 		return;
 	}
@@ -6857,8 +7003,8 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		TypeKind vk = e->args[0]->type.kind;
 		char mul[8];
-		cg_simd_op("mul", vk, mul);                          /* mulpd/mulps/pmulld. */
-		cg_simd_combine(cg,tt,e->args[0],e->args[1],mul,1);   /* a*b vector -> xmm0. */
+		cg_simd_op("mul", vk, mul);                              /* mulpd/mulps/pmulld/vmulpd. */
+		cg_simd_combine(cg,tt,e->args[0],e->args[1],mul,1,vk);   /* a*b vector -> reg 0. */
 		cg_simd_hreduce(cg, vk);
 		return;
 	}
@@ -6869,7 +7015,7 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 	char op[8];
 	cg_simd_op(m, e->type.kind, op);
 	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0 || strcmp(m,"min")==0 || strcmp(m,"max")==0;
-	cg_simd_combine(cg,tt,e->args[0],e->args[1],op,commutative);
+	cg_simd_combine(cg,tt,e->args[0],e->args[1],op,commutative,e->type.kind);
 }
 
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
@@ -7461,7 +7607,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		sprintf(mem,"[rbp - %d]", e->anno_int);
 		if (ty_is_simd(e->type.kind))
 		{
-			cg_load_local_simd(cg, e->anno_int, 0);   /* XMM home if promoted, else 16-byte slot. */
+			cg_load_local_simd(cg, e->anno_int, 0, e->type.kind);   /* XMM home if promoted, else 16-byte slot. */
 		}
 		else if (ty_is_float(e->type.kind))
 		{
@@ -10386,7 +10532,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			else if (ty_is_simd(s->decl_type.kind))
 			{
 				cg_expr(cg,tt,s->decl_init);                       /* Packed value -> xmm0. */
-				cg_store_local_simd(cg, s->decl_offset);           /* XMM home if promoted, else 16-byte slot. */
+				cg_store_local_simd(cg, s->decl_offset, s->decl_type.kind);           /* XMM home if promoted, else 16-byte slot. */
 			}
 			else if (!cg_fp_load_into_home(cg, s->decl_offset, s->decl_type.kind, s->decl_init))
 			{
@@ -10449,7 +10595,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		else if (ty_is_simd(s->target->type.kind) && s->target->kind == EX_IDENT && s->target->anno_int > 0)
 		{
 			cg_expr(cg,tt,s->value);                               /* Packed value -> xmm0. */
-			cg_store_local_simd(cg, s->target->anno_int);          /* XMM home if promoted, else slot. */
+			cg_store_local_simd(cg, s->target->anno_int, s->target->type.kind);          /* XMM home if promoted, else slot. */
 		}
 		else
 		{

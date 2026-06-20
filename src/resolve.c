@@ -758,7 +758,7 @@ static void resolve_memory(Expr *e)
 /* The scalar lane kind of a SIMD vector type. */
 static TypeKind simd_lane_kind(TypeKind v)
 {
-	if (v==TY_F64X2) { return TY_DOUBLE; }
+	if (v==TY_F64X2 || v==TY_F64X4) { return TY_DOUBLE; }
 	if (v==TY_I32X4) { return TY_INT; }
 	return TY_FLOAT;   /* f32x4. */
 }
@@ -797,16 +797,37 @@ static void resolve_simd(Expr *e)
 		die(e->line,"Simd.pack takes two floats (f64x2), four floats (f32x4), or four ints (i32x4).",NULL);
 	}
 
+	/* 256-bit AVX f64x4: an explicit width-suffixed constructor so four double
+	   lanes are never confused with the four-lane f32x4 (float literals are
+	   double, so arity alone cannot tell them apart). */
+	if (strcmp(m,"pack256")==0)
+	{
+		int all_double = e->arg_count==4;
+		for (int i=0; i<e->arg_count; i++)
+		{
+			if (!ty_is_float(e->args[i]->type.kind)) { all_double=0; break; }
+		}
+
+		if (!all_double)
+		{
+			die(e->line,"Simd.pack256(x, y, z, w) takes four floating-point lanes (f64x4).",NULL);
+		}
+
+		e->type.kind=TY_F64X4;
+		return;
+	}
+
 	if (strcmp(m,"x")==0 || strcmp(m,"y")==0 || strcmp(m,"z")==0 || strcmp(m,"w")==0)
 	{
 		int two_lane = strcmp(m,"x")==0 || strcmp(m,"y")==0;
-		int four_lane = e->arg_count==1 && (e->args[0]->type.kind==TY_F32X4 || e->args[0]->type.kind==TY_I32X4);
-		if (e->arg_count!=1 || !ty_is_simd(e->args[0]->type.kind) || (!two_lane && !four_lane))
+		TypeKind vk = e->arg_count==1 ? e->args[0]->type.kind : TY_VOID;
+		int four_lane = vk==TY_F32X4 || vk==TY_I32X4 || vk==TY_F64X4;
+		if (e->arg_count!=1 || !ty_is_simd(vk) || (!two_lane && !four_lane))
 		{
-			die(e->line,"Simd.x/y take any vector; Simd.z/w take f32x4 or i32x4.",NULL);
+			die(e->line,"Simd.x/y take any vector; Simd.z/w take a four-lane vector.",NULL);
 		}
 
-		e->type.kind = simd_lane_kind(e->args[0]->type.kind);
+		e->type.kind = simd_lane_kind(vk);
 		return;
 	}
 
@@ -895,6 +916,32 @@ static void resolve_simd(Expr *e)
 		if (!((ek==TY_DOUBLE && vk==TY_F64X2) || (ek==TY_FLOAT && vk==TY_F32X4) || (ek==TY_INT && vk==TY_I32X4)))
 		{
 			die(e->line,"Simd.store: vector type must match the array element type.",NULL);
+		}
+
+		e->type.kind=TY_VOID;
+		return;
+	}
+
+	/* 256-bit AVX load/store: four double lanes (i..i+3) of a double[]. */
+	if (strcmp(m,"load256")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
+			|| e->args[0]->type.elem->kind!=TY_DOUBLE || !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"Simd.load256(double[] a, int i) loads lanes i..i+3 (f64x4).",NULL);
+		}
+
+		e->type.kind=TY_F64X4;
+		return;
+	}
+
+	if (strcmp(m,"store256")==0)
+	{
+		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
+			|| e->args[0]->type.elem->kind!=TY_DOUBLE || !ty_is_int(e->args[1]->type.kind)
+			|| e->args[2]->type.kind!=TY_F64X4)
+		{
+			die(e->line,"Simd.store256(double[] a, int i, f64x4 v) stores lanes i..i+3.",NULL);
 		}
 
 		e->type.kind=TY_VOID;
