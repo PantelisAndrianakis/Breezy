@@ -1,0 +1,29 @@
+// f64x2 packed load/store + a register-promoted accumulator dot product.
+void main()
+{
+	int n = 8;
+	double[] a = new double[8];
+	double[] b = new double[8];
+	for (int i = 0; i < n; i = i + 1)
+	{
+		a[i] = (double)(i + 1);
+		b[i] = 2.0;
+	}
+
+	f64x2 acc = Simd.pack(0.0, 0.0);
+	for (int i = 0; i < n; i = i + 2)
+	{
+		acc = Simd.add(acc, Simd.mul(Simd.load(a, i), Simd.load(b, i)));
+	}
+
+	print(Simd.x(acc) + Simd.y(acc));   // 2*(1+..+8)=72
+
+	double[] c = new double[8];
+	for (int i = 0; i < n; i = i + 2)
+	{
+		Simd.store(c, i, Simd.add(Simd.load(a, i), Simd.load(b, i)));
+	}
+
+	print(c[0]);   // 3
+	print(c[7]);   // 10
+}

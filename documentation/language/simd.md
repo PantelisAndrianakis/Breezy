@@ -55,8 +55,37 @@ void main()
 | `Simd.mul(a, b)` | `mulpd` | Per-lane product. |
 | `Simd.div(a, b)` | `divpd` | Per-lane quotient. |
 
+## Packed array load and store
+
+`Simd.load`/`Simd.store` move two adjacent `double[]` elements as one packed
+value. These are raw packed primitives: they read or write lanes `i` and `i+1`
+in a single 16-byte move and do **not** bounds-check — the caller guarantees both
+indices are in range (typically by striding an even loop over an even-length
+array).
+
+| Call | Result | Meaning |
+|------|--------|---------|
+| `Simd.load(a, i)` | `f64x2` | Load lanes `i`, `i+1` of `double[] a`. |
+| `Simd.store(a, i, v)` | — | Store `v` into lanes `i`, `i+1` of `double[] a`. |
+
+A dot product accumulates packed products; a register-promoted `f64x2`
+accumulator carries the reduction in an xmm register with no per-iteration
+memory traffic:
+
+```breezy
+f64x2 acc;
+acc = Simd.pack(0.0, 0.0);
+for (int i = 0; i < n; i = i + 2)
+{
+	acc = Simd.add(acc, Simd.mul(Simd.load(a, i), Simd.load(b, i)));
+}
+
+double dot;
+dot = Simd.x(acc) + Simd.y(acc);
+```
+
 ## Status
 
-`f64x2` construction, lane access, and element-wise `add`/`sub`/`mul`/`div` ship
-today (Domain 2a, parts 1–2). Wider types (`f32x4`, `f64x4`, integer vectors)
-follow in later parts.
+`f64x2` construction, lane access, element-wise `add`/`sub`/`mul`/`div`, and
+packed `load`/`store` ship today (Domain 2a). Wider types (`f32x4`, `f64x4`,
+integer vectors) follow in later parts.

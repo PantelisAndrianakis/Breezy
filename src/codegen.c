@@ -242,6 +242,36 @@ static void cg_store_local_fp(Codegen *cg, int off, TypeKind k)
 	}
 }
 
+/* Store the packed f64x2 in xmm0 into local `off`: its XMM home if promoted
+   (movaps copies all 128 bits), else its 16-byte stack slot (unaligned). */
+static void cg_store_local_simd(Codegen *cg, int off)
+{
+	const char *xr = cg_local_xmm(cg, off);
+	if (xr)
+	{
+		cg_emit(cg, "    movaps %s, xmm0", xr);
+	}
+	else
+	{
+		cg_emit(cg, "    movupd [rbp - %d], xmm0", off);
+	}
+}
+
+/* Load packed f64x2 local `off` into xmm`reg`: from its XMM home if promoted,
+   else from its stack slot. */
+static void cg_load_local_simd(Codegen *cg, int off, int reg)
+{
+	const char *xr = cg_local_xmm(cg, off);
+	if (xr)
+	{
+		cg_emit(cg, "    movaps xmm%d, %s", reg, xr);
+	}
+	else
+	{
+		cg_emit(cg, "    movupd xmm%d, [rbp - %d]", reg, off);
+	}
+}
+
 static void cg_load_scalar_into(Codegen *cg, TypeKind k, const char *mem, const char *r64, const char *r32);
 static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e);
 static void cg_extend_reg(Codegen *cg, TypeKind k);
@@ -6488,6 +6518,87 @@ static void cg_memory(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_aligned_call(cg,"bzy_memory_map");
 }
 
+/* True for a packed-value operand whose evaluation leaves xmm0 untouched, so it
+   can be loaded straight into a chosen xmm register without spilling the other
+   operand: a `Simd.load` (its address math uses only integer registers) or a
+   plain f64x2 local (a single movupd from its slot). */
+static int cg_simd_xmm0_safe(Expr *e)
+{
+	return (e->kind==EX_CALL && strncmp(e->name,"Simd.",5)==0 && strcmp(e->name+5,"load")==0)
+		   || (e->kind==EX_IDENT && e->type.kind==TY_F64X2 && e->anno_int > 0);
+}
+
+/* In-place packed accumulate: `T = Simd.<op>(T, P)` (or the commutative
+   `Simd.add/mul(P, T)`) where T is a register-promoted f64x2 local. Emits the
+   other operand into xmm0 and combines straight into T's xmm home - no shuffle
+   through xmm0 and no store-back, so a dot/saxpy reduction carries the same
+   tight in-place chain Go's scalar accumulator does. Returns 1 if it emitted. */
+static int cg_try_simd_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
+{
+	if (target->kind != EX_IDENT || target->type.kind != TY_F64X2 || target->anno_int <= 0)
+	{
+		return 0;
+	}
+
+	const char *home = cg_local_xmm(cg, target->anno_int);
+	if (!home || value->kind != EX_CALL || strncmp(value->name, "Simd.", 5) != 0)
+	{
+		return 0;
+	}
+
+	const char *m = value->name + 5;
+	const char *op = strcmp(m,"add")==0 ? "addpd"
+					 : strcmp(m,"sub")==0 ? "subpd"
+					 : strcmp(m,"mul")==0 ? "mulpd"
+					 : strcmp(m,"div")==0 ? "divpd" : NULL;
+	if (!op || value->arg_count != 2)
+	{
+		return 0;
+	}
+
+	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0;
+	int lhs_is_t = value->args[0]->kind==EX_IDENT && value->args[0]->anno_int==target->anno_int;
+	int rhs_is_t = value->args[1]->kind==EX_IDENT && value->args[1]->anno_int==target->anno_int;
+
+	Expr *other;
+	if (lhs_is_t)
+	{
+		other = value->args[1];          /* T op P  ->  home op= P. */
+	}
+	else if (rhs_is_t && commutative)
+	{
+		other = value->args[0];          /* P op T, commutative -> home op= P. */
+	}
+	else
+	{
+		return 0;
+	}
+
+	cg_expr(cg,tt,other);                /* P -> xmm0 (Simd ops touch only xmm0/xmm1). */
+	cg_emit(cg,"    %s %s, xmm0", op, home);
+	return 1;
+}
+
+/* Load such an operand into xmm`reg` (1 or 2). Assumes cg_simd_xmm0_safe(e). */
+static void cg_simd_load_into(Codegen *cg, TypeTable *tt, Expr *e, int reg)
+{
+	if (e->kind==EX_IDENT)
+	{
+		cg_load_local_simd(cg, e->anno_int, reg);   /* XMM home if promoted, else slot. */
+		return;
+	}
+
+	/* Simd.load(a, i): &a[i] in rbx, then a packed load into the target. */
+	Expr ie = {0};
+	ie.kind = EX_INDEX;
+	ie.lhs = e->args[0];
+	ie.rhs = e->args[1];
+	ie.type.kind = TY_DOUBLE;
+	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees lanes i, i+1 in range. */
+	cg_index_addr(cg,tt,&ie);
+	cg_emit(cg,"    movupd xmm%d, [rbx]", reg);
+}
+
 /* Simd.* builtins. A packed f64x2 result lives in the full xmm0 (low lane = x,
    high lane = y); a lane-extract result is a scalar double in xmm0. */
 static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
@@ -6519,10 +6630,66 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"load")==0)
+	{
+		/* Address of element i via a fabricated arr[i] index (bounds-checks lane i;
+		   lane i+1 is read by the 16-byte movupd and is the caller's responsibility,
+		   like any explicit packed primitive). */
+		Expr ie = {0};
+		ie.kind = EX_INDEX;
+		ie.lhs = e->args[0];
+		ie.rhs = e->args[1];
+		ie.type.kind = TY_DOUBLE;
+	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees lanes i, i+1 in range. */
+		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
+		cg_emit(cg,"    movupd xmm0, [rbx]");
+		return;
+	}
+
+	if (strcmp(m,"store")==0)
+	{
+		int b = cg_scratch_alloc(cg, 16);
+		cg_expr(cg,tt,e->args[2]);                       /* v -> xmm0. */
+		cg_emit(cg,"    movupd [rbp - %d], xmm0", b);     /* Park v across the address computation. */
+		Expr ie = {0};
+		ie.kind = EX_INDEX;
+		ie.lhs = e->args[0];
+		ie.rhs = e->args[1];
+		ie.type.kind = TY_DOUBLE;
+	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees lanes i, i+1 in range. */
+		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
+		cg_emit(cg,"    movupd xmm1, [rbp - %d]", b);
+		cg_scratch_free(cg, 16);
+		cg_emit(cg,"    movupd [rbx], xmm1");
+		return;
+	}
+
 	/* Element-wise add/sub/mul/div: both operands are packed f64x2 values. */
 	const char *op = strcmp(m,"add")==0 ? "addpd"
 					 : strcmp(m,"sub")==0 ? "subpd"
 					 : strcmp(m,"mul")==0 ? "mulpd" : "divpd";
+	int commutative = strcmp(m,"add")==0 || strcmp(m,"mul")==0;
+
+	/* Spill-free fast paths: when one operand is xmm0-safe it loads straight into
+	   xmm1 with no scratch round-trip. This collapses a multiply-accumulate chain
+	   (acc = add(acc, mul(load, load))) to pure register/packed-load traffic. */
+	if (cg_simd_xmm0_safe(e->args[1]))
+	{
+		cg_expr(cg,tt,e->args[0]);                       /* lhs -> xmm0. */
+		cg_simd_load_into(cg,tt,e->args[1],1);           /* rhs -> xmm1 (xmm0 preserved). */
+		cg_emit(cg,"    %s xmm0, xmm1", op);
+		return;
+	}
+
+	if (commutative && cg_simd_xmm0_safe(e->args[0]))
+	{
+		cg_expr(cg,tt,e->args[1]);                       /* rhs -> xmm0. */
+		cg_simd_load_into(cg,tt,e->args[0],1);           /* lhs -> xmm1; op is commutative. */
+		cg_emit(cg,"    %s xmm0, xmm1", op);
+		return;
+	}
+
+	/* Generic: spill the evaluated lhs so a nested rhs can reuse xmm0/xmm1. */
 	int b = cg_scratch_alloc(cg, 16);
 	cg_expr(cg,tt,e->args[0]);                           /* a -> xmm0. */
 	cg_emit(cg,"    movupd [rbp - %d], xmm0", b);
@@ -7122,7 +7289,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		sprintf(mem,"[rbp - %d]", e->anno_int);
 		if (ty_is_simd(e->type.kind))
 		{
-			cg_emit(cg,"    movupd xmm0, %s", mem);   /* Packed value: full 16-byte load. */
+			cg_load_local_simd(cg, e->anno_int, 0);   /* XMM home if promoted, else 16-byte slot. */
 		}
 		else if (ty_is_float(e->type.kind))
 		{
@@ -10029,8 +10196,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			}
 			else if (ty_is_simd(s->decl_type.kind))
 			{
-				cg_expr(cg,tt,s->decl_init);                                   /* Packed value -> xmm0. */
-				cg_emit(cg,"    movupd [rbp - %d], xmm0", s->decl_offset);     /* 16-byte slot, unaligned. */
+				cg_expr(cg,tt,s->decl_init);                       /* Packed value -> xmm0. */
+				cg_store_local_simd(cg, s->decl_offset);           /* XMM home if promoted, else 16-byte slot. */
 			}
 			else if (!cg_fp_load_into_home(cg, s->decl_offset, s->decl_type.kind, s->decl_init))
 			{
@@ -10085,6 +10252,15 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		else if (cg_try_rmw_index(cg,tt,s->target,s->value))
 		{
 			/* arr[X] = arr[X] op V fused: one indexed address, one bounds check. */
+		}
+		else if (ty_is_simd(s->target->type.kind) && cg_try_simd_inplace(cg,tt,s->target,s->value))
+		{
+			/* Packed accumulate fused straight into the target's xmm home. */
+		}
+		else if (ty_is_simd(s->target->type.kind) && s->target->kind == EX_IDENT && s->target->anno_int > 0)
+		{
+			cg_expr(cg,tt,s->value);                               /* Packed value -> xmm0. */
+			cg_store_local_simd(cg, s->target->anno_int);          /* XMM home if promoted, else slot. */
 		}
 		else
 		{

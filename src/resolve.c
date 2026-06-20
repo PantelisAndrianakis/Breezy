@@ -791,6 +791,32 @@ static void resolve_simd(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"load")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_ARRAY
+			|| !e->args[0]->type.elem || e->args[0]->type.elem->kind!=TY_DOUBLE
+			|| !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"Simd.load(double[] a, int i) loads lanes i and i+1.",NULL);
+		}
+
+		e->type.kind=TY_F64X2;
+		return;
+	}
+
+	if (strcmp(m,"store")==0)
+	{
+		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY
+			|| !e->args[0]->type.elem || e->args[0]->type.elem->kind!=TY_DOUBLE
+			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_F64X2)
+		{
+			die(e->line,"Simd.store(double[] a, int i, f64x2 v) stores lanes i and i+1.",NULL);
+		}
+
+		e->type.kind=TY_VOID;
+		return;
+	}
+
 	die(e->line,"Unknown Simd method: ",m);
 }
 

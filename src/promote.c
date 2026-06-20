@@ -1,6 +1,7 @@
 #include "promote.h"
 #include "grow.h"
 #include <stdlib.h>
+#include <string.h>
 
 #define NREGS    4      /* r12..r15: the ABI-symmetric callee-saved integer registers. */
 #define NFREGS   4      /* xmm2..xmm5: caller-saved on BOTH Win64 and SysV, never used as codegen scratch. */
@@ -52,6 +53,23 @@ static int expr_has_call(Expr *e)
 {
 	if (!e)
 	{
+		return 0;
+	}
+
+	/* Simd.* intrinsics lower entirely inline (no call instruction) and touch only
+	   xmm0/xmm1 and integer scratch - never the xmm2..5 promotion homes. So they do
+	   not poison the caller-saved-XMM call-free test; recurse into their args (which
+	   may still contain a real call) without counting the intrinsic itself. */
+	if (e->kind == EX_CALL && strncmp(e->name, "Simd.", 5) == 0)
+	{
+		for (int i = 0; i < e->arg_count; i++)
+		{
+			if (expr_has_call(e->args[i]))
+			{
+				return 1;
+			}
+		}
+
 		return 0;
 	}
 
@@ -221,8 +239,9 @@ static void scan_expr(Expr *e, int depth, Ctx *c)
 		bump(e->anno_int, depth, c);
 	}
 
-	/* A double local read is a candidate for XMM (xmm2..5) promotion. */
-	if (e->kind == EX_IDENT && e->type.kind == TY_DOUBLE && e->anno_int > 0)
+	/* A double or packed f64x2 local read is a candidate for XMM (xmm2..5)
+	   promotion: both live in a full caller-saved xmm over a call-free interval. */
+	if (e->kind == EX_IDENT && (e->type.kind == TY_DOUBLE || e->type.kind == TY_F64X2) && e->anno_int > 0)
 	{
 		fbump(e->anno_int, depth, c);
 	}
@@ -299,7 +318,7 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 		bump(s->decl_offset, depth, c);
 	}
 
-	if (s->kind == ST_VARDECL && s->decl_type.kind == TY_DOUBLE && s->decl_offset > 0)
+	if (s->kind == ST_VARDECL && (s->decl_type.kind == TY_DOUBLE || s->decl_type.kind == TY_F64X2) && s->decl_offset > 0)
 	{
 		fbump(s->decl_offset, depth, c);
 	}
