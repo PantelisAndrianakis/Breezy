@@ -1,0 +1,33 @@
+// Option<T> and Result<T, E> are built-in prelude types - no definition needed.
+void main()
+{
+	Option<int> a;
+	a = Option.Some(5);
+	Option<int> b;
+	b = Option.None;
+	match (a)
+	{
+		Some(x) => print(x);     // 5
+		None    => print(-1);
+	}
+	match (b)
+	{
+		Some(x) => print(x);
+		None    => print(-1);    // -1
+	}
+
+	Result<int, string> r;
+	r = Result.Ok(42);
+	match (r)
+	{
+		Ok(v)  => print(v);      // 42
+		Err(e) => print(e);
+	}
+	Result<int, string> e;
+	e = Result.Err("bad");
+	match (e)
+	{
+		Ok(v)    => print(v);
+		Err(msg) => print(msg);  // bad
+	}
+}

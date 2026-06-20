@@ -419,8 +419,24 @@ static const char DATETIME[] =
 	"	string format(string pattern) { return Clock.getDateString(this.millis, pattern); }\n"
 	"}\n";
 
-const char *BZY_PRELUDE[] = { VEC2I, VEC2L, VEC2F, VEC2D, VEC3I, VEC3L, VEC3F, VEC3D, DATETIME };
-const int   BZY_PRELUDE_COUNT = 9;
+/* Option<T> and Result<T, E>: built-in generic sum types for "a value or nothing"
+   and "a value or an error". Generic enums, so they cost nothing until used. */
+static const char OPTION[] =
+	"enum Option<T>\n"
+	"{\n"
+	"	Some(T v),\n"
+	"	None;\n"
+	"}\n";
+
+static const char RESULT[] =
+	"enum Result<T, E>\n"
+	"{\n"
+	"	Ok(T v),\n"
+	"	Err(E e);\n"
+	"}\n";
+
+const char *BZY_PRELUDE[] = { VEC2I, VEC2L, VEC2F, VEC2D, VEC3I, VEC3L, VEC3F, VEC3D, DATETIME, OPTION, RESULT };
+const int   BZY_PRELUDE_COUNT = 11;
 
 /* ---- Desktop GUI prelude (Breezy source). ---- */
 
