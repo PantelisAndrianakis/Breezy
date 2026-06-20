@@ -389,6 +389,8 @@ int64_t bzy_system_shell(void *command, int64_t wait);
 void   *bzy_channel_new(int64_t cap, int64_t elem_managed); /* Owned (+1) bounded channel. */
 void    bzy_channel_send(void *ch, int64_t v);   /* Parks if full; moves a managed value in. */
 int64_t bzy_channel_recv(void *ch);              /* Parks if empty; returns an owned value. */
+int64_t bzy_channel_try_send(void *ch, int64_t v);       /* Non-blocking; 1 if sent, 0 if full. */
+int64_t bzy_channel_try_recv(void *ch, int64_t *out);    /* Non-blocking; 1 with *out, 0 if empty. */
 
 /* Timers (6a-4): a shared min-heap of Timer objects keyed by absolute deadline.
    Timer is a managed leaf object (same layout idiom as channel). */

@@ -1089,6 +1089,27 @@ static void test_channel_is_shared(void)
 	bzy_release(c);
 }
 
+/* Non-blocking try_send/try_recv: never park, report ready/not-ready, and move
+   values in FIFO order. The foundation of `select`. */
+static void test_channel_try_send_recv(void)
+{
+	void *c = bzy_channel_new(2, 0);   /* Capacity 2. */
+	int64_t v = -1;
+
+	ASSERT_INT(bzy_channel_try_recv(c, &v), 0);   /* Empty: nothing to take. */
+	ASSERT_INT(bzy_channel_try_send(c, 10), 1);   /* Buffered. */
+	ASSERT_INT(bzy_channel_try_send(c, 20), 1);
+	ASSERT_INT(bzy_channel_try_send(c, 30), 0);   /* Full: refused, no park. */
+
+	ASSERT_INT(bzy_channel_try_recv(c, &v), 1);
+	ASSERT_INT(v, 10);                             /* FIFO. */
+	ASSERT_INT(bzy_channel_try_recv(c, &v), 1);
+	ASSERT_INT(v, 20);
+	ASSERT_INT(bzy_channel_try_recv(c, &v), 0);    /* Drained. */
+
+	bzy_release(c);
+}
+
 /* The small-object pool must actually recycle: a freed block of a pooled size is
    handed straight back to the next same-size allocation (on this thread), and the
    live count returns to baseline so nothing leaks. */
@@ -1922,6 +1943,7 @@ int main(void)
 	RUN(test_scheduler_multicore);
 	RUN(test_channel_roundtrip);
 	RUN(test_channel_is_shared);
+	RUN(test_channel_try_send_recv);
 	RUN(test_pool_recycles_block);
 	RUN(test_timer_heap_orders_by_deadline);
 	RUN(test_timer_periodic_coalesces_missed_ticks);

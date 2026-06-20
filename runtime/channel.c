@@ -348,3 +348,50 @@ int64_t bzy_channel_recv(void *p)
 		/* Resumed because a sender published a value: loop and retry the dequeue. */
 	}
 }
+
+/* Non-blocking send: one ring_enqueue attempt, never parks. Returns 1 if the
+   value was buffered (and a parked receiver, if any, woken), 0 if the ring was
+   full. The cross-core share happens before publish, as in the blocking send;
+   on the full path it is a harmless no-op (the value stays with the caller). */
+int64_t bzy_channel_try_send(void *p, int64_t v)
+{
+	Channel *c = (Channel*)p;
+	if (c->elem_managed)
+	{
+		bzy_share_crosscore((void*)v);
+	}
+
+	if (ring_enqueue(c, v))
+	{
+		__atomic_thread_fence(__ATOMIC_SEQ_CST);
+		if (__atomic_load_n(&c->recv_waiters, __ATOMIC_SEQ_CST) > 0)
+		{
+			wake_one_recv(c);
+		}
+
+		return 1;
+	}
+
+	return 0;
+}
+
+/* Non-blocking receive: one ring_dequeue attempt, never parks. Returns 1 with the
+   value in *out (and a parked sender, if any, woken), 0 if the ring was empty. */
+int64_t bzy_channel_try_recv(void *p, int64_t *out)
+{
+	Channel *c = (Channel*)p;
+	int64_t v;
+	if (ring_dequeue(c, &v))
+	{
+		__atomic_thread_fence(__ATOMIC_SEQ_CST);
+		if (__atomic_load_n(&c->send_waiters, __ATOMIC_SEQ_CST) > 0)
+		{
+			wake_one_send(c);
+		}
+
+		*out = v;
+		return 1;
+	}
+
+	return 0;
+}
