@@ -7,6 +7,7 @@ being spread across scalar slots:
 - `f32x4` — four packed `float` lanes (`x`, `y`, `z`, `w`).
 - `i32x4` — four packed `int` lanes (`x`, `y`, `z`, `w`).
 - `f64x4` — four packed `double` lanes in a 256-bit AVX register (`x`, `y`, `z`, `w`).
+- `f32x8` — eight packed `float` lanes in a 256-bit AVX register.
 
 A vector is a value, not a heap object — it occupies a 16-byte stack slot and is
 never reference-counted. It is constructed and consumed through the `Simd`
@@ -122,16 +123,18 @@ dot = Simd.x(acc) + Simd.y(acc);
 
 ## 256-bit AVX (`f64x4`)
 
-`f64x4` packs four doubles into a 256-bit AVX register. Because four `double`
-literals are indistinguishable from the four-lane `f32x4` by arity, the
-constructors and array I/O are width-explicit; everything else (lanes, element
-ops, `sum`/`dot`) dispatches by the value's type.
+`f64x4` packs four doubles, `f32x8` eight floats, into a 256-bit AVX register.
+The constructors and array I/O are width-explicit (`*256`) because the lane
+types/counts overlap the SSE widths by arity; everything else (lanes, element
+ops, `sum`/`dot`) dispatches by the value's type. `f32x8` lanes 0–3 read with
+`x`/`y`/`z`/`w`; all eight reach an array through `Simd.store256`.
 
 | Call | Result | Meaning |
 |------|--------|---------|
-| `Simd.pack256(x, y, z, w)` | `f64x4` | Pack four doubles into the four lanes. |
-| `Simd.load256(a, i)` | `f64x4` | Load lanes `i..i+3` of a `double[]`. |
-| `Simd.store256(a, i, v)` | — | Store `v` into lanes `i..i+3` of a `double[]`. |
+| `Simd.pack256(a, b, c, d)` | `f64x4` | Pack four doubles. |
+| `Simd.pack256(a..h)` | `f32x8` | Pack eight floats. |
+| `Simd.load256(a, i)` | `f64x4`/`f32x8` | Load the packed group at `i` of a `double[]`/`float[]`. |
+| `Simd.store256(a, i, v)` | — | Store `v` into the packed group at `i`. |
 
 ```breezy
 f64x4 a = Simd.pack256(1.0, 2.0, 3.0, 4.0);
@@ -147,8 +150,8 @@ none of this. (There is no scalar fallback — an AVX program needs AVX to run.)
 
 ## Status
 
-`f64x2`, `f32x4`, `i32x4`, and 256-bit `f64x4` construction, lane access,
+`f64x2`, `f32x4`, `i32x4`, and 256-bit `f64x4`/`f32x8` construction, lane access,
 element-wise `add`/`sub`/`mul`/`div` (no `div` for `i32x4`), `min`/`max`, packed
-`load`/`store`, and horizontal `sum`/`dot` ship today (Domain 2a + 2b + 2c
-`f64x4`). Remaining: the AVX runtime feature gate + scalar fallback, the wider
-`i32x8`/`f32x8` integer/float AVX types, and a `bench/vs_go` AVX pillar.
+`load`/`store`, and horizontal `sum`/`dot` ship today (Domain 2a + 2b + 2c). The
+AVX startup guard aborts cleanly on a non-AVX CPU. Remaining: the AVX2 integer
+type `i32x8`.

@@ -6563,7 +6563,7 @@ static int cg_simd_xmm0_safe(Expr *e)
    f32x4. So addpd vs addps, mulpd vs mulps, etc. */
 static const char *cg_simd_sfx(TypeKind k)
 {
-	return k==TY_F32X4 ? "ps" : "pd";
+	return (k==TY_F32X4 || k==TY_F32X8) ? "ps" : "pd";
 }
 
 /* Element kind a Simd.load/store addresses for its array (double, float, or int),
@@ -6728,6 +6728,16 @@ static void cg_simd_hreduce(Codegen *cg, TypeKind k)
 		return;
 	}
 
+	if (k==TY_F32X8)
+	{
+		cg_emit(cg,"    vextractf128 xmm1, ymm0, 1");   /* xmm1 = high four floats. */
+		cg_emit(cg,"    vzeroupper");
+		cg_emit(cg,"    addps xmm0, xmm1");              /* four pairwise sums. */
+		cg_emit(cg,"    haddps xmm0, xmm0");
+		cg_emit(cg,"    haddps xmm0, xmm0");             /* low lane = sum of all eight. */
+		return;
+	}
+
 	if (k==TY_F32X4)
 	{
 		cg_emit(cg,"    haddps xmm0, xmm0");    /* (x+y, z+w, x+y, z+w). */
@@ -6772,7 +6782,7 @@ static const char *cg_simd_op(const char *m, TypeKind k, char *buf)
 					   : strcmp(m,"div")==0 ? "div"
 					   : strcmp(m,"min")==0 ? "min" : "max";
 	/* f64x4 uses the AVX VEX-encoded form (vaddpd…); SSE widths the legacy form. */
-	snprintf(buf, 8, "%s%s%s", k==TY_F64X4 ? "v" : "", base, cg_simd_sfx(k));
+	snprintf(buf, 8, "%s%s%s", ty_simd_bytes(k)==32 ? "v" : "", base, cg_simd_sfx(k));
 	return buf;
 }
 
@@ -6831,12 +6841,29 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(m,"pack256")==0)
 	{
-		/* f64x4: lay four double lanes into a 32-byte scratch, then one ymm load. */
 		int b = cg_scratch_alloc(cg, 32);
-		for (int i=0; i<4; i++)
+		if (e->type.kind==TY_F32X8)
 		{
-			cg_to_double(cg,tt,e->args[i]);              /* lane i -> xmm0 low. */
-			cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - i*8);
+			/* f32x8: lay eight float lanes into a 32-byte scratch, then one ymm load. */
+			for (int i=0; i<8; i++)
+			{
+				cg_expr(cg,tt,e->args[i]);                /* lane i -> xmm0 low. */
+				if (e->args[i]->type.kind==TY_DOUBLE)
+				{
+					cg_emit(cg,"    cvtsd2ss xmm0, xmm0");
+				}
+
+				cg_emit(cg,"    movss dword [rbp - %d], xmm0", b - i*4);
+			}
+		}
+		else
+		{
+			/* f64x4: four double lanes. */
+			for (int i=0; i<4; i++)
+			{
+				cg_to_double(cg,tt,e->args[i]);          /* lane i -> xmm0 low. */
+				cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b - i*8);
+			}
 		}
 
 		cg_emit(cg,"    vmovups ymm0, [rbp - %d]", b);
@@ -6848,6 +6875,19 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		cg_expr(cg,tt,e->args[0]);                       /* Packed value -> reg 0. */
 		int lane = strcmp(m,"x")==0 ? 0 : strcmp(m,"y")==0 ? 1 : strcmp(m,"z")==0 ? 2 : 3;
+
+		if (e->args[0]->type.kind==TY_F32X8)
+		{
+			/* Lanes 0-3 live in the low 128 bits; bring the wanted one to lane 0.
+			   (Lanes 4-7 are reached via Simd.store256 into a float[].) */
+			cg_emit(cg,"    vzeroupper");                        /* Back to SSE cleanly. */
+			if (lane != 0)
+			{
+				cg_emit(cg,"    shufps xmm0, xmm0, %d", lane);
+			}
+
+			return;
+		}
 
 		if (e->args[0]->type.kind==TY_F64X4)
 		{
@@ -6948,13 +6988,13 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(m,"load256")==0)
 	{
-		/* f64x4 load: four double lanes (stride 8), one ymm move, folded when the
-		   base is hoisted. */
+		/* 256-bit load: four double lanes (stride 8, f64x4) or eight float lanes
+		   (stride 4, f32x8). One ymm move, folded when the base is hoisted. */
 		Expr ie = {0};
 		ie.kind = EX_INDEX;
 		ie.lhs = e->args[0];
 		ie.rhs = e->args[1];
-		ie.type.kind = TY_DOUBLE;
+		ie.type.kind = cg_simd_elem_kind(e->args[0]);
 		ie.anno_index_safe = 1;
 		char lopnd[64];
 		if (cg_index_opnd(cg, &ie, lopnd))
@@ -6976,7 +7016,7 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 		ie.kind = EX_INDEX;
 		ie.lhs = e->args[0];
 		ie.rhs = e->args[1];
-		ie.type.kind = TY_DOUBLE;
+		ie.type.kind = cg_simd_elem_kind(e->args[0]);
 		ie.anno_index_safe = 1;
 		char sopnd[64];
 		if (cg_index_opnd(cg, &ie, sopnd))

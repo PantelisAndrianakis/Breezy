@@ -1,0 +1,24 @@
+// f32x8: eight packed float lanes in a 256-bit AVX register. Lanes 0-3 read via
+// x/y/z/w; all eight reach an array through store256. Horizontal sum/dot reduce
+// the whole vector.
+void main()
+{
+	f32x8 a = Simd.pack256(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+	f32x8 b = Simd.pack256(2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0);
+
+	print(Simd.x(a));        // 1
+	print(Simd.w(a));        // 4
+	print(Simd.sum(a));      // 36
+	print(Simd.dot(a, b));   // 72
+
+	f32x8 s = Simd.add(a, b);
+	print(Simd.x(s));        // 3
+
+	float[] out = new float[8];
+	Simd.store256(out, 0, Simd.mul(a, b));
+	print(out[0]);           // 2
+	print(out[7]);           // 16
+
+	f32x8 v = Simd.load256(out, 0);
+	print(Simd.sum(v));      // 72
+}

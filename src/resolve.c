@@ -769,11 +769,11 @@ static void resolve_simd(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "Simd.". */
 
-	/* Flag AVX use for the startup guard: any f64x4 operand means 256-bit ops are
+	/* Flag AVX use for the startup guard: any 256-bit operand means AVX ops are
 	   emitted. The pure producers (pack256/load256) set it in their branches. */
 	for (int ai = 0; ai < e->arg_count; ai++)
 	{
-		if (e->args[ai]->type.kind == TY_F64X4)
+		if (ty_is_simd(e->args[ai]->type.kind) && ty_simd_bytes(e->args[ai]->type.kind) == 32)
 		{
 			g_program_uses_avx = 1;
 		}
@@ -814,19 +814,19 @@ static void resolve_simd(Expr *e)
 	   double, so arity alone cannot tell them apart). */
 	if (strcmp(m,"pack256")==0)
 	{
-		int all_double = e->arg_count==4;
+		int all_float = e->arg_count==4 || e->arg_count==8;
 		for (int i=0; i<e->arg_count; i++)
 		{
-			if (!ty_is_float(e->args[i]->type.kind)) { all_double=0; break; }
+			if (!ty_is_float(e->args[i]->type.kind)) { all_float=0; break; }
 		}
 
-		if (!all_double)
+		if (!all_float)
 		{
-			die(e->line,"Simd.pack256(x, y, z, w) takes four floating-point lanes (f64x4).",NULL);
+			die(e->line,"Simd.pack256 takes four lanes (f64x4) or eight lanes (f32x8).",NULL);
 		}
 
 		g_program_uses_avx = 1;
-		e->type.kind=TY_F64X4;
+		e->type.kind = (e->arg_count==8) ? TY_F32X8 : TY_F64X4;
 		return;
 	}
 
@@ -834,10 +834,10 @@ static void resolve_simd(Expr *e)
 	{
 		int two_lane = strcmp(m,"x")==0 || strcmp(m,"y")==0;
 		TypeKind vk = e->arg_count==1 ? e->args[0]->type.kind : TY_VOID;
-		int four_lane = vk==TY_F32X4 || vk==TY_I32X4 || vk==TY_F64X4;
+		int four_lane = vk==TY_F32X4 || vk==TY_I32X4 || vk==TY_F64X4 || vk==TY_F32X8;
 		if (e->arg_count!=1 || !ty_is_simd(vk) || (!two_lane && !four_lane))
 		{
-			die(e->line,"Simd.x/y take any vector; Simd.z/w take a four-lane vector.",NULL);
+			die(e->line,"Simd.x/y take any vector; Simd.z/w take a four-or-more-lane vector.",NULL);
 		}
 
 		e->type.kind = simd_lane_kind(vk);
@@ -935,27 +935,32 @@ static void resolve_simd(Expr *e)
 		return;
 	}
 
-	/* 256-bit AVX load/store: four double lanes (i..i+3) of a double[]. */
+	/* 256-bit AVX load/store: four double lanes (f64x4) of a double[], or eight
+	   float lanes (f32x8) of a float[]. */
 	if (strcmp(m,"load256")==0)
 	{
-		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
-			|| e->args[0]->type.elem->kind!=TY_DOUBLE || !ty_is_int(e->args[1]->type.kind))
+		int ok = e->arg_count==2 && e->args[0]->type.kind==TY_ARRAY && e->args[0]->type.elem
+				 && ty_is_int(e->args[1]->type.kind);
+		TypeKind ek = ok ? e->args[0]->type.elem->kind : TY_VOID;
+		if (!ok || (ek!=TY_DOUBLE && ek!=TY_FLOAT))
 		{
-			die(e->line,"Simd.load256(double[] a, int i) loads lanes i..i+3 (f64x4).",NULL);
+			die(e->line,"Simd.load256(a, i) loads a packed group from double[] (f64x4) or float[] (f32x8).",NULL);
 		}
 
 		g_program_uses_avx = 1;
-		e->type.kind=TY_F64X4;
+		e->type.kind = (ek==TY_FLOAT) ? TY_F32X8 : TY_F64X4;
 		return;
 	}
 
 	if (strcmp(m,"store256")==0)
 	{
-		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
-			|| e->args[0]->type.elem->kind!=TY_DOUBLE || !ty_is_int(e->args[1]->type.kind)
-			|| e->args[2]->type.kind!=TY_F64X4)
+		int ok = e->arg_count==3 && e->args[0]->type.kind==TY_ARRAY && e->args[0]->type.elem
+				 && ty_is_int(e->args[1]->type.kind) && ty_is_simd(e->args[2]->type.kind);
+		TypeKind ek = ok ? e->args[0]->type.elem->kind : TY_VOID;
+		TypeKind vk = ok ? e->args[2]->type.kind : TY_VOID;
+		if (!ok || !((ek==TY_DOUBLE && vk==TY_F64X4) || (ek==TY_FLOAT && vk==TY_F32X8)))
 		{
-			die(e->line,"Simd.store256(double[] a, int i, f64x4 v) stores lanes i..i+3.",NULL);
+			die(e->line,"Simd.store256(a, i, v): f64x4 into double[] or f32x8 into float[].",NULL);
 		}
 
 		e->type.kind=TY_VOID;
