@@ -1,0 +1,20 @@
+// A select with no default arm blocks: it cooperatively yields and re-polls
+// until an arm becomes ready. Here main blocks on the receive until the spawned
+// worker sends.
+void worker(channel<int> ch)
+{
+	ch.send(42);
+}
+
+void main()
+{
+	channel<int> ch;
+	ch = new channel<int>(2);
+	spawn worker(ch);
+	int got;
+	select
+	{
+		v = ch.recv() => got = v;
+	}
+	print(got);   // 42
+}

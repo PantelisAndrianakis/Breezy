@@ -203,7 +203,11 @@ static void scan_stmt_escapes(Stmt *s)
 			scan_block_escapes(s->sel_arms[i].body);
 		}
 
-		scan_block_escapes(s->else_blk);
+		if (s->else_blk)
+		{
+			scan_block_escapes(s->else_blk);
+		}
+
 		break;
 	case ST_CASE:
 	case ST_DEFAULT:

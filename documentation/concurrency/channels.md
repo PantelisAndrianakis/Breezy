@@ -71,15 +71,23 @@ Arms are tried top to bottom; the first ready one runs and the rest are skipped.
 A receive binds its value into an arm-scoped local; a send whose channel is full
 is simply not taken (its value is reclaimed, never leaked).
 
-> A `default` arm is currently required - `select` is non-blocking. A blocking
-> `select` that parks until one arm becomes ready is a future addition.
+**With a `default` arm** the `select` is non-blocking: the default runs when no
+other arm is ready. **Without a `default`** it blocks - cooperatively yielding
+the breeze and re-polling - until one of its arms becomes ready:
+
+```breezy
+select
+{
+	v = ch.recv() => use(v);   // No default: park here until a value arrives.
+}
+```
 
 ---
 
 ## Rules & gotchas
 
 - **Capacity is fixed at creation:** `new channel<T>(N)`.
-- **`select` needs a `default`** (it is non-blocking for now); each arm is a `recv()` or `send(...)` on a channel, tried in order.
+- **`select` with a `default` is non-blocking; without one it blocks** (yields and re-polls) until an arm is ready. Each arm is a `recv()` or `send(...)` on a channel, tried in order.
 - **`send` parks when full; `recv` parks when empty** - both yield the breeze, not the OS thread.
 - **A full channel applies backpressure** to the producer, bounding memory use.
 - **Pass channels to spawned workers** as arguments (up to four arguments of any type).

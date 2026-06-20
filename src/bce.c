@@ -994,15 +994,22 @@ static void bce_stmt(Stmt *st, Env *env)
 			mod_block(st->sel_arms[i].body, &mod);
 		}
 
-		mod_block(st->else_blk, &mod);
+		if (st->else_blk)
+		{
+			mod_block(st->else_blk, &mod);
+		}
+
 		for (int i = 0; i < st->sel_arm_count; i++)
 		{
 			Env child = env_dup(env);
 			bce_block(st->sel_arms[i].body, &child);
 		}
 
-		Env dflt = env_dup(env);
-		bce_block(st->else_blk, &dflt);
+		if (st->else_blk)
+		{
+			Env dflt = env_dup(env);
+			bce_block(st->else_blk, &dflt);
+		}
 		for (int i = 0; i < mod.n; i++)
 		{
 			env_set(env, mod.off[i], IV_TOP);

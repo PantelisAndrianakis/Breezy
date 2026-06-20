@@ -4854,13 +4854,8 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"select needs at least one send/receive arm.",NULL);
 		}
 
-		/* Non-blocking only for now: a default arm is required (a blocking,
-		   parking select is a later addition). */
-		if (!s->else_blk)
-		{
-			die(s->line,"select needs a default arm (blocking select is not supported yet).",NULL);
-		}
-
+		/* No default => a blocking select (cooperatively yields and retries until
+		   an arm is ready). With a default it is non-blocking. */
 		for (int i=0; i<s->sel_arm_count; i++)
 		{
 			SelectArm *a=&s->sel_arms[i];
@@ -4888,7 +4883,11 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			resolve_block(st,a->body,tc);
 		}
 
-		resolve_block(st,s->else_blk,tc);
+		if (s->else_blk)
+		{
+			resolve_block(st,s->else_blk,tc);
+		}
+
 		break;
 	}
 	case ST_THROW:

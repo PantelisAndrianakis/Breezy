@@ -49,7 +49,11 @@ static void walk_stmt(Func *f, Stmt *s)
 			walk_block(f, a->body);
 		}
 
-		walk_block(f, s->else_blk);
+		if (s->else_blk)
+		{
+			walk_block(f, s->else_blk);
+		}
+
 		break;
 	case ST_TRY:
 		walk_block(f, s->then_blk);

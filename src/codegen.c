@@ -9413,14 +9413,18 @@ static void cg_switch_string(Codegen *cg, TypeTable *tt, Stmt *s, Block *b, int 
 	cg_emit(cg,"    jmp rax");
 }
 
-/* Non-blocking select: try each arm in order via the channel try-primitives;
-   the first ready arm runs, otherwise the default arm runs. One scratch slot is
-   shared across the (sequential) arm attempts: [rbp-b] holds the channel, and
-   [rbp-(b-8)] the received value (recv) or sent value (send). The dispatch chain
-   jumps to per-arm body labels; bodies are emitted after the scratch is freed. */
+/* Select: try each arm in order via the channel try-primitives; the first ready
+   arm runs. With a default arm the select is non-blocking (the default runs when
+   nothing is ready); without one it blocks, cooperatively yielding and retrying
+   until an arm becomes ready. One scratch slot is shared across the (sequential)
+   arm attempts: [rbp-b] holds the channel, [rbp-(b-8)] the received/sent value.
+   The dispatch chain jumps to per-arm body labels; bodies are emitted after the
+   scratch is freed. */
 static void cg_select(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
+	int blocking = (s->else_blk == NULL);
 	int end = cg_label(cg);
+	int retry = blocking ? cg_label(cg) : end;
 	int *armlbl = malloc(sizeof(int) * (size_t)s->sel_arm_count);
 	for (int i = 0; i < s->sel_arm_count; i++)
 	{
@@ -9428,6 +9432,11 @@ static void cg_select(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	}
 
 	int b = cg_scratch_alloc(cg, 16);
+	if (blocking)
+	{
+		cg_emit(cg, ".L%d:", retry);          /* Re-poll point: loop back here after yielding. */
+	}
+
 	for (int i = 0; i < s->sel_arm_count; i++)
 	{
 		SelectArm *a = &s->sel_arms[i];
@@ -9492,8 +9501,16 @@ static void cg_select(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 
 	cg_scratch_free(cg, 16);
 
-	cg_block(cg, tt, f, s->else_blk, in_main);               /* Default arm: no arm was ready. */
-	cg_emit(cg, "    jmp .L%d", end);
+	if (blocking)
+	{
+		cg_aligned_call(cg, "bzy_yield");           /* Nothing ready: yield, then re-poll. */
+		cg_emit(cg, "    jmp .L%d", retry);
+	}
+	else
+	{
+		cg_block(cg, tt, f, s->else_blk, in_main);  /* Default arm: no arm was ready. */
+		cg_emit(cg, "    jmp .L%d", end);
+	}
 
 	for (int i = 0; i < s->sel_arm_count; i++)
 	{
