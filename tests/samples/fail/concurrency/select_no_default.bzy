@@ -1,0 +1,11 @@
+// A blocking select (no default arm) is not supported yet; rejected.
+void main()
+{
+	channel<int> ch;
+	ch = new channel<int>(2);
+	ch.send(1);
+	select
+	{
+		v = ch.recv() => print(v);
+	}
+}

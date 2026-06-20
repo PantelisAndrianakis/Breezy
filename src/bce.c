@@ -984,6 +984,34 @@ static void bce_stmt(Stmt *st, Env *env)
 		ck_clear(env);   /* switch / try is a control-flow boundary. */
 		break;
 	}
+	case ST_SELECT:
+	{
+		OffSet mod = { .n = 0 };
+		for (int i = 0; i < st->sel_arm_count; i++)
+		{
+			mark_indexes(st->sel_arms[i].chan, env);
+			mark_indexes(st->sel_arms[i].send_val, env);
+			mod_block(st->sel_arms[i].body, &mod);
+		}
+
+		mod_block(st->else_blk, &mod);
+		for (int i = 0; i < st->sel_arm_count; i++)
+		{
+			Env child = env_dup(env);
+			bce_block(st->sel_arms[i].body, &child);
+		}
+
+		Env dflt = env_dup(env);
+		bce_block(st->else_blk, &dflt);
+		for (int i = 0; i < mod.n; i++)
+		{
+			env_set(env, mod.off[i], IV_TOP);
+			alen_set(env, mod.off[i], IV_TOP);
+		}
+
+		ck_clear(env);   /* select is a control-flow boundary. */
+		break;
+	}
 	default:
 		mark_indexes(st->cond, env);
 		mark_indexes(st->value, env);

@@ -1466,6 +1466,96 @@ static Stmt *parse_match(Parser *p)
 	return s;
 }
 
+/* One arm body: a `{ block }` or a single statement, always returned as a Block. */
+static Block *parse_arm_body(Parser *p)
+{
+	if (check(p,TOKEN_LBRACE))
+	{
+		return parse_block(p);
+	}
+
+	Block *b=block_new();
+	block_push(b,parse_statement(p));
+	return b;
+}
+
+/* select { [v =] ch.recv() => body ; ch.send(x) => body ; default => body }
+   Multiplexes over channel receive/send. A `default` arm makes it non-blocking
+   (runs when no arm is ready). The head of a non-default arm is a channel method
+   call (recv/send), optionally bound on a receive (`v = ch.recv()`). */
+static Stmt *parse_select(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                       /* Consume 'select'. */
+	Stmt *s=stmt_new(ST_SELECT,line);
+	expect(p,TOKEN_LBRACE);
+	int cap=0;
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		if (check(p,TOKEN_DEFAULT))
+		{
+			advance(p);
+			expect(p,TOKEN_FATARROW);
+			if (s->else_blk)
+			{
+				fprintf(stderr,"line %d: select has more than one default arm.\n",p->cur.line);
+				exit(1);
+			}
+
+			s->else_blk=parse_arm_body(p);
+			continue;
+		}
+
+		SelectArm arm;
+		memset(&arm,0,sizeof(arm));
+		/* Optional receive binding: `v = ...`. */
+		if (check(p,TOKEN_IDENT) && p->peek.type==TOKEN_ASSIGN)
+		{
+			strcpy(arm.bind,p->cur.text);
+			advance(p);                /* IDENT */
+			advance(p);                /* '=' */
+		}
+
+		Expr *call=parse_expr(p);
+		if (call->kind!=EX_METHOD_CALL)
+		{
+			fprintf(stderr,"line %d: a select arm must be a channel recv() or send(...).\n",arm.bind[0]?call->line:p->cur.line);
+			exit(1);
+		}
+
+		if (strcmp(call->name,"send")==0)
+		{
+			arm.is_send=1;
+			arm.chan=call->lhs;
+			if (call->arg_count!=1)
+			{
+				fprintf(stderr,"line %d: select send arm needs one value: ch.send(x).\n",call->line);
+				exit(1);
+			}
+
+			arm.send_val=call->args[0];
+		}
+		else if (strcmp(call->name,"recv")==0)
+		{
+			arm.is_send=0;
+			arm.chan=call->lhs;
+		}
+		else
+		{
+			fprintf(stderr,"line %d: a select arm must call recv() or send(...), not '%s'.\n",call->line,call->name);
+			exit(1);
+		}
+
+		expect(p,TOKEN_FATARROW);
+		arm.body=parse_arm_body(p);
+		s->sel_arms=grow_ensure(s->sel_arms,s->sel_arm_count,&cap,sizeof(*s->sel_arms));
+		s->sel_arms[s->sel_arm_count++]=arm;
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return s;
+}
+
 static Stmt *parse_switch(Parser *p)
 {
 	int line=p->cur.line;
@@ -1649,6 +1739,10 @@ static Stmt *parse_statement(Parser *p)
 	if (check(p,TOKEN_MATCH))
 	{
 		return parse_match(p);
+	}
+	if (check(p,TOKEN_SELECT))
+	{
+		return parse_select(p);
 	}
 	if (check(p,TOKEN_RETURN))
 	{

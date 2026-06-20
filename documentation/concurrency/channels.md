@@ -51,9 +51,35 @@ The bounded capacity is the whole point. If a consumer is slower than its produc
 
 ---
 
+## select - multiplex over channels
+
+`select` waits on several channel operations at once and runs the arm that is
+ready. Each arm is a receive (`v = ch.recv() => ...`, binding the value) or a
+send (`ch.send(x) => ...`); a `default` arm runs when **no** other arm is ready,
+making the whole `select` non-blocking.
+
+```breezy
+select
+{
+	v = inbox.recv()  => handle(v);     // A message was waiting.
+	outbox.send(done) => markSent();    // There was room to send.
+	default           => doOtherWork(); // Nothing ready right now.
+}
+```
+
+Arms are tried top to bottom; the first ready one runs and the rest are skipped.
+A receive binds its value into an arm-scoped local; a send whose channel is full
+is simply not taken (its value is reclaimed, never leaked).
+
+> A `default` arm is currently required - `select` is non-blocking. A blocking
+> `select` that parks until one arm becomes ready is a future addition.
+
+---
+
 ## Rules & gotchas
 
 - **Capacity is fixed at creation:** `new channel<T>(N)`.
+- **`select` needs a `default`** (it is non-blocking for now); each arm is a `recv()` or `send(...)` on a channel, tried in order.
 - **`send` parks when full; `recv` parks when empty** - both yield the breeze, not the OS thread.
 - **A full channel applies backpressure** to the producer, bounding memory use.
 - **Pass channels to spawned workers** as arguments (up to four arguments of any type).

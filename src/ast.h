@@ -239,7 +239,20 @@ struct Expr
 	LambdaInfo *lam;          /* EX_LAMBDA side-data. */
 };
 
-typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN } StmtKind;
+typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN, ST_SELECT } StmtKind;
+
+/* One arm of a `select`. A receive arm binds the value (`v = ch.receive() => ...`);
+   a send arm delivers a value (`ch.send(x) => ...`). */
+typedef struct
+{
+	int      is_send;       /* 1 = send arm, 0 = receive arm. */
+	Expr    *chan;          /* The channel expression. */
+	char     bind[64];      /* Receive arm: bound local name (empty if the value is discarded). */
+	TypeRef  bind_type;     /* Receive arm: channel element type (resolved). */
+	int      bind_offset;   /* Receive arm: frame slot for the bound local (resolved). */
+	Expr    *send_val;      /* Send arm: the value expression. */
+	struct Block *body;     /* The arm body (Block is defined below). */
+} SelectArm;
 
 typedef struct Stmt Stmt;
 typedef struct Block Block;
@@ -272,6 +285,8 @@ struct Stmt
 	                            skip the downcast assignability check, the matched tag guarantees it. */
 	char   (*case_binds)[64]; /* ST_CASE: positional payload bind names, e.g. Circle(r) -> {"r"}. */
 	int      case_bind_count;
+	SelectArm *sel_arms;      /* ST_SELECT: the send/receive arms. */
+	int      sel_arm_count;   /* ST_SELECT: arm count (else_blk holds the default body, or NULL). */
 	Stmt    *accum_stmt;      /* P5: the recognized `s = s + ...` body statement, or NULL. */
 	int      accum_sb_offset; /* P5: frame slot for the lowering StringBuilder (0 = not lowered). */
 };

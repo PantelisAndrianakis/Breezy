@@ -307,6 +307,8 @@ check timer_crash tests/samples/pass/concurrency/timer_crash.bzy   $'42'
 check_abort timer_deadlock tests/samples/fail/concurrency/timer_deadlock.bzy
 unset BZY_WORKERS
 check channel     tests/samples/pass/concurrency/channel.bzy       $'60'
+check select_basic tests/samples/pass/concurrency/select_basic.bzy $'10\n99\n1\n5\nfull'
+check_fail select_no_default tests/samples/fail/concurrency/select_no_default.bzy
 check mc_sum      tests/samples/pass/concurrency/mc_sum.bzy        $'100'
 check mc_shared   tests/samples/pass/concurrency/mc_shared.bzy     $'42'
 check mc_stress   tests/samples/pass/concurrency/mc_stress.bzy     $'124500'

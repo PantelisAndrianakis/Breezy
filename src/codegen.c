@@ -9413,6 +9413,99 @@ static void cg_switch_string(Codegen *cg, TypeTable *tt, Stmt *s, Block *b, int 
 	cg_emit(cg,"    jmp rax");
 }
 
+/* Non-blocking select: try each arm in order via the channel try-primitives;
+   the first ready arm runs, otherwise the default arm runs. One scratch slot is
+   shared across the (sequential) arm attempts: [rbp-b] holds the channel, and
+   [rbp-(b-8)] the received value (recv) or sent value (send). The dispatch chain
+   jumps to per-arm body labels; bodies are emitted after the scratch is freed. */
+static void cg_select(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
+{
+	int end = cg_label(cg);
+	int *armlbl = malloc(sizeof(int) * (size_t)s->sel_arm_count);
+	for (int i = 0; i < s->sel_arm_count; i++)
+	{
+		armlbl[i] = cg_label(cg);
+	}
+
+	int b = cg_scratch_alloc(cg, 16);
+	for (int i = 0; i < s->sel_arm_count; i++)
+	{
+		SelectArm *a = &s->sel_arms[i];
+		TypeKind et = a->chan->type.elem->kind;
+		int managed = ty_is_managed(et);
+
+		if (!a->is_send)
+		{
+			cg_expr(cg, tt, a->chan);                        /* Channel -> rax. */
+			cg_emit(cg, "    mov [rbp - %d], rax", b);
+			cg_emit(cg, "    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+			cg_emit(cg, "    lea %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
+			cg_aligned_call(cg, "bzy_channel_try_recv");     /* rax = 1/0, value at [rbp-(b-8)]. */
+			cg_emit(cg, "    cmp rax, 0");
+			int next = cg_label(cg);
+			cg_emit(cg, "    je .L%d", next);
+			if (a->bind[0])
+			{
+				cg_emit(cg, "    mov rax, [rbp - %d]", b - 8);
+				cg_emit(cg, "    mov [rbp - %d], rax", a->bind_offset);   /* Bind (raw bits; owned value moves in). */
+			}
+			else if (managed)
+			{
+				cg_emit(cg, "    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
+				cg_release_rcx(cg);                          /* Discarded owned value. */
+			}
+
+			cg_emit(cg, "    jmp .L%d", armlbl[i]);
+			cg_emit(cg, ".L%d:", next);
+		}
+		else
+		{
+			cg_expr(cg, tt, a->chan);                        /* Channel -> rax. */
+			cg_emit(cg, "    mov [rbp - %d], rax", b);
+			if (managed)
+			{
+				cg_expr_owned(cg, tt, a->send_val);          /* +1; moves in on success. */
+			}
+			else
+			{
+				cg_expr(cg, tt, a->send_val);
+			}
+
+			if (ty_is_float(et))
+			{
+				cg_emit(cg, et == TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+			}
+
+			cg_emit(cg, "    mov [rbp - %d], rax", b - 8);
+			cg_emit(cg, "    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
+			cg_emit(cg, "    mov %s, [rbp - %d]", cg_iarg(cg, 1), b - 8);
+			cg_aligned_call(cg, "bzy_channel_try_send");     /* rax = 1/0. */
+			cg_emit(cg, "    cmp rax, 0");
+			cg_emit(cg, "    jne .L%d", armlbl[i]);           /* Sent: channel owns the value. */
+			if (managed)
+			{
+				cg_emit(cg, "    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);
+				cg_release_rcx(cg);                          /* Full: reclaim the +1 we took. */
+			}
+		}
+	}
+
+	cg_scratch_free(cg, 16);
+
+	cg_block(cg, tt, f, s->else_blk, in_main);               /* Default arm: no arm was ready. */
+	cg_emit(cg, "    jmp .L%d", end);
+
+	for (int i = 0; i < s->sel_arm_count; i++)
+	{
+		cg_emit(cg, ".L%d:", armlbl[i]);
+		cg_block(cg, tt, f, s->sel_arms[i].body, in_main);
+		cg_emit(cg, "    jmp .L%d", end);
+	}
+
+	cg_emit(cg, ".L%d:", end);
+	free(armlbl);
+}
+
 static void cg_switch(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	Block *b = s->then_blk;
@@ -10122,6 +10215,9 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	case ST_SWITCH:
 		cg_switch(cg,tt,f,s,in_main);
+		break;
+	case ST_SELECT:
+		cg_select(cg,tt,f,s,in_main);
 		break;
 	case ST_CASE:
 	case ST_DEFAULT:
@@ -11531,6 +11627,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_channel_new");
 	cg_emit(cg,"extern bzy_channel_send");
 	cg_emit(cg,"extern bzy_channel_recv");
+	cg_emit(cg,"extern bzy_channel_try_send");
+	cg_emit(cg,"extern bzy_channel_try_recv");
 	cg_emit(cg,"extern bzy_timer_after");
 	cg_emit(cg,"extern bzy_timer_every");
 	cg_emit(cg,"extern bzy_timer_cancel");

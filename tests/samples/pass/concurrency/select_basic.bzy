@@ -1,0 +1,43 @@
+// Non-blocking select: a default arm runs when no send/receive arm is ready.
+void main()
+{
+	channel<int> ch;
+	ch = new channel<int>(2);
+	ch.send(10);
+
+	int got;
+	got = 0;
+	select
+	{
+		v = ch.recv() => got = v;        // Ready: binds 10.
+		default       => got = -1;
+	}
+	print(got);                          // 10
+
+	channel<int> empty;
+	empty = new channel<int>(2);
+	select
+	{
+		w = empty.recv() => print(w);
+		default          => print(99);   // Empty: default.
+	}
+
+	channel<int> out;
+	out = new channel<int>(2);
+	select
+	{
+		out.send(5) => print(1);         // Space: sent.
+		default     => print(0);
+	}
+	print(out.recv());                   // 5
+
+	channel<string> sf;
+	sf = new channel<string>(2);
+	sf.send("a");
+	sf.send("b");
+	select
+	{
+		sf.send("c") => print("sent");
+		default      => print("full");   // Full: default, "c" reclaimed.
+	}
+}

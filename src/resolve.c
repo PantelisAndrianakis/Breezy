@@ -4847,6 +4847,50 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;   /* Resolved as part of the enclosing switch body. */
+	case ST_SELECT:
+	{
+		if (s->sel_arm_count==0)
+		{
+			die(s->line,"select needs at least one send/receive arm.",NULL);
+		}
+
+		/* Non-blocking only for now: a default arm is required (a blocking,
+		   parking select is a later addition). */
+		if (!s->else_blk)
+		{
+			die(s->line,"select needs a default arm (blocking select is not supported yet).",NULL);
+		}
+
+		for (int i=0; i<s->sel_arm_count; i++)
+		{
+			SelectArm *a=&s->sel_arms[i];
+			resolve_expr(st,a->chan,tc);
+			if (a->chan->type.kind!=TY_CHANNEL)
+			{
+				die(a->chan->line,"select arm operand must be a channel.",NULL);
+			}
+
+			TypeRef elem=*a->chan->type.elem;
+			if (a->is_send)
+			{
+				resolve_value(st,a->send_val,&elem,tc);
+				if (!assignable(&elem,&a->send_val->type))
+				{
+					die(a->chan->line,"select send arm value type mismatch.",NULL);
+				}
+			}
+			else if (a->bind[0])
+			{
+				a->bind_type=elem;
+				a->bind_offset=sym_add(st,a->bind,elem)->offset;
+			}
+
+			resolve_block(st,a->body,tc);
+		}
+
+		resolve_block(st,s->else_blk,tc);
+		break;
+	}
 	case ST_THROW:
 	{
 		resolve_expr(st,s->expr,tc);
@@ -5425,6 +5469,22 @@ static void frame_stmt(Stmt *s, int *d, int *a, int *sc)
 	frame_stmt(s->for_post, d, a, sc);
 	frame_block(s->then_blk, d, a, sc);
 	frame_block(s->else_blk, d, a, sc);
+	if (s->kind==ST_SELECT)
+	{
+		if (*a < 2)
+		{
+			*a = 2;   /* The try_send/try_recv calls each pass two outgoing args. */
+		}
+
+		for (int i=0; i<s->sel_arm_count; i++)
+		{
+			frame_expr_depth(s->sel_arms[i].chan, d, a);
+			frame_expr_depth(s->sel_arms[i].send_val, d, a);
+			frame_scratch_bytes(s->sel_arms[i].chan, sc);
+			frame_scratch_bytes(s->sel_arms[i].send_val, sc);
+			frame_block(s->sel_arms[i].body, d, a, sc);
+		}
+	}
 }
 
 static void frame_annotate(Func *f)

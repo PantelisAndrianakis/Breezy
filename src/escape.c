@@ -195,6 +195,16 @@ static void scan_stmt_escapes(Stmt *s)
 		walk_expr(s->cond);
 		scan_block_escapes(s->then_blk);
 		break;
+	case ST_SELECT:
+		for (int i = 0; i < s->sel_arm_count; i++)
+		{
+			walk_expr(s->sel_arms[i].chan);
+			walk_expr(s->sel_arms[i].send_val);
+			scan_block_escapes(s->sel_arms[i].body);
+		}
+
+		scan_block_escapes(s->else_blk);
+		break;
 	case ST_CASE:
 	case ST_DEFAULT:
 		break;
