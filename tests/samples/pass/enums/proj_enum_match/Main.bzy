@@ -1,0 +1,22 @@
+void main()
+{
+	Color c;
+	c = Color.GREEN;
+
+	// Exhaustive match, no default, single-statement and block arms, no fallthrough.
+	match (c)
+	{
+		RED   => print(1);
+		GREEN => { print(2); print(20); }
+		BLUE  => print(3);
+	}
+
+	c = Color.BLUE;
+
+	// A default arm makes the match exhaustive without listing every constant.
+	match (c)
+	{
+		RED  => print(1);
+		default => print(9);
+	}
+}

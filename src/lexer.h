@@ -7,6 +7,7 @@ typedef enum
 	TOKEN_VOID, TOKEN_INT, TOKEN_IF, TOKEN_ELSE, TOKEN_WHILE, TOKEN_FOREACH, TOKEN_FOR, TOKEN_IN, TOKEN_RETURN, TOKEN_THROW, TOKEN_TRY, TOKEN_CATCH, TOKEN_SPAWN,
 	TOKEN_BREAK, TOKEN_CONTINUE,                         /* Loop control. */
 	TOKEN_SWITCH, TOKEN_CASE, TOKEN_DEFAULT,             /* Switch. */
+	TOKEN_MATCH,                                         /* `match`: exhaustive, fallthrough-free switch over enums. */
 	TOKEN_CLASS, TOKEN_EXTENDS, TOKEN_NEW, TOKEN_THIS,
 	TOKEN_RECORD,                                       /* `record` declaration: final class with synthesized hashCode/equals. */
 	TOKEN_INTERFACE, TOKEN_IMPLEMENTS,                   /* Interfaces. */

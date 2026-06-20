@@ -4690,6 +4690,34 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		}
 
 		g_break_depth--;
+
+		/* `match` is exhaustive: with no default arm, every enum constant must
+		   have an arm. Report the first uncovered constant. (seen[] holds the
+		   case ordinals after the enum-label rewrite above.) */
+		if (s->is_match && ndefault==0)
+		{
+			if (!is_enum_switch)
+			{
+				die(s->line,"A match without a default must be over an enum.",NULL);
+			}
+
+			int total=enum_count_of(s->cond->type.class_name);
+			for (int ord=0; ord<total; ord++)
+			{
+				int covered=0;
+				for (int j=0; j<nseen; j++)
+				{
+					if (seen[j]==ord) { covered=1; break; }
+				}
+
+				if (!covered)
+				{
+					die(s->line,"Non-exhaustive match; missing case: ",
+						enum_const_name(s->cond->type.class_name,ord));
+				}
+			}
+		}
+
 		break;
 	}
 	case ST_CASE:

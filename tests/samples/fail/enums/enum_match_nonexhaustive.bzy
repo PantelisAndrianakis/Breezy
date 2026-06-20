@@ -1,0 +1,21 @@
+// A match over an enum with no default must cover every constant; BLUE is missing.
+enum Color
+{
+	RED(0),
+	GREEN(0),
+	BLUE(0);
+
+	int r;
+	Color(int r) { this.r = r; }
+}
+
+void main()
+{
+	Color c;
+	c = Color.RED;
+	match (c)
+	{
+		RED   => print(1);
+		GREEN => print(2);
+	}
+}

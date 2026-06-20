@@ -1393,6 +1393,58 @@ static Expr *parse_case_const(Parser *p)
 	return e;
 }
 
+/* match (subject) { LABEL => stmt-or-block  ... [default => ...] }
+   Lowered to the same ST_SWITCH node as `switch`, with two differences enforced
+   later: every arm ends in an implicit break (no fallthrough), and the resolver
+   checks the arms exhaustively cover the enum (or a default is present). */
+static Stmt *parse_match(Parser *p)
+{
+	int line=p->cur.line;
+	advance(p);                       /* Consume 'match'. */
+	Stmt *s=stmt_new(ST_SWITCH,line);
+	s->is_match=1;
+	expect(p,TOKEN_LPAREN);
+	s->cond=parse_expr(p);
+	expect(p,TOKEN_RPAREN);
+	expect(p,TOKEN_LBRACE);
+	s->then_blk=block_new();
+	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
+	{
+		int cl=p->cur.line;
+		if (check(p,TOKEN_DEFAULT))
+		{
+			advance(p);
+			expect(p,TOKEN_FATARROW);
+			block_push(s->then_blk,stmt_new(ST_DEFAULT,cl));
+		}
+		else
+		{
+			Stmt *c=stmt_new(ST_CASE,cl);
+			c->value=parse_case_const(p);
+			expect(p,TOKEN_FATARROW);
+			block_push(s->then_blk,c);
+		}
+
+		if (check(p,TOKEN_LBRACE))
+		{
+			Block *grp=parse_block(p);
+			for (int i=0; i<grp->count; i++)
+			{
+				block_push(s->then_blk,grp->stmts[i]);
+			}
+		}
+		else
+		{
+			block_push(s->then_blk,parse_statement(p));
+		}
+
+		block_push(s->then_blk,stmt_new(ST_BREAK,cl));   /* Implicit per-arm break: no fallthrough. */
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return s;
+}
+
 static Stmt *parse_switch(Parser *p)
 {
 	int line=p->cur.line;
@@ -1572,6 +1624,10 @@ static Stmt *parse_statement(Parser *p)
 	if (check(p,TOKEN_SWITCH))
 	{
 		return parse_switch(p);
+	}
+	if (check(p,TOKEN_MATCH))
+	{
+		return parse_match(p);
 	}
 	if (check(p,TOKEN_RETURN))
 	{

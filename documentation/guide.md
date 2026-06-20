@@ -16,6 +16,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [Interfaces](language/interfaces.md) | Abstract contracts, `implements`, polymorphism without inheritance, zero-overhead dispatch. |
 | [Generics](language/generics.md) | User-defined parametric classes, multiple type parameters, interface bounds, monomorphization. |
 | [Enums](language/enums.md) | Singleton constants, per-constant fields/constructors/bodies, `values`/`valueOf`/`name`/`ordinal`. |
+| [Match](language/match.md) | Exhaustive, fall-through-free selection over an enum; compile-time missing-case check, zero run-time cost over `switch`. |
 | [Static members & static classes](language/static-members.md) | `static` fields and methods, `static class`, field initializers, the singleton pattern. |
 | [Built-in vector types](language/vector-types.md) | The eight `Vector2/3 x i/l/f/d` types: `equals`, `calculateDistance`. |
 | [No primitive wrapper classes](language/no-wrapper-classes.md) | Raw machine integers, no boxing, `int` vs `long`. |
