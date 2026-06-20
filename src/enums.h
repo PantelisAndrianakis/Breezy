@@ -30,6 +30,11 @@ int          enum_ordinal(const char *en, const char *c); /* ordinal or -1. */
 int          enum_count_of(const char *en);
 const char  *enum_const_name(const char *en, int idx);
 int          enum_is_generic(const char *en);                      /* 1 if the enum has type parameters. */
+/* Register a monomorphized enum instance (e.g. "Wrap$int") as an enum mirroring
+   its generic base, so match/ordinal/name recognize it. `suffix` is the arg part
+   of the instance name (e.g. "$int"); payload variant classes become
+   base-variant + suffix (Wrap$Of -> Wrap$Of$int). */
+void         enum_register_instance(const char *inst, const char *base, const char *suffix);
 int          enum_const_is_payload(const char *en, const char *c); /* 1 if constant c is a payload variant. */
 const char  *enum_variant_class(const char *en, const char *c);    /* "Enum$C" for a payload variant, else NULL. */
 int          enum_total(void);

@@ -1,4 +1,5 @@
 #include "generics.h"
+#include "enums.h"
 #include "grow.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -389,6 +390,27 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 	*g_units = grow_ensure(*g_units, *g_total, g_cap, sizeof(**g_units));
 	(*g_units)[(*g_total)++]=u;
 	g_changed=1;   /* New unit must be walked for further applications. */
+
+	/* If this is a generic enum's base, co-instantiate its payload variants with
+	   the same type arguments. A construction site (Enum.Variant(...)) names no
+	   type directly, so the variant instance would otherwise never be created;
+	   binding it to the base's instantiation makes Enum$Variant$args exist
+	   wherever Enum$args does. */
+	if (enum_is(tmpl))
+	{
+		enum_register_instance(out, tmpl, out + strlen(tmpl));   /* Make Wrap$int a recognized enum. */
+		int nc = enum_count_of(tmpl);
+		for (int vi=0; vi<nc; vi++)
+		{
+			const char *cn = enum_const_name(tmpl, vi);
+			if (cn && enum_const_is_payload(tmpl, cn))
+			{
+				const char *vt = enum_variant_class(tmpl, cn);   /* "Enum$Variant" template. */
+				char vout[128];
+				ensure_instance(vt, targs, n, line, vout);
+			}
+		}
+	}
 }
 
 /* ---- whole-program walk: rewrite every user-generic application in place ---- */

@@ -187,6 +187,42 @@ as for plain constants.
 
 ---
 
+## Generic enums
+
+An enum can take [type parameters](generics.md), making a reusable sum type. Its
+payload variants carry the parameter, and each use monomorphizes independently:
+
+```breezy
+enum Wrap<T>
+{
+	Of(T v);
+}
+
+void main()
+{
+	Wrap<int> wi = Wrap.Of(9);
+	match (wi) { Of(x) => print(x); }     // 9
+
+	Wrap<string> ws = Wrap.Of("hi");
+	match (ws) { Of(x) => print(x); }     // hi
+}
+```
+
+`Wrap<int>` synthesizes `Wrap$int` with a variant `Wrap$Of$int` (riding
+[parametric inheritance](generics.md#parametric-inheritance)); `Wrap<string>` is
+a separate instantiation. Construct a variant in a **typed context** - a typed
+local, a field, a return, or an argument - so the concrete type is known:
+
+```breezy
+Wrap<int> w = Wrap.Of(9);   // The declared type fixes T = int.
+```
+
+Two limits apply for now: every constant must carry a payload (a zero-field
+variant in a generic enum, like an `Option`'s `None`, is not yet supported), and
+construction needs that surrounding typed context.
+
+---
+
 ## How it performs
 
 Enums lower to ordinary classes: each constant becomes a singleton object constructed once at program start, and per-constant bodies become subclasses. Dispatch is therefore the same zero-overhead [virtual call](classes.md#virtual-dispatch-polymorphism) as any method - there is no special run-time machinery. A [payload variant](#payload-variants-sum-types) is built on demand through its own subclass constructor and rides the same escape-analysis [stack allocation](../memory/automatic-memory.md) as any short-lived object.

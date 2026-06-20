@@ -1235,6 +1235,36 @@ static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const 
 		return;
 	}
 
+	/* Generic enum construction (Wrap.Of(5)) in a typed context: the expected type
+	   is the already-monomorphized base instance (e.g. Wrap$int), so the concrete
+	   variant is Wrap$Of + the same arg suffix = Wrap$Of$int (co-instantiated with
+	   the base). Build `new Wrap$Of$int(5)` directly - no arg inference needed. */
+	if (e->kind == EX_METHOD_CALL && e->lhs && e->lhs->kind == EX_IDENT
+			&& enum_is(e->lhs->name) && enum_is_generic(e->lhs->name)
+			&& enum_const_is_payload(e->lhs->name, e->name)
+			&& expected && expected->kind == TY_OBJECT)
+	{
+		const char *base = e->lhs->name;
+		const char *inst = expected->class_name;
+		size_t bl = strlen(base);
+		if (strncmp(inst, base, bl) == 0 && inst[bl] == '$')
+		{
+			const char *vt = enum_variant_class(base, e->name);   /* "Wrap$Of". */
+			char concrete[160];
+			snprintf(concrete, sizeof(concrete), "%s%s", vt, inst + bl);   /* + "$int". */
+			Expr *nw = expr_new(EX_NEW, e->line);
+			snprintf(nw->name, sizeof(nw->name), "%s", concrete);
+			for (int a = 0; a < e->arg_count; a++)
+			{
+				expr_add_arg(nw, e->args[a]);
+			}
+
+			resolve_expr(st, nw, tc);
+			*e = *nw;
+			return;
+		}
+	}
+
 	resolve_expr(st, e, tc);
 }
 

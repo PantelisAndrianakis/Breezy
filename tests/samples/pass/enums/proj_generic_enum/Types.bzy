@@ -1,0 +1,2 @@
+enum Wrap<T> { Of(T v); }
+enum Pair2<A, B> { Both(A a, B b); }

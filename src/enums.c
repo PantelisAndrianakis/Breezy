@@ -365,6 +365,47 @@ const char *enum_const_name(const char *en, int idx)
 	return e->const_name[idx];
 }
 
+void enum_register_instance(const char *inst, const char *base, const char *suffix)
+{
+	const EnumInfo *b=find_enum(base);
+	if (!b || find_enum(inst))
+	{
+		return;
+	}
+
+	/* Capture the base's array pointers + count before growing g_enums (the grow
+	   may realloc, invalidating `b`; the captured arrays live outside it). */
+	int cc=b->constant_count;
+	char (*bname)[64]=b->const_name;
+	char (*bclass)[64]=b->const_class;
+	int *bpay=b->const_payload;
+
+	g_enums=grow_ensure(g_enums,g_enum_count,&g_enum_cap,sizeof(*g_enums));
+	EnumInfo *info=&g_enums[g_enum_count++];
+	memset(info,0,sizeof(*info));
+	strcpy(info->name,inst);
+	info->constant_count=cc;
+	info->constant_cap=cc;
+	info->const_name    = cc ? calloc((size_t)cc,sizeof(*info->const_name))    : NULL;
+	info->const_class   = cc ? calloc((size_t)cc,sizeof(*info->const_class))   : NULL;
+	info->const_args    = cc ? calloc((size_t)cc,sizeof(*info->const_args))    : NULL;
+	info->const_argc    = cc ? calloc((size_t)cc,sizeof(*info->const_argc))    : NULL;
+	info->const_payload = cc ? calloc((size_t)cc,sizeof(*info->const_payload)) : NULL;
+	for (int i=0; i<cc; i++)
+	{
+		strcpy(info->const_name[i],bname[i]);
+		info->const_payload[i]=bpay[i];
+		if (bpay[i])
+		{
+			snprintf(info->const_class[i],64,"%s%s",bclass[i],suffix);   /* Wrap$Of -> Wrap$Of$int. */
+		}
+		else
+		{
+			strcpy(info->const_class[i],inst);
+		}
+	}
+}
+
 int enum_is_generic(const char *en)
 {
 	const EnumInfo *e=find_enum(en);
