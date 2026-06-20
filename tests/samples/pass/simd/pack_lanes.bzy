@@ -1,0 +1,10 @@
+// f64x2: pack two doubles into one xmm value, read each lane back.
+void main()
+{
+	f64x2 v = Simd.pack(3.5, 7.25);
+	print(Simd.x(v));   // 3.5
+	print(Simd.y(v));   // 7.25
+
+	double sum = Simd.x(v) + Simd.y(v);
+	print(sum);         // 10.75
+}

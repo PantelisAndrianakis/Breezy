@@ -6488,6 +6488,35 @@ static void cg_memory(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_aligned_call(cg,"bzy_memory_map");
 }
 
+/* Simd.* builtins. A packed f64x2 result lives in the full xmm0 (low lane = x,
+   high lane = y); a lane-extract result is a scalar double in xmm0. */
+static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Simd.". */
+	if (strcmp(m,"pack")==0)
+	{
+		int b = cg_scratch_alloc(cg, 16);
+		cg_to_double(cg,tt,e->args[0]);                  /* x -> xmm0. */
+		cg_emit(cg,"    movsd qword [rbp - %d], xmm0", b);
+		cg_to_double(cg,tt,e->args[1]);                  /* y -> xmm0. */
+		cg_emit(cg,"    movaps xmm1, xmm0");             /* xmm1 low = y. */
+		cg_emit(cg,"    movsd xmm0, qword [rbp - %d]", b);
+		cg_scratch_free(cg, 16);
+		cg_emit(cg,"    unpcklpd xmm0, xmm1");           /* xmm0 = [x | y]. */
+		return;
+	}
+
+	if (strcmp(m,"x")==0)
+	{
+		cg_expr(cg,tt,e->args[0]);                       /* Packed value -> xmm0; low lane already = x. */
+		return;
+	}
+
+	/* Simd.y: move the high lane into the low half. */
+	cg_expr(cg,tt,e->args[0]);
+	cg_emit(cg,"    unpckhpd xmm0, xmm0");
+}
+
 static void cg_clock(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Clock.". */
@@ -7075,7 +7104,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		char mem[32];
 		sprintf(mem,"[rbp - %d]", e->anno_int);
-		if (ty_is_float(e->type.kind))
+		if (ty_is_simd(e->type.kind))
+		{
+			cg_emit(cg,"    movupd xmm0, %s", mem);   /* Packed value: full 16-byte load. */
+		}
+		else if (ty_is_float(e->type.kind))
 		{
 			const char *xr = e->type.kind==TY_DOUBLE ? cg_local_xmm(cg, e->anno_int) : NULL;
 			if (xr)
@@ -7462,6 +7495,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Memory.",7)==0)
 		{
 			cg_memory(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Simd.",5)==0)
+		{
+			cg_simd(cg,tt,e);
 		}
 		else if (strncmp(e->name,"Graphics.",9)==0)
 		{
@@ -9973,6 +10010,11 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			{
 				cg_expr_owned(cg,tt,s->decl_init);
 				cg_store_local_off(cg, s->decl_offset, s->decl_type.kind);
+			}
+			else if (ty_is_simd(s->decl_type.kind))
+			{
+				cg_expr(cg,tt,s->decl_init);                                   /* Packed value -> xmm0. */
+				cg_emit(cg,"    movupd [rbp - %d], xmm0", s->decl_offset);     /* 16-byte slot, unaligned. */
 			}
 			else if (!cg_fp_load_into_home(cg, s->decl_offset, s->decl_type.kind, s->decl_init))
 			{

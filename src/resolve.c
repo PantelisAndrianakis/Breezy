@@ -755,6 +755,34 @@ static void resolve_memory(Expr *e)
 	die(e->line,"Unknown Memory method: ",m);
 }
 
+static void resolve_simd(Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Simd.". */
+	if (strcmp(m,"pack")==0)
+	{
+		if (e->arg_count!=2 || !ty_is_float(e->args[0]->type.kind) || !ty_is_float(e->args[1]->type.kind))
+		{
+			die(e->line,"Simd.pack(x, y) takes two floating-point lane values.",NULL);
+		}
+
+		e->type.kind=TY_F64X2;
+		return;
+	}
+
+	if (strcmp(m,"x")==0 || strcmp(m,"y")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_F64X2)
+		{
+			die(e->line,"Simd.x/y(v) takes one f64x2 value.",NULL);
+		}
+
+		e->type.kind=TY_DOUBLE;
+		return;
+	}
+
+	die(e->line,"Unknown Simd method: ",m);
+}
+
 static void resolve_graphics(Expr *e)
 {
 	const char *m = e->name + 9;   /* After "Graphics.". */
@@ -4067,6 +4095,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Memory.",7)==0)
 		{
 			resolve_memory(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Simd.",5)==0)
+		{
+			resolve_simd(e);
 			break;
 		}
 

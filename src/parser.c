@@ -422,7 +422,7 @@ static int parse_args(Parser *p, Expr *e)
 /* The fixed set of compiler-known static namespaces. 5c/5d extend this. */
 static int is_namespace(const char *name)
 {
-	return strcmp(name,"Math")==0 || strcmp(name,"Clock")==0 || strcmp(name,"Random")==0 || strcmp(name,"Regex")==0 || strcmp(name,"File")==0 || strcmp(name,"System")==0 || strcmp(name,"Network")==0 || strcmp(name,"Graphics")==0 || strcmp(name,"Ffi")==0 || strcmp(name,"Log")==0 || strcmp(name,"Xml")==0 || strcmp(name,"Json")==0 || strcmp(name,"Http")==0 || strcmp(name,"Memory")==0;
+	return strcmp(name,"Math")==0 || strcmp(name,"Clock")==0 || strcmp(name,"Random")==0 || strcmp(name,"Regex")==0 || strcmp(name,"File")==0 || strcmp(name,"System")==0 || strcmp(name,"Network")==0 || strcmp(name,"Graphics")==0 || strcmp(name,"Ffi")==0 || strcmp(name,"Log")==0 || strcmp(name,"Xml")==0 || strcmp(name,"Json")==0 || strcmp(name,"Http")==0 || strcmp(name,"Memory")==0 || strcmp(name,"Simd")==0;
 }
 
 /* A '(' opens a lambda parameter list (rather than a grouped expression) iff the
@@ -746,6 +746,9 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 		return 1;
 	case TOKEN_DOUBLE:
 		*out=TY_DOUBLE;
+		return 1;
+	case TOKEN_F64X2:
+		*out=TY_F64X2;
 		return 1;
 	default:
 		return 0;

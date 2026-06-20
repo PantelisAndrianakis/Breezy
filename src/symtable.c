@@ -19,7 +19,7 @@ Symbol *sym_add(SymTable *st, const char *name, TypeRef type)
 	strncpy(s->name,name,sizeof(s->name)-1);
 	s->name[sizeof(s->name)-1]='\0';
 	s->type=type;
-	st->next_offset+=8;
+	st->next_offset+=ty_is_simd(type.kind)?16:8;   /* A packed SIMD value needs a 16-byte slot. */
 	s->offset=st->next_offset;
 	return s;
 }
