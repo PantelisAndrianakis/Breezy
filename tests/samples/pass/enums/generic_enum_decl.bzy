@@ -1,0 +1,12 @@
+// A generic enum's type parameters parse and are forwarded to the synthesized
+// base and variant classes. (Construction needs type inference, a later part;
+// this confirms declaration + lowering.)
+enum Wrap<T>
+{
+	Of(T v);
+}
+
+void main()
+{
+	print(1);
+}

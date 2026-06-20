@@ -288,6 +288,9 @@ check_fail enum_match_nonexhaustive tests/samples/fail/enums/enum_match_nonexhau
 check_fail enum_payload_noargs tests/samples/fail/enums/enum_payload_noargs.bzy
 check_fail enum_bind_arity tests/samples/fail/enums/enum_bind_arity.bzy
 check_fail enum_bind_nonpayload tests/samples/fail/enums/enum_bind_nonpayload.bzy
+check generic_enum_decl tests/samples/pass/enums/generic_enum_decl.bzy $'1'
+check_fail generic_enum_singleton tests/samples/fail/enums/generic_enum_singleton.bzy
+check_fail generic_enum_construct tests/samples/fail/enums/generic_enum_construct.bzy
 check record_basic tests/samples/pass/records/record_basic.bzy $'3\n4'
 check_fail record_extends tests/samples/fail/records/proj_record_extends
 check record_methods tests/samples/pass/records/record_methods.bzy $'true\nfalse\ntrue'

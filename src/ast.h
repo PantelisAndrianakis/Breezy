@@ -401,6 +401,9 @@ typedef struct
 typedef struct
 {
 	char  name[64];
+	char  (*type_params)[64]; /* Generic enum: parameter names, e.g. "T". 0 = non-generic. */
+	int   type_param_count;
+	int   type_param_cap;
 	char  (*implements)[64];
 	int   implements_count;
 	int   implements_cap;

@@ -14,12 +14,27 @@ static int is_reserved_method(const char *n)
 		   || strcmp(n,"name")==0 || strcmp(n,"ordinal")==0;
 }
 
+/* Forward a generic enum's type parameters onto a synthesized class so the
+   normal class monomorphization handles them. */
+static void copy_type_params(ClassDecl *c, const EnumDecl *e)
+{
+	for (int i=0; i<e->type_param_count; i++)
+	{
+		c->type_params       = grow_ensure(c->type_params,       c->type_param_count, &c->type_param_cap,        sizeof(*c->type_params));
+		c->type_param_bounds = grow_ensure(c->type_param_bounds, c->type_param_count, &c->type_param_bounds_cap, sizeof(*c->type_param_bounds));
+		strcpy(c->type_params[c->type_param_count],e->type_params[i]);
+		c->type_param_bounds[c->type_param_count][0]='\0';
+		c->type_param_count++;
+	}
+}
+
 /* The base class for an enum: hidden __ordinal/__name fields, then the user
    fields, the user methods, the constructor, and the implements list. */
 static ClassDecl *make_base_class(const EnumDecl *e)
 {
 	ClassDecl *c=class_new();
 	strcpy(c->name,e->name);
+	copy_type_params(c,e);
 	c->implements=grow_reserve(c->implements,e->implements_count,&c->implements_cap,sizeof(*c->implements));
 	c->implements_count=e->implements_count;
 	for (int i=0; i<e->implements_count; i++)
@@ -126,6 +141,24 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 	strcpy(c->name,mangled);
 	c->has_parent=1;
 	strcpy(c->parent_name,e->name);
+	/* A generic enum's variant subclass is itself generic and extends the generic
+	   base: Enum$Variant<T> extends Enum<T>. Forward the parameters and the parent
+	   type arguments so monomorphization produces Enum$Variant$int extends
+	   Enum$int. */
+	copy_type_params(c,e);
+	if (e->type_param_count>0)
+	{
+		int pcap=0;
+		for (int i=0; i<e->type_param_count; i++)
+		{
+			TypeRef *tr=calloc(1,sizeof(TypeRef));
+			tr->kind=TY_OBJECT;
+			strcpy(tr->class_name,e->type_params[i]);
+			c->parent_targs=grow_ensure(c->parent_targs,c->parent_targ_count,&pcap,sizeof(*c->parent_targs));
+			c->parent_targs[c->parent_targ_count++]=tr;
+		}
+	}
+
 	for (int i=0; i<k->override_count; i++)
 	{
 		if (is_reserved_method(k->overrides[i]->name))
@@ -165,6 +198,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 	EnumInfo *info=&g_enums[g_enum_count++];
 	memset(info,0,sizeof(*info));
 	strcpy(info->name,e->name);
+	info->type_param_count=e->type_param_count;
 	info->implements=grow_reserve(info->implements,e->implements_count,&info->implements_cap,sizeof(*info->implements));
 	info->implements_count=e->implements_count;
 	for (int i=0; i<e->implements_count; i++)
@@ -199,6 +233,17 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 				fprintf(stderr,"Enum '%s': duplicate constant '%s'.\n",e->name,k->name);
 				exit(1);
 			}
+		}
+
+		/* A generic enum's constants are constructed per call (no per-instantiation
+		   singleton exists), so they must carry a payload for now. A zero-field
+		   variant (e.g. Option's None) needs construction-site type inference,
+		   which is a later addition. */
+		if (e->type_param_count>0 && k->payload_count==0)
+		{
+			fprintf(stderr,"Enum '%s': a generic enum's constant '%s' must carry a payload (zero-field variants not supported yet).\n",
+					e->name,k->name);
+			exit(1);
 		}
 
 		strcpy(info->const_name[i],k->name);
@@ -318,6 +363,12 @@ const char *enum_const_name(const char *en, int idx)
 	}
 
 	return e->const_name[idx];
+}
+
+int enum_is_generic(const char *en)
+{
+	const EnumInfo *e=find_enum(en);
+	return e ? (e->type_param_count>0) : 0;
 }
 
 int enum_const_is_payload(const char *en, const char *c)

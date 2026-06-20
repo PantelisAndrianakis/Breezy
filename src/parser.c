@@ -2128,6 +2128,18 @@ static EnumDecl *parse_enum(Parser *p)
 	EnumDecl *e=enum_new();
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(e->name,name.text);
+	if (match(p,TOKEN_LT))           /* Generic enum: enum Name<T, ...>. */
+	{
+		do
+		{
+			e->type_params=grow_ensure(e->type_params,e->type_param_count,&e->type_param_cap,sizeof(*e->type_params));
+			Token tp=expect(p,TOKEN_IDENT);
+			strcpy(e->type_params[e->type_param_count++],tp.text);
+		}
+		while (match(p,TOKEN_COMMA));
+		expect_gt(p);
+	}
+
 	if (check(p,TOKEN_EXTENDS))
 	{
 		fprintf(stderr,"line %d: Enums may not extend a class.\n",p->cur.line);

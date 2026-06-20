@@ -2060,6 +2060,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			   variant subclass (is-a the base enum, so assignable/matchable). */
 			if (enum_const_is_payload(e->lhs->name,e->name))
 			{
+				if (enum_is_generic(e->lhs->name))
+				{
+					die(e->line,"Generic enum construction is not supported yet (type inference pending): ",e->name);
+				}
+
 				const char *vc=enum_variant_class(e->lhs->name,e->name);
 				Expr *nw=expr_new(EX_NEW,e->line);
 				strcpy(nw->name,vc);
