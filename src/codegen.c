@@ -6604,15 +6604,25 @@ static void cg_simd_load_into(Codegen *cg, TypeTable *tt, Expr *e, int reg)
 		return;
 	}
 
-	/* Simd.load(a, i): &a[i] in rbx, then a packed load into the target. The
-	   fabricated index uses the array element kind so the stride is right (8 for
-	   double[], 4 for float[]). */
+	/* Simd.load(a, i): packed load into the target. The fabricated index uses the
+	   array element kind so the stride is right (8 for double[], 4 for float/int).
+	   When the base is hoisted and the index register-resident, fold the whole
+	   address into the load operand (movups xmm, [base + iv*stride + 32]); else
+	   compute it into rbx first. */
 	Expr ie = {0};
 	ie.kind = EX_INDEX;
 	ie.lhs = e->args[0];
 	ie.rhs = e->args[1];
 	ie.type.kind = cg_simd_elem_kind(e->args[0]);
 	ie.anno_index_safe = 1;   /* Raw packed primitive: caller guarantees the lane group is in range. */
+
+	char opnd[64];
+	if (cg_index_opnd(cg, &ie, opnd))
+	{
+		cg_emit(cg,"    movups xmm%d, %s", reg, opnd);
+		return;
+	}
+
 	cg_index_addr(cg,tt,&ie);
 	cg_emit(cg,"    movups xmm%d, [rbx]", reg);
 }
@@ -6792,22 +6802,43 @@ static void cg_simd(Codegen *cg, TypeTable *tt, Expr *e)
 		ie.rhs = e->args[1];
 		ie.type.kind = cg_simd_elem_kind(e->args[0]);
 		ie.anno_index_safe = 1;
-		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
-		cg_emit(cg,"    movups xmm0, [rbx]");
+		char lopnd[64];
+		if (cg_index_opnd(cg, &ie, lopnd))
+		{
+			cg_emit(cg,"    movups xmm0, %s", lopnd);    /* Folded address. */
+		}
+		else
+		{
+			cg_index_addr(cg,tt,&ie);                    /* rbx = &a[i]. */
+			cg_emit(cg,"    movups xmm0, [rbx]");
+		}
+
 		return;
 	}
 
 	if (strcmp(m,"store")==0)
 	{
-		int b = cg_scratch_alloc(cg, 16);
-		cg_expr(cg,tt,e->args[2]);                       /* v -> xmm0. */
-		cg_emit(cg,"    movups [rbp - %d], xmm0", b);     /* Park v across the address computation. */
 		Expr ie = {0};
 		ie.kind = EX_INDEX;
 		ie.lhs = e->args[0];
 		ie.rhs = e->args[1];
 		ie.type.kind = cg_simd_elem_kind(e->args[0]);
 		ie.anno_index_safe = 1;
+
+		/* If the address folds, no spill is needed: evaluate v into xmm0 and store
+		   it straight to the folded operand. Otherwise park v while computing the
+		   address into rbx. */
+		char sopnd[64];
+		if (cg_index_opnd(cg, &ie, sopnd))
+		{
+			cg_expr(cg,tt,e->args[2]);                   /* v -> xmm0. */
+			cg_emit(cg,"    movups %s, xmm0", sopnd);
+			return;
+		}
+
+		int b = cg_scratch_alloc(cg, 16);
+		cg_expr(cg,tt,e->args[2]);                       /* v -> xmm0. */
+		cg_emit(cg,"    movups [rbp - %d], xmm0", b);     /* Park v across the address computation. */
 		cg_index_addr(cg,tt,&ie);                        /* rbx = &a[i]. */
 		cg_emit(cg,"    movups xmm1, [rbp - %d]", b);
 		cg_scratch_free(cg, 16);
@@ -8221,6 +8252,23 @@ static int cg_hoist_expr_ok(Expr *e)
 {
 	if (!e)
 	{
+		return 1;
+	}
+
+	/* Simd.* intrinsics lower entirely inline (no call instruction); a Simd.load/
+	   store fabricates an already-safe index, so it emits no bounds check either.
+	   They are call-free as long as their argument expressions are - so a loop
+	   doing packed work can still hoist its invariant array bases into r8-r11. */
+	if (e->kind == EX_CALL && strncmp(e->name, "Simd.", 5) == 0)
+	{
+		for (int i = 0; i < e->arg_count; i++)
+		{
+			if (!cg_hoist_expr_ok(e->args[i]))
+			{
+				return 0;
+			}
+		}
+
 		return 1;
 	}
 
