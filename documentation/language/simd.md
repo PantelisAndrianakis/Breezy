@@ -140,7 +140,10 @@ double s = Simd.sum(Simd.mul(a, b));   // four-lane dot of one block
 ```
 
 Element ops lower to the VEX-encoded AVX forms (`vaddpd`/`vmulpd`/…). `f64x4`
-requires a CPU with AVX; there is no runtime feature gate or scalar fallback yet.
+requires a CPU with AVX: a program that uses it checks for AVX support once at
+startup and aborts with a clear message on a CPU without it, rather than faulting
+on the first 256-bit instruction. A program that uses no 256-bit type carries
+none of this. (There is no scalar fallback — an AVX program needs AVX to run.)
 
 ## Status
 

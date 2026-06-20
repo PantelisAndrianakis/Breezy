@@ -763,9 +763,21 @@ static TypeKind simd_lane_kind(TypeKind v)
 	return TY_FLOAT;   /* f32x4. */
 }
 
+extern int g_program_uses_avx;   /* Defined in codegen.c; set when any AVX (f64x4) value appears. */
+
 static void resolve_simd(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "Simd.". */
+
+	/* Flag AVX use for the startup guard: any f64x4 operand means 256-bit ops are
+	   emitted. The pure producers (pack256/load256) set it in their branches. */
+	for (int ai = 0; ai < e->arg_count; ai++)
+	{
+		if (e->args[ai]->type.kind == TY_F64X4)
+		{
+			g_program_uses_avx = 1;
+		}
+	}
 	if (strcmp(m,"pack")==0)
 	{
 		/* All-float lanes: two -> f64x2, four -> f32x4. All-int lanes: four -> i32x4. */
@@ -813,6 +825,7 @@ static void resolve_simd(Expr *e)
 			die(e->line,"Simd.pack256(x, y, z, w) takes four floating-point lanes (f64x4).",NULL);
 		}
 
+		g_program_uses_avx = 1;
 		e->type.kind=TY_F64X4;
 		return;
 	}
@@ -931,6 +944,7 @@ static void resolve_simd(Expr *e)
 			die(e->line,"Simd.load256(double[] a, int i) loads lanes i..i+3 (f64x4).",NULL);
 		}
 
+		g_program_uses_avx = 1;
 		e->type.kind=TY_F64X4;
 		return;
 	}
@@ -6310,6 +6324,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 	g_lam_count = 0;     /* Reset the lambda registry: a process may compile more than once (the test harness). */
 	g_lambda_seq = 0;
 	g_desugar_seq = 0;
+	g_program_uses_avx = 0;   /* Per-program (the test harness compiles several in one process). */
 	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
 
 	for (int i=0; i<unit_count; i++)

@@ -14,6 +14,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* Set during resolution when any program expression touches an AVX (f64x4)
+   vector; drives the startup AVX-support guard emitted into bzy_user_main. */
+int g_program_uses_avx = 0;
+
 void cg_init(Codegen *cg, FILE *out)
 {
 	cg->out=out;
@@ -12610,6 +12614,21 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 
 	cg_emit(cg,"");
 	cg_emit(cg,"section .data");
+
+	/* AVX startup guard hook: a program using f64x4 plants a data pointer to the
+	   AVX-check helper. The runtime entry weakly references this symbol and calls
+	   through it before main, so the program aborts with a clear message on a non-
+	   AVX CPU instead of faulting. The `dq` is a strong reference that pulls in the
+	   cpu.c TU; a program with no 256-bit SIMD emits nothing here and links none of
+	   it. Lives in .data so it never shifts the .text the prelude depends on. */
+	if (g_program_uses_avx)
+	{
+		cg_emit(cg,"extern bzy_require_avx");
+		cg_emit(cg,"global __bzy_avx_check");
+		cg_emit(cg,"__bzy_avx_check:");
+		cg_emit(cg,"    dq bzy_require_avx");
+	}
+
 	for (int i=0; i<tt->class_count; i++)
 	{
 		cg_emit_vtable(cg,tt->classes[i]);

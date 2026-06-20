@@ -3,8 +3,20 @@
 
 extern void bzy_user_main(void);
 
+/* AVX guard hook: a weak definition defaulting to NULL. A program that uses a
+   256-bit SIMD type emits a strong definition of __bzy_avx_check pointing at the
+   AVX-support check (which pulls in the cpu.c TU); that strong symbol overrides
+   this weak NULL. Every other program keeps the NULL and pulls in nothing. A weak
+   definition (rather than a weak reference) links cleanly on both ELF and PE. */
+void (*__bzy_avx_check)(void) __attribute__((weak)) = 0;
+
 int main(int argc, char **argv)
 {
+	if (__bzy_avx_check)
+	{
+		__bzy_avx_check();      /* Aborts with a diagnostic if the CPU lacks AVX. */
+	}
+
 	bzy_set_args(argc, argv);   /* Make argv available to System.args(). */
 	bzy_sched_init();
 

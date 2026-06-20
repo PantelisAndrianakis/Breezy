@@ -180,6 +180,7 @@ void    bzy_callback_leave(void); /* FFI: leaving a foreign callback. */
 int     bzy_in_callback(void);    /* FFI: 1 if a foreign callback is running on this thread (park/throw forbidden). */
 void    bzy_cycle_slice(int wid); /* Drain this worker's cycle candidates in a bounded slice (safepoint). */
 int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanoseconds. */
+void    bzy_require_avx(void);     /* Abort with a diagnostic if the CPU lacks AVX; emitted at startup by AVX programs. */
 void   *bzy_clock_date(int64_t millis);                /* "yyyy-MM-dd HH:mm:ss", local time; owned. */
 void   *bzy_clock_date_fmt(int64_t millis, void *fmt); /* Java-style pattern, local time; owned. */
 
