@@ -33,6 +33,7 @@
 #define BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME 55
 #define BZ_TLSEXT_NAMETYPE_host_name    0
 #define BZ_DTLS_CTRL_GET_TIMEOUT        73   /* SSL_ctrl: fill a struct timeval; 1 if pending. */
+#define BZ_DTLS_CTRL_HANDLE_TIMEOUT     74   /* SSL_ctrl: re-queue the lost flight (DTLSv1_handle_timeout is a macro). */
 #define BZ_DTLS_CTRL_SET_LINK_MTU       120  /* SSL_ctrl: pin the link MTU. */
 #define BZ_SSL_OP_NO_QUERY_MTU          0x1000L  /* Do not ask the BIO for the path MTU. */
 #define BZ_DTLS_LINK_MTU                1200 /* Conservative IPv6-safe datagram size. */
@@ -69,7 +70,6 @@ static struct
 	int   (*SSL_shutdown)(void *ssl);
 	void *(*SSL_get_rbio)(const void *ssl);
 	void *(*SSL_get_wbio)(const void *ssl);
-	long  (*DTLSv1_handle_timeout)(void *ssl);   /* Real fn (not a macro): re-queue the lost flight. */
 } ossl;
 
 /* Minimal dl helpers (mirrors tls.c; kept local for own-TU). */
@@ -152,7 +152,6 @@ static int dtls_load(void)
 	SYM(SSL_shutdown, "SSL_shutdown");
 	SYM(SSL_get_rbio, "SSL_get_rbio");
 	SYM(SSL_get_wbio, "SSL_get_wbio");
-	SYM(DTLSv1_handle_timeout, "DTLSv1_handle_timeout");
 	#undef SYM
 	#undef SYMC
 
@@ -272,7 +271,7 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 			if (f == -2)
 			{
 				/* Retransmit deadline expired: re-queue the lost flight and re-send. */
-				ossl.DTLSv1_handle_timeout(ssl);
+				ossl.SSL_ctrl(ssl, BZ_DTLS_CTRL_HANDLE_TIMEOUT, 0, NULL);
 				if (dtls_flush(s) < 0) { return -1; }
 				continue;
 			}

@@ -1,0 +1,47 @@
+// In-process DTLS-over-UDP echo over loopback. A server breeze listens with the
+// committed self-signed cert; a client breeze connects to 127.0.0.1 without peer
+// verification (the cert is self-signed), sends 4 bytes, reads the echo, and
+// prints the byte count. Output is 4 on a successful handshake + encrypted
+// datagram round-trip. If OpenSSL is absent the first DTLS call throws an
+// IOException -> the program aborts and the runner reports SKIP (never a silent
+// pass). The DTLS server is POSIX-only; on Windows dtlsListen throws "POSIX-only"
+// -> the runner also reports SKIP.
+void server(DtlsListener l, channel<int> portCh)
+{
+	portCh.send(l.port());        // Hand the bound port to the client.
+	DtlsSocket c;
+	c = l.accept();               // Parks: discover the peer + server handshake.
+	byte[] buf;
+	buf = c.read(64);             // Parks: decrypt the incoming datagram.
+	c.write(buf);                 // Encrypt + echo.
+	c.close();
+}
+
+void client(channel<int> portCh)
+{
+	int port;
+	port = portCh.recv();
+	DtlsSocket s;
+	s = Network.dtlsConnectInsecure("127.0.0.1", port);
+	byte[] msg;
+	msg = new byte[4];
+	msg[0] = (byte)112;           // 'p'
+	msg[1] = (byte)105;           // 'i'
+	msg[2] = (byte)110;           // 'n'
+	msg[3] = (byte)103;           // 'g'
+	s.write(msg);
+	byte[] back;
+	back = s.read(64);
+	print(back.length);           // 4
+	s.close();
+}
+
+void main()
+{
+	DtlsListener l;
+	l = Network.dtlsListen(0, "tests/samples/pass/net/tls_cert.pem", "tests/samples/pass/net/tls_key.pem");
+	channel<int> portCh;
+	portCh = new channel<int>(1);
+	spawn server(l, portCh);
+	spawn client(portCh);
+}

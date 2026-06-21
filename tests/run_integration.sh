@@ -351,6 +351,18 @@ else
     elif echo "$tls_out" | grep -qi "TLS unavailable"; then echo "  tls_echo: SKIP (OpenSSL not present)"
     else echo "  tls_echo: FAIL (got '$tls_out')"; fail=1; fi
 fi
+# DTLS-over-UDP echo: OK on a successful handshake + datagram round-trip (prints 4);
+# SKIP when OpenSSL is absent ("DTLS unavailable") or on Windows where the server is
+# Stage 2 ("POSIX-only") -- never a silent pass.
+bzy_build tests/samples/pass/net/dtls_echo.bzy
+if [ $? -ne 0 ]; then echo "  dtls_echo: COMPILE FAILED"; fail=1
+else
+    dtls_out="$(./out.exe 2>&1)"; dtls_out="${dtls_out//$'\r'/}"
+    if [ "$dtls_out" == "4" ]; then echo "  dtls_echo: OK"
+    elif echo "$dtls_out" | grep -qi "DTLS unavailable"; then echo "  dtls_echo: SKIP (OpenSSL not present)"
+    elif echo "$dtls_out" | grep -qi "POSIX-only"; then echo "  dtls_echo: SKIP (DTLS server is POSIX-only)"
+    else echo "  dtls_echo: FAIL (got '$dtls_out')"; fail=1; fi
+fi
 # Pixel surface: OK when it opens+presents+closes (prints surface-ok); SKIP when
 # SDL2/display is absent (the program aborts with the "Surface unavailable"
 # IOException -- not our bug).
@@ -457,7 +469,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls surface glsurface dynsym order pqueue btree xml json httpproto; do
+    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls dtls surface glsurface dynsym order pqueue btree xml json httpproto; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
