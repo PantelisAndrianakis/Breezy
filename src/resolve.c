@@ -21,10 +21,13 @@ static SymTable *g_lam_enc;    /* Enclosing scope while resolving a lambda body 
 static LambdaInfo *g_cur_lam;  /* Lambda whose body is currently being resolved (for capture recording). */
 static int g_lambda_seq;       /* Monotonic id for synthetic lambda body labels. */
 
+static const char *g_cur_file;   /* File of the unit being resolved, for diagnostics. */
+static const char *g_cur_src;    /* Its source buffer, for the diagnostic line echo. */
+
 static void die(int line, const char *msg, const char *arg)
 {
-	fprintf(stderr,"line %d: %s%s\n",line,msg,arg?arg:"");
-	exit(1);
+	/* col 0: resolve-time AST nodes carry no column, so echo the line without a caret. */
+	lexer_diag(g_cur_src, g_cur_file, line, 0, msg, arg);
 }
 
 static ClassInfo *class_of(const TypeRef *t)
@@ -6344,6 +6347,8 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<unit_count; i++)
 	{
 		Unit *u=units[i];
+		g_cur_file=u->file;
+		g_cur_src=u->src;
 		for (int k=0; k<u->func_count; k++)
 		{
 			resolve_func(tt,u->funcs[k],NULL);

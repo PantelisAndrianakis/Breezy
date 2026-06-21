@@ -466,6 +466,8 @@ typedef struct
 	Func          **funcs;        /* File-scope functions. */
 	int            func_count;
 	int            funcs_cap;
+	const char    *file;          /* Source path, for diagnostics. */
+	const char    *src;           /* Source buffer, for diagnostic line echo. */
 } Unit;
 
 void   ast_free_all(void);

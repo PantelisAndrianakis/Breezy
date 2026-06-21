@@ -38,7 +38,25 @@ void lexer_init(Lexer *l, const char *src)
 void lexer_diag(const char *src, const char *file, int line, int col,
                 const char *msg, const char *arg)
 {
-	fprintf(stderr, "%s:%d:%d: %s%s\n", file, line, col, msg, arg ? arg : "");
+	if (!file)
+	{
+		file = "<source>";
+	}
+
+	if (col > 0)
+	{
+		fprintf(stderr, "%s:%d:%d: %s%s\n", file, line, col, msg, arg ? arg : "");
+	}
+	else
+	{
+		fprintf(stderr, "%s:%d: %s%s\n", file, line, msg, arg ? arg : "");
+	}
+
+	/* Without a source buffer there is no line to echo. */
+	if (!src)
+	{
+		exit(1);
+	}
 
 	/* Find the start of the offending line and print it with a caret. */
 	const char *p = src;
@@ -56,14 +74,19 @@ void lexer_diag(const char *src, const char *file, int line, int col,
 		end++;
 	}
 
-	fprintf(stderr, "  %.*s\n  ", (int)(end - p), p);
-	for (int i = 1; i < col && p[i - 1]; i++)
+	fprintf(stderr, "  %.*s\n", (int)(end - p), p);
+	if (col > 0)
 	{
-		/* Preserve tabs so the caret lines up under the source. */
-		fputc(p[i - 1] == '\t' ? '\t' : ' ', stderr);
+		fputs("  ", stderr);
+		for (int i = 1; i < col && p[i - 1]; i++)
+		{
+			/* Preserve tabs so the caret lines up under the source. */
+			fputc(p[i - 1] == '\t' ? '\t' : ' ', stderr);
+		}
+
+		fprintf(stderr, "^\n");
 	}
 
-	fprintf(stderr, "^\n");
 	exit(1);
 }
 

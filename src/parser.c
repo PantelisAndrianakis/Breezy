@@ -2376,6 +2376,8 @@ static EnumDecl *parse_enum(Parser *p)
 Unit *parse_unit(Parser *p)
 {
 	Unit *u=unit_new();
+	u->file=p->lex.file;
+	u->src=p->lex.src;
 	while (!check(p,TOKEN_EOF))
 	{
 		if (check(p,TOKEN_INTERFACE))
