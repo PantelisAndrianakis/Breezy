@@ -96,6 +96,39 @@ int64_t bzy_udp_port(void *u)
 	return (int64_t)ntohs(addr.sin6_port);
 }
 
+/* A UDP socket connect()ed to one peer: send/recv go to exactly that peer and the
+   kernel filters foreign sources, so the DTLS pump drives ciphertext over it with
+   the same bzy_sock_recv/bzy_sock_send_all helpers the TLS pump uses on TCP. */
+void *bzy_udp_connect(void *host, int64_t port)
+{
+	bzy_iocp_ensure();
+
+	struct sockaddr_storage dst;
+	socklen_t dstlen;
+	int fam;
+	if (bzy_resolve_any(bzy_str_data(host), (int)port, &dst, &dstlen, &fam) != 0)
+	{
+		return NULL;
+	}
+
+	SOCKET fd = socket(fam, SOCK_DGRAM, IPPROTO_UDP);
+	if (fd == INVALID_SOCKET)
+	{
+		return NULL;
+	}
+
+	u_long nb = 1;
+	ioctlsocket(fd, FIONBIO, &nb);
+	if (connect(fd, (struct sockaddr*)&dst, dstlen) != 0)   /* Sets the default peer; no network round-trip for UDP. */
+	{
+		closesocket(fd);
+		return NULL;
+	}
+
+	bzy_iocp_associate((void*)fd);
+	return bzy_sock_wrap(fd);
+}
+
 static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf, int64_t len)
 {
 	struct sockaddr_storage dst;
@@ -369,6 +402,36 @@ int64_t bzy_udp_port(void *u)
 	}
 
 	return (int64_t)ntohs(addr.sin6_port);
+}
+
+/* A UDP socket connect()ed to one peer: send/recv go to exactly that peer and the
+   kernel filters foreign sources, so the DTLS pump drives ciphertext over it with
+   the same bzy_sock_recv/bzy_sock_send_all helpers the TLS pump uses on TCP. */
+void *bzy_udp_connect(void *host, int64_t port)
+{
+	bzy_reactor_ensure();
+
+	struct sockaddr_storage dst;
+	socklen_t dstlen;
+	int fam;
+	if (bzy_resolve_any(bzy_str_data(host), (int)port, &dst, &dstlen, &fam) != 0)
+	{
+		return NULL;
+	}
+
+	int fd = socket(fam, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+	if (fd < 0)
+	{
+		return NULL;
+	}
+
+	if (connect(fd, (struct sockaddr*)&dst, dstlen) != 0)   /* Sets the default peer; no network round-trip for UDP. */
+	{
+		close(fd);
+		return NULL;
+	}
+
+	return bzy_sock_wrap(fd);
 }
 
 static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf, int64_t len)

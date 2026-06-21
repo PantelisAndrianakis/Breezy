@@ -26,7 +26,12 @@ int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
 
 int     bzy_sched_local_runnable(void);                                    /* 1 if this worker has other ready breezes (spin-gate hint). */
 
-/* Reactor-parked raw byte I/O on a plain Socket handle (shared with tls.c). */
+/* Reactor-parked raw byte I/O on a plain Socket handle (shared with tls.c / dtls.c). */
 int     bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms);    /* bytes, 0 EOF, -1 err, -2 timeout. */
 int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);          /* bytes sent, <0 on error. */
+
+/* A connected UDP socket (send/recv to exactly one peer) wrapped as a managed
+   Socket handle; the DTLS pump reuses it as its ciphertext transport. Shared with
+   dtls.c. NULL on resolve/socket/connect failure. */
+void   *bzy_udp_connect(void *host, int64_t port);
 #endif
