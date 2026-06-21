@@ -24,6 +24,8 @@ typedef enum
 	TY_SOCKET,                                /* Socket: TCP connection handle. */
 	TY_TLSSOCKET,                             /* TlsSocket: TLS connection handle. */
 	TY_TLSLISTENER,                           /* TlsListener: TLS accept handle. */
+	TY_DTLSSOCKET,                            /* DtlsSocket: DTLS-over-UDP connection handle. */
+	TY_DTLSLISTENER,                          /* DtlsListener: DTLS accept handle. */
 	TY_SURFACE,                               /* Surface: SDL2 pixel-window handle. */
 	TY_GLSURFACE,                             /* GlSurface: SDL2 OpenGL context handle. */
 	TY_UDPSOCKET,                             /* UdpSocket: UDP datagram handle. */
@@ -95,6 +97,8 @@ static inline int ty_bits(TypeKind k)
 	case TY_SOCKET:
 	case TY_TLSSOCKET:
 	case TY_TLSLISTENER:
+	case TY_DTLSSOCKET:
+	case TY_DTLSLISTENER:
 	case TY_SURFACE:
 	case TY_GLSURFACE:
 	case TY_UDPSOCKET:
@@ -166,7 +170,7 @@ static inline int ty_is_managed(TypeKind k)
 {
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
 	       || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
-	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
+	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_DTLSSOCKET || k == TY_DTLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
 	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
 	       || k == TY_XMLNODE || k == TY_JSONVALUE || k == TY_HTTPREQUEST || k == TY_HTTPRESPONSE
 	       || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */

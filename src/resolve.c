@@ -738,6 +738,42 @@ static void resolve_network(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"dtlsConnect")==0)
+	{
+		if ((e->arg_count!=2 && e->arg_count!=3)
+			|| e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
+			|| (e->arg_count==3 && e->args[2]->type.kind!=TY_STRING))
+		{
+			die(e->line,"Network.dtlsConnect(host, port[, caBundlePath]) takes a string, an integer, and an optional string.",NULL);
+		}
+
+		e->type.kind=TY_DTLSSOCKET;
+		return;
+	}
+
+	if (strcmp(m,"dtlsConnectInsecure")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"Network.dtlsConnectInsecure(host, port) takes a string and an integer.",NULL);
+		}
+
+		e->type.kind=TY_DTLSSOCKET;
+		return;
+	}
+
+	if (strcmp(m,"dtlsListen")==0)
+	{
+		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
+			|| e->args[1]->type.kind!=TY_STRING || e->args[2]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Network.dtlsListen(port, certPath, keyPath) takes an integer and two strings.",NULL);
+		}
+
+		e->type.kind=TY_DTLSLISTENER;
+		return;
+	}
+
 	die(e->line,"Unknown Network method: ",m);
 }
 
@@ -2764,6 +2800,86 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else
 			{
 				die(e->line,"Unknown TlsSocket method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_DTLSLISTENER)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"accept")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"DtlsListener.accept() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_DTLSSOCKET;
+			}
+			else if (strcmp(e->name,"port")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"DtlsListener.port() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"DtlsListener.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown DtlsListener method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_DTLSSOCKET)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"read")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"DtlsSocket.read(maxBytes) takes one integer.",NULL);
+				}
+
+				TypeRef el;
+				memset(&el,0,sizeof(el));
+				el.kind=TY_BYTE;
+				e->type.kind=TY_ARRAY;
+				e->type.elem=typeref_box(el);   /* byte[]. */
+			}
+			else if (strcmp(e->name,"write")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY)
+				{
+					die(e->line,"DtlsSocket.write(byte[]) takes one byte[].",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"DtlsSocket.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown DtlsSocket method: ",e->name);
 			}
 
 			break;

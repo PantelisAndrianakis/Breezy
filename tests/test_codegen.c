@@ -1287,6 +1287,26 @@ static void test_tls_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_tls_close") != NULL, 1);
 }
 
+static void test_dtls_lowers(void)
+{
+	/* Network.dtlsConnect (2-arg) lowers to bzy_dtls_connect guarded by io_check. */
+	emit("void main() { DtlsSocket s; s = Network.dtlsConnect(\"h\", 4433); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_connect") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_io_check") != NULL, 1);
+
+	/* dtlsConnectInsecure lowers to the loudly-named insecure entry point. */
+	emit("void main() { DtlsSocket s; s = Network.dtlsConnectInsecure(\"h\", 4433); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_connect_insecure") != NULL, 1);
+
+	/* Network.dtlsListen + accept + read/write/close lower to their bzy_dtls_* calls. */
+	emit("void main() { DtlsListener l; l = Network.dtlsListen(0, \"c.pem\", \"k.pem\"); DtlsSocket s; s = l.accept(); byte[] b; b = s.read(16); s.write(b); s.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_listen") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_accept") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_read") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_write") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "bzy_dtls_close") != NULL, 1);
+}
+
 static void test_surface_lowers(void)
 {
 	/* Graphics.open lowers to bzy_surface_open guarded by io_check; the Surface
@@ -1605,6 +1625,7 @@ int main(void)
 	RUN(test_filechannel_lock_lowers);
 	RUN(test_raw_socket_lowers);
 	RUN(test_tls_lowers);
+	RUN(test_dtls_lowers);
 	RUN(test_surface_lowers);
 	RUN(test_glsurface_lowers);
 	RUN(test_mappedfile_lowers);

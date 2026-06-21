@@ -5558,6 +5558,40 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"dtlsConnect")==0 || strcmp(m,"dtlsConnectInsecure")==0)
+	{
+		/* dtlsConnect: 2-arg -> system CAs, 3-arg -> CA bundle. dtlsConnectInsecure:
+		   no peer-cert verification. All fallible. */
+		const char *dfn = (strcmp(m,"dtlsConnectInsecure")==0) ? "bzy_dtls_connect_insecure"
+		                : (e->arg_count==3) ? "bzy_dtls_connect_ca" : "bzy_dtls_connect";
+		TypeRef pdc[3];
+		for (int i=0; i<e->arg_count; i++) { pdc[i]=e->args[i]->type; }
+		cg_call_with_args(cg,tt,dfn,NULL,e->args,e->arg_count,0, 1, 0, pdc, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int kdc = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), kdc);
+		cg_emit(cg,".L%d:", kdc);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
+	if (strcmp(m,"dtlsListen")==0)
+	{
+		TypeRef pdl[3];
+		for (int i=0; i<e->arg_count; i++) { pdl[i]=e->args[i]->type; }
+		cg_call_with_args(cg,tt,"bzy_dtls_listen",NULL,e->args,e->arg_count,0, 1, 0, pdl, e->arg_count, 0);
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int kdl = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), kdl);
+		cg_emit(cg,".L%d:", kdl);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		return;
+	}
+
 	const char *fn;
 	if (strcmp(m,"listen")==0)
 	{
@@ -6253,6 +6287,85 @@ static void cg_tls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
 	else
 	{
 		fn = "bzy_tls_close";
+		fallible = 0;
+	}
+
+	TypeRef ps[1];
+	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+
+	int obj = ty_is_managed(e->type.kind);   /* read -> byte[] (owned); others scalar/void. */
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count, 0);
+
+	if (fallible)
+	{
+		if (e->type.kind != TY_VOID)
+		{
+			cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		}
+
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		if (e->type.kind != TY_VOID)
+		{
+			cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+		}
+	}
+}
+
+/* DtlsListener.accept() -> owned DtlsSocket (fallible); close() -> void (not). */
+static void cg_dtls_listener_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	if (strcmp(n,"accept")==0)
+	{
+		fn = "bzy_dtls_accept";
+	}
+	else if (strcmp(n,"port")==0)
+	{
+		fn = "bzy_dtls_listener_port";
+	}
+	else
+	{
+		fn = "bzy_dtls_close_listener";
+	}
+	int fallible = (strcmp(n,"accept")==0);
+
+	int obj = ty_is_managed(e->type.kind);
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, NULL, 0, 0);
+
+	if (fallible)
+	{
+		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+		int k = cg_label(cg);
+		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+		cg_emit(cg,".L%d:", k);
+		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+		cg_aligned_call(cg,"bzy_io_check");
+		cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+	}
+}
+
+/* DtlsSocket.read(max)->byte[] / write(byte[])->int are fallible; close()->void is not. */
+static void cg_dtls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn;
+	int fallible = 1;
+	if (strcmp(n,"read")==0)
+	{
+		fn = "bzy_dtls_read";
+	}
+	else if (strcmp(n,"write")==0)
+	{
+		fn = "bzy_dtls_write";
+	}
+	else
+	{
+		fn = "bzy_dtls_close";
 		fallible = 0;
 	}
 
@@ -7902,6 +8015,14 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_TLSSOCKET)
 		{
 			cg_tls_socket_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_DTLSLISTENER)
+		{
+			cg_dtls_listener_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_DTLSSOCKET)
+		{
+			cg_dtls_socket_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_SURFACE)
 		{
@@ -12336,6 +12457,16 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_tls_write");
 	cg_emit(cg,"extern bzy_tls_close");
 	cg_emit(cg,"extern bzy_tls_close_listener");
+	cg_emit(cg,"extern bzy_dtls_connect");
+	cg_emit(cg,"extern bzy_dtls_connect_ca");
+	cg_emit(cg,"extern bzy_dtls_connect_insecure");
+	cg_emit(cg,"extern bzy_dtls_listen");
+	cg_emit(cg,"extern bzy_dtls_accept");
+	cg_emit(cg,"extern bzy_dtls_listener_port");
+	cg_emit(cg,"extern bzy_dtls_read");
+	cg_emit(cg,"extern bzy_dtls_write");
+	cg_emit(cg,"extern bzy_dtls_close");
+	cg_emit(cg,"extern bzy_dtls_close_listener");
 	cg_emit(cg,"extern bzy_surface_open");
 	cg_emit(cg,"extern bzy_surface_present");
 	cg_emit(cg,"extern bzy_surface_poll_event");
