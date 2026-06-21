@@ -48,9 +48,10 @@ static Token expect(Parser *p, TokenType tt)
 {
 	if (p->cur.type != tt)
 	{
-		fprintf(stderr, "line %d: Expected '%s', got '%s'\n",
-		        p->cur.line, token_type_name(tt), token_type_name(p->cur.type));
-		exit(1);
+		char msg[128];
+		snprintf(msg, sizeof(msg), "Expected '%s', got '%s'.",
+		         token_type_name(tt), token_type_name(p->cur.type));
+		lexer_diag(p->lex.src, p->lex.file, p->cur.line, p->cur.col, msg, NULL);
 	}
 	Token t = p->cur;
 	advance(p);

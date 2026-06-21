@@ -191,6 +191,7 @@ int main(int argc, char *argv[])
 	for (int i=0; i<nfiles; i++)
 	{
 		parser_init(&parsers[np+ndesk+i],srcs[i]);
+		parsers[np+ndesk+i].lex.file=paths[i];   /* Real path for diagnostics. */
 		units[np+ndesk+i]=parse_unit(&parsers[np+ndesk+i]);
 	}
 

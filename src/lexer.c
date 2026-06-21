@@ -31,6 +31,40 @@ void lexer_init(Lexer *l, const char *src)
 	l->src = src;
 	l->pos = 0;
 	l->line = 1;
+	l->col = 1;
+	l->file = "<source>";
+}
+
+void lexer_diag(const char *src, const char *file, int line, int col,
+                const char *msg, const char *arg)
+{
+	fprintf(stderr, "%s:%d:%d: %s%s\n", file, line, col, msg, arg ? arg : "");
+
+	/* Find the start of the offending line and print it with a caret. */
+	const char *p = src;
+	for (int ln = 1; ln < line && *p; p++)
+	{
+		if (*p == '\n')
+		{
+			ln++;
+		}
+	}
+
+	const char *end = p;
+	while (*end && *end != '\n')
+	{
+		end++;
+	}
+
+	fprintf(stderr, "  %.*s\n  ", (int)(end - p), p);
+	for (int i = 1; i < col && p[i - 1]; i++)
+	{
+		/* Preserve tabs so the caret lines up under the source. */
+		fputc(p[i - 1] == '\t' ? '\t' : ' ', stderr);
+	}
+
+	fprintf(stderr, "^\n");
+	exit(1);
 }
 
 static char peek_ch(Lexer *l)
@@ -44,6 +78,11 @@ static char next_ch(Lexer *l)
 	if (c == '\n')
 	{
 		l->line++;
+		l->col = 1;
+	}
+	else
+	{
+		l->col++;
 	}
 
 	return c;
@@ -126,6 +165,7 @@ Token lexer_next(Lexer *l)
 	}
 
 	t.line = l->line;
+	t.col = l->col;
 	char c = peek_ch(l);
 	if (!c)
 	{
@@ -251,8 +291,10 @@ Token lexer_next(Lexer *l)
 					d = '"';
 					break;
 				default:
-					fprintf(stderr, "line %d: Bad string escape '\\%c'\n", l->line, e);
-					exit(1);
+				{
+					char esc[3] = { '\\', e, '\0' };
+					lexer_diag(l->src, l->file, l->line, l->col - 1, "Bad string escape: ", esc);
+				}
 				}
 			}
 
@@ -261,8 +303,7 @@ Token lexer_next(Lexer *l)
 
 		if (peek_ch(l) != '"')
 		{
-			fprintf(stderr, "line %d: Unterminated string literal.\n", l->line);
-			exit(1);
+			lexer_diag(l->src, l->file, t.line, t.col, "Unterminated string literal.", NULL);
 		}
 
 		next_ch(l);                 /* Consume the closing quote. */
@@ -529,9 +570,13 @@ Token lexer_next(Lexer *l)
 
 		return t;
 	default:
-		fprintf(stderr,"line %d: Unexpected char '%c'\n",l->line,c);
-		exit(1);
+	{
+		char ch[2] = { c, '\0' };
+		lexer_diag(l->src, l->file, l->line, l->col, "Unexpected char: ", ch);
 	}
+	}
+
+	return t;   /* Unreachable: lexer_diag exits. */
 }
 
 const char *token_type_name(TokenType t)
