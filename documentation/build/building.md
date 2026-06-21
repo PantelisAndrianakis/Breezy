@@ -41,6 +41,17 @@ breezy myproject --target linux     # System V AMD64 / ELF64 emission.
 - **Windows PE64** uses the Microsoft x64 ABI.
 - **`--target linux`** emits System V AMD64 assembly (integer arguments in `rdi, rsi, rdx, rcx, r8, r9`, floating-point arguments numbered independently of position) and drives `nasm -f elf64` plus `gcc -no-pie`.
 
+### Checking without building
+
+`--check` runs the front-end only — parse and resolve — then exits without emitting code. Diagnostics are written to stdout as a single JSON object, which makes it the integration point for editors and language tooling:
+
+```sh
+breezy myproject --check
+```
+
+- On success it prints `{"ok":true}` and exits `0`.
+- On the first error it prints `{"file":"...","line":N,"col":C,"message":"..."}` and exits `1`. A `col` of `0` means the error is line-level (resolve and type errors carry no column; syntax errors do).
+
 On a Linux host, `breezy` builds and runs native ELF64 for compute, concurrency, file I/O, and networking. The one external runtime dependency on Linux is **libcurl** (`libcurl4-openssl-dev`), used by [`Network.readUrl`](../io/native-io.md).
 
 **Per-host difference:** a few [`File`](../stdlib/file.md) attributes (`HIDDEN`, `SYSTEM`, `ARCHIVE`) are Windows concepts with no POSIX equivalent.

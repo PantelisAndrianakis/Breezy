@@ -68,4 +68,7 @@ const char *token_type_name(TokenType t);
 void        lexer_diag(const char *src, const char *file, int line, int col,
                        const char *msg, const char *arg);
 
+/* Toggle JSON diagnostic output (one object on stdout, then exit). For --check. */
+void        lexer_diag_json(int on);
+
 #endif

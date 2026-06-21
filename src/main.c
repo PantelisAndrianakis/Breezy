@@ -86,6 +86,7 @@ int main(int argc, char *argv[])
 	memset(&app_cfg, 0, sizeof(app_cfg));
 	const char *src_arg = NULL;
 	const char *out_arg = NULL;   /* Optional second positional: final executable path. */
+	int check_only = 0;           /* --check: parse + resolve, emit JSON diagnostics, no codegen. */
 #ifdef _WIN32
 	Target target = TARGET_WINDOWS;   /* Default to the build host. */
 #else
@@ -116,6 +117,11 @@ int main(int argc, char *argv[])
 				fprintf(stderr,"Unknown --target '%s' (use linux|windows).\n", t);
 				return 1;
 			}
+		}
+		else if (strcmp(argv[i],"--check")==0)
+		{
+			check_only = 1;
+			lexer_diag_json(1);
 		}
 		else if (!src_arg)
 		{
@@ -222,6 +228,13 @@ int main(int argc, char *argv[])
 	}
 	types_register_all_members(&tt,units,total);   /* Classes parent-first: file order is filesystem-dependent. */
 	resolve_program(&tt,units,total);
+
+	/* --check: front-end only. Reaching here means no diagnostics fired. */
+	if (check_only)
+	{
+		printf("{\"ok\":true}\n");
+		return 0;
+	}
 
 	FILE *out=fopen("out.asm","w");
 	if (!out)

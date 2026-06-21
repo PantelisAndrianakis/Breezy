@@ -35,12 +35,56 @@ void lexer_init(Lexer *l, const char *src)
 	l->file = "<source>";
 }
 
+static int g_json_diag;   /* When set, diagnostics are emitted as one JSON object on stdout. */
+
+void lexer_diag_json(int on)
+{
+	g_json_diag = on;
+}
+
+/* Print s to stdout with JSON string escaping for the few chars that need it. */
+static void json_str(const char *s)
+{
+	for (; s && *s; s++)
+	{
+		switch (*s)
+		{
+		case '"':
+			fputs("\\\"", stdout);
+			break;
+		case '\\':
+			fputs("\\\\", stdout);
+			break;
+		case '\n':
+			fputs("\\n", stdout);
+			break;
+		case '\t':
+			fputs("\\t", stdout);
+			break;
+		default:
+			fputc(*s, stdout);
+			break;
+		}
+	}
+}
+
 void lexer_diag(const char *src, const char *file, int line, int col,
                 const char *msg, const char *arg)
 {
 	if (!file)
 	{
 		file = "<source>";
+	}
+
+	if (g_json_diag)
+	{
+		fputs("{\"file\":\"", stdout);
+		json_str(file);
+		fprintf(stdout, "\",\"line\":%d,\"col\":%d,\"message\":\"", line, col);
+		json_str(msg);
+		json_str(arg);
+		fputs("\"}\n", stdout);
+		exit(1);
 	}
 
 	if (col > 0)
