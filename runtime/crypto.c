@@ -38,6 +38,7 @@ static void *dl_sym(void *h, const char *n) { return dlsym(h, n); }
 static struct
 {
 	int loaded;   /* 0 unknown, 1 ok, -1 unavailable. */
+	unsigned char *(*SHA1)(const unsigned char*, size_t, unsigned char*);
 	unsigned char *(*SHA256)(const unsigned char*, size_t, unsigned char*);
 	unsigned char *(*MD5)(const unsigned char*, size_t, unsigned char*);
 	const void    *(*EVP_sha256)(void);
@@ -64,6 +65,7 @@ int bzy_crypto_load(void)
 		*(void**)(&cc.field) = dl_sym(h, name); \
 		if (!cc.field) { cc.loaded = -1; return 0; } \
 	} while (0)
+	CSYM(SHA1, "SHA1");
 	CSYM(SHA256, "SHA256");
 	CSYM(MD5, "MD5");
 	CSYM(EVP_sha256, "EVP_sha256");
@@ -74,6 +76,11 @@ int bzy_crypto_load(void)
 
 	cc.loaded = 1;
 	return 1;
+}
+
+void bzy_crypto_sha1(const unsigned char *in, size_t len, unsigned char *out20)
+{
+	cc.SHA1(in, len, out20);
 }
 
 void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char *out32)
