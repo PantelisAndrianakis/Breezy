@@ -478,4 +478,23 @@ else
     echo "  nobloat_minimal: SKIP (no linker map produced)"
 fi
 
+# Language Server (Phase G.1): drive `breezy --lsp` over stdio with a framed
+# JSON-RPC session and assert the lifecycle handshake. Pure stdin/stdout, no DB
+# and no network -- fully CI-portable (unlike the database-driver pillars).
+lsp_frame() { printf 'Content-Length: %d\r\n\r\n%s' "${#1}" "$1"; }
+lsp_lifecycle() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame '{"jsonrpc":"2.0","method":"initialized","params":{}}'
+    lsp_frame '{"jsonrpc":"2.0","id":2,"method":"shutdown"}'
+    lsp_frame '{"jsonrpc":"2.0","method":"exit"}'
+}
+lsp_out="$(lsp_lifecycle | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_out" | grep -q '"capabilities"' \
+   && echo "$lsp_out" | grep -q '"textDocumentSync"' \
+   && echo "$lsp_out" | grep -q '"id":1'; then
+    echo "  lsp_lifecycle: OK"
+else
+    echo "  lsp_lifecycle: FAIL (got '$lsp_out')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

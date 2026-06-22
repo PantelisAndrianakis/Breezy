@@ -13,6 +13,7 @@
 #include "prelude.h"
 #include "config.h"
 #include "grow.h"
+#include "lsp.h"
 
 static char *read_file(const char *path)
 {
@@ -87,6 +88,7 @@ int main(int argc, char *argv[])
 	const char *src_arg = NULL;
 	const char *out_arg = NULL;   /* Optional second positional: final executable path. */
 	int check_only = 0;           /* --check: parse + resolve, emit JSON diagnostics, no codegen. */
+	int lsp_mode = 0;             /* --lsp: run the stdio language server, no compile. */
 #ifdef _WIN32
 	Target target = TARGET_WINDOWS;   /* Default to the build host. */
 #else
@@ -123,6 +125,10 @@ int main(int argc, char *argv[])
 			check_only = 1;
 			lexer_diag_json(1);
 		}
+		else if (strcmp(argv[i],"--lsp")==0)
+		{
+			lsp_mode = 1;
+		}
 		else if (!src_arg)
 		{
 			src_arg = argv[i];
@@ -131,6 +137,12 @@ int main(int argc, char *argv[])
 		{
 			out_arg = argv[i];
 		}
+	}
+
+	/* --lsp: hand off to the stdio language server; it has no source positional. */
+	if (lsp_mode)
+	{
+		return lsp_main(argv[0]);
 	}
 
 	if (!src_arg)
