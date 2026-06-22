@@ -137,6 +137,54 @@ static void mangle_type(const TypeRef *t, char *buf)
 		strcat(buf,"$");
 		mangle_type(t->elem,buf);
 		break;
+	/* Built-in managed handle types as type arguments — so a generic can hold them,
+	   e.g. Pool<PgConnection> / Pool<Socket>. They are 8-byte managed pointers like
+	   any object (channels already carry them), so they need only a stable name. */
+	case TY_SOCKET:
+		strcat(buf,"Socket");
+		break;
+	case TY_TLSSOCKET:
+		strcat(buf,"TlsSocket");
+		break;
+	case TY_DTLSSOCKET:
+		strcat(buf,"DtlsSocket");
+		break;
+	case TY_UDPSOCKET:
+		strcat(buf,"UdpSocket");
+		break;
+	case TY_FILECHANNEL:
+		strcat(buf,"FileChannel");
+		break;
+	case TY_FILEWRITER:
+		strcat(buf,"FileWriter");
+		break;
+	case TY_MAPPEDFILE:
+		strcat(buf,"MappedFile");
+		break;
+	case TY_XMLNODE:
+		strcat(buf,"XmlNode");
+		break;
+	case TY_JSONVALUE:
+		strcat(buf,"JsonValue");
+		break;
+	case TY_HTTPREQUEST:
+		strcat(buf,"HttpRequest");
+		break;
+	case TY_HTTPRESPONSE:
+		strcat(buf,"HttpResponse");
+		break;
+	case TY_PGCONNECTION:
+		strcat(buf,"PgConnection");
+		break;
+	case TY_MYCONNECTION:
+		strcat(buf,"MyConnection");
+		break;
+	case TY_DBRESULT:
+		strcat(buf,"DbResult");
+		break;
+	case TY_DBROW:
+		strcat(buf,"DbRow");
+		break;
 	default:
 		fprintf(stderr,"Generics: cannot mangle type kind %d as a type argument.\n",t->kind);
 		exit(1);

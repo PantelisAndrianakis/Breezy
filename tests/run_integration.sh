@@ -335,6 +335,7 @@ check shared_array_obj   tests/samples/pass/concurrency/shared_array_obj.bzy   $
 check pia_race tests/samples/pass/concurrency/put_if_absent_race.bzy $'1\n1\n1'
 check mc_pingpong tests/samples/pass/concurrency/mc_pingpong.bzy $'40000'
 check pool        tests/samples/pass/concurrency/pool.bzy         $'5'
+check pool_managed tests/samples/pass/concurrency/pool_managed.bzy $'7\n7'
 check file_async  tests/samples/pass/io/file_async.bzy    $'50'
 check system_shell  tests/samples/pass/io/system_shell.bzy  $'5'
 check classname     tests/samples/pass/oop/proj_classname      $'Dog'

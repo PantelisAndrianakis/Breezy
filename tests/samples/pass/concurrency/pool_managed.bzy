@@ -1,0 +1,13 @@
+// Pool over a built-in managed handle type (JsonValue), proving generics accept the
+// special managed TypeKinds — the exact case a connection pool (Pool<PgConnection>)
+// needs. JsonValue is built in-process with Json.parse, so no infra is required.
+void main()
+{
+	()->JsonValue make = () => Json.parse("7");
+	Pool<JsonValue> pool = new Pool<JsonValue>(2, make);
+	JsonValue a = pool.acquire();
+	print(a.asLong());      // 7
+	pool.release(a);
+	JsonValue b = pool.acquire();   // `a` handed back from the pool
+	print(b.asLong());      // 7
+}
