@@ -157,6 +157,13 @@ extern long mysql_real_connect(long conn, string host, string user, string pass,
 extern blocking int mysql_real_query(long conn, string stmt, long len);
 ```
 
+> **For PostgreSQL, prefer the native [`Postgres`](../stdlib/postgres.md) driver over an
+> FFI binding.** It speaks the wire protocol directly and **parks** each query on the
+> reactor (a breeze suspends instead of consuming a `blocking` offload thread), so it
+> scales to many concurrent connections where a `blocking` `libpq` call would tie up a
+> pool thread per in-flight query. The `extern` route above is for C libraries Breezy
+> does not yet wrap natively.
+
 ---
 
 ## dynamic - resolve the address at run time
