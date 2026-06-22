@@ -109,6 +109,7 @@ void *bzy_str_to_bytes(void *s)
 	{
 		memcpy((char*)a + 32, (char*)s + 32, (size_t)n);
 	}
+
 	return a;
 }
 
@@ -120,6 +121,7 @@ void *bzy_str_from_bytes(void *arr)
 	{
 		return NULL;
 	}
+
 	return bzy_str_new((const char*)arr + 32, bzy_array_len(arr));
 }
 

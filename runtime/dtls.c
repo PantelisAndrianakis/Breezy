@@ -90,12 +90,15 @@ static void *dl_open_first(const char **names)
 			return (void*)h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return (void*)GetProcAddress((HMODULE)h, n);
 }
+
 #else
 static void *dl_open_first(const char **names)
 {
@@ -107,12 +110,15 @@ static void *dl_open_first(const char **names)
 			return h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return dlsym(h, n);
 }
+
 #endif
 
 /* Resolve libssl (+ libcrypto transitively) once. Returns 1 on success, 0 on
@@ -123,6 +129,7 @@ static int dtls_load(void)
 	{
 		return 1;
 	}
+
 	if (ossl.loaded == -1)
 	{
 		bzy_io_fail("DTLS unavailable: OpenSSL not found.");
@@ -234,16 +241,19 @@ static void dtls_sock_finalize(void *o)
 	{
 		return;
 	}
+
 	if (DTS_SSL(o))
 	{
 		ossl.SSL_free(DTS_SSL(o));
 		DTS_SSL(o) = NULL;
 	}
+
 	if (DTS_CTXOWN(o))
 	{
 		ossl.CTX_free(DTS_CTXOWN(o));
 		DTS_CTXOWN(o) = NULL;
 	}
+
 #ifdef _WIN32
 	if (DTS_DEMUXOUT(o))
 	{
@@ -251,12 +261,14 @@ static void dtls_sock_finalize(void *o)
 		free(DTS_DEMUXOUT(o));
 		DTS_DEMUXOUT(o) = NULL;
 	}
+
 #endif
 	if (DTS_TRANSPORT(o))
 	{
 		bzy_release(DTS_TRANSPORT(o));
 		DTS_TRANSPORT(o) = NULL;
 	}
+
 	DTS_CLOSED(o) = 1;
 }
 
@@ -299,12 +311,14 @@ static int dtls_flush(void *s)
 			{
 				return 0;
 			}
+
 			if (sendto(dx->fd, buf, n, 0, (struct sockaddr*)&dx->peer, dx->peerlen) < 0)
 			{
 				return -1;
 			}
 		}
 	}
+
 #endif
 	for (;;)
 	{
@@ -313,6 +327,7 @@ static int dtls_flush(void *s)
 		{
 			return 0;    /* Nothing pending (mem BIO). */
 		}
+
 		if (bzy_sock_send_all(DTS_TRANSPORT(s), buf, n) < 0)
 		{
 			return -1;
@@ -332,18 +347,22 @@ static int dtls_feed(void *s, int64_t timeout_ms)
 	{
 		return -2;
 	}
+
 	if (n < 0)
 	{
 		return -1;
 	}
+
 	if (n == 0)
 	{
 		return 0;
 	}
+
 	if (ossl.BIO_write(rbio, buf, n) != n)
 	{
 		return -1;
 	}
+
 	return 1;
 }
 
@@ -356,6 +375,7 @@ static int64_t dtls_timeout_ms(void *ssl)
 	{
 		return -1;
 	}
+
 	return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 }
 
@@ -390,18 +410,22 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 			{
 				return -1;
 			}
+
 			return 1;
 		}
+
 		if (op_kind == 1 && ret > 0)
 		{
 			return ret;
 		}
+
 		if (op_kind == 2 && ret > 0)
 		{
 			if (dtls_flush(s) < 0)
 			{
 				return -1;
 			}
+
 			return ret;
 		}
 
@@ -412,12 +436,15 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 			{
 				return 0;    /* Clean EOF on read. */
 			}
+
 			return -1;                                    /* Fatal. */
 		}
+
 		if (dtls_flush(s) < 0)
 		{
 			return -1;    /* Always push pending bytes first. */
 		}
+
 		if (err == BZ_SSL_ERROR_WANT_READ)
 		{
 			int64_t to = (op_kind == 0) ? dtls_timeout_ms(ssl) : -1;
@@ -432,6 +459,7 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 				}
 				continue;
 			}
+
 			if (f <= 0)
 			{
 				return -1;    /* Peer closed mid-op. */
@@ -465,6 +493,7 @@ static int dtls_attach_bios(void *ssl)
 	{
 		return -1;
 	}
+
 	ossl.SSL_set_bio(ssl, rbio, wbio);
 	return 0;
 }
@@ -494,12 +523,14 @@ static void dtls_cookie_secret_init(void)
 	{
 		return;
 	}
+
 	if (ossl.RAND_bytes(g_cookie_secret, (int)sizeof(g_cookie_secret)) != 1)
 	{
 		/* Degrade safe: a fixed secret still gives return-routability (an off-path
 		   spoofer never receives the cookie), just not unpredictability. */
 		memset(g_cookie_secret, 0x5a, sizeof(g_cookie_secret));
 	}
+
 	g_cookie_secret_ready = 1;
 }
 
@@ -517,11 +548,13 @@ static void dtls_make_cookie(const struct sockaddr_storage *ss, unsigned char *o
 		h1 = (h1 ^ g_cookie_secret[i]) * 1099511628211ULL;
 		h2 = (h2 ^ g_cookie_secret[i]) * 1099511628211ULL;
 	}
+
 	for (size_t i = 0; i < alen; i++)
 	{
 		h1 = (h1 ^ a[i]) * 1099511628211ULL;
 		h2 = (h2 ^ a[i]) * 1099511628211ULL;
 	}
+
 	memcpy(out, &h1, 8);
 	memcpy(out + 8, &h2, 8);
 	*len = 16;
@@ -534,6 +567,7 @@ static int dtls_cookie_generate(void *ssl, unsigned char *c, unsigned int *l)
 	{
 		return 0;
 	}
+
 	dtls_make_cookie(ss, c, l);
 	return 1;
 }
@@ -545,6 +579,7 @@ static int dtls_cookie_verify(void *ssl, const unsigned char *c, unsigned int l)
 	{
 		return 0;
 	}
+
 	unsigned char want[16];
 	unsigned int wl;
 	dtls_make_cookie(ss, want, &wl);
@@ -580,6 +615,7 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 		bzy_io_fail("Network.dtlsConnect: SSL_CTX_new failed.");
 		return NULL;
 	}
+
 	if (!insecure)
 	{
 		if (caBundle)
@@ -590,6 +626,7 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 		{
 			ossl.CTX_set_default_verify_paths(ctx);
 		}
+
 		ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
 	}
 
@@ -608,17 +645,20 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 		{
 			ossl.SSL_free(ssl);
 		}
+
 		bzy_release(transport);
 		ossl.CTX_free(ctx);
 		bzy_io_fail("Network.dtlsConnect: SSL setup failed.");
 		return NULL;
 	}
+
 	dtls_set_mtu(ssl);
 	if (!insecure)
 	{
 		ossl.SSL_set1_host(ssl, bzy_str_data(host));                                                 /* Verify hostname. */
 		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)bzy_str_data(host)); /* SNI. */
 	}
+
 	ossl.SSL_set_connect_state(ssl);
 
 	void *s = dtls_sock_wrap(transport, ssl, ctx);
@@ -627,10 +667,12 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 		bzy_io_fail("Network.dtlsConnect: handshake failed.");   /* Finalizer cleans up; io_check throws. */
 		return s;
 	}
+
 	if (!insecure && ossl.SSL_get_verify_result(ssl) != BZ_X509_V_OK)
 	{
 		bzy_io_fail("Network.dtlsConnect: certificate verification failed.");
 	}
+
 	return s;
 }
 
@@ -656,6 +698,7 @@ void *bzy_dtls_read(void *s, int64_t maxbytes)
 		bzy_io_fail("DtlsSocket.read: socket is closed.");
 		return NULL;
 	}
+
 	int max = (int)(maxbytes > 0 ? maxbytes : 1);
 	/* Stage the plaintext on the stack for the common record; only a rare oversized
 	   read touches the heap. */
@@ -666,6 +709,7 @@ void *bzy_dtls_read(void *s, int64_t maxbytes)
 		bzy_io_fail("DtlsSocket.read: out of memory.");
 		return NULL;
 	}
+
 	int n = dtls_run(s, 1, buf, max);
 	if (n < 0)
 	{
@@ -673,14 +717,17 @@ void *bzy_dtls_read(void *s, int64_t maxbytes)
 		{
 			free(buf);
 		}
+
 		bzy_io_fail("DtlsSocket.read: DTLS read error.");
 		return NULL;
 	}
+
 	void *arr = dtls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean shutdown). */
 	if (buf != stackbuf)
 	{
 		free(buf);
 	}
+
 	return arr;
 }
 
@@ -691,18 +738,21 @@ int64_t bzy_dtls_write(void *s, void *data)
 		bzy_io_fail("DtlsSocket.write: socket is closed.");
 		return 0;
 	}
+
 	int len = (int)bzy_array_len(data);
 	const char *bytes = (const char*)data + 32;   /* Packed byte[] payload. */
 	if (len == 0)
 	{
 		return 0;
 	}
+
 	int n = dtls_run(s, 2, (void*)bytes, len);
 	if (n < 0)
 	{
 		bzy_io_fail("DtlsSocket.write: DTLS write error.");
 		return 0;
 	}
+
 	return n;
 }
 
@@ -712,11 +762,13 @@ void bzy_dtls_close(void *s)
 	{
 		return;
 	}
+
 	if (DTS_SSL(s))
 	{
 		ossl.SSL_shutdown(DTS_SSL(s));
 		dtls_flush(s);
 	}
+
 	dtls_sock_finalize(s);
 }
 
@@ -742,16 +794,19 @@ static void dtls_list_finalize(void *o)
 	{
 		return;
 	}
+
 	if (DTL_CTX(o))
 	{
 		ossl.CTX_free(DTL_CTX(o));
 		DTL_CTX(o) = NULL;
 	}
+
 	if (DTL_FD(o) >= 0)
 	{
 		close((int)DTL_FD(o));
 		DTL_FD(o) = -1;
 	}
+
 	DTL_CLOSED(o) = 1;
 }
 
@@ -775,18 +830,21 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		bzy_io_fail("Network.dtlsListen: SSL_CTX_new failed.");
 		return NULL;
 	}
+
 	if (ossl.CTX_use_certificate_chain_file(ctx, bzy_str_data(certPath)) != 1)
 	{
 		ossl.CTX_free(ctx);
 		bzy_io_fail("Network.dtlsListen: cannot load certificate chain.");
 		return NULL;
 	}
+
 	if (ossl.CTX_use_PrivateKey_file(ctx, bzy_str_data(keyPath), BZ_SSL_FILETYPE_PEM) != 1)
 	{
 		ossl.CTX_free(ctx);
 		bzy_io_fail("Network.dtlsListen: cannot load private key.");
 		return NULL;
 	}
+
 	dtls_ctx_enable_cookie(ctx);   /* HelloVerifyRequest amplification protection. */
 
 	bzy_reactor_ensure();
@@ -797,6 +855,7 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		bzy_io_fail("Network.dtlsListen: socket failed.");
 		return NULL;
 	}
+
 	int v6only = 0;   /* Dual-stack: discover IPv6 and IPv4 (v4-mapped) peers. */
 	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
 	int yes = 1;
@@ -849,11 +908,13 @@ void *bzy_dtls_accept(void *l)
 		{
 			break;
 		}
+
 		if (errno != EAGAIN && errno != EWOULDBLOCK)
 		{
 			bzy_io_fail("DtlsListener.accept: recvfrom failed.");
 			return NULL;
 		}
+
 		if (bzy_poll_wait(pd, fd, BZY_POLL_READ, -1) < 0)
 		{
 			bzy_io_fail("DtlsListener.accept: wait failed.");
@@ -874,11 +935,13 @@ void *bzy_dtls_accept(void *l)
 		bzy_io_fail("DtlsListener.accept: socket failed.");
 		return NULL;
 	}
+
 	if (local.ss_family == AF_INET6)
 	{
 		int v6only = 0;
 		setsockopt(cfd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
 	}
+
 	int yes = 1;
 	setsockopt(cfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #ifdef SO_REUSEPORT
@@ -899,10 +962,12 @@ void *bzy_dtls_accept(void *l)
 		{
 			ossl.SSL_free(ssl);
 		}
+
 		bzy_release(transport);
 		bzy_io_fail("DtlsListener.accept: SSL setup failed.");
 		return NULL;
 	}
+
 	dtls_set_mtu(ssl);
 	ossl.SSL_set_accept_state(ssl);
 	dtls_ssl_arm_cookie(ssl, &peer);   /* `peer` stays valid through dtls_run in this frame. */
@@ -919,6 +984,7 @@ void *bzy_dtls_accept(void *l)
 	{
 		bzy_io_fail("DtlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
 	}
+
 	return s;
 }
 
@@ -1000,6 +1066,7 @@ static void dtls_demux_peer_closed(void *demuxout)
 	{
 		return;
 	}
+
 	EnterCriticalSection(&o->dx->lock);
 	((DemuxPeer*)o->entry)->dead = 1;
 	LeaveCriticalSection(&o->dx->lock);
@@ -1011,6 +1078,7 @@ static int ss_eq(const struct sockaddr_storage *a, const struct sockaddr_storage
 	{
 		return 0;
 	}
+
 	if (a->ss_family == AF_INET6)
 	{
 		const struct sockaddr_in6 *x = (const struct sockaddr_in6*)a;
@@ -1031,6 +1099,7 @@ static SOCKET make_loopback_udp(struct sockaddr_in *out)
 	{
 		return INVALID_SOCKET;
 	}
+
 	struct sockaddr_in a;
 	memset(&a, 0, sizeof(a));
 	a.sin_family = AF_INET;
@@ -1098,6 +1167,7 @@ static DWORD WINAPI dtls_demux_thread(LPVOID arg)
 						dx->peers = (DemuxPeer**)realloc(dx->peers, (size_t)nc * sizeof(DemuxPeer*));
 						dx->cap = nc;
 					}
+
 					dx->peers[dx->npeers++] = np;
 					sendto(dx->fwd_fd, buf, n, 0, (struct sockaddr*)&np->inbox_addr, sizeof(np->inbox_addr));
 					sendto(dx->fwd_fd, "\0", 1, 0, (struct sockaddr*)&dx->accept_addr, sizeof(dx->accept_addr));
@@ -1108,8 +1178,10 @@ static DWORD WINAPI dtls_demux_thread(LPVOID arg)
 				}
 			}
 		}
+
 		LeaveCriticalSection(&dx->lock);
 	}
+
 	return 0;
 }
 
@@ -1119,6 +1191,7 @@ static void dtls_list_finalize(void *o)
 	{
 		return;
 	}
+
 	DtlsDemux *dx = (DtlsDemux*)DTL2_DX(o);
 	if (dx)
 	{
@@ -1128,22 +1201,26 @@ static void dtls_list_finalize(void *o)
 			closesocket(dx->shared_fd);
 			dx->shared_fd = INVALID_SOCKET;
 		}
+
 		if (dx->thread)
 		{
 			WaitForSingleObject(dx->thread, 2000);
 			CloseHandle(dx->thread);
 			dx->thread = NULL;
 		}
+
 		if (dx->fwd_fd != INVALID_SOCKET)
 		{
 			closesocket(dx->fwd_fd);
 			dx->fwd_fd = INVALID_SOCKET;
 		}
+
 		if (dx->accept_sock)
 		{
 			bzy_release(dx->accept_sock);
 			dx->accept_sock = NULL;
 		}
+
 		EnterCriticalSection(&dx->lock);
 		for (int i = 0; i < dx->npeers; i++)
 		{
@@ -1153,6 +1230,7 @@ static void dtls_list_finalize(void *o)
 				dx->peers[i]->inbox_fd = INVALID_SOCKET;
 			}
 		}
+
 		LeaveCriticalSection(&dx->lock);
 		if (dx->ctx)
 		{
@@ -1161,6 +1239,7 @@ static void dtls_list_finalize(void *o)
 		}
 		/* dx + entries intentionally NOT freed (live peers may reference them). */
 	}
+
 	DTL2_CLOSED(o) = 1;
 }
 
@@ -1184,18 +1263,21 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		bzy_io_fail("Network.dtlsListen: SSL_CTX_new failed.");
 		return NULL;
 	}
+
 	if (ossl.CTX_use_certificate_chain_file(ctx, bzy_str_data(certPath)) != 1)
 	{
 		ossl.CTX_free(ctx);
 		bzy_io_fail("Network.dtlsListen: cannot load certificate chain.");
 		return NULL;
 	}
+
 	if (ossl.CTX_use_PrivateKey_file(ctx, bzy_str_data(keyPath), BZ_SSL_FILETYPE_PEM) != 1)
 	{
 		ossl.CTX_free(ctx);
 		bzy_io_fail("Network.dtlsListen: cannot load private key.");
 		return NULL;
 	}
+
 	dtls_ctx_enable_cookie(ctx);   /* HelloVerifyRequest amplification protection. */
 
 	bzy_iocp_ensure();
@@ -1209,6 +1291,7 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		bzy_io_fail("Network.dtlsListen: socket failed.");
 		return NULL;
 	}
+
 	int v6only = 0;
 	setsockopt(shared, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
 	int yes = 1;
@@ -1238,11 +1321,13 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		{
 			closesocket(dx->fwd_fd);
 		}
+
 		ossl.CTX_free(ctx);
 		free(dx);
 		bzy_io_fail("Network.dtlsListen: internal socket setup failed.");
 		return NULL;
 	}
+
 	u_long nb = 1;
 	ioctlsocket(dx->accept_fd, FIONBIO, &nb);
 	bzy_iocp_associate((void*)dx->accept_fd);
@@ -1295,6 +1380,7 @@ void *bzy_dtls_accept(void *l)
 				break;
 			}
 		}
+
 		LeaveCriticalSection(&dx->lock);
 		if (!p)
 		{
@@ -1313,10 +1399,12 @@ void *bzy_dtls_accept(void *l)
 			{
 				ossl.SSL_free(ssl);
 			}
+
 			bzy_release(transport);
 			bzy_io_fail("DtlsListener.accept: SSL setup failed.");
 			return NULL;
 		}
+
 		dtls_set_mtu(ssl);
 		ossl.SSL_set_accept_state(ssl);
 		dtls_ssl_arm_cookie(ssl, &p->peer);   /* p is a heap DemuxPeer, stable through the handshake. */
@@ -1336,6 +1424,7 @@ void *bzy_dtls_accept(void *l)
 		{
 			bzy_io_fail("DtlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
 		}
+
 		return s;
 	}
 }

@@ -398,10 +398,12 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 	{
 		subst_typeref(&c->fields[i].type,t,targs);
 	}
+
 	for (int i=0; i<c->method_count; i++)
 	{
 		subst_func(c->methods[i],t,targs);
 	}
+
 	for (int i=0; i<c->ctor_count; i++)
 	{
 		subst_func(c->ctors[i],t,targs);
@@ -606,10 +608,12 @@ static void rewrite_unit(Unit *u)
 		{
 			continue;
 		}
+
 		for (int i=0; i<c->field_count; i++)
 		{
 			rewrite_typeref(&c->fields[i].type);
 		}
+
 		for (int i=0; i<c->method_count; i++)
 		{
 			rewrite_func(c->methods[i]);
@@ -689,6 +693,7 @@ void generics_expand(Unit ***units, int *total, int *cap)
 					{
 						un->klasses[j-1]=un->klasses[j];
 					}
+
 					un->class_count--;
 					ci--;   /* Re-check the slot now holding the shifted element. */
 				}

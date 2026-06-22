@@ -53,8 +53,10 @@ void *bzy_input_line(void)
 				free(buf);
 				return bzy_str_new(NULL, 0);
 			}
+
 			buf = grown;
 		}
+
 		buf[len++] = (char)c;
 	}
 

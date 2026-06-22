@@ -678,10 +678,12 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 	{
 		file_set_xattr(p, "user.bzy.hidden",  on);
 	}
+
 	if (attr & 4)   /* SYSTEM.  */
 	{
 		file_set_xattr(p, "user.bzy.system",  on);
 	}
+
 	if (attr & 32)  /* ARCHIVE. */
 	{
 		file_set_xattr(p, "user.bzy.archive", on);
@@ -716,10 +718,12 @@ int64_t bzy_file_has_attribute(void *path, int64_t attr)
 	{
 		return file_has_xattr(p, "user.bzy.hidden");     /* HIDDEN.  */
 	}
+
 	if (attr & 4)
 	{
 		return file_has_xattr(p, "user.bzy.system");     /* SYSTEM.  */
 	}
+
 	if (attr & 32)
 	{
 		return file_has_xattr(p, "user.bzy.archive");    /* ARCHIVE. */
@@ -748,6 +752,7 @@ static void off1_run(void *p)
 	c->err = g_io_error;     /* Capture on the worker thread; */
 	g_io_error = NULL;       /* leave the worker thread's flag clean. */
 }
+
 static void *offload1(void *(*fn)(void*), void *a0)
 {
 	if (!bzy_sched_current())
@@ -775,6 +780,7 @@ static void off2v_run(void *p)
 	c->err = g_io_error;
 	g_io_error = NULL;
 }
+
 static void offload2v(void (*fn)(void*,void*), void *a0, void *a1)
 {
 	if (!bzy_sched_current())
@@ -801,6 +807,7 @@ static void off1v_run(void *p)
 	c->err = g_io_error;
 	g_io_error = NULL;
 }
+
 static void offload1v(void (*fn)(void*), void *a0)
 {
 	if (!bzy_sched_current())
@@ -818,22 +825,27 @@ void *bzy_file_read_text(void *path)
 {
 	return offload1(real_read_text, path);
 }
+
 void *bzy_file_read_lines(void *path)
 {
 	return offload1(real_read_lines, path);
 }
+
 void *bzy_file_read_bytes(void *path)
 {
 	return offload1(real_read_bytes, path);
 }
+
 void  bzy_file_write_text(void *path, void *c)
 {
 	offload2v(real_write_text, path, c);
 }
+
 void  bzy_file_append_text(void *path, void *c)
 {
 	offload2v(real_append_text, path, c);
 }
+
 void  bzy_file_write_bytes(void *path, void *d)
 {
 	offload2v(real_write_bytes, path, d);

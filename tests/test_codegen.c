@@ -37,12 +37,17 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 		parser_init(&parsers[np + j], srcs[j]);
 		units[np + j] = parse_unit(&parsers[np + j]);
 	}
+
 	int total = np + nsrc;
 
 	/* Mirror main.c: lower generics (drops uninstantiated templates like Pool<T>)
 	   so resolve/codegen never see a live template. No realloc — total stays well
 	   under MAX_U — so `units` is compacted in place. */
-	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &total, &gc); }
+	{
+		Unit **gu = units;
+		int gc = MAX_U;
+		generics_expand(&gu, &total, &gc);
+	}
 
 	types_init(&tt);
 	types_register_builtins(&tt);
@@ -50,11 +55,13 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 	{
 		types_register_unit_names(&tt, units[i]);
 	}
+
 	types_reserve_hashable(&tt);   /* Mirror main.c: slots 0/1 for record hashCode/equals, before interfaces. */
 	for (int i = 0; i < total; i++)
 	{
 		types_register_interfaces(&tt, units[i]);
 	}
+
 	types_register_all_members(&tt, units, total);
 	resolve_program(&tt, units, total);
 
@@ -100,20 +107,34 @@ static TypeTable *build_tt(const char **srcs, int nsrc)
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
 		units[i] = parse_unit(&parsers[i]);
 	}
+
 	for (int j = 0; j < nsrc; j++)
 	{
 		parser_init(&parsers[np + j], srcs[j]);
 		units[np + j] = parse_unit(&parsers[np + j]);
 	}
+
 	int total = np + nsrc;
 
-	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &total, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
+	{
+		Unit **gu = units;    /* Drop uninstantiated templates (Pool<T>), like main.c. */
+		int gc = MAX_U;
+		generics_expand(&gu, &total, &gc);
+	}
 
 	types_init(&tt);
 	types_register_builtins(&tt);
-	for (int i = 0; i < total; i++) { types_register_unit_names(&tt, units[i]); }
+	for (int i = 0; i < total; i++)
+	{
+		types_register_unit_names(&tt, units[i]);
+	}
+
 	types_reserve_hashable(&tt);
-	for (int i = 0; i < total; i++) { types_register_interfaces(&tt, units[i]); }
+	for (int i = 0; i < total; i++)
+	{
+		types_register_interfaces(&tt, units[i]);
+	}
+
 	types_register_all_members(&tt, units, total);
 	resolve_program(&tt, units, total);
 	return &tt;
@@ -136,12 +157,14 @@ static const char *fn_body(const char *label)
 	{
 		return buf;
 	}
+
 	const char *e = strstr(s, "__exception");
 	size_t len = e ? (size_t)(e - s) : strlen(s);
 	if (len >= sizeof(buf))
 	{
 		len = sizeof(buf) - 1;
 	}
+
 	memcpy(buf, s, len);
 	buf[len] = '\0';
 	return buf;
@@ -162,28 +185,47 @@ static void emit_desktop(const char *src, Target target)
 		units[n] = parse_unit(&parsers[n]);
 		n++;
 	}
+
 	for (int i = 0; i < BZY_DESKTOP_PRELUDE_COUNT; i++)
 	{
 		parser_init(&parsers[n], BZY_DESKTOP_PRELUDE[i]);
 		units[n] = parse_unit(&parsers[n]);
 		n++;
 	}
+
 	parser_init(&parsers[n], src);
 	units[n] = parse_unit(&parsers[n]);
 	n++;
 
-	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &n, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
+	{
+		Unit **gu = units;    /* Drop uninstantiated templates (Pool<T>), like main.c. */
+		int gc = MAX_U;
+		generics_expand(&gu, &n, &gc);
+	}
 
 	types_init(&tt);
 	types_register_builtins(&tt);
-	for (int i = 0; i < n; i++) { types_register_unit_names(&tt, units[i]); }
+	for (int i = 0; i < n; i++)
+	{
+		types_register_unit_names(&tt, units[i]);
+	}
+
 	types_reserve_hashable(&tt);
-	for (int i = 0; i < n; i++) { types_register_interfaces(&tt, units[i]); }
+	for (int i = 0; i < n; i++)
+	{
+		types_register_interfaces(&tt, units[i]);
+	}
+
 	types_register_all_members(&tt, units, n);
 	resolve_program(&tt, units, n);
 
 	FILE *f = fopen("out_cg_test.asm", "w+");
-	if (!f) { printf("FAIL\n    cannot open out_cg_test.asm\n"); exit(1); }
+	if (!f)
+	{
+		printf("FAIL\n    cannot open out_cg_test.asm\n");
+		exit(1);
+	}
+
 	Codegen cg;
 	cg_init(&cg, f);
 	cg.target = target;
@@ -587,10 +629,10 @@ static void test_subclass_declared_before_parent(void)
 		"void main() { Animal a; a = new Dog(); a.speak(); }",
 		TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm,
-		"__vtable_Dog:\n"
-		"    dq 0\n"
-		"    dq 0\n"
-		"    dq Dog__speak") != NULL, 1);   /* Full table: reserved slots 0/1, speak at slot 2. */
+					  "__vtable_Dog:\n"
+					  "    dq 0\n"
+					  "    dq 0\n"
+					  "    dq Dog__speak") != NULL, 1);   /* Full table: reserved slots 0/1, speak at slot 2. */
 }
 
 static void test_map_compound_lowering(void)
@@ -1146,6 +1188,7 @@ static void test_grow_ensure(void)
 		a = grow_ensure(a, n, &cap, sizeof(int));
 		a[n++] = i * 7;
 	}
+
 	ASSERT_INT(n, 100);
 	ASSERT_INT(cap >= 100, 1);
 	ASSERT_INT(a[0], 0);

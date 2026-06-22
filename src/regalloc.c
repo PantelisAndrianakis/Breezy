@@ -988,6 +988,7 @@ IRAlloc *ra_run(IRFunc *f)
 				{
 					a->istart[v] = bstart;
 				}
+
 				if (bend > a->iend[v])
 				{
 					a->iend[v] = bend;
@@ -1008,6 +1009,7 @@ IRAlloc *ra_run(IRFunc *f)
 				{
 					a->istart[def] = p;
 				}
+
 				if (p > a->iend[def])
 				{
 					a->iend[def] = p;
@@ -1023,6 +1025,7 @@ IRAlloc *ra_run(IRFunc *f)
 					{
 						a->istart[uv] = p;
 					}
+
 					if (p > a->iend[uv])
 					{
 						a->iend[uv] = p;

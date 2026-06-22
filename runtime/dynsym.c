@@ -29,6 +29,7 @@ void *bzy_dynsym(const char *name)
 		snprintf(msg, sizeof(msg), "dynamic extern '%s' unresolved.", name ? name : "?");
 		bzy_io_fail(msg);   /* Copies the message; throws via the call site's io_check. */
 	}
+
 	return p;
 }
 
@@ -39,6 +40,7 @@ static void *dlsym_resolver(const char *name)
 {
 	return g_lib ? (void*)GetProcAddress(g_lib, name) : NULL;
 }
+
 int64_t bzy_ffi_bind(void *path)
 {
 	HMODULE h = LoadLibraryA(bzy_str_data(path));
@@ -46,6 +48,7 @@ int64_t bzy_ffi_bind(void *path)
 	{
 		return 0;
 	}
+
 	g_lib = h;
 	bzy_dyn_set_resolver(dlsym_resolver);
 	return 1;
@@ -56,6 +59,7 @@ static void *dlsym_resolver(const char *name)
 {
 	return g_lib ? dlsym(g_lib, name) : NULL;
 }
+
 int64_t bzy_ffi_bind(void *path)
 {
 	void *h = dlopen(bzy_str_data(path), RTLD_NOW | RTLD_GLOBAL);
@@ -63,6 +67,7 @@ int64_t bzy_ffi_bind(void *path)
 	{
 		return 0;
 	}
+
 	g_lib = h;
 	bzy_dyn_set_resolver(dlsym_resolver);
 	return 1;

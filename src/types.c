@@ -925,6 +925,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		fprintf(stderr,"A record may not extend another type: %s.\n",d->name);
 		exit(1);
 	}
+
 	if (d->is_static)
 	{
 		if (d->ctor)
@@ -932,16 +933,19 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 			fprintf(stderr,"Static class %s may not declare a constructor.\n",d->name);
 			exit(1);
 		}
+
 		if (d->has_parent)
 		{
 			fprintf(stderr,"Static class %s may not extend a class.\n",d->name);
 			exit(1);
 		}
+
 		if (d->implements_count)
 		{
 			fprintf(stderr,"Static class %s may not implement interfaces.\n",d->name);
 			exit(1);
 		}
+
 		if (d->type_param_count)
 		{
 			fprintf(stderr,"Static class %s may not be generic.\n",d->name);
@@ -996,6 +1000,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 				add_param_type(&dst->param_types,&dst->param_types_cap,p,src->param_types[p]);
 			}
 		}
+
 		c->vtable_size=c->parent->vtable_size;
 	}
 	else
@@ -1269,6 +1274,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 			cc[ci].param_count=c->ctors[ci].param_count;
 			cc[ci].min_args=overload_min_args(c->ctors[ci].ast);
 		}
+
 		if (overload_set_is_ambiguous(cc,c->ctor_count))
 		{
 			fprintf(stderr,"Class %s: ambiguous constructor overload set.\n",c->name);

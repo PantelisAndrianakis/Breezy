@@ -17,6 +17,7 @@ static void test_block_push_grows(void)
 	{
 		block_push(b, stmt_new(ST_EXPR, i));
 	}
+
 	ASSERT_INT(b->count, 50);
 	ASSERT_INT(b->stmts[49]->line, 49);
 }

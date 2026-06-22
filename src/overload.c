@@ -131,6 +131,7 @@ void overload_encode_types(char *out, size_t cap, const TypeRef *types, int coun
 	{
 		encode_one(out, cap, &n, &types[i]);
 	}
+
 	out[n < (int)cap ? n : (int)cap - 1] = '\0';
 }
 

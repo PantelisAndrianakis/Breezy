@@ -77,6 +77,7 @@ static ClassDecl *make_base_class(const EnumDecl *e)
 		class_add_ctor(c,func_clone(e->ctor));
 		c->ctor=c->ctors[0];
 	}
+
 	return c;
 }
 

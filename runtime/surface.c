@@ -34,8 +34,10 @@ static void *dl_open_first(const char **names)
 			return (void*)h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return (void*)GetProcAddress((HMODULE)h, n);
@@ -51,8 +53,10 @@ static void *dl_open_first(const char **names)
 			return h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return dlsym(h, n);
@@ -100,6 +104,7 @@ static int surface_load(void)
 	{
 		return 1;
 	}
+
 	if (sdl.loaded == -1)
 	{
 		bzy_io_fail("Surface unavailable: SDL2 not found.");
@@ -175,6 +180,7 @@ static void ring_push(SurfaceCtrl *c, int64_t v)
 	{
 		return;
 	}
+
 	c->ring[c->ring_head & 255] = v;
 	c->ring_head++;
 }
@@ -190,6 +196,7 @@ static void *surface_thread(void *p)
 		bzy_sem_post(&c->open_sem, 1);
 		return NULL;
 	}
+
 	c->win = sdl.CreateWindow(c->title, BZ_SDL_WINDOWPOS_UNDEFINED, BZ_SDL_WINDOWPOS_UNDEFINED,
 							  c->w, c->h, BZ_SDL_WINDOW_SHOWN);
 	if (!c->win)
@@ -199,6 +206,7 @@ static void *surface_thread(void *p)
 		bzy_sem_post(&c->open_sem, 1);
 		return NULL;
 	}
+
 	c->ren = sdl.CreateRenderer(c->win, -1, BZ_SDL_RENDERER_ACCELERATED);
 	if (!c->ren)
 	{
@@ -208,6 +216,7 @@ static void *surface_thread(void *p)
 		bzy_sem_post(&c->open_sem, 1);
 		return NULL;
 	}
+
 	c->tex = sdl.CreateTexture(c->ren, BZ_SDL_PIXELFORMAT_ARGB8888, BZ_SDL_TEXTUREACCESS_STREAMING, c->w, c->h);
 	if (!c->tex)
 	{
@@ -296,6 +305,7 @@ static void surface_teardown(SurfaceCtrl *c)
 	{
 		bzy_thread_join(c->thread);
 	}
+
 	bzy_sem_destroy(&c->open_sem);
 	bzy_sem_destroy(&c->frame_sem);
 	free(c->front);
@@ -309,11 +319,13 @@ static void surface_finalize(void *o)
 	{
 		return;
 	}
+
 	if (SURF_CTRL(o))
 	{
 		surface_teardown(SURF_CTRL(o));
 		SURF_CTRL(o) = NULL;
 	}
+
 	SURF_CLOSED(o) = 1;
 }
 
@@ -330,6 +342,7 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 	{
 		return NULL;
 	}
+
 	if (w <= 0 || h <= 0)
 	{
 		bzy_io_fail("Surface.open: width and height must be positive.");
@@ -342,6 +355,7 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 		bzy_io_fail("Surface.open: out of memory.");
 		return NULL;
 	}
+
 	c->w = (int)w;
 	c->h = (int)h;
 	const char *tt = title ? bzy_str_data(title) : "";
@@ -356,6 +370,7 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 		bzy_io_fail("Surface.open: out of memory.");
 		return NULL;
 	}
+
 	bzy_mutex_init(&c->lock);
 	bzy_sem_init(&c->open_sem);
 	bzy_sem_init(&c->frame_sem);
@@ -386,6 +401,7 @@ void bzy_surface_present(void *s, void *pixels)
 		bzy_io_fail("Surface.present: surface is closed.");
 		return;
 	}
+
 	SurfaceCtrl *c = SURF_CTRL(s);
 	int64_t n = bzy_array_len(pixels);
 	if (n != (int64_t)c->w * (int64_t)c->h)
@@ -393,6 +409,7 @@ void bzy_surface_present(void *s, void *pixels)
 		bzy_io_fail("Surface.present: framebuffer length must be width*height.");
 		return;
 	}
+
 	bzy_mutex_lock(&c->lock);
 	memcpy(c->back, (char*)pixels + 32, (size_t)c->w * (size_t)c->h * 4);   /* Packed int[] payload at +32. */
 	c->frame_ready = 1;
@@ -406,11 +423,13 @@ int64_t bzy_surface_poll_event(void *s)
 	{
 		return 0;
 	}
+
 	SurfaceCtrl *c = SURF_CTRL(s);
 	if (c->ring_tail == c->ring_head)
 	{
 		return 0;
 	}
+
 	int64_t v = c->ring[c->ring_tail & 255];
 	c->ring_tail++;
 	return v;
@@ -422,6 +441,7 @@ int64_t bzy_surface_is_open(void *s)
 	{
 		return 0;
 	}
+
 	return SURF_CTRL(s)->open ? 1 : 0;
 }
 
@@ -431,6 +451,7 @@ void bzy_surface_close(void *s)
 	{
 		return;
 	}
+
 	surface_teardown(SURF_CTRL(s));
 	SURF_CTRL(s) = NULL;
 	SURF_CLOSED(s) = 1;

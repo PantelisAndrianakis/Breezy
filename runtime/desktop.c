@@ -20,8 +20,10 @@ static void *dl_open_first(const char **names)
 			return (void *)h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *name)
 {
 	return (void *)GetProcAddress((HMODULE)h, name);
@@ -39,8 +41,10 @@ static void *dl_open_first(const char **names)
 			return h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *name)
 {
 	return dlsym(h, name);
@@ -166,6 +170,7 @@ static int desktop_load(void)
 		G.loaded = -1;
 		return 0;
 	}
+
 	G.loaded = 1;
 	return 1;
 }
@@ -187,6 +192,7 @@ int bzy_desktop_is_enabled(void)
 	{
 		return 1;
 	}
+
 	return 0;
 #endif
 }
@@ -265,6 +271,7 @@ static struct border *border_find(void *window)
 			return &borders[i];
 		}
 	}
+
 	return NULL;
 }
 
@@ -299,6 +306,7 @@ static void push_event(int64_t reg_index, int64_t kind)
 	{
 		return;
 	}
+
 	struct ui_event *ev = (struct ui_event *)malloc(sizeof(*ev));
 	ev->reg_index = reg_index;
 	ev->kind = kind;
@@ -322,6 +330,7 @@ static void on_window_close(void *widget, void *user_data)
 	{
 		open_windows--;
 	}
+
 	if (open_windows == 0)
 	{
 		push_event(-1, 0);    /* Sentinel: stop the run-loop. */
@@ -368,6 +377,7 @@ static void ensure_gtk_thread(void)
 		MTX_INIT(&start_mtx);
 		start_mtx_init = 1;
 	}
+
 	MTX_LOCK(&start_mtx);
 	ensure_event_queue();   /* Create once under the lock: no creation race. */
 	if (!gtk_thread_started)
@@ -381,6 +391,7 @@ static void ensure_gtk_thread(void)
 		pthread_detach(t);
 #endif
 	}
+
 	MTX_UNLOCK(&start_mtx);
 }
 
@@ -392,6 +403,7 @@ static int64_t gtk_call(int op, int64_t a, int64_t b, int64_t c, const char *s)
 	{
 		return 0;
 	}
+
 	ensure_gtk_thread();
 
 	struct cmd cmd;
@@ -412,6 +424,7 @@ static int64_t gtk_call(int op, int64_t a, int64_t b, int64_t c, const char *s)
 	{
 		CND_WAIT(&cmd.cv, &cmd.m);
 	}
+
 	MTX_UNLOCK(&cmd.m);
 	return cmd.result;
 }
@@ -477,6 +490,7 @@ static void cmd_execute(struct cmd *c)
 		{
 			break;
 		}
+
 		switch ((int)c->c)
 		{
 		case 0:
@@ -531,58 +545,72 @@ int64_t bzy_desktop_frame_new(void)
 {
 	return gtk_call(OP_FRAME_NEW, 0, 0, 0, NULL);
 }
+
 int64_t bzy_desktop_frame_content(int64_t f)
 {
 	return f;
 }
+
 void bzy_desktop_frame_set_title(int64_t f, const char *t)
 {
 	gtk_call(OP_FRAME_TITLE, f, 0, 0, t);
 }
+
 int64_t bzy_desktop_panel_new(void)
 {
 	return gtk_call(OP_PANEL_NEW, 0, 0, 0, NULL);
 }
+
 int64_t bzy_desktop_button_new(void)
 {
 	return gtk_call(OP_BUTTON_NEW, 0, 0, 0, NULL);
 }
+
 void bzy_desktop_button_set_text(int64_t b, const char *t)
 {
 	gtk_call(OP_BUTTON_TEXT, b, 0, 0, t);
 }
+
 int64_t bzy_desktop_label_new(void)
 {
 	return gtk_call(OP_LABEL_NEW, 0, 0, 0, NULL);
 }
+
 void bzy_desktop_label_set_text(int64_t l, const char *t)
 {
 	gtk_call(OP_LABEL_TEXT, l, 0, 0, t);
 }
+
 void bzy_desktop_container_add(int64_t p, int64_t ch)
 {
 	gtk_call(OP_CONTAINER_ADD, p, ch, 0, NULL);
 }
+
 void bzy_desktop_border_add(int64_t bd, int64_t ch, int r)
 {
 	gtk_call(OP_BORDER_ADD, bd, ch, r, NULL);
 }
+
 void bzy_desktop_set_visible(int64_t w, int v)
 {
 	gtk_call(OP_SET_VISIBLE, w, v, 0, NULL);
 }
+
 void bzy_desktop_set_enabled(int64_t w, int e)
 {
 	gtk_call(OP_SET_ENABLED, w, e, 0, NULL);
 }
+
 void bzy_desktop_window_set_size(int64_t w, int a, int b)
 {
 	gtk_call(OP_WIN_SIZE, w, a, b, NULL);
 }
+
 void bzy_desktop_window_show(int64_t w)
 {
 	gtk_call(OP_WIN_SHOW, w, 0, 0, NULL);
 }
+
 void bzy_desktop_window_dispose(int64_t w)
 {
 	gtk_call(OP_WIN_DISPOSE, w, 0, 0, NULL);
@@ -593,6 +621,7 @@ void bzy_desktop_listen_action(int64_t w, int i)
 {
 	gtk_call(OP_LISTEN_ACTION, w, i, 0, NULL);
 }
+
 void bzy_desktop_listen_window_close(int64_t w, int i)
 {
 	gtk_call(OP_LISTEN_CLOSE, w, i, 0, NULL);
@@ -604,12 +633,14 @@ int bzy_desktop_next_event(void)
 	{
 		return -1;
 	}
+
 	ensure_gtk_thread();
 	ensure_event_queue();
 	if (!event_queue)
 	{
 		return -1;
 	}
+
 	struct ui_event *ev = (struct ui_event *)G.async_queue_pop(event_queue);   /* Blocks. */
 	int idx = (int)ev->reg_index;
 	cur_event_kind = ev->kind;

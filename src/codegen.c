@@ -886,62 +886,77 @@ static const char *cg_reg32(const char *r)
 	{
 		return "eax";
 	}
+
 	if (!strcmp(r, "rbx"))
 	{
 		return "ebx";
 	}
+
 	if (!strcmp(r, "rcx"))
 	{
 		return "ecx";
 	}
+
 	if (!strcmp(r, "rdx"))
 	{
 		return "edx";
 	}
+
 	if (!strcmp(r, "rsi"))
 	{
 		return "esi";
 	}
+
 	if (!strcmp(r, "rdi"))
 	{
 		return "edi";
 	}
+
 	if (!strcmp(r, "rbp"))
 	{
 		return "ebp";
 	}
+
 	if (!strcmp(r, "r8"))
 	{
 		return "r8d";
 	}
+
 	if (!strcmp(r, "r9"))
 	{
 		return "r9d";
 	}
+
 	if (!strcmp(r, "r10"))
 	{
 		return "r10d";
 	}
+
 	if (!strcmp(r, "r11"))
 	{
 		return "r11d";
 	}
+
 	if (!strcmp(r, "r12"))
 	{
 		return "r12d";
 	}
+
 	if (!strcmp(r, "r13"))
 	{
 		return "r13d";
 	}
+
 	if (!strcmp(r, "r14"))
 	{
 		return "r14d";
 	}
+
 	if (!strcmp(r, "r15"))
 	{
 		return "r15d";
 	}
+
 	return r;
 }
 
@@ -1937,6 +1952,7 @@ static void cg_release_rcx(Codegen *cg)
 		cg_emit(cg,"    dec qword [%s + 136]", base);        /* live--. */
 		cg_emit(cg,"    jmp .L%d", done);
 	}
+
 	cg_emit(cg,".L%d:", slow);
 	cg_aligned_call(cg,"bzy_release");
 	cg_emit(cg,".L%d:", done);
@@ -2295,6 +2311,7 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_scratch_free(cg, 8);
 		rhs = "xmm1";
 	}
+
 	switch (e->op)
 	{
 	case TOKEN_PLUS:
@@ -2385,6 +2402,7 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 		{
 			r = cg_hoist_reg(cg, e->rhs->anno_int);
 		}
+
 		if (r && cg_op_uses_rhsop(e->op))
 		{
 			*rhsop = r;   /* compare/+/- read the operand straight from its register. */
@@ -3105,6 +3123,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			{
 				cg_emit(cg,"    add rax, 32");
 			}
+
 			cg_emit(cg,"    mov [rsp + %d], rax",dst);
 		}
 	}
@@ -3121,6 +3140,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			{
 				continue;
 			}
+
 			if (is_float)
 			{
 				cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",s,src);
@@ -3148,6 +3168,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			{
 				continue;
 			}
+
 			int xi=fp_idx++;
 			if (is_float)
 			{
@@ -3164,6 +3185,7 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 			{
 				continue;
 			}
+
 			int ii=int_idx++;
 			cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,ii),src);
 			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY))
@@ -4475,6 +4497,7 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 				cg_emit(cg,".L%d:", join);
 			}
 		}
+
 		if (fp)
 		{
 			cg_emit(cg, tk==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
@@ -5609,6 +5632,7 @@ static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			ps[i]=e->args[i]->type;
 		}
+
 		cg_call_with_args(cg,tt,"bzy_surface_open",NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int k = cg_label(cg);
@@ -5629,6 +5653,7 @@ static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			ps[i]=e->args[i]->type;
 		}
+
 		cg_call_with_args(cg,tt,"bzy_glsurface_open",NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int k = cg_label(cg);
@@ -5687,6 +5712,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			pst[i]=e->args[i]->type;
 		}
+
 		cg_call_with_args(cg,tt,tfn,NULL,e->args,e->arg_count,0, 1, 0, pst, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kc = cg_label(cg);
@@ -5705,6 +5731,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			psl[i]=e->args[i]->type;
 		}
+
 		cg_call_with_args(cg,tt,"bzy_tls_listen",NULL,e->args,e->arg_count,0, 1, 0, psl, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kl = cg_label(cg);
@@ -5727,6 +5754,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			pdc[i]=e->args[i]->type;
 		}
+
 		cg_call_with_args(cg,tt,dfn,NULL,e->args,e->arg_count,0, 1, 0, pdc, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kdc = cg_label(cg);
@@ -5745,6 +5773,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			pdl[i]=e->args[i]->type;
 		}
+
 		cg_call_with_args(cg,tt,"bzy_dtls_listen",NULL,e->args,e->arg_count,0, 1, 0, pdl, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kdl = cg_label(cg);
@@ -6274,6 +6303,7 @@ static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_call_with_args(cg,tt,"bzy_db_row_count",e->lhs,e->args,0,0,0,0,NULL,0,0);
 			return;
 		}
+
 		if (strcmp(n,"columnCount")==0)
 		{
 			cg_call_with_args(cg,tt,"bzy_db_col_count",e->lhs,e->args,0,0,0,0,NULL,0,0);
@@ -6289,6 +6319,7 @@ static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_db_check_after(cg);                  /* Index out of range -> DbException. */
 			return;
 		}
+
 		if (strcmp(n,"columnName")==0)
 		{
 			cg_call_with_args(cg,tt,"bzy_db_col_name",e->lhs,e->args,1,0,1,0,ps,1,0);
@@ -6336,6 +6367,7 @@ static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			fn = byname ? "bzy_db_is_null_named"    : "bzy_db_is_null";
 		}
+
 		if (!fn)
 		{
 			fprintf(stderr,"Codegen: unknown Row method '%s'\n", n);
@@ -6680,6 +6712,7 @@ static void cg_tls_listener_method(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		fn = "bzy_tls_close_listener";
 	}
+
 	int fallible = (strcmp(n,"accept")==0);
 
 	int obj = ty_is_managed(e->type.kind);
@@ -6762,6 +6795,7 @@ static void cg_dtls_listener_method(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		fn = "bzy_dtls_close_listener";
 	}
+
 	int fallible = (strcmp(n,"accept")==0);
 
 	int obj = ty_is_managed(e->type.kind);
@@ -8787,6 +8821,7 @@ static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 
 		return;
 	}
+
 	if (target->kind==EX_IDENT)
 	{
 		if (fp)
@@ -8986,6 +9021,7 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 		cg_release_rcx(cg);                   /* Release old. */
 		return;
 	}
+
 	if (target->kind==EX_IDENT)
 	{
 		cg_expr_owned(cg,tt,value);
@@ -10524,6 +10560,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 				cg_emit(cg,"    mov rax, [rax + rcx*8 + 32]");/* slot value -> rax */
 			}
 		}
+
 		if (ty_is_float(et))
 		{
 			char mem[32];
@@ -11367,6 +11404,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 			promo_restored[ri] = 1;
 			cg_emit(cg,"    mov %s, [rbp - %d]", CG_PROMO_REGS[ri], cg->callee_save[ri]);
 		}
+
 		cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 		cg_emit(cg,"    mov rsp, rbp");
 		cg_emit(cg,"    pop rbp");
@@ -12315,6 +12353,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		promo_restored[ri] = 1;
 		cg_emit(cg,"    mov %s, [rbp - %d]", CG_PROMO_REGS[ri], cg->callee_save[ri]);
 	}
+
 	cg_emit(cg,"    mov rbx, [rbp - %d]", cg->rbx_save);   /* Restore the caller's rbx. */
 	cg_emit(cg,"    mov rsp, rbp");
 	cg_emit(cg,"    pop rbp");
@@ -12867,6 +12906,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		cg_emit(cg,"extern bzy_tpool_off");          /* Inline allocator: thread-pointer -> t_pool offset. */
 		cg_emit(cg,"extern bzy_tpool_off_ready");    /* Inline allocator: offset-computed flag. */
 	}
+
 	cg_emit(cg,"extern bzy_retain");
 	cg_emit(cg,"extern bzy_share_crosscore");
 	cg_emit(cg,"extern bzy_array_get_shared");
@@ -13276,6 +13316,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 						break;
 					}
 				}
+
 				strcpy(buf,fi->asm_label);
 				label=buf;
 			}
@@ -13303,6 +13344,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 						break;
 					}
 				}
+
 				cg_emit_func(cg,tt,mi->asm_label,m, mi->is_static ? NULL : c->name);   /* Static: no `this`. */
 			}
 
@@ -13461,6 +13503,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 			{
 				continue;
 			}
+
 			int dup=0;
 			for (int uj=0; uj<=ui && !dup; uj++)
 			{
@@ -13476,10 +13519,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 					}
 				}
 			}
+
 			if (dup)
 			{
 				continue;
 			}
+
 			cg_emit(cg,"__dynslot_%s: dq 0", f->name);
 			cg_emit(cg,"__dynname_%s: db \"%s\", 0", f->name, f->name);
 		}

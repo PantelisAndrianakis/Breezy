@@ -93,20 +93,24 @@ static void parse_string_value(const char *val, char *out, int out_size)
 	{
 		p++;
 	}
+
 	if (*p != '"')
 	{
 		return;
 	}
+
 	const char *start = ++p;
 	while (*p && *p != '"')
 	{
 		p++;
 	}
+
 	int len = (int)(p - start);
 	if (len >= out_size)
 	{
 		len = out_size - 1;
 	}
+
 	memcpy(out, start, len);
 	out[len] = '\0';
 }
@@ -128,6 +132,7 @@ static void config_scan(const char *text, const char *section,
 		{
 			line[n++] = *p++;
 		}
+
 		line[n] = '\0';
 		if (*p == '\n')
 		{
@@ -278,6 +283,7 @@ void config_load(const char *src_arg, LinkConfig *link, AppConfig *app)
 	{
 		config_parse_links(buf, link);
 	}
+
 	if (app)
 	{
 		config_parse_app(buf, app);

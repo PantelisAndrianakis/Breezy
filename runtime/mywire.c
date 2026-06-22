@@ -73,14 +73,17 @@ static uint32_t le16(const unsigned char *p)
 {
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8);
 }
+
 static uint32_t le24(const unsigned char *p)
 {
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
 }
+
 static uint32_t le32(const unsigned char *p)
 {
 	return le24(p) | ((uint32_t)p[3] << 24);
 }
+
 static uint64_t le64(const unsigned char *p)
 {
 	uint64_t v = 0;
@@ -88,6 +91,7 @@ static uint64_t le64(const unsigned char *p)
 	{
 		v |= (uint64_t)p[i] << (8 * i);
 	}
+
 	return v;
 }
 
@@ -101,11 +105,13 @@ static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
 		*adv = 1;
 		return c;
 	}
+
 	if (c == 0xfc)
 	{
 		*adv = 3;
 		return le16(p + 1);
 	}
+
 	if (c == 0xfd)
 	{
 		*adv = 4;
@@ -117,6 +123,7 @@ static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
 	{
 		v |= (uint64_t)p[1 + i] << (8 * i);
 	}
+
 	return v;
 }
 
@@ -130,12 +137,14 @@ static const char *lenenc_str(const unsigned char **p, const unsigned char *end,
 	{
 		return NULL;
 	}
+
 	if (**p == 0xfb)
 	{
 		*isnull = 1;
 		(*p)++;
 		return NULL;
 	}
+
 	int64_t adv;
 	uint64_t n = lenenc_int(*p, &adv);
 	*p += adv;
@@ -167,6 +176,7 @@ static int rd_fill(Reader *r)
 	{
 		return 0;
 	}
+
 	if (r->len + 65536 > r->cap)
 	{
 		r->cap = r->cap ? r->cap * 2 : 65536;
@@ -174,6 +184,7 @@ static int rd_fill(Reader *r)
 		{
 			r->cap = r->len + 65536;
 		}
+
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
@@ -183,6 +194,7 @@ static int rd_fill(Reader *r)
 		r->eof = 1;
 		return 0;
 	}
+
 	r->len += n;
 	return 1;
 }
@@ -209,6 +221,7 @@ static int rd_packet(Reader *r, unsigned char **payload, int64_t *plen, int *seq
 	{
 		return 0;
 	}
+
 	const unsigned char *h = (const unsigned char*)(r->buf + r->pos);
 	int64_t L = le24(h);
 	*seq = h[3];
@@ -335,10 +348,12 @@ static void set_error_from_err(const unsigned char *payload, int64_t plen)
 	{
 		msglen = (int64_t)sizeof(buf) - n - 1;
 	}
+
 	if (msglen < 0)
 	{
 		msglen = 0;
 	}
+
 	memcpy(buf + n, msg, (size_t)msglen);
 	buf[n + msglen] = '\0';
 	bzy_db_set_error(buf);
@@ -364,21 +379,25 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 	{
 		return 0;    /* Protocol version 10. */
 	}
+
 	p++;
 	while (p < end && *p)
 	{
 		p++;    /* server version cstr. */
 	}
+
 	p++;
 	if (p + 4 > end)
 	{
 		return 0;
 	}
+
 	p += 4;                                        /* connection id. */
 	if (p + 8 > end)
 	{
 		return 0;
 	}
+
 	memcpy(hs->scramble, p, 8);                    /* auth-plugin-data part 1. */
 	p += 8;
 	p += 1;                                        /* filler. */
@@ -386,22 +405,26 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 	{
 		return 1;    /* No extended part; scramble is short. */
 	}
+
 	p += 2;                                        /* capability flags lower. */
 
 	if (p + 1 > end)
 	{
 		return 1;
 	}
+
 	p += 1;                                        /* character set. */
 	if (p + 2 > end)
 	{
 		return 1;
 	}
+
 	p += 2;                                        /* status flags. */
 	if (p + 2 > end)
 	{
 		return 1;
 	}
+
 	p += 2;                                        /* capability flags upper. */
 	int auth_data_len = (p < end) ? *p : 0;
 	p += 1;
@@ -413,14 +436,17 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 	{
 		take = 12;
 	}
+
 	if (take < 0)
 	{
 		take = 0;
 	}
+
 	if (p + take <= end)
 	{
 		memcpy(hs->scramble + 8, p, take);
 	}
+
 	p += part2;
 
 	if (p < end)                                   /* auth plugin name cstr. */
@@ -430,6 +456,7 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 		{
 			hs->plugin[i++] = (char)*p++;
 		}
+
 		hs->plugin[i] = '\0';
 	}
 
@@ -445,6 +472,7 @@ static int auth_native(const char *password, const unsigned char *scramble, unsi
 	{
 		return 0;
 	}
+
 	unsigned char h1[20], h2[20], h3[20], cat[40];
 	bzy_crypto_sha1((const unsigned char*)password, strlen(password), h1);
 	bzy_crypto_sha1(h1, 20, h2);
@@ -455,6 +483,7 @@ static int auth_native(const char *password, const unsigned char *scramble, unsi
 	{
 		out[i] = (unsigned char)(h1[i] ^ h3[i]);
 	}
+
 	return 20;
 }
 
@@ -466,6 +495,7 @@ static int auth_caching_sha2(const char *password, const unsigned char *scramble
 	{
 		return 0;
 	}
+
 	unsigned char d1[32], d2[32], d3[32], cat[52];
 	bzy_crypto_sha256((const unsigned char*)password, strlen(password), d1);
 	bzy_crypto_sha256(d1, 32, d2);
@@ -476,6 +506,7 @@ static int auth_caching_sha2(const char *password, const unsigned char *scramble
 	{
 		out[i] = (unsigned char)(d1[i] ^ d3[i]);
 	}
+
 	return 32;
 }
 
@@ -485,10 +516,12 @@ static int compute_auth(const char *plugin, const char *password, const unsigned
 	{
 		return auth_native(password, scramble, out);
 	}
+
 	if (strcmp(plugin, "caching_sha2_password") == 0)
 	{
 		return auth_caching_sha2(password, scramble, out);
 	}
+
 	return 0;   /* Unknown plugin -> empty; the server will AuthSwitch or reject. */
 }
 
@@ -502,10 +535,12 @@ static uint32_t client_caps(const char *db, int with_ssl)
 	{
 		caps |= CLIENT_CONNECT_WITH_DB;
 	}
+
 	if (with_ssl)
 	{
 		caps |= CLIENT_SSL;
 	}
+
 	return caps;
 }
 
@@ -542,10 +577,12 @@ static int send_handshake_response(Xport *x, int seq, const char *user, const ch
 	{
 		w_bytes(&w, auth, authlen);
 	}
+
 	if (db && db[0])
 	{
 		w_cstr(&w, db);
 	}
+
 	w_cstr(&w, plugin);
 
 	int ok = send_packet(x, seq, w.p, w.len);
@@ -607,6 +644,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			free(r.buf);
 			return 0;
 		}
+
 		rseq++;
 		void *tls = bzy_tls_upgrade_client(x->t, host, tls_mode == 2);
 		if (!tls)
@@ -616,6 +654,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			free(r.buf);
 			return 0;
 		}
+
 		x->t = tls;
 		x->is_tls = 1;
 	}
@@ -644,6 +683,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			ok = 1;    /* OK. */
 			break;
 		}
+
 		if (marker == 0xff)
 		{
 			set_error_from_err(payload, plen);
@@ -660,11 +700,13 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			{
 				newplugin[i++] = (char)*q++;
 			}
+
 			newplugin[i] = '\0';
 			if (q < end)
 			{
 				q++;    /* Step past the NUL. */
 			}
+
 			unsigned char newscr[20];
 			memset(newscr, 0, 20);
 			int64_t avail = end - q;
@@ -672,6 +714,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			{
 				avail = 20;
 			}
+
 			if (avail > 0)
 			{
 				memcpy(newscr, q, (size_t)avail);
@@ -694,6 +737,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			{
 				continue;    /* fast_auth_success -> next packet is OK. */
 			}
+
 			if (sub == 0x04)                 /* full_auth: no cached entry on the server. */
 			{
 				if (!x->is_tls)
@@ -742,6 +786,7 @@ static void *myc_vtable(void)
 		g_myc_vt[0] = (int64_t)&g_myc_ti[0];
 		g_myc_vt_built = 1;
 	}
+
 	return &g_myc_vt[1];
 }
 
@@ -801,8 +846,10 @@ static void *my_connect_tls(void *host, int64_t port, void *user, void *pass, vo
 			{
 				bzy_socket_close(x.t);
 			}
+
 			bzy_release(x.t);
 		}
+
 		return NULL;
 	}
 
@@ -831,6 +878,7 @@ void bzy_my_close(void *conn)
 	{
 		return;
 	}
+
 	void *sock = *(void**)((char*)conn + MYC_SOCK);
 	if (sock)
 	{
@@ -878,6 +926,7 @@ static void *my_collect(Reader *r)
 		free(r->buf);
 		return NULL;
 	}
+
 	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
 	{
 		int64_t adv;
@@ -885,6 +934,7 @@ static void *my_collect(Reader *r)
 		free(r->buf);
 		return bzy_db_result_new(NULL, NULL, (int64_t)affected);
 	}
+
 	if (m0 == 0xfb)
 	{
 		bzy_db_set_error("MySQL LOCAL INFILE is not supported.");
@@ -944,6 +994,7 @@ static void *my_collect(Reader *r)
 		{
 			break;    /* EOF: end of rows. */
 		}
+
 		if (m == 0xff)
 		{
 			set_error_from_err(payload, plen);
@@ -971,6 +1022,7 @@ static void *my_collect(Reader *r)
 			rowcap = rowcap ? rowcap * 2 : 16;
 			rowbuf = (void**)realloc(rowbuf, (size_t)rowcap * sizeof(void*));
 		}
+
 		rowbuf[nrows++] = row;
 	}
 
@@ -981,6 +1033,7 @@ static void *my_collect(Reader *r)
 		{
 			bzy_release(rowbuf[i]);
 		}
+
 		free(rowbuf);
 		bzy_release(colnames);
 		return NULL;
@@ -991,6 +1044,7 @@ static void *my_collect(Reader *r)
 	{
 		arr_set(rows, i, rowbuf[i]);
 	}
+
 	free(rowbuf);
 	return bzy_db_result_new(colnames, rows, nrows);
 }
@@ -1004,6 +1058,7 @@ void *bzy_my_query(void *conn, void *sql)
 		bzy_db_set_error("Query on a null connection.");
 		return NULL;
 	}
+
 	Xport xp = { *(void**)((char*)conn + MYC_SOCK), *(int*)((char*)conn + MYC_TLS) };
 
 	const char *s = bzy_str_data(sql);
@@ -1069,101 +1124,172 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 	char tmp[64];
 	switch (type)
 	{
-		case 0x01:   /* TINY. */
+	case 0x01:   /* TINY. */
+	{
+		unsigned char b = (*p)[0];
+		(*p) += 1;
+		if (is_unsigned)
 		{
-			unsigned char b = (*p)[0];
-			(*p) += 1;
-			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%u", (unsigned)b); }
-			else { snprintf(tmp, sizeof(tmp), "%d", (int)(int8_t)b); }
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%u", (unsigned)b);
 		}
-		case 0x02:   /* SHORT. */
-		case 0x0d:   /* YEAR. */
+		else
 		{
-			uint32_t u = le16(*p);
-			(*p) += 2;
-			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%u", u); }
-			else { snprintf(tmp, sizeof(tmp), "%d", (int)(int16_t)u); }
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%d", (int)(int8_t)b);
 		}
-		case 0x03:   /* LONG. */
-		case 0x09:   /* INT24. */
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x02:   /* SHORT. */
+	case 0x0d:   /* YEAR. */
+	{
+		uint32_t u = le16(*p);
+		(*p) += 2;
+		if (is_unsigned)
 		{
-			uint32_t u = le32(*p);
-			(*p) += 4;
-			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%u", u); }
-			else { snprintf(tmp, sizeof(tmp), "%d", (int)(int32_t)u); }
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%u", u);
 		}
-		case 0x08:   /* LONGLONG. */
+		else
 		{
-			uint64_t u = le64(*p);
-			(*p) += 8;
-			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%llu", (unsigned long long)u); }
-			else { snprintf(tmp, sizeof(tmp), "%lld", (long long)(int64_t)u); }
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%d", (int)(int16_t)u);
 		}
-		case 0x04:   /* FLOAT. */
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x03:   /* LONG. */
+	case 0x09:   /* INT24. */
+	{
+		uint32_t u = le32(*p);
+		(*p) += 4;
+		if (is_unsigned)
 		{
-			uint32_t bits = le32(*p);
-			(*p) += 4;
-			float f;
-			memcpy(&f, &bits, 4);
-			snprintf(tmp, sizeof(tmp), "%g", (double)f);
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%u", u);
 		}
-		case 0x05:   /* DOUBLE. */
+		else
 		{
-			uint64_t bits = le64(*p);
-			(*p) += 8;
-			double d;
-			memcpy(&d, &bits, 8);
-			snprintf(tmp, sizeof(tmp), "%.17g", d);
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%d", (int)(int32_t)u);
 		}
-		case 0x0a:   /* DATE. */
-		case 0x07:   /* TIMESTAMP. */
-		case 0x0c:   /* DATETIME. */
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x08:   /* LONGLONG. */
+	{
+		uint64_t u = le64(*p);
+		(*p) += 8;
+		if (is_unsigned)
 		{
-			unsigned char L = (*p)[0];
-			(*p) += 1;
-			int year = 0, mon = 0, day = 0, hh = 0, mm = 0, ss = 0;
-			uint32_t micro = 0;
-			if (L >= 4) { year = (int)le16(*p); mon = (*p)[2]; day = (*p)[3]; }
-			if (L >= 7) { hh = (*p)[4]; mm = (*p)[5]; ss = (*p)[6]; }
-			if (L >= 11) { micro = le32(*p + 7); }
-			(*p) += L;
-			if (L == 0) { snprintf(tmp, sizeof(tmp), "0000-00-00"); }
-			else if (L == 4) { snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d", year, mon, day); }
-			else if (L >= 11) { snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d %02d:%02d:%02d.%06u", year, mon, day, hh, mm, ss, micro); }
-			else { snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d %02d:%02d:%02d", year, mon, day, hh, mm, ss); }
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%llu", (unsigned long long)u);
 		}
-		case 0x0b:   /* TIME. */
+		else
 		{
-			unsigned char L = (*p)[0];
-			(*p) += 1;
-			int neg = 0, hh = 0, mm = 0, ss = 0;
-			uint32_t days = 0, micro = 0;
-			if (L >= 8) { neg = (*p)[0]; days = le32(*p + 1); hh = (*p)[5]; mm = (*p)[6]; ss = (*p)[7]; }
-			if (L >= 12) { micro = le32(*p + 8); }
-			(*p) += L;
-			long total_h = (long)days * 24 + hh;
-			if (L == 0) { snprintf(tmp, sizeof(tmp), "00:00:00"); }
-			else if (L >= 12) { snprintf(tmp, sizeof(tmp), "%s%ld:%02d:%02d.%06u", neg ? "-" : "", total_h, mm, ss, micro); }
-			else { snprintf(tmp, sizeof(tmp), "%s%ld:%02d:%02d", neg ? "-" : "", total_h, mm, ss); }
-			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+			snprintf(tmp, sizeof(tmp), "%lld", (long long)(int64_t)u);
 		}
-		default:     /* DECIMAL/VARCHAR/VAR_STRING/STRING/BLOB/BIT/ENUM/SET/JSON/... */
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x04:   /* FLOAT. */
+	{
+		uint32_t bits = le32(*p);
+		(*p) += 4;
+		float f;
+		memcpy(&f, &bits, 4);
+		snprintf(tmp, sizeof(tmp), "%g", (double)f);
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x05:   /* DOUBLE. */
+	{
+		uint64_t bits = le64(*p);
+		(*p) += 8;
+		double d;
+		memcpy(&d, &bits, 8);
+		snprintf(tmp, sizeof(tmp), "%.17g", d);
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x0a:   /* DATE. */
+	case 0x07:   /* TIMESTAMP. */
+	case 0x0c:   /* DATETIME. */
+	{
+		unsigned char L = (*p)[0];
+		(*p) += 1;
+		int year = 0, mon = 0, day = 0, hh = 0, mm = 0, ss = 0;
+		uint32_t micro = 0;
+		if (L >= 4)
 		{
-			int64_t adv;
-			uint64_t n = lenenc_int(*p, &adv);
-			(*p) += adv;
-			const char *s = (const char*)*p;
-			if (*p + n > end) { n = (uint64_t)(end - *p); }
-			(*p) += n;
-			return bzy_str_new(s, (int64_t)n);
+			year = (int)le16(*p);
+			mon = (*p)[2];
+			day = (*p)[3];
 		}
+		if (L >= 7)
+		{
+			hh = (*p)[4];
+			mm = (*p)[5];
+			ss = (*p)[6];
+		}
+		if (L >= 11)
+		{
+			micro = le32(*p + 7);
+		}
+		(*p) += L;
+		if (L == 0)
+		{
+			snprintf(tmp, sizeof(tmp), "0000-00-00");
+		}
+		else if (L == 4)
+		{
+			snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d", year, mon, day);
+		}
+		else if (L >= 11)
+		{
+			snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d %02d:%02d:%02d.%06u", year, mon, day, hh, mm, ss, micro);
+		}
+		else
+		{
+			snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d %02d:%02d:%02d", year, mon, day, hh, mm, ss);
+		}
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	case 0x0b:   /* TIME. */
+	{
+		unsigned char L = (*p)[0];
+		(*p) += 1;
+		int neg = 0, hh = 0, mm = 0, ss = 0;
+		uint32_t days = 0, micro = 0;
+		if (L >= 8)
+		{
+			neg = (*p)[0];
+			days = le32(*p + 1);
+			hh = (*p)[5];
+			mm = (*p)[6];
+			ss = (*p)[7];
+		}
+		if (L >= 12)
+		{
+			micro = le32(*p + 8);
+		}
+		(*p) += L;
+		long total_h = (long)days * 24 + hh;
+		if (L == 0)
+		{
+			snprintf(tmp, sizeof(tmp), "00:00:00");
+		}
+		else if (L >= 12)
+		{
+			snprintf(tmp, sizeof(tmp), "%s%ld:%02d:%02d.%06u", neg ? "-" : "", total_h, mm, ss, micro);
+		}
+		else
+		{
+			snprintf(tmp, sizeof(tmp), "%s%ld:%02d:%02d", neg ? "-" : "", total_h, mm, ss);
+		}
+		return bzy_str_new(tmp, (int64_t)strlen(tmp));
+	}
+	default:     /* DECIMAL/VARCHAR/VAR_STRING/STRING/BLOB/BIT/ENUM/SET/JSON/... */
+	{
+		int64_t adv;
+		uint64_t n = lenenc_int(*p, &adv);
+		(*p) += adv;
+		const char *s = (const char*)*p;
+		if (*p + n > end)
+		{
+			n = (uint64_t)(end - *p);
+		}
+		(*p) += n;
+		return bzy_str_new(s, (int64_t)n);
+	}
 	}
 }
 
@@ -1181,7 +1307,12 @@ static void *my_collect_binary(Reader *r)
 	}
 
 	unsigned char m0 = (plen >= 1) ? payload[0] : 0xff;
-	if (m0 == 0xff) { set_error_from_err(payload, plen); free(r->buf); return NULL; }
+	if (m0 == 0xff)
+	{
+		set_error_from_err(payload, plen);
+		free(r->buf);
+		return NULL;
+	}
 	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
 	{
 		int64_t adv;
@@ -1229,8 +1360,16 @@ static void *my_collect_binary(Reader *r)
 		}
 
 		unsigned char m = (plen >= 1) ? payload[0] : 0;
-		if (m == 0xfe && plen < 9) { break; }        /* EOF: end of rows. */
-		if (m == 0xff) { set_error_from_err(payload, plen); failed = 1; break; }
+		if (m == 0xfe && plen < 9)
+		{
+			break;    /* EOF: end of rows. */
+		}
+		if (m == 0xff)
+		{
+			set_error_from_err(payload, plen);
+			failed = 1;
+			break;
+		}
 
 		/* Binary row: a 0x00 header, a NULL bitmap, then each non-NULL value. */
 		const unsigned char *p = payload + 1;
@@ -1242,7 +1381,10 @@ static void *my_collect_binary(Reader *r)
 		for (uint64_t c = 0; c < ncols; c++)
 		{
 			int null_bit = (bitmap[(c + 2) / 8] >> ((c + 2) % 8)) & 1;
-			if (!null_bit) { arr_set(values, (int64_t)c, decode_bin_value(&p, end, types[c], uns[c])); }
+			if (!null_bit)
+			{
+				arr_set(values, (int64_t)c, decode_bin_value(&p, end, types[c], uns[c]));
+			}
 		}
 
 		void *row = bzy_db_row_new(values, colnames);
@@ -1251,6 +1393,7 @@ static void *my_collect_binary(Reader *r)
 			rowcap = rowcap ? rowcap * 2 : 16;
 			rowbuf = (void**)realloc(rowbuf, (size_t)rowcap * sizeof(void*));
 		}
+
 		rowbuf[nrows++] = row;
 	}
 
@@ -1259,14 +1402,20 @@ static void *my_collect_binary(Reader *r)
 	free(r->buf);
 	if (failed)
 	{
-		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
+		for (int64_t i = 0; i < nrows; i++)
+		{
+			bzy_release(rowbuf[i]);
+		}
 		free(rowbuf);
 		bzy_release(colnames);
 		return NULL;
 	}
 
 	void *rows = bzy_array_new(nrows, 1);
-	for (int64_t i = 0; i < nrows; i++) { arr_set(rows, i, rowbuf[i]); }
+	for (int64_t i = 0; i < nrows; i++)
+	{
+		arr_set(rows, i, rowbuf[i]);
+	}
 	free(rowbuf);
 	return bzy_db_result_new(colnames, rows, nrows);
 }
@@ -1277,7 +1426,11 @@ static void *my_collect_binary(Reader *r)
    binds SQL NULL. */
 void *bzy_my_query_params(void *conn, void *sql, void *params)
 {
-	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	if (!conn)
+	{
+		bzy_db_set_error("Query on a null connection.");
+		return NULL;
+	}
 	Xport xp = { *(void**)((char*)conn + MYC_SOCK), *(int*)((char*)conn + MYC_TLS) };
 
 	int64_t nparams = params ? *(int64_t*)((char*)params + 24) : 0;
@@ -1292,7 +1445,11 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 		w_bytes(&w, s, sl);
 		int oks = send_packet(&xp, 0, w.p, w.len);
 		free(w.p);
-		if (!oks) { bzy_db_set_error("Failed to send the prepare."); return NULL; }
+		if (!oks)
+		{
+			bzy_db_set_error("Failed to send the prepare.");
+			return NULL;
+		}
 	}
 
 	Reader r = { 0 };
@@ -1306,6 +1463,7 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 		free(r.buf);
 		return NULL;
 	}
+
 	if (plen >= 1 && payload[0] == 0xff)
 	{
 		set_error_from_err(payload, plen);
@@ -1318,10 +1476,22 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 	int num_cols = (int)le16(payload + 5);
 	int num_params = (int)le16(payload + 7);
 
-	for (int i = 0; i < num_params; i++) { rd_packet(&r, &payload, &plen, &seq); }   /* Param defs. */
-	if (num_params > 0) { rd_packet(&r, &payload, &plen, &seq); }                     /* EOF. */
-	for (int i = 0; i < num_cols; i++) { rd_packet(&r, &payload, &plen, &seq); }      /* Col defs (re-read at EXECUTE). */
-	if (num_cols > 0) { rd_packet(&r, &payload, &plen, &seq); }                       /* EOF. */
+	for (int i = 0; i < num_params; i++)
+	{
+		rd_packet(&r, &payload, &plen, &seq);    /* Param defs. */
+	}
+	if (num_params > 0)
+	{
+		rd_packet(&r, &payload, &plen, &seq);    /* EOF. */
+	}
+	for (int i = 0; i < num_cols; i++)
+	{
+		rd_packet(&r, &payload, &plen, &seq);    /* Col defs (re-read at EXECUTE). */
+	}
+	if (num_cols > 0)
+	{
+		rd_packet(&r, &payload, &plen, &seq);    /* EOF. */
+	}
 
 	/* COM_STMT_EXECUTE. */
 	{
@@ -1339,16 +1509,22 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 				for (int b = 0; b < 8; b++)
 				{
 					int64_t idx = i * 8 + b;
-					if (idx < nparams && pslots[idx] == NULL) { byte |= (unsigned char)(1 << b); }
+					if (idx < nparams && pslots[idx] == NULL)
+					{
+						byte |= (unsigned char)(1 << b);
+					}
 				}
+
 				w_u8(&w, byte);
 			}
+
 			w_u8(&w, 0x01);              /* new_params_bound_flag. */
 			for (int64_t i = 0; i < nparams; i++)
 			{
 				w_u8(&w, 0xfd);          /* MYSQL_TYPE_VAR_STRING. */
 				w_u8(&w, 0x00);          /* Unsigned flag. */
 			}
+
 			for (int64_t i = 0; i < nparams; i++)
 			{
 				void *v = pslots[i];
@@ -1360,9 +1536,15 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 				}
 			}
 		}
+
 		int oks = send_packet(&xp, 0, w.p, w.len);
 		free(w.p);
-		if (!oks) { bzy_db_set_error("Failed to send the execute."); free(r.buf); return NULL; }
+		if (!oks)
+		{
+			bzy_db_set_error("Failed to send the execute.");
+			free(r.buf);
+			return NULL;
+		}
 	}
 
 	void *result = my_collect_binary(&r);   /* Frees r.buf. */

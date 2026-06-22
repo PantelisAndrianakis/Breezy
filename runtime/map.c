@@ -720,6 +720,7 @@ void *bzy_map_iter_snapshot(void *m)
 			}
 		}
 	}
+
 	bzy_shared_unlock(m);
 	return c;
 }

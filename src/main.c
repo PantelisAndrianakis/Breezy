@@ -23,6 +23,7 @@ static char *read_file(const char *path)
 		perror(path);
 		exit(1);
 	}
+
 	fseek(f,0,SEEK_END);
 	long sz=ftell(f);
 	rewind(f);
@@ -32,10 +33,12 @@ static char *read_file(const char *path)
 		perror("read");
 		exit(1);
 	}
+
 	buf[sz]='\0';
 	fclose(f);
 	return buf;
 }
+
 static int has_suffix(const char *s, const char *suf)
 {
 	size_t ls=strlen(s),lf=strlen(suf);
@@ -58,6 +61,7 @@ static int collect_files(const char *path, char ***out_paths)
 		*out_paths=paths;
 		return 1;
 	}
+
 	struct dirent *e;
 	while ((e=readdir(d))!=NULL)
 	{
@@ -69,6 +73,7 @@ static int collect_files(const char *path, char ***out_paths)
 			n++;
 		}
 	}
+
 	closedir(d);
 	*out_paths=paths;
 	if (n==0)
@@ -76,8 +81,10 @@ static int collect_files(const char *path, char ***out_paths)
 		fprintf(stderr,"No .bzy files in %s\n",path);
 		exit(1);
 	}
+
 	return n;
 }
+
 int main(int argc, char *argv[])
 {
 	/* Collect --link <lib> flags; the first non-flag arg is the source path. */
@@ -150,6 +157,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"Usage: breezy <project-dir-or-file.bzy> [output] [--link <lib>]... [--target linux|windows]\n");
 		return 1;
 	}
+
 	if (!out_arg)
 	{
 		out_arg = "out.exe";   /* Backward-compatible default. */
@@ -182,6 +190,7 @@ int main(int argc, char *argv[])
 					uses_desktop=1;
 					break;
 				}
+
 				p+=7;
 			}
 		}
@@ -201,11 +210,13 @@ int main(int argc, char *argv[])
 		parser_init(&parsers[i],BZY_PRELUDE[i]);
 		units[i]=parse_unit(&parsers[i]);
 	}
+
 	for (int i=0; i<ndesk; i++)
 	{
 		parser_init(&parsers[np+i],BZY_DESKTOP_PRELUDE[i]);
 		units[np+i]=parse_unit(&parsers[np+i]);
 	}
+
 	for (int i=0; i<nfiles; i++)
 	{
 		parser_init(&parsers[np+ndesk+i],srcs[i]);
@@ -233,11 +244,13 @@ int main(int argc, char *argv[])
 	{
 		types_register_unit_names(&tt,units[i]);
 	}
+
 	types_reserve_hashable(&tt);   /* Reserve slots 0/1 for record hashCode/equals, before any interface. */
 	for (int i=0; i<total; i++)
 	{
 		types_register_interfaces(&tt,units[i]);   /* Reserve vtable slots [0..K) before members. */
 	}
+
 	types_register_all_members(&tt,units,total);   /* Classes parent-first: file order is filesystem-dependent. */
 	resolve_program(&tt,units,total);
 
@@ -254,6 +267,7 @@ int main(int argc, char *argv[])
 		perror("out.asm");
 		exit(1);
 	}
+
 	Codegen cg;
 	cg_init(&cg,out);
 	cg.target = target;
@@ -291,13 +305,16 @@ int main(int argc, char *argv[])
 				{
 					continue;
 				}
+
 				fprintf(af, "global %s\n%s: db ", fields[fi][0], fields[fi][0]);
 				for (const char *cp = fields[fi][1]; *cp; cp++)
 				{
 					fprintf(af, "%d,", (unsigned char)*cp);
 				}
+
 				fprintf(af, "0\n");
 			}
+
 			fclose(af);
 		}
 	}
@@ -338,6 +355,7 @@ int main(int argc, char *argv[])
 						*cp = '/';
 					}
 				}
+
 				fprintf(rc, "1 ICON \"%s\"\n\n", icon_path);
 			}
 
@@ -368,15 +386,18 @@ int main(int argc, char *argv[])
 			{
 				fprintf(rc, "            VALUE \"ProductName\", \"%s\"\n", app_cfg.name);
 			}
+
 			if (app_cfg.version[0])
 			{
 				fprintf(rc, "            VALUE \"ProductVersion\", \"%s\"\n", app_cfg.version);
 				fprintf(rc, "            VALUE \"FileVersion\", \"%s\"\n", app_cfg.version);
 			}
+
 			if (app_cfg.description[0])
 			{
 				fprintf(rc, "            VALUE \"FileDescription\", \"%s\"\n", app_cfg.description);
 			}
+
 			if (app_cfg.author[0])
 			{
 				fprintf(rc, "            VALUE \"LegalCopyright\", \"%s\"\n", app_cfg.author);
@@ -417,10 +438,12 @@ int main(int argc, char *argv[])
 		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
 					   has_rc ? " out_res.obj" : "");
 	}
+
 	for (int i = 0; i < cfg.nlib_paths; i++)
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -L%s",cfg.lib_paths[i]);
 	}
+
 	for (int i = 0; i < cfg.nlibs; i++)
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",cfg.libs[i]);
@@ -437,12 +460,14 @@ int main(int argc, char *argv[])
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -Wl,-Map=out.map");
 	}
+
 	snprintf(link_cmd+off,sizeof(link_cmd)-off," -o %s",out_arg);
 	if (system(link_cmd)!=0)
 	{
 		fprintf(stderr,"Gcc link failed.\n");
 		return 1;
 	}
+
 	printf("Built %s\n",out_arg);
 
 	ast_free_all();

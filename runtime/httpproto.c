@@ -47,6 +47,7 @@ static void *req_vtable(void)
 		g_req_vt[0] = (int64_t)&g_req_ti[0];
 		g_req_vt_built = 1;
 	}
+
 	return &g_req_vt[1];
 }
 
@@ -57,6 +58,7 @@ static void *resp_vtable(void)
 		g_resp_vt[0] = (int64_t)&g_resp_ti[0];
 		g_resp_vt_built = 1;
 	}
+
 	return &g_resp_vt[1];
 }
 
@@ -66,6 +68,7 @@ static void *req_new(void)
 	*(void**)n = req_vtable();
 	return n;
 }
+
 static void *resp_new(void)
 {
 	void *n = bzy_alloc(H_SIZE);
@@ -97,6 +100,7 @@ static int rd_fill(Reader *r)
 	{
 		return 0;
 	}
+
 	if (r->len + 65536 > r->cap)
 	{
 		r->cap = r->cap ? r->cap * 2 : 65536;
@@ -104,6 +108,7 @@ static int rd_fill(Reader *r)
 		{
 			r->cap = r->len + 65536;
 		}
+
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
@@ -113,6 +118,7 @@ static int rd_fill(Reader *r)
 		r->eof = 1;
 		return 0;
 	}
+
 	r->len += n;
 	return 1;
 }
@@ -184,6 +190,7 @@ static void hdr_free(Hdrs *h)
 		bzy_release(h->names[i]);
 		bzy_release(h->vals[i]);
 	}
+
 	free(h->names);
 	free(h->vals);
 }
@@ -200,6 +207,7 @@ static void hdr_store(void *node, Hdrs *h)
 			arr_set(names, i, h->names[i]);
 			arr_set(vals, i, h->vals[i]);
 		}
+
 		HSET(node, H_HNAMES, names);
 		HSET(node, H_HVALS, vals);
 	}
@@ -216,6 +224,7 @@ static int64_t hdr_index(void *node, void *name)
 	{
 		return -1;
 	}
+
 	int64_t n = *(int64_t*)((char*)names + 24);
 	void **slots = (void**)((char*)names + 32);
 	const char *k = bzy_str_data(name);
@@ -265,6 +274,7 @@ static int parse_headers(Reader *r, Hdrs *h)
 			r->err = "Unterminated header block.";
 			return 0;
 		}
+
 		if (cr == r->pos)
 		{
 			r->pos = cr + 2;    /* Blank line: end of headers. */
@@ -280,6 +290,7 @@ static int parse_headers(Reader *r, Hdrs *h)
 				break;
 			}
 		}
+
 		if (colon < 0)
 		{
 			r->err = "Malformed header line.";
@@ -296,6 +307,7 @@ static int parse_headers(Reader *r, Hdrs *h)
 		{
 			ve--;
 		}
+
 		void *val = bzy_str_new(r->buf + vs, ve - vs);
 		hdr_push(h, name, val);
 		r->pos = cr + 2;
@@ -350,6 +362,7 @@ static void *parse_body(Reader *r, void *node)
 				r->err = "Bad chunk size.";
 				return NULL;
 			}
+
 			long sz = strtol(r->buf + r->pos, NULL, 16);
 			r->pos = cr + 2;
 			if (sz < 0)
@@ -358,21 +371,25 @@ static void *parse_body(Reader *r, void *node)
 				r->err = "Bad chunk size.";
 				return NULL;
 			}
+
 			if (sz == 0)
 			{
 				break;
 			}
+
 			if (!rd_ensure(r, sz + 2))
 			{
 				free(out);
 				r->err = "Truncated chunk.";
 				return NULL;
 			}
+
 			if (olen + (size_t)sz > ocap)
 			{
 				ocap = (olen + (size_t)sz) * 2 + 16;
 				out = (char*)realloc(out, ocap);
 			}
+
 			memcpy(out + olen, r->buf + r->pos, (size_t)sz);
 			olen += (size_t)sz;
 			r->pos += sz + 2;   /* Chunk data + its trailing CRLF. */
@@ -383,6 +400,7 @@ static void *parse_body(Reader *r, void *node)
 		{
 			r->pos = cr + 2;
 		}
+
 		void *s = bzy_str_new(out ? out : "", (int64_t)olen);
 		free(out);
 		return s;
@@ -397,15 +415,18 @@ static void *parse_body(Reader *r, void *node)
 			want = 0;
 		}
 	}
+
 	if (want == 0)
 	{
 		return bzy_str_new("", 0);
 	}
+
 	if (!rd_ensure(r, want))
 	{
 		r->err = "Body shorter than Content-Length.";
 		return NULL;
 	}
+
 	void *s = bzy_str_new(r->buf + r->pos, want);
 	r->pos += want;
 	return s;
@@ -425,6 +446,7 @@ static void *parse_request(Reader *r, int *was_eof)
 			*was_eof = 1;    /* Clean close at a boundary. */
 			return NULL;
 		}
+
 		r->err = "Unterminated request line.";
 		return NULL;
 	}
@@ -465,6 +487,7 @@ static void *parse_request(Reader *r, int *was_eof)
 		bzy_release(node);
 		return NULL;
 	}
+
 	hdr_store(node, &h);
 
 	void *body = parse_body(r, node);
@@ -473,6 +496,7 @@ static void *parse_request(Reader *r, int *was_eof)
 		bzy_release(node);
 		return NULL;
 	}
+
 	HSET(node, H_BODY, body);
 	return node;
 }
@@ -491,6 +515,7 @@ static void *parse_response(Reader *r, int *was_eof)
 			*was_eof = 1;
 			return NULL;
 		}
+
 		r->err = "Unterminated status line.";
 		return NULL;
 	}
@@ -517,6 +542,7 @@ static void *parse_response(Reader *r, int *was_eof)
 		r->err = "Malformed status line.";
 		return NULL;
 	}
+
 	int64_t rs = sp2 >= 0 ? sp2 + 1 : cr;   /* Reason may be empty (no second space). */
 
 	void *node = resp_new();
@@ -531,6 +557,7 @@ static void *parse_response(Reader *r, int *was_eof)
 		bzy_release(node);
 		return NULL;
 	}
+
 	hdr_store(node, &h);
 
 	void *body = parse_body(r, node);
@@ -539,6 +566,7 @@ static void *parse_response(Reader *r, int *was_eof)
 		bzy_release(node);
 		return NULL;
 	}
+
 	HSET(node, H_BODY, body);
 	return node;
 }
@@ -564,6 +592,7 @@ void *bzy_http_read_request(void *sock)
 	{
 		g_http_error = r.err ? r.err : "Malformed HTTP request.";
 	}
+
 	return node;
 }
 
@@ -579,6 +608,7 @@ void *bzy_http_read_response(void *sock)
 	{
 		g_http_error = r.err ? r.err : "Malformed HTTP response.";
 	}
+
 	return node;
 }
 
@@ -588,6 +618,7 @@ void bzy_http_check(int64_t pc, int64_t frame)
 	{
 		return;
 	}
+
 	void *msg = bzy_str_new(g_http_error, (int64_t)strlen(g_http_error));
 	g_http_error = NULL;
 	void *exc = bzy_alloc(32);
@@ -606,6 +637,7 @@ void *bzy_http_header(void *node, void *name)
 	{
 		return bzy_str_new("", 0);
 	}
+
 	void *v = hdr_val_at(node, i);
 	bzy_retain(v);
 	return v;
@@ -627,6 +659,7 @@ void *bzy_http_header_names(void *node)
 	{
 		bzy_vec_push_back(list, (int64_t)slots[i]);
 	}
+
 	return list;
 }
 
@@ -653,6 +686,7 @@ static void tb_push(TextBuf *t, const char *bytes, size_t n)
 		{
 			nc *= 2;
 		}
+
 		t->data = (char*)realloc(t->data, nc);
 		t->cap = nc;
 	}
@@ -760,6 +794,7 @@ void bzy_http_set_header(void *node, void *name, void *val)
 	{
 		bzy_release(on);
 	}
+
 	if (ov)
 	{
 		bzy_release(ov);
@@ -786,6 +821,7 @@ static void emit_headers(TextBuf *t, void *node)
 	{
 		return;
 	}
+
 	int64_t n = *(int64_t*)((char*)names + 24);
 	void **ns = (void**)((char*)names + 32);
 	void **vs = (void**)((char*)HGET(node, H_HVALS) + 32);
@@ -798,6 +834,7 @@ static void emit_headers(TextBuf *t, void *node)
 		{
 			continue;
 		}
+
 		tb_str(t, ns[i]);
 		tb_push(t, ": ", 2);
 		tb_str(t, vs[i]);

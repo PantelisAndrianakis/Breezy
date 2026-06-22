@@ -47,6 +47,7 @@ static void *res_vtable(void)
 		g_res_vt[0] = (int64_t)&g_res_ti[0];
 		g_res_vt_built = 1;
 	}
+
 	return &g_res_vt[1];
 }
 
@@ -57,6 +58,7 @@ static void *row_vtable(void)
 		g_row_vt[0] = (int64_t)&g_row_ti[0];
 		g_row_vt_built = 1;
 	}
+
 	return &g_row_vt[1];
 }
 
@@ -108,6 +110,7 @@ void bzy_db_check(int64_t pc, int64_t frame)
 	{
 		return;
 	}
+
 	void *msg = bzy_str_new(g_db_errbuf, (int64_t)strlen(g_db_errbuf));
 	g_db_has_error = 0;
 	void *exc = bzy_alloc(32);
@@ -173,6 +176,7 @@ static void *row_value(void *row, int64_t i)
 	{
 		return NULL;
 	}
+
 	return ARR_SLOTS(v)[i];
 }
 
@@ -196,6 +200,7 @@ void *bzy_db_get_string(void *row, int64_t i)
 	{
 		return bzy_str_new("", 0);
 	}
+
 	bzy_retain(s);
 	return s;
 }
@@ -221,6 +226,7 @@ int64_t bzy_db_get_bool(void *row, int64_t i)
 	{
 		return 0;
 	}
+
 	const char *d = bzy_str_data(s);
 	return (d[0] == 't' || d[0] == 'T' || d[0] == '1');
 }
@@ -236,6 +242,7 @@ static int64_t row_col_index(void *row, void *name)
 	{
 		return -1;
 	}
+
 	int64_t n = ARR_LEN(c);
 	void **slots = ARR_SLOTS(c);
 	const char *k = bzy_str_data(name);

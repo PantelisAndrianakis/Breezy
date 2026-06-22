@@ -66,34 +66,34 @@ static void test_ir_build_basic(void)
 static void test_eligible_accepts_scalar_loop(void)
 {
 	const Func *f = parse_one_func(
-		"long sum(int limit)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < limit; i = i + 1)\n"
-		"	{\n"
-		"		s = s + (long)i;\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
+						"long sum(int limit)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < limit; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)i;\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 }
 
 static void test_eligible_rejects_string(void)
 {
 	const Func *f = parse_one_func(
-		"string greet()\n"
-		"{\n"
-		"	return \"hi\";\n"
-		"}\n");
+						"string greet()\n"
+						"{\n"
+						"	return \"hi\";\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 0);
 }
 
 static void test_eligible_rejects_call(void)
 {
 	const Func *f = parse_one_func(
-		"int two() { return one() + one(); }\n"
-		"int one() { return 1; }\n");
+						"int two() { return one() + one(); }\n"
+						"int one() { return 1; }\n");
 	/* funcs[0] is `two`, which contains calls -> ineligible. */
 	ASSERT_INT(ir_eligible(f), 0);
 }
@@ -103,10 +103,10 @@ static void test_eligible_accepts_int_array(void)
 	/* Integer arrays are supported (bounds-checked): an int[] parameter indexed by
 	   a constant is eligible. */
 	const Func *f = parse_one_func(
-		"int first(int[] xs)\n"
-		"{\n"
-		"	return xs[0];\n"
-		"}\n");
+						"int first(int[] xs)\n"
+						"{\n"
+						"	return xs[0];\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 }
 
@@ -115,10 +115,10 @@ static void test_eligible_accepts_double_array(void)
 	/* double[] elements are in scope as of Tier 1/1a Stage 3 (xmm register class):
 	   the element load/store emits movsd and the (int) cast emits cvttsd2si. */
 	const Func *f = parse_one_func(
-		"int firstd(double[] xs)\n"
-		"{\n"
-		"	return (int)xs[0];\n"
-		"}\n");
+						"int firstd(double[] xs)\n"
+						"{\n"
+						"	return (int)xs[0];\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 }
 
@@ -126,22 +126,22 @@ static void test_eligible_rejects_new_array(void)
 {
 	/* Allocating an array is a managed call, excluded from the call-free IR. */
 	const Func *f = parse_one_func(
-		"int mk()\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[4];\n"
-		"	return a[0];\n"
-		"}\n");
+						"int mk()\n"
+						"{\n"
+						"	int[] a;\n"
+						"	a = new int[4];\n"
+						"	return a[0];\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 0);
 }
 
 static void test_lower_produces_blocks_and_ret(void)
 {
 	const Func *f = parse_one_func(
-		"int idret(int x)\n"
-		"{\n"
-		"	return x + 1;\n"
-		"}\n");
+						"int idret(int x)\n"
+						"{\n"
+						"	return x + 1;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *ir = ir_lower_func(f, 0);
 	ASSERT(ir != NULL);
@@ -157,26 +157,26 @@ static void test_lower_collatz_succeeds(void)
 	/* The whole collatz kernel lowers (no NULL fallback): for/while/if/else,
 	   casts, %/ and comparisons all translate. */
 	const Func *f = parse_one_func(
-		"long collatzSum(int n)\n"
-		"{\n"
-		"	long checksum;\n"
-		"	checksum = 0;\n"
-		"	for (int start = 1; start <= n; start = start + 1)\n"
-		"	{\n"
-		"		long m;\n"
-		"		m = (long)start;\n"
-		"		int steps;\n"
-		"		steps = 0;\n"
-		"		while (m > 1)\n"
-		"		{\n"
-		"			if (m % 2 == 0) { m = m / 2; }\n"
-		"			else { m = 3 * m + 1; }\n"
-		"			steps = steps + 1;\n"
-		"		}\n"
-		"		checksum = checksum + (long)steps;\n"
-		"	}\n"
-		"	return checksum;\n"
-		"}\n");
+						"long collatzSum(int n)\n"
+						"{\n"
+						"	long checksum;\n"
+						"	checksum = 0;\n"
+						"	for (int start = 1; start <= n; start = start + 1)\n"
+						"	{\n"
+						"		long m;\n"
+						"		m = (long)start;\n"
+						"		int steps;\n"
+						"		steps = 0;\n"
+						"		while (m > 1)\n"
+						"		{\n"
+						"			if (m % 2 == 0) { m = m / 2; }\n"
+						"			else { m = 3 * m + 1; }\n"
+						"			steps = steps + 1;\n"
+						"		}\n"
+						"		checksum = checksum + (long)steps;\n"
+						"	}\n"
+						"	return checksum;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *ir = ir_lower_func(f, 0);
 	ASSERT(ir != NULL);
@@ -216,12 +216,12 @@ static void test_bce_guarded_sweep_is_safe(void)
 {
 	/* for (i = 0; i < a.length; i++) a[i]  -> provably in range, no bounds check. */
 	ASSERT_INT(first_elem_load_checked(
-		"long asum(int[] a)\n"
-		"{\n"
-		"	long s; s = 0;\n"
-		"	for (int i = 0; i < a.length; i = i + 1) { s = s + (long)a[i]; }\n"
-		"	return s;\n"
-		"}\n"), 0);
+				   "long asum(int[] a)\n"
+				   "{\n"
+				   "	long s; s = 0;\n"
+				   "	for (int i = 0; i < a.length; i = i + 1) { s = s + (long)a[i]; }\n"
+				   "	return s;\n"
+				   "}\n"), 0);
 }
 
 /* Adversarial cases - each MUST stay bounds-checked (checked == 1); a wrong
@@ -230,36 +230,36 @@ static void test_bce_offbyone_stays_checked(void)
 {
 	/* `<=` lets i reach a.length. */
 	ASSERT_INT(first_elem_load_checked(
-		"long f(int[] a)\n"
-		"{\n"
-		"	long s; s = 0;\n"
-		"	for (int i = 0; i <= a.length; i = i + 1) { s = s + (long)a[i]; }\n"
-		"	return s;\n"
-		"}\n"), 1);
+				   "long f(int[] a)\n"
+				   "{\n"
+				   "	long s; s = 0;\n"
+				   "	for (int i = 0; i <= a.length; i = i + 1) { s = s + (long)a[i]; }\n"
+				   "	return s;\n"
+				   "}\n"), 1);
 }
 
 static void test_bce_other_array_stays_checked(void)
 {
 	/* Guard is on a.length but the access is into b. */
 	ASSERT_INT(first_elem_load_checked(
-		"long f(int[] a, int[] b)\n"
-		"{\n"
-		"	long s; s = 0;\n"
-		"	for (int i = 0; i < a.length; i = i + 1) { s = s + (long)b[i]; }\n"
-		"	return s;\n"
-		"}\n"), 1);
+				   "long f(int[] a, int[] b)\n"
+				   "{\n"
+				   "	long s; s = 0;\n"
+				   "	for (int i = 0; i < a.length; i = i + 1) { s = s + (long)b[i]; }\n"
+				   "	return s;\n"
+				   "}\n"), 1);
 }
 
 static void test_bce_counter_reassigned_stays_checked(void)
 {
 	/* The body bumps i past the guarded value before the access. */
 	ASSERT_INT(first_elem_load_checked(
-		"long f(int[] a)\n"
-		"{\n"
-		"	long s; s = 0;\n"
-		"	for (int i = 0; i < a.length; i = i + 1) { i = i + 5; s = s + (long)a[i]; }\n"
-		"	return s;\n"
-		"}\n"), 1);
+				   "long f(int[] a)\n"
+				   "{\n"
+				   "	long s; s = 0;\n"
+				   "	for (int i = 0; i < a.length; i = i + 1) { i = i + 5; s = s + (long)a[i]; }\n"
+				   "	return s;\n"
+				   "}\n"), 1);
 }
 
 /* The first for/while statement in f's top-level body, or NULL. */
@@ -313,23 +313,23 @@ static void test_bce_variable_mask_is_safe(void)
 	/* mask = 65535 (a derived constant); array length 65536: h & mask is in
 	   [0, 65535] regardless of h's sign, so the access is provably safe. */
 	ASSERT_INT(first_region_elem_load_checked(
-		"long f(int h)\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[65536];\n"
-		"	int n;\n"
-		"	n = 65536;\n"
-		"	int mask;\n"
-		"	mask = n - 1;\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < 100; i = i + 1)\n"
-		"	{\n"
-		"		h = h * 31 + 7;\n"
-		"		s = s + (long)a[h & mask];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n"), 0);
+				   "long f(int h)\n"
+				   "{\n"
+				   "	int[] a;\n"
+				   "	a = new int[65536];\n"
+				   "	int n;\n"
+				   "	n = 65536;\n"
+				   "	int mask;\n"
+				   "	mask = n - 1;\n"
+				   "	long s;\n"
+				   "	s = 0;\n"
+				   "	for (int i = 0; i < 100; i = i + 1)\n"
+				   "	{\n"
+				   "		h = h * 31 + 7;\n"
+				   "		s = s + (long)a[h & mask];\n"
+				   "	}\n"
+				   "	return s;\n"
+				   "}\n"), 0);
 }
 
 static void test_lower_masked_byte_load_is_movzx(void)
@@ -337,10 +337,10 @@ static void test_lower_masked_byte_load_is_movzx(void)
 	/* (int)a[i] & 255 must lower to a single unsigned byte load: no IR_AND,
 	   no IR_CAST, one IR_LOAD of type TY_UBYTE (iremit emits movzx for it). */
 	const Func *f = parse_one_func(
-		"int f(byte[] a, int i)\n"
-		"{\n"
-		"	return (int)a[i] & 255;\n"
-		"}\n");
+						"int f(byte[] a, int i)\n"
+						"{\n"
+						"	return (int)a[i] & 255;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);
@@ -381,10 +381,10 @@ static void test_lower_rmw_index_lowered_once(void)
 	/* a[i + 1] = a[i + 1] + 2: the index expression must lower once - one
 	   IR_ADD for i+1 plus one IR_ADD for the value add, not two for i+1. */
 	const Func *f = parse_one_func(
-		"void f(int[] a, int i)\n"
-		"{\n"
-		"	a[i + 1] = a[i + 1] + 2;\n"
-		"}\n");
+						"void f(int[] a, int i)\n"
+						"{\n"
+						"	a[i + 1] = a[i + 1] + 2;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);
@@ -418,14 +418,14 @@ static void test_lower_unrolls_constant_trip_loop(void)
 	/* A 13-trip counted loop lowers as straight-line code: no IR_BRCOND, and
 	   the body's multiply appears 13 times. */
 	const Func *f = parse_one_func(
-		"int f(int h)\n"
-		"{\n"
-		"	for (int b = 0; b < 13; b = b + 1)\n"
-		"	{\n"
-		"		h = h * 16777619;\n"
-		"	}\n"
-		"	return h;\n"
-		"}\n");
+						"int f(int h)\n"
+						"{\n"
+						"	for (int b = 0; b < 13; b = b + 1)\n"
+						"	{\n"
+						"		h = h * 16777619;\n"
+						"	}\n"
+						"	return h;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);
@@ -458,14 +458,14 @@ static void test_lower_unroll_skips_iv_reassigned_in_body(void)
 {
 	/* The body writes the counter: must lower as a real loop (1 IR_BRCOND). */
 	const Func *f = parse_one_func(
-		"int f(int h)\n"
-		"{\n"
-		"	for (int b = 0; b < 13; b = b + 1)\n"
-		"	{\n"
-		"		b = b + h;\n"
-		"	}\n"
-		"	return h;\n"
-		"}\n");
+						"int f(int h)\n"
+						"{\n"
+						"	for (int b = 0; b < 13; b = b + 1)\n"
+						"	{\n"
+						"		b = b + h;\n"
+						"	}\n"
+						"	return h;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);
@@ -491,18 +491,18 @@ static void test_lower_folds_constant_index_addend(void)
 	/* a[i + 10] with the access BCE-proved safe: the +10 folds into the load
 	   displacement (32 + 10*4 = 72) instead of an add on the index. */
 	const Func *f = parse_one_func(
-		"long f()\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[64];\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < 50; i = i + 1)\n"
-		"	{\n"
-		"		s = s + (long)a[i + 10];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
+						"long f()\n"
+						"{\n"
+						"	int[] a;\n"
+						"	a = new int[64];\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < 50; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)a[i + 10];\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
 	IRFunc *irf = ir_lower_region(f, first_loop(f));
 	ASSERT(irf != NULL);
 
@@ -513,7 +513,7 @@ static void test_lower_folds_constant_index_addend(void)
 		{
 			IRInstr *in = &irf->blocks[b].instrs[i];
 			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4
-				&& in->disp == 72 && !in->checked)
+					&& in->disp == 72 && !in->checked)
 			{
 				folded++;
 			}
@@ -529,16 +529,16 @@ static void test_lower_checked_index_addend_not_folded(void)
 	/* The array length is unknown, so the access stays checked - the bounds
 	   check must compare the FULL index, so the +10 must NOT fold away. */
 	const Func *f = parse_one_func(
-		"long f(int[] a)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < 50; i = i + 1)\n"
-		"	{\n"
-		"		s = s + (long)a[i + 10];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
+						"long f(int[] a)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < 50; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)a[i + 10];\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
 	IRFunc *irf = ir_lower_region(f, first_loop(f));
 	ASSERT(irf != NULL);
 
@@ -549,7 +549,7 @@ static void test_lower_checked_index_addend_not_folded(void)
 		{
 			IRInstr *in = &irf->blocks[b].instrs[i];
 			if (in->op == IR_LOAD && !in->is_frame && in->scale == 4
-				&& in->disp == 32 && in->checked)
+					&& in->disp == 32 && in->checked)
 			{
 				base_disp_checked++;
 			}
@@ -565,55 +565,55 @@ static void test_bce_downward_loop_is_safe(void)
 	/* for (i = k-1; i >= 0; i = i - 1) over new int[k]: the exact descending
 	   range proves every a[i] in [0, k), mirroring the upward case. */
 	ASSERT_INT(first_region_elem_load_checked(
-		"long f()\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[200000];\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 200000 - 1; i >= 0; i = i - 1)\n"
-		"	{\n"
-		"		s = s + (long)a[i];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n"), 0);
+				   "long f()\n"
+				   "{\n"
+				   "	int[] a;\n"
+				   "	a = new int[200000];\n"
+				   "	long s;\n"
+				   "	s = 0;\n"
+				   "	for (int i = 200000 - 1; i >= 0; i = i - 1)\n"
+				   "	{\n"
+				   "		s = s + (long)a[i];\n"
+				   "	}\n"
+				   "	return s;\n"
+				   "}\n"), 0);
 }
 
 static void test_bce_downward_underflow_stays_checked(void)
 {
 	/* `>= -1` lets i reach -1: must stay checked. */
 	ASSERT_INT(first_region_elem_load_checked(
-		"long f()\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[64];\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 63; i >= 0 - 1; i = i - 1)\n"
-		"	{\n"
-		"		s = s + (long)a[i];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n"), 1);
+				   "long f()\n"
+				   "{\n"
+				   "	int[] a;\n"
+				   "	a = new int[64];\n"
+				   "	long s;\n"
+				   "	s = 0;\n"
+				   "	for (int i = 63; i >= 0 - 1; i = i - 1)\n"
+				   "	{\n"
+				   "		s = s + (long)a[i];\n"
+				   "	}\n"
+				   "	return s;\n"
+				   "}\n"), 1);
 }
 
 static void test_bce_downward_reassigned_stays_checked(void)
 {
 	/* The body rewrites the counter: the range proof is void. */
 	ASSERT_INT(first_region_elem_load_checked(
-		"long f(int n)\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[64];\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 63; i >= 0; i = i - 1)\n"
-		"	{\n"
-		"		i = i + n;\n"
-		"		s = s + (long)a[i];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n"), 1);
+				   "long f(int n)\n"
+				   "{\n"
+				   "	int[] a;\n"
+				   "	a = new int[64];\n"
+				   "	long s;\n"
+				   "	s = 0;\n"
+				   "	for (int i = 63; i >= 0; i = i - 1)\n"
+				   "	{\n"
+				   "		i = i + n;\n"
+				   "		s = s + (long)a[i];\n"
+				   "	}\n"
+				   "	return s;\n"
+				   "}\n"), 1);
 }
 
 static void test_lower_max_pattern_becomes_select(void)
@@ -621,18 +621,18 @@ static void test_lower_max_pattern_becomes_select(void)
 	/* if (cand > w) { w = cand; } - a single-assignment if with a pure, cheap
 	   body lowers to IR_SEL (branchless cmov), not a BRCOND diamond. */
 	const Func *f = parse_one_func(
-		"int f(int cand, int w)\n"
-		"{\n"
-		"	for (int i = 0; i < 100; i = i + 1)\n"
-		"	{\n"
-		"		cand = cand * 31 + 7;\n"
-		"		if (cand > w)\n"
-		"		{\n"
-		"			w = cand;\n"
-		"		}\n"
-		"	}\n"
-		"	return w;\n"
-		"}\n");
+						"int f(int cand, int w)\n"
+						"{\n"
+						"	for (int i = 0; i < 100; i = i + 1)\n"
+						"	{\n"
+						"		cand = cand * 31 + 7;\n"
+						"		if (cand > w)\n"
+						"		{\n"
+						"			w = cand;\n"
+						"		}\n"
+						"	}\n"
+						"	return w;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);
@@ -666,17 +666,17 @@ static void test_lower_div_body_stays_branched(void)
 	/* The body divides: evaluating it unconditionally could fault, so the if
 	   must stay a real branch (no IR_SEL). */
 	const Func *f = parse_one_func(
-		"int f(int cand, int w, int d)\n"
-		"{\n"
-		"	for (int i = 0; i < 100; i = i + 1)\n"
-		"	{\n"
-		"		if (cand > w)\n"
-		"		{\n"
-		"			w = cand / d;\n"
-		"		}\n"
-		"	}\n"
-		"	return w;\n"
-		"}\n");
+						"int f(int cand, int w, int d)\n"
+						"{\n"
+						"	for (int i = 0; i < 100; i = i + 1)\n"
+						"	{\n"
+						"		if (cand > w)\n"
+						"		{\n"
+						"			w = cand / d;\n"
+						"		}\n"
+						"	}\n"
+						"	return w;\n"
+						"}\n");
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);
 
@@ -701,19 +701,19 @@ static void test_bce_negative_mask_stays_checked(void)
 	/* The mask is an unbounded parameter, possibly negative: a & b with b of
 	   unknown sign proves nothing, so the check must stay. */
 	ASSERT_INT(first_region_elem_load_checked(
-		"long f(int h, int mask)\n"
-		"{\n"
-		"	int[] a;\n"
-		"	a = new int[65536];\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < 100; i = i + 1)\n"
-		"	{\n"
-		"		h = h * 31 + 7;\n"
-		"		s = s + (long)a[h & mask];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n"), 1);
+				   "long f(int h, int mask)\n"
+				   "{\n"
+				   "	int[] a;\n"
+				   "	a = new int[65536];\n"
+				   "	long s;\n"
+				   "	s = 0;\n"
+				   "	for (int i = 0; i < 100; i = i + 1)\n"
+				   "	{\n"
+				   "		h = h * 31 + 7;\n"
+				   "		s = s + (long)a[h & mask];\n"
+				   "	}\n"
+				   "	return s;\n"
+				   "}\n"), 1);
 }
 
 static void test_region_eligible_despite_call(void)
@@ -721,15 +721,15 @@ static void test_region_eligible_despite_call(void)
 	/* The helper() call makes the whole function ineligible, but the loop subtree
 	   alone is a valid region. */
 	const Func *f = parse_one_func(
-		"void k(byte[] buf, int[] tbl)\n"
-		"{\n"
-		"	helper();\n"
-		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
-		"	{\n"
-		"		tbl[i] = (int)buf[i] & 255;\n"
-		"	}\n"
-		"}\n"
-		"void helper() { }\n");
+						"void k(byte[] buf, int[] tbl)\n"
+						"{\n"
+						"	helper();\n"
+						"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+						"	{\n"
+						"		tbl[i] = (int)buf[i] & 255;\n"
+						"	}\n"
+						"}\n"
+						"void helper() { }\n");
 	ASSERT_INT(ir_eligible(f), 0);
 	const Stmt *loop = first_loop(f);
 	ASSERT(loop != 0);
@@ -740,17 +740,17 @@ static void test_region_rejects_return(void)
 {
 	/* A region cannot run the function epilogue, so returns inside it bail. */
 	const Func *f = parse_one_func(
-		"int k(int[] a)\n"
-		"{\n"
-		"	for (int i = 0; i < a.length; i = i + 1)\n"
-		"	{\n"
-		"		if (a[i] < 0)\n"
-		"		{\n"
-		"			return i;\n"
-		"		}\n"
-		"	}\n"
-		"	return 0 - 1;\n"
-		"}\n");
+						"int k(int[] a)\n"
+						"{\n"
+						"	for (int i = 0; i < a.length; i = i + 1)\n"
+						"	{\n"
+						"		if (a[i] < 0)\n"
+						"		{\n"
+						"			return i;\n"
+						"		}\n"
+						"	}\n"
+						"	return 0 - 1;\n"
+						"}\n");
 	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
 }
 
@@ -758,28 +758,28 @@ static void test_region_rejects_managed_assign(void)
 {
 	/* Reassigning an array local inside a region would skip refcounting. */
 	const Func *f = parse_one_func(
-		"void k(int[] a, int[] b)\n"
-		"{\n"
-		"	for (int i = 0; i < 3; i = i + 1)\n"
-		"	{\n"
-		"		a = b;\n"
-		"	}\n"
-		"}\n");
+						"void k(int[] a, int[] b)\n"
+						"{\n"
+						"	for (int i = 0; i < 3; i = i + 1)\n"
+						"	{\n"
+						"		a = b;\n"
+						"	}\n"
+						"}\n");
 	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
 }
 
 static void test_region_lower_has_no_ret(void)
 {
 	const Func *f = parse_one_func(
-		"void k(int[] tbl)\n"
-		"{\n"
-		"	helper();\n"
-		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
-		"	{\n"
-		"		tbl[i] = tbl[i] * 3;\n"
-		"	}\n"
-		"}\n"
-		"void helper() { }\n");
+						"void k(int[] tbl)\n"
+						"{\n"
+						"	helper();\n"
+						"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+						"	{\n"
+						"		tbl[i] = tbl[i] * 3;\n"
+						"	}\n"
+						"}\n"
+						"void helper() { }\n");
 	IRFunc *irf = ir_lower_region(f, first_loop(f));
 	ASSERT(irf != NULL);
 	for (int b = 0; b < irf->block_count; b++)
@@ -800,16 +800,16 @@ static void test_whole_function_eligibility_unaffected(void)
 {
 	/* The region-mode flag must not leak into whole-function checks. */
 	const Func *f = parse_one_func(
-		"long sum(int limit)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < limit; i = i + 1)\n"
-		"	{\n"
-		"		s = s + (long)i;\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
+						"long sum(int limit)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < limit; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)i;\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
 	ASSERT_INT(ir_region_eligible(first_loop(f)), 1);
 	ASSERT_INT(ir_eligible(f), 1);
 }
@@ -840,15 +840,15 @@ static void emit_region_to_buf(const Func *f, const Stmt *loop, Target target, i
 static void test_region_emit_no_prologue_no_ret(void)
 {
 	const Func *f = parse_one_func(
-		"void k(byte[] buf, int[] tbl)\n"
-		"{\n"
-		"	helper();\n"
-		"	for (int i = 0; i < tbl.length; i = i + 1)\n"
-		"	{\n"
-		"		tbl[i] = (int)buf[i] & 255;\n"
-		"	}\n"
-		"}\n"
-		"void helper() { }\n");
+						"void k(byte[] buf, int[] tbl)\n"
+						"{\n"
+						"	helper();\n"
+						"	for (int i = 0; i < tbl.length; i = i + 1)\n"
+						"	{\n"
+						"		tbl[i] = (int)buf[i] & 255;\n"
+						"	}\n"
+						"}\n"
+						"void helper() { }\n");
 	emit_region_to_buf(f, first_loop(f), TARGET_WINDOWS, 256);
 
 	/* A region is body-only: no frame setup, no epilogue, no return. */
@@ -876,13 +876,13 @@ static void test_region_rejects_small_constant_trip(void)
 	/* A fixed 8-iteration loop is the emitter's unroller's territory; region
 	   entry/exit overhead would dominate (codec's 8x8 stage loops). */
 	const Func *f = parse_one_func(
-		"void k(int[] a)\n"
-		"{\n"
-		"	for (int r = 0; r < 8; r = r + 1)\n"
-		"	{\n"
-		"		a[r] = a[r] * 3;\n"
-		"	}\n"
-		"}\n");
+						"void k(int[] a)\n"
+						"{\n"
+						"	for (int r = 0; r < 8; r = r + 1)\n"
+						"	{\n"
+						"		a[r] = a[r] * 3;\n"
+						"	}\n"
+						"}\n");
 	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
 }
 
@@ -890,13 +890,13 @@ static void test_region_accepts_larger_constant_trip(void)
 {
 	/* Nine iterations is past the unroller's limit: stays a region. */
 	const Func *f = parse_one_func(
-		"void k(int[] a)\n"
-		"{\n"
-		"	for (int r = 0; r < 9; r = r + 1)\n"
-		"	{\n"
-		"		a[r] = a[r] * 3;\n"
-		"	}\n"
-		"}\n");
+						"void k(int[] a)\n"
+						"{\n"
+						"	for (int r = 0; r < 9; r = r + 1)\n"
+						"	{\n"
+						"		a[r] = a[r] * 3;\n"
+						"	}\n"
+						"}\n");
 	ASSERT_INT(ir_region_eligible(first_loop(f)), 1);
 }
 
@@ -904,13 +904,13 @@ static void test_region_lowers_bitwise_not(void)
 {
 	/* ~x lowers as x ^ -1 (one xor, no new IR op); compiler-bench solve-loop shape. */
 	const Func *f = parse_one_func(
-		"void k(long[] a, long[] b)\n"
-		"{\n"
-		"	for (int i = 0; i < a.length; i = i + 1)\n"
-		"	{\n"
-		"		a[i] = a[i] & ~b[i];\n"
-		"	}\n"
-		"}\n");
+						"void k(long[] a, long[] b)\n"
+						"{\n"
+						"	for (int i = 0; i < a.length; i = i + 1)\n"
+						"	{\n"
+						"		a[i] = a[i] & ~b[i];\n"
+						"	}\n"
+						"}\n");
 	const Stmt *loop = first_loop(f);
 	ASSERT_INT(ir_region_eligible(loop), 1);
 	IRFunc *irf = ir_lower_region(f, loop);
@@ -951,7 +951,11 @@ static void emit_unit_asm(const char *src, Target target)
 	units[np] = parse_unit(&parsers[np]);
 	int total = np + 1;
 
-	{ Unit **gu = units; int gc = 16; generics_expand(&gu, &total, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
+	{
+		Unit **gu = units;    /* Drop uninstantiated templates (Pool<T>), like main.c. */
+		int gc = 16;
+		generics_expand(&gu, &total, &gc);
+	}
 
 	types_init(&tt);
 	types_register_builtins(&tt);
@@ -1064,16 +1068,16 @@ static void test_region_bounds_check_cold_out_of_line(void)
 	/* A checked access's hot path must be cmp + not-taken jae to a cold stub;
 	   the bzy_oob argument setup may no longer sit inline right after it. */
 	const Func *f = parse_one_func(
-		"long k(int[] a, int[] b)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < a.length; i = i + 1)\n"
-		"	{\n"
-		"		s = s + (long)b[a[i]];\n"
-		"	}\n"
-		"	return s;\n"
-		"}\n");
+						"long k(int[] a, int[] b)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < a.length; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)b[a[i]];\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
 	const Stmt *loop = first_loop(f);
 	ASSERT_INT(ir_region_eligible(loop), 1);
 	emit_region_to_buf(f, loop, TARGET_WINDOWS, 1000);
@@ -1092,19 +1096,19 @@ static void test_region_select_emits_cmov(void)
 {
 	/* The browser max pattern inside a region must emit a cmov. */
 	const Func *f = parse_one_func(
-		"int k(int[] a, int w)\n"
-		"{\n"
-		"	for (int i = 0; i < a.length; i = i + 1)\n"
-		"	{\n"
-		"		int cand;\n"
-		"		cand = a[i] + 2;\n"
-		"		if (cand > w)\n"
-		"		{\n"
-		"			w = cand;\n"
-		"		}\n"
-		"	}\n"
-		"	return w;\n"
-		"}\n");
+						"int k(int[] a, int w)\n"
+						"{\n"
+						"	for (int i = 0; i < a.length; i = i + 1)\n"
+						"	{\n"
+						"		int cand;\n"
+						"		cand = a[i] + 2;\n"
+						"		if (cand > w)\n"
+						"		{\n"
+						"			w = cand;\n"
+						"		}\n"
+						"	}\n"
+						"	return w;\n"
+						"}\n");
 	const Stmt *loop = first_loop(f);
 	ASSERT_INT(ir_region_eligible(loop), 1);
 	emit_region_to_buf(f, loop, TARGET_WINDOWS, 1000);
@@ -1117,14 +1121,14 @@ static void test_lower_folds_unrolled_product(void)
 	   a single immediate: no IR_MUL for the stride/index arithmetic. Without the
 	   constant-product fold the four copies each emit an imul. */
 	const Func *f = parse_one_func(
-		"int f(int h)\n"
-		"{\n"
-		"	for (int u = 0; u < 4; u = u + 1)\n"
-		"	{\n"
-		"		h = h + u * 8;\n"
-		"	}\n"
-		"	return h;\n"
-		"}\n");
+						"int f(int h)\n"
+						"{\n"
+						"	for (int u = 0; u < 4; u = u + 1)\n"
+						"	{\n"
+						"		h = h + u * 8;\n"
+						"	}\n"
+						"	return h;\n"
+						"}\n");
 	ASSERT_INT(ir_eligible(f), 1);
 	IRFunc *irf = ir_lower_func(f, 0);
 	ASSERT(irf != NULL);

@@ -84,6 +84,7 @@ static int rd_fill(Reader *r)
 	{
 		return 0;
 	}
+
 	if (r->len + 65536 > r->cap)
 	{
 		r->cap = r->cap ? r->cap * 2 : 65536;
@@ -91,6 +92,7 @@ static int rd_fill(Reader *r)
 		{
 			r->cap = r->len + 65536;
 		}
+
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
@@ -100,6 +102,7 @@ static int rd_fill(Reader *r)
 		r->eof = 1;
 		return 0;
 	}
+
 	r->len += n;
 	return 1;
 }
@@ -142,11 +145,13 @@ static int rd_msg(Reader *r, char *tag, char **body, int64_t *blen)
 	{
 		return 0;
 	}
+
 	int64_t total = 1 + (int64_t)L;          /* tag + length-field + body. */
 	if (!rd_need(r, total))
 	{
 		return 0;
 	}
+
 	*body = r->buf + r->pos + 5;
 	*blen = (int64_t)L - 4;
 	r->pos += total;
@@ -249,22 +254,27 @@ static int b64_val(char c)
 	{
 		return c - 'A';
 	}
+
 	if (c >= 'a' && c <= 'z')
 	{
 		return c - 'a' + 26;
 	}
+
 	if (c >= '0' && c <= '9')
 	{
 		return c - '0' + 52;
 	}
+
 	if (c == '+')
 	{
 		return 62;
 	}
+
 	if (c == '/')
 	{
 		return 63;
 	}
+
 	return -1;   /* '=' or padding/whitespace. */
 }
 
@@ -280,11 +290,13 @@ static int b64_decode(const char *in, int inlen, unsigned char *out)
 		{
 			break;
 		}
+
 		int v = b64_val(in[i]);
 		if (v < 0)
 		{
 			return -1;
 		}
+
 		acc = (acc << 6) | v;
 		bits += 6;
 		if (bits >= 8)
@@ -379,6 +391,7 @@ static int scram_field(const char *msg, char key, char *out, int outcap)
 			{
 				n = outcap - 1;
 			}
+
 			memcpy(out, v, n);
 			out[n] = '\0';
 			return n;
@@ -389,6 +402,7 @@ static int scram_field(const char *msg, char key, char *out, int outcap)
 		{
 			break;
 		}
+
 		p = nx + 1;
 	}
 
@@ -455,6 +469,7 @@ static int auth_scram(Reader *r, Xport *x, const char *user, const char *passwor
 	{
 		sflen = (int)sizeof(server_first) - 1;
 	}
+
 	memcpy(server_first, body + 4, sflen);
 	server_first[sflen] = '\0';
 
@@ -510,6 +525,7 @@ static int auth_scram(Reader *r, Xport *x, const char *user, const char *passwor
 	{
 		proof[i] = client_key[i] ^ client_sig[i];
 	}
+
 	char proof_b64[64];
 	b64_encode(proof, 32, proof_b64);
 
@@ -534,6 +550,7 @@ static int auth_scram(Reader *r, Xport *x, const char *user, const char *passwor
 	{
 		ffl = (int)sizeof(server_final) - 1;
 	}
+
 	memcpy(server_final, body + 4, ffl);
 	server_final[ffl] = '\0';
 
@@ -592,10 +609,12 @@ static void set_error_from_response(const char *body, int64_t blen)
 		{
 			i++;    /* Scan to the value's NUL. */
 		}
+
 		if (i < blen)
 		{
 			i++;    /* Step past the NUL. */
 		}
+
 		if (code == 'C')
 		{
 			sqlstate = val;
@@ -654,6 +673,7 @@ int bzy_pg_run_startup(Xport *x, const char *user, const char *password, const c
 					bzy_db_set_error("Malformed MD5 authentication request.");
 					break;
 				}
+
 				unsigned char salt[4];
 				memcpy(salt, body + 4, 4);
 				if (!auth_md5(x, user, password, salt))
@@ -692,6 +712,7 @@ int bzy_pg_run_startup(Xport *x, const char *user, const char *password, const c
 	{
 		bzy_db_set_error("Connection closed during PostgreSQL startup.");
 	}
+
 	free(r.buf);
 	return ok;
 }
@@ -716,6 +737,7 @@ static void *pgc_vtable(void)
 		g_pgc_vt[0] = (int64_t)&g_pgc_ti[0];
 		g_pgc_vt_built = 1;
 	}
+
 	return &g_pgc_vt[1];
 }
 
@@ -780,6 +802,7 @@ static void *pg_connect_tls(void *host, int64_t port, void *user, void *pass, vo
 		bzy_release(sock);
 		return NULL;
 	}
+
 	if (reply != 'S')
 	{
 		bzy_db_set_error("The PostgreSQL server refused TLS (SSLRequest returned 'N').");
@@ -829,6 +852,7 @@ void bzy_pg_close(void *conn)
 	{
 		return;
 	}
+
 	void *sock = *(void**)((char*)conn + PGC_SOCK);
 	if (sock)
 	{
@@ -868,15 +892,18 @@ static int64_t cc_rowcount(const char *tag)
 	{
 		end--;
 	}
+
 	int64_t start = end;
 	while (start > 0 && tag[start - 1] >= '0' && tag[start - 1] <= '9')
 	{
 		start--;
 	}
+
 	if (start == end)
 	{
 		return 0;
 	}
+
 	return strtoll(tag + start, NULL, 10);
 }
 
@@ -932,6 +959,7 @@ static void *collect_results(Reader *r)
 				rowcap = rowcap ? rowcap * 2 : 16;
 				rowbuf = (void**)realloc(rowbuf, (size_t)rowcap * sizeof(void*));
 			}
+
 			rowbuf[nrows++] = row;
 		}
 		else if (tag == 'C')                         /* CommandComplete. */
@@ -960,10 +988,12 @@ static void *collect_results(Reader *r)
 		{
 			bzy_db_set_error("Connection closed during the query.");
 		}
+
 		for (int64_t i = 0; i < nrows; i++)
 		{
 			bzy_release(rowbuf[i]);
 		}
+
 		free(rowbuf);
 		bzy_release(colnames);
 		return NULL;
@@ -993,6 +1023,7 @@ void *bzy_pg_query(void *conn, void *sql)
 		bzy_db_set_error("Query on a null connection.");
 		return NULL;
 	}
+
 	Xport x = { *(void**)((char*)conn + PGC_SOCK), *(int*)((char*)conn + PGC_TLS) };
 
 	const char *s = bzy_str_data(sql);
@@ -1018,6 +1049,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		bzy_db_set_error("Query on a null connection.");
 		return NULL;
 	}
+
 	Xport xp = { *(void**)((char*)conn + PGC_SOCK), *(int*)((char*)conn + PGC_TLS) };
 
 	const char *s = bzy_str_data(sql);
@@ -1060,6 +1092,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 				w_bytes(&b, bzy_str_data(v), vl);
 			}
 		}
+
 		w_i16(&b, 0);                    /* 0 result format codes -> all text. */
 		int ok = send_tagged(&xp, 'B', b.p, b.len);
 		free(b.p);
@@ -1095,6 +1128,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 			return NULL;
 		}
 	}
+
 	if (!send_tagged(&xp, 'S', "", 0))
 	{
 		bzy_db_set_error("Failed to send the Sync message.");

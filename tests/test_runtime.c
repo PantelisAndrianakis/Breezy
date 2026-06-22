@@ -281,6 +281,7 @@ static void test_map_string_keys_and_grow(void)
 		bzy_map_put(m, (int64_t)k, i);
 		bzy_release(k);                   /* the map retained its own copy */
 	}
+
 	ASSERT_INT(bzy_map_len(m), 50);
 	void *probe = bzy_str_new("k37", 3);
 	ASSERT_INT(bzy_map_get(m, (int64_t)probe), 37);   /* content-equality lookup */
@@ -957,6 +958,7 @@ static void worker_a(void)
 	bzy_yield();
 	g_breeze_log[g_breeze_n++] = 3;
 }
+
 static void worker_b(void)
 {
 	g_breeze_log[g_breeze_n++] = 2;
@@ -992,6 +994,7 @@ static void channel_producer(void)
 	bzy_channel_send(g_ch,2);
 	bzy_channel_send(g_ch,3);
 }
+
 static void channel_consumer(void)
 {
 	g_recv_sum = bzy_channel_recv(g_ch) + bzy_channel_recv(g_ch) + bzy_channel_recv(g_ch);
@@ -1003,6 +1006,7 @@ static void mc_worker(void)
 {
 	bzy_channel_send(g_mc_ch, 1);
 }
+
 static void mc_collector(void)
 {
 	int64_t s = 0;
@@ -1329,6 +1333,7 @@ static void off_fn(void *p)
 	*v += 1;
 	g_off_ran = 1;
 }
+
 static int g_off_result;
 static void off_breeze(void)
 {

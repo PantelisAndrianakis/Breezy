@@ -145,6 +145,7 @@ static int cycle_timing_on(void)
 	{
 		t = getenv("BZY_CYCLE_TIMING") ? 1 : 0;
 	}
+
 	return t;
 }
 
@@ -158,6 +159,7 @@ static void assert_on_worker(void)
 	{
 		dbg = getenv("BZY_CYCLE_DEBUG") ? 1 : 0;
 	}
+
 	if (dbg && !bzy_on_worker())
 	{
 		fprintf(stderr, "[cycle] BUG: confined candidate buffered off-worker (wid=%d)\n", bzy_current_wid());
@@ -673,6 +675,7 @@ int64_t bzy_roots_buffered(void)
 	{
 		n += g_cyc[i].n;    /* Diagnostic; racy read is fine. */
 	}
+
 	return n;
 }
 

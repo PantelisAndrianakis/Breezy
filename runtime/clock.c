@@ -56,6 +56,7 @@ int64_t bzy_clock_nanos(void)
 	{
 		rdtsc_init();
 	}
+
 	return (int64_t)(((unsigned __int128)(read_tsc() - g_tsc0) * g_scale_q32) >> 32);
 }
 
@@ -125,6 +126,7 @@ static int64_t floordiv(int64_t a, int64_t b)
 	{
 		q--;
 	}
+
 	return q;
 }
 
@@ -187,6 +189,7 @@ static int64_t local_offset(time_t secs)
 	{
 		shifted += CYCLE;
 	}
+
 	time_t st = (time_t)shifted;
 	struct tm *lt = localtime(&st);
 	tmv = *lt;

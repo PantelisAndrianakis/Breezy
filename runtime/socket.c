@@ -95,6 +95,7 @@ void *bzy_sock_wrap(SOCKET fd)
 			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one));
 		}
 	}
+
 	return o;
 }
 
@@ -366,14 +367,17 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 			{
 				return pn;
 			}
+
 			if (pn == 0)
 			{
 				return 0;
 			}
+
 			if (WSAGetLastError() != WSAEWOULDBLOCK)
 			{
 				return -1;
 			}
+
 			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++)
 			{
 				bzy_sock_pause();
@@ -665,6 +669,7 @@ void *bzy_sock_wrap(int fd)
 			setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 		}
 	}
+
 	return o;
 }
 
@@ -1083,6 +1088,7 @@ int bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 {
 	return sock_recv(s, buf, max, timeout_ms);
 }
+
 int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len)
 {
 	return sock_send_all(s, buf, len);

@@ -147,6 +147,7 @@ static void advance(Scan *s)
 		{
 			s->col++;
 		}
+
 		s->p++;
 	}
 }
@@ -184,6 +185,7 @@ static void tb_push(TextBuf *t, const char *bytes, size_t n)
 		{
 			nc *= 2;
 		}
+
 		t->data = (char*)realloc(t->data, nc);
 		t->cap = nc;
 	}
@@ -223,6 +225,7 @@ static void append_utf8(TextBuf *t, long cp)
 		b[3] = 0x80 | (cp & 0x3F);
 		n = 4;
 	}
+
 	tb_push(t, (char*)b, (size_t)n);
 }
 
@@ -249,6 +252,7 @@ static int parse_hex4(Scan *s)
 		{
 			return -1;
 		}
+
 		v = v * 16 + d;
 		advance(s);
 	}
@@ -268,6 +272,7 @@ static void *parse_string(Scan *s)
 		fail(s, "Expected a string.");
 		return NULL;
 	}
+
 	advance(s);   /* '"'. */
 
 	TextBuf tb = { 0 };
@@ -279,12 +284,14 @@ static void *parse_string(Scan *s)
 			fail(s, "Unterminated string.");
 			return NULL;
 		}
+
 		int c = peek(s);
 		if (c == '"')
 		{
 			advance(s);
 			break;
 		}
+
 		if (c == '\\')
 		{
 			advance(s);
@@ -326,6 +333,7 @@ static void *parse_string(Scan *s)
 					fail(s, "Bad \\u escape.");
 					return NULL;
 				}
+
 				long cp = u;
 				if (u >= 0xD800 && u <= 0xDBFF)   /* High surrogate: expect a low one. */
 				{
@@ -335,6 +343,7 @@ static void *parse_string(Scan *s)
 						fail(s, "Unpaired surrogate.");
 						return NULL;
 					}
+
 					advance(s);
 					if (peek(s) != 'u')
 					{
@@ -342,6 +351,7 @@ static void *parse_string(Scan *s)
 						fail(s, "Unpaired surrogate.");
 						return NULL;
 					}
+
 					advance(s);
 					int lo = parse_hex4(s);
 					if (lo < 0xDC00 || lo > 0xDFFF)
@@ -350,6 +360,7 @@ static void *parse_string(Scan *s)
 						fail(s, "Unpaired surrogate.");
 						return NULL;
 					}
+
 					cp = 0x10000 + (((long)u - 0xD800) << 10) + (lo - 0xDC00);
 				}
 
@@ -431,6 +442,7 @@ static void *parse_number(Scan *s)
 		fail(s, "Number too long.");
 		return NULL;
 	}
+
 	memcpy(buf, start, n);
 	buf[n] = '\0';
 
@@ -443,6 +455,7 @@ static void *parse_number(Scan *s)
 			fail(s, "Malformed number.");
 			return NULL;
 		}
+
 		void *v = jv_new(JK_DBL);
 		jv_set_double(v, d);
 		return v;
@@ -454,6 +467,7 @@ static void *parse_number(Scan *s)
 		fail(s, "Malformed number.");
 		return NULL;
 	}
+
 	void *v = jv_new(JK_INT);
 	JSCA(v) = (int64_t)ll;
 	return v;
@@ -482,6 +496,7 @@ static void *parse_array(Scan *s)
 			bzy_release(items);
 			return NULL;
 		}
+
 		bzy_vec_push_back(items, (int64_t)el);   /* Retains. */
 		bzy_release(el);                          /* Drop our +1; the vector owns it. */
 		skip_ws(s);
@@ -492,11 +507,13 @@ static void *parse_array(Scan *s)
 			skip_ws(s);
 			continue;
 		}
+
 		if (c == ']')
 		{
 			advance(s);
 			break;
 		}
+
 		bzy_release(items);
 		fail(s, "Expected ',' or ']' in array.");
 		return NULL;
@@ -549,6 +566,7 @@ static void obj_free(ObjTmp *o)
 		bzy_release(o->keys[i]);
 		bzy_release(o->vals[i]);
 	}
+
 	free(o->keys);
 	free(o->vals);
 }
@@ -575,12 +593,14 @@ static void *parse_object(Scan *s)
 			fail(s, "Expected a string key.");
 			return NULL;
 		}
+
 		void *key = parse_string(s);
 		if (s->err)
 		{
 			obj_free(&o);
 			return NULL;
 		}
+
 		skip_ws(s);
 		if (peek(s) != ':')
 		{
@@ -589,6 +609,7 @@ static void *parse_object(Scan *s)
 			fail(s, "Expected ':' after key.");
 			return NULL;
 		}
+
 		advance(s);
 		void *val = parse_value(s);
 		if (s->err)
@@ -597,6 +618,7 @@ static void *parse_object(Scan *s)
 			obj_free(&o);
 			return NULL;
 		}
+
 		obj_push(&o, key, val);   /* Transfers the owned key + value. */
 		skip_ws(s);
 		int c = peek(s);
@@ -605,11 +627,13 @@ static void *parse_object(Scan *s)
 			advance(s);
 			continue;
 		}
+
 		if (c == '}')
 		{
 			advance(s);
 			break;
 		}
+
 		obj_free(&o);
 		fail(s, "Expected ',' or '}' in object.");
 		return NULL;
@@ -645,6 +669,7 @@ static void *parse_value(Scan *s)
 		fail(s, "Unexpected end of input.");
 		return NULL;
 	}
+
 	int c = peek(s);
 	switch (c)
 	{
@@ -659,6 +684,7 @@ static void *parse_value(Scan *s)
 		{
 			return NULL;
 		}
+
 		void *v = jv_new(JK_STR);
 		JSET_MAN(v, str);
 		return v;
@@ -670,10 +696,12 @@ static void *parse_value(Scan *s)
 			{
 				advance(s);
 			}
+
 			void *v = jv_new(JK_BOOL);
 			JSCA(v) = 1;
 			return v;
 		}
+
 		fail(s, "Unexpected character.");
 		return NULL;
 	case 'f':
@@ -683,10 +711,12 @@ static void *parse_value(Scan *s)
 			{
 				advance(s);
 			}
+
 			void *v = jv_new(JK_BOOL);
 			JSCA(v) = 0;
 			return v;
 		}
+
 		fail(s, "Unexpected character.");
 		return NULL;
 	case 'n':
@@ -696,8 +726,10 @@ static void *parse_value(Scan *s)
 			{
 				advance(s);
 			}
+
 			return jv_new(JK_NULL);
 		}
+
 		fail(s, "Unexpected character.");
 		return NULL;
 	default:
@@ -705,6 +737,7 @@ static void *parse_value(Scan *s)
 		{
 			return parse_number(s);
 		}
+
 		fail(s, "Unexpected character.");
 		return NULL;
 	}
@@ -801,23 +834,28 @@ int64_t bzy_json_is_null(void *v)
 {
 	return JKIND(v) == JK_NULL;
 }
+
 int64_t bzy_json_is_bool(void *v)
 {
 	return JKIND(v) == JK_BOOL;
 }
+
 int64_t bzy_json_is_number(void *v)
 {
 	int64_t k = JKIND(v);
 	return k == JK_INT || k == JK_DBL;
 }
+
 int64_t bzy_json_is_string(void *v)
 {
 	return JKIND(v) == JK_STR;
 }
+
 int64_t bzy_json_is_array(void *v)
 {
 	return JKIND(v) == JK_ARR;
 }
+
 int64_t bzy_json_is_object(void *v)
 {
 	return JKIND(v) == JK_OBJ;
@@ -864,6 +902,7 @@ int64_t bzy_json_as_long(void *v)
 	{
 		return JSCA(v);
 	}
+
 	if (k == JK_DBL)
 	{
 		union
@@ -874,6 +913,7 @@ int64_t bzy_json_as_long(void *v)
 		u.i = JSCA(v);
 		return (int64_t)u.d;
 	}
+
 	json_type_fail("asLong() on a non-number JSON value.");
 	return 0;
 }
@@ -891,10 +931,12 @@ double bzy_json_as_double(void *v)
 		u.i = JSCA(v);
 		return u.d;
 	}
+
 	if (k == JK_INT)
 	{
 		return (double)JSCA(v);
 	}
+
 	json_type_fail("asDouble() on a non-number JSON value.");
 	return 0.0;
 }
@@ -907,6 +949,7 @@ void *bzy_json_as_string(void *v)
 		bzy_retain(s);
 		return s;
 	}
+
 	json_type_fail("asString() on a non-string JSON value.");
 	return bzy_str_new("", 0);
 }
@@ -917,6 +960,7 @@ int64_t bzy_json_as_bool(void *v)
 	{
 		return JSCA(v);
 	}
+
 	json_type_fail("asBool() on a non-bool JSON value.");
 	return 0;
 }
@@ -935,6 +979,7 @@ static void *json_null_retained(void)
 	{
 		g_json_null = jv_new(JK_NULL);
 	}
+
 	bzy_retain(g_json_null);
 	return g_json_null;
 }
@@ -947,6 +992,7 @@ static int64_t obj_index(void *v, void *key)
 	{
 		return -1;
 	}
+
 	int64_t n = *(int64_t*)((char*)names + 24);   /* length@24. */
 	void **slots = (void**)((char*)names + 32);
 	for (int64_t i = 0; i < n; i++)
@@ -986,6 +1032,7 @@ int64_t bzy_json_has(void *v, void *key)
 	{
 		return obj_index(v, key) >= 0;
 	}
+
 	return 0;
 }
 
@@ -1019,6 +1066,7 @@ void *bzy_json_items(void *v)
 		bzy_retain(l);
 		return l;
 	}
+
 	return bzy_vec_new(4);   /* Object elements. */
 }
 
@@ -1055,11 +1103,13 @@ int64_t bzy_json_size(void *v)
 		void *l = JGET_MAN(v);
 		return l ? *(int64_t*)((char*)l + 24) : 0;
 	}
+
 	if (k == JK_OBJ)
 	{
 		void *names = JGET_MAN(v);
 		return names ? *(int64_t*)((char*)names + 24) : 0;
 	}
+
 	return 0;
 }
 
@@ -1230,6 +1280,7 @@ static void serialize_value(TextBuf *t, void *v)
 			json_type_fail("Cannot stringify a non-finite number.");
 			return;
 		}
+
 		void *s = bzy_str_from_f64(u.d);   /* Breezy's canonical double text (matches print). */
 		tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s));
 		bzy_release(s);
@@ -1250,6 +1301,7 @@ static void serialize_value(TextBuf *t, void *v)
 			{
 				tb_push(t, ",", 1);
 			}
+
 			serialize_value(t, ((void**)((char*)data + 32))[i]);
 			if (g_json_error)
 			{
@@ -1274,6 +1326,7 @@ static void serialize_value(TextBuf *t, void *v)
 			{
 				tb_push(t, ",", 1);
 			}
+
 			json_escape_string(t, ks[i]);
 			tb_push(t, ":", 1);
 			serialize_value(t, vs[i]);

@@ -74,13 +74,13 @@ static void test_alloc_trivial_in_register(void)
 static void test_loop_value_interval_spans_loop(void)
 {
 	const Func *loopf = parse_one_func(
-		"long sum(int n)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
-		"	return s;\n"
-		"}\n");
+							"long sum(int n)\n"
+							"{\n"
+							"	long s;\n"
+							"	s = 0;\n"
+							"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
+							"	return s;\n"
+							"}\n");
 	IRFunc *li = ir_lower_func(loopf, 0);
 	IRAlloc *la = ra_run(li);
 	int loop_span = ra_debug_max_interval(la);
@@ -104,13 +104,13 @@ static void test_loop_value_interval_spans_loop(void)
 static void test_small_function_no_spill(void)
 {
 	const Func *f = parse_one_func(
-		"long sum(int n)\n"
-		"{\n"
-		"	long s;\n"
-		"	s = 0;\n"
-		"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
-		"	return s;\n"
-		"}\n");
+						"long sum(int n)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
+						"	return s;\n"
+						"}\n");
 	IRFunc *ir = ir_lower_func(f, 0);
 	IRAlloc *a = ra_run(ir);
 	/* A handful of live values fit in 11 registers - nothing spills. */
@@ -124,16 +124,16 @@ static void test_many_locals_force_spill(void)
 	/* Eighteen longs all live at the final sum exceed even the expanded pool
 	   (11 base + rcx + rdx = 13, claimable here because there is no shift/div). */
 	const Func *f = parse_one_func(
-		"long many(long a)\n"
-		"{\n"
-		"	long b0; b0 = a + 0;  long b1; b1 = a + 1;  long b2; b2 = a + 2;\n"
-		"	long b3; b3 = a + 3;  long b4; b4 = a + 4;  long b5; b5 = a + 5;\n"
-		"	long b6; b6 = a + 6;  long b7; b7 = a + 7;  long b8; b8 = a + 8;\n"
-		"	long b9; b9 = a + 9;  long b10; b10 = a + 10;  long b11; b11 = a + 11;\n"
-		"	long b12; b12 = a + 12;  long b13; b13 = a + 13;  long b14; b14 = a + 14;\n"
-		"	long b15; b15 = a + 15;  long b16; b16 = a + 16;  long b17; b17 = a + 17;\n"
-		"	return b0+b1+b2+b3+b4+b5+b6+b7+b8+b9+b10+b11+b12+b13+b14+b15+b16+b17;\n"
-		"}\n");
+						"long many(long a)\n"
+						"{\n"
+						"	long b0; b0 = a + 0;  long b1; b1 = a + 1;  long b2; b2 = a + 2;\n"
+						"	long b3; b3 = a + 3;  long b4; b4 = a + 4;  long b5; b5 = a + 5;\n"
+						"	long b6; b6 = a + 6;  long b7; b7 = a + 7;  long b8; b8 = a + 8;\n"
+						"	long b9; b9 = a + 9;  long b10; b10 = a + 10;  long b11; b11 = a + 11;\n"
+						"	long b12; b12 = a + 12;  long b13; b13 = a + 13;  long b14; b14 = a + 14;\n"
+						"	long b15; b15 = a + 15;  long b16; b16 = a + 16;  long b17; b17 = a + 17;\n"
+						"	return b0+b1+b2+b3+b4+b5+b6+b7+b8+b9+b10+b11+b12+b13+b14+b15+b16+b17;\n"
+						"}\n");
 	IRFunc *ir = ir_lower_func(f, 0);
 	IRAlloc *a = ra_run(ir);
 	ASSERT(a->spill_bytes > 0);
@@ -145,12 +145,12 @@ static void test_no_hot_spill_small_loop(void)
 {
 	/* A handful of inner-loop values fit in registers - no hot spill. */
 	const Func *f = parse_one_func(
-		"long sum(int n)\n"
-		"{\n"
-		"	long s; s = 0;\n"
-		"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
-		"	return s;\n"
-		"}\n");
+						"long sum(int n)\n"
+						"{\n"
+						"	long s; s = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1) { s = s + (long)i; }\n"
+						"	return s;\n"
+						"}\n");
 	IRFunc *ir = ir_lower_func(f, 0);
 	ASSERT_INT(ra_hot_spill(ir), 0);
 	ir_func_free(ir);
@@ -173,31 +173,45 @@ static IRFunc *build_hot_spill_func(int n)
 	/* Base value i, loaded once from a frame local. */
 	IRReg i = ir_reg(f);
 	IRInstr *li = ir_emit(f, b0, IR_LOAD, TY_LONG);
-	li->dst = i; li->a = IR_NO_REG; li->b = IR_NO_REG; li->is_frame = 1; li->disp = 8;
+	li->dst = i;
+	li->a = IR_NO_REG;
+	li->b = IR_NO_REG;
+	li->is_frame = 1;
+	li->disp = 8;
 
 	/* n temporaries, each t_k = i + i; they live until the sum below consumes them. */
 	for (int k = 0; k < n; k++)
 	{
 		t[k] = ir_reg(f);
 		IRInstr *ad = ir_emit(f, b0, IR_ADD, TY_LONG);
-		ad->dst = t[k]; ad->a = i; ad->b = i;
+		ad->dst = t[k];
+		ad->a = i;
+		ad->b = i;
 	}
 
 	/* Left-leaning sum: at the first add, t[2..n-1] are all still live. */
 	IRReg acc = ir_reg(f);
 	IRInstr *a0 = ir_emit(f, b0, IR_ADD, TY_LONG);
-	a0->dst = acc; a0->a = t[0]; a0->b = t[1];
+	a0->dst = acc;
+	a0->a = t[0];
+	a0->b = t[1];
 	for (int k = 2; k < n; k++)
 	{
 		IRReg na = ir_reg(f);
 		IRInstr *ad = ir_emit(f, b0, IR_ADD, TY_LONG);
-		ad->dst = na; ad->a = acc; ad->b = t[k];
+		ad->dst = na;
+		ad->a = acc;
+		ad->b = t[k];
 		acc = na;
 	}
 
 	/* Store the result so nothing is dead. */
 	IRInstr *st = ir_emit(f, b0, IR_STORE, TY_LONG);
-	st->a = IR_NO_REG; st->b = IR_NO_REG; st->c = acc; st->is_frame = 1; st->disp = 8;
+	st->a = IR_NO_REG;
+	st->b = IR_NO_REG;
+	st->c = acc;
+	st->is_frame = 1;
+	st->disp = 8;
 
 	IRInstr *rt = ir_emit(f, b0, IR_RET, TY_VOID);
 	rt->a = IR_NO_REG;
@@ -225,24 +239,46 @@ static IRFunc *build_fp_func(IRReg *dadd, IRReg *iload)
 
 	IRReg da = ir_reg(f);
 	IRInstr *la = ir_emit(f, b0, IR_LOAD, TY_DOUBLE);
-	la->dst = da; la->a = IR_NO_REG; la->b = IR_NO_REG; la->is_frame = 1; la->disp = 8;
+	la->dst = da;
+	la->a = IR_NO_REG;
+	la->b = IR_NO_REG;
+	la->is_frame = 1;
+	la->disp = 8;
 
 	IRReg db = ir_reg(f);
 	IRInstr *lb = ir_emit(f, b0, IR_LOAD, TY_DOUBLE);
-	lb->dst = db; lb->a = IR_NO_REG; lb->b = IR_NO_REG; lb->is_frame = 1; lb->disp = 16;
+	lb->dst = db;
+	lb->a = IR_NO_REG;
+	lb->b = IR_NO_REG;
+	lb->is_frame = 1;
+	lb->disp = 16;
 
 	*dadd = ir_reg(f);
 	IRInstr *ad = ir_emit(f, b0, IR_ADD, TY_DOUBLE);
-	ad->dst = *dadd; ad->a = da; ad->b = db;
+	ad->dst = *dadd;
+	ad->a = da;
+	ad->b = db;
 
 	IRInstr *st = ir_emit(f, b0, IR_STORE, TY_DOUBLE);
-	st->a = IR_NO_REG; st->b = IR_NO_REG; st->c = *dadd; st->is_frame = 1; st->disp = 24;
+	st->a = IR_NO_REG;
+	st->b = IR_NO_REG;
+	st->c = *dadd;
+	st->is_frame = 1;
+	st->disp = 24;
 
 	*iload = ir_reg(f);
 	IRInstr *li = ir_emit(f, b0, IR_LOAD, TY_LONG);
-	li->dst = *iload; li->a = IR_NO_REG; li->b = IR_NO_REG; li->is_frame = 1; li->disp = 32;
+	li->dst = *iload;
+	li->a = IR_NO_REG;
+	li->b = IR_NO_REG;
+	li->is_frame = 1;
+	li->disp = 32;
 	IRInstr *si = ir_emit(f, b0, IR_STORE, TY_LONG);
-	si->a = IR_NO_REG; si->b = IR_NO_REG; si->c = *iload; si->is_frame = 1; si->disp = 40;
+	si->a = IR_NO_REG;
+	si->b = IR_NO_REG;
+	si->c = *iload;
+	si->is_frame = 1;
+	si->disp = 40;
 
 	IRInstr *rt = ir_emit(f, b0, IR_RET, TY_VOID);
 	rt->a = IR_NO_REG;
@@ -401,6 +437,7 @@ static void test_remat_skipped_when_local_stored(void)
 	ra_free(a);
 	ir_func_free(f);
 }
+
 int main(void)
 {
 	RUN(test_reg_tables);

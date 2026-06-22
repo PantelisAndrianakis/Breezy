@@ -42,10 +42,12 @@ static TypeTable *build_generic(const char **srcs, int n)
 	{
 		types_register_unit_names(&g_tt,units[i]);
 	}
+
 	for (int i=0; i<total; i++)
 	{
 		types_register_interfaces(&g_tt,units[i]);
 	}
+
 	types_register_all_members(&g_tt,units,total);
 
 	resolve_program(&g_tt,units,total);
@@ -98,10 +100,12 @@ static TypeTable *build_program(const char **srcs, int n)
 	{
 		types_register_unit_names(&g_tt,units[i]);
 	}
+
 	for (int i=0; i<total; i++)
 	{
 		types_register_interfaces(&g_tt,units[i]);
 	}
+
 	types_register_all_members(&g_tt,units,total);
 
 	resolve_program(&g_tt,units,total);
@@ -755,14 +759,17 @@ static void test_method_call_slot_and_class(void)
 		parser_init(&ps[i],s[i]);
 		units[i]=parse_unit(&ps[i]);
 	}
+
 	for (int i=0; i<2; i++)
 	{
 		types_register_unit_names(&g_tt,units[i]);
 	}
+
 	for (int i=0; i<2; i++)
 	{
 		types_register_interfaces(&g_tt,units[i]);
 	}
+
 	types_register_all_members(&g_tt,units,2);
 	resolve_program(&g_tt,units,2);
 	Func *go=units[1]->klasses[0]->methods[1];
@@ -792,14 +799,17 @@ static void test_shared_set_inference(void)
 		parser_init(&ps[i],s[i]);
 		units[i]=parse_unit(&ps[i]);
 	}
+
 	for (int i=0; i<4; i++)
 	{
 		types_register_unit_names(&g_tt,units[i]);
 	}
+
 	for (int i=0; i<4; i++)
 	{
 		types_register_interfaces(&g_tt,units[i]);
 	}
+
 	types_register_all_members(&g_tt,units,4);
 	resolve_program(&g_tt,units,4);
 	ASSERT_INT(types_find_class(&g_tt,"Player")->is_shared, 1);

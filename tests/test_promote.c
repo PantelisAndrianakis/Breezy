@@ -28,7 +28,11 @@ static Func *resolve_one(const char *src, const char *fname)
 	units[np] = parse_unit(&parsers[np]);
 	int total = np + 1;
 
-	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &total, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
+	{
+		Unit **gu = units;    /* Drop uninstantiated templates (Pool<T>), like main.c. */
+		int gc = MAX_U;
+		generics_expand(&gu, &total, &gc);
+	}
 
 	types_init(&tt);
 	types_register_builtins(&tt);

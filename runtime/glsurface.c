@@ -37,8 +37,10 @@ static void *dl_open_first(const char **names)
 			return (void*)h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return (void*)GetProcAddress((HMODULE)h, n);
@@ -54,8 +56,10 @@ static void *dl_open_first(const char **names)
 			return h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return dlsym(h, n);
@@ -98,6 +102,7 @@ static int gl_load(void)
 	{
 		return 1;
 	}
+
 	if (sdl.loaded == -1)
 	{
 		bzy_io_fail("OpenGL surface unavailable: SDL2 not found.");
@@ -173,10 +178,12 @@ static void gl_teardown(GlCtrl *c)
 	{
 		sdl.GL_DeleteContext(c->ctx);
 	}
+
 	if (c->win)
 	{
 		sdl.DestroyWindow(c->win);
 	}
+
 	free(c);
 }
 
@@ -186,11 +193,13 @@ static void gl_finalize(void *o)
 	{
 		return;
 	}
+
 	if (GL_CTRL(o))
 	{
 		gl_teardown(GL_CTRL(o));
 		GL_CTRL(o) = NULL;
 	}
+
 	GL_CLOSED(o) = 1;
 }
 
@@ -207,6 +216,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 	{
 		return NULL;    /* gl_load already called bzy_io_fail. */
 	}
+
 	if (w <= 0 || h <= 0)
 	{
 		bzy_io_fail("Graphics.openGL: width and height must be positive.");
@@ -218,6 +228,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 		bzy_io_fail("Graphics.openGL: SDL video init failed (no display?).");
 		return NULL;
 	}
+
 	sdl.GL_SetAttribute(BZ_SDL_GL_DOUBLEBUFFER, 1);   /* Default/compat context: immediate mode stays available. */
 
 	const char *tt = title ? bzy_str_data(title) : "";
@@ -228,6 +239,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 		bzy_io_fail("Graphics.openGL: window creation failed.");
 		return NULL;
 	}
+
 	void *ctx = sdl.GL_CreateContext(win);
 	if (!ctx)
 	{
@@ -235,6 +247,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 		bzy_io_fail("Graphics.openGL: GL context creation failed.");
 		return NULL;
 	}
+
 	sdl.GL_MakeCurrent(win, ctx);   /* Current on THIS worker thread (synchronous, no offload). */
 
 	bzy_dyn_set_resolver(gl_getproc);   /* extern dynamic gl* now resolve through the live context. */
@@ -247,6 +260,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 		bzy_io_fail("Graphics.openGL: out of memory.");
 		return NULL;
 	}
+
 	c->win = win;
 	c->ctx = ctx;
 	c->owner_tid = cur_tid();
@@ -265,6 +279,7 @@ int64_t bzy_glsurface_poll(void *s)
 	{
 		return 0;
 	}
+
 	char ev[64];   /* >= sizeof(SDL_Event) (56). */
 	while (sdl.PollEvent(ev))
 	{
@@ -297,6 +312,7 @@ int64_t bzy_glsurface_poll(void *s)
 		}
 		/* Else: unmapped event, keep draining. */
 	}
+
 	return 0;
 }
 
@@ -307,6 +323,7 @@ void bzy_glsurface_swap(void *s)
 		bzy_io_fail("GlSurface.swapBuffers: surface is closed.");
 		return;
 	}
+
 	GlCtrl *c = GL_CTRL(s);
 	if (cur_tid() != c->owner_tid)
 	{
@@ -314,6 +331,7 @@ void bzy_glsurface_swap(void *s)
 						"do not await inside a GL render loop.\n");
 		abort();
 	}
+
 	sdl.GL_SwapWindow(c->win);
 }
 
@@ -323,6 +341,7 @@ int64_t bzy_glsurface_isopen(void *s)
 	{
 		return 0;
 	}
+
 	return 1;   /* Open until close(); SDL_QUIT is delivered via pollEvent (kind 6). */
 }
 
@@ -332,6 +351,7 @@ void bzy_glsurface_close(void *s)
 	{
 		return;
 	}
+
 	gl_teardown(GL_CTRL(s));
 	GL_CTRL(s) = NULL;
 	GL_CLOSED(s) = 1;

@@ -17,22 +17,27 @@ static inline void bzy_mutex_init(bzy_mutex *m)
 {
 	InitializeSRWLock(m);
 }
+
 static inline void bzy_mutex_lock(bzy_mutex *m)
 {
 	AcquireSRWLockExclusive(m);
 }
+
 static inline void bzy_mutex_unlock(bzy_mutex *m)
 {
 	ReleaseSRWLockExclusive(m);
 }
+
 static inline void bzy_sem_init(bzy_sem *s)
 {
 	*s = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
 }
+
 static inline void bzy_sem_post(bzy_sem *s, int n)
 {
 	ReleaseSemaphore(*s, (LONG)n, NULL);
 }
+
 static inline void bzy_sem_wait(bzy_sem *s)
 {
 	WaitForSingleObject(*s, INFINITE);
@@ -42,15 +47,18 @@ static inline int  bzy_sem_wait_ms(bzy_sem *s, int64_t ms)
 {
 	return WaitForSingleObject(*s, (DWORD)ms) == WAIT_OBJECT_0;
 }
+
 static inline void bzy_sem_destroy(bzy_sem *s)
 {
 	CloseHandle(*s);
 }
+
 typedef HANDLE bzy_thread;
 static inline void bzy_thread_start(bzy_thread *t, void *(*fn)(void*), void *arg)
 {
 	*t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(void*)fn, arg, 0, NULL);
 }
+
 static inline void bzy_thread_join(bzy_thread t)
 {
 	WaitForSingleObject(t, INFINITE);
@@ -67,18 +75,22 @@ static inline void bzy_mutex_init(bzy_mutex *m)
 {
 	pthread_mutex_init(m, NULL);
 }
+
 static inline void bzy_mutex_lock(bzy_mutex *m)
 {
 	pthread_mutex_lock(m);
 }
+
 static inline void bzy_mutex_unlock(bzy_mutex *m)
 {
 	pthread_mutex_unlock(m);
 }
+
 static inline void bzy_sem_init(bzy_sem *s)
 {
 	sem_init(s, 0, 0);
 }
+
 static inline void bzy_sem_post(bzy_sem *s, int n)
 {
 	for (int i = 0; i < n; i++)
@@ -86,10 +98,12 @@ static inline void bzy_sem_post(bzy_sem *s, int n)
 		sem_post(s);
 	}
 }
+
 static inline void bzy_sem_wait(bzy_sem *s)
 {
 	while (sem_wait(s) != 0) { }
 }
+
 static inline int  bzy_sem_wait_ms(bzy_sem *s, int64_t ms)
 {
 	struct timespec ts;
@@ -104,15 +118,18 @@ static inline int  bzy_sem_wait_ms(bzy_sem *s, int64_t ms)
 
 	return sem_timedwait(s, &ts) == 0;
 }
+
 static inline void bzy_sem_destroy(bzy_sem *s)
 {
 	sem_destroy(s);
 }
+
 typedef pthread_t bzy_thread;
 static inline void bzy_thread_start(bzy_thread *t, void *(*fn)(void*), void *arg)
 {
 	pthread_create(t, NULL, fn, arg);
 }
+
 static inline void bzy_thread_join(bzy_thread t)
 {
 	pthread_join(t, NULL);

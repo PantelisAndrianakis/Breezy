@@ -45,6 +45,7 @@ static void mf_teardown(MmapCtrl *c)
 		FlushViewOfFile(c->base, 0);
 		UnmapViewOfFile(c->base);
 	}
+
 	if (c->win_map)
 	{
 		CloseHandle((HANDLE)c->win_map);
@@ -64,11 +65,13 @@ static void mf_finalize(void *o)
 	{
 		return;
 	}
+
 	if (MF_CTRL(o))
 	{
 		mf_teardown(MF_CTRL(o));
 		MF_CTRL(o) = NULL;
 	}
+
 	MF_CLOSED(o) = 1;
 }
 
@@ -95,18 +98,21 @@ void *bzy_mmap_map(void *fc)
 		bzy_io_fail("FileChannel.map: could not size the file.");
 		return NULL;
 	}
+
 	int64_t len = (int64_t)li.QuadPart;
 	if (len <= 0)
 	{
 		bzy_io_fail("FileChannel.map: cannot map an empty file (truncate it first).");
 		return NULL;
 	}
+
 	HANDLE map = CreateFileMappingA(h, NULL, PAGE_READWRITE, li.HighPart, li.LowPart, NULL);
 	if (!map)
 	{
 		bzy_io_fail("FileChannel.map: CreateFileMapping failed.");
 		return NULL;
 	}
+
 	void *base = MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, (SIZE_T)len);
 	if (!base)
 	{
@@ -114,6 +120,7 @@ void *bzy_mmap_map(void *fc)
 		bzy_io_fail("FileChannel.map: MapViewOfFile failed.");
 		return NULL;
 	}
+
 	int64_t src = (int64_t)(intptr_t)h;
 	void *win_map = (void*)map;
 #else
@@ -124,18 +131,21 @@ void *bzy_mmap_map(void *fc)
 		bzy_io_fail("FileChannel.map: could not size the file.");
 		return NULL;
 	}
+
 	int64_t len = (int64_t)stt.st_size;
 	if (len <= 0)
 	{
 		bzy_io_fail("FileChannel.map: cannot map an empty file (truncate it first).");
 		return NULL;
 	}
+
 	void *base = mmap(NULL, (size_t)len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (base == MAP_FAILED)
 	{
 		bzy_io_fail("FileChannel.map: mmap failed.");
 		return NULL;
 	}
+
 	int64_t src = (int64_t)fd;
 	void *win_map = NULL;
 #endif
@@ -152,6 +162,7 @@ void *bzy_mmap_map(void *fc)
 		bzy_io_fail("FileChannel.map: out of memory.");
 		return NULL;
 	}
+
 	c->base = base;
 	c->len = len;
 	c->win_map = win_map;
@@ -185,6 +196,7 @@ void *bzy_memory_map(int64_t bytes)
 		bzy_io_fail("Memory.map: CreateFileMapping failed.");
 		return NULL;
 	}
+
 	void *base = MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, (SIZE_T)bytes);
 	if (!base)
 	{
@@ -192,6 +204,7 @@ void *bzy_memory_map(int64_t bytes)
 		bzy_io_fail("Memory.map: MapViewOfFile failed.");
 		return NULL;
 	}
+
 	void *win_map = (void*)map;
 #else
 	void *base = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -200,6 +213,7 @@ void *bzy_memory_map(int64_t bytes)
 		bzy_io_fail("Memory.map: mmap failed.");
 		return NULL;
 	}
+
 	void *win_map = NULL;
 #endif
 
@@ -215,6 +229,7 @@ void *bzy_memory_map(int64_t bytes)
 		bzy_io_fail("Memory.map: out of memory.");
 		return NULL;
 	}
+
 	c->base = base;
 	c->len = bytes;
 	c->win_map = win_map;
@@ -234,6 +249,7 @@ int64_t bzy_mmap_size(void *m)
 	{
 		return 0;
 	}
+
 	return MF_CTRL(m)->len;
 }
 
@@ -245,6 +261,7 @@ int64_t bzy_mmap_get_byte(void *m, int64_t i)
 	{
 		bzy_oob_abort(i, len);
 	}
+
 	return (int64_t)*(uint8_t*)((char*)c->base + i);
 }
 
@@ -256,6 +273,7 @@ int64_t bzy_mmap_get_int(void *m, int64_t i)
 	{
 		bzy_oob_abort(i, len);
 	}
+
 	int32_t v;
 	memcpy(&v, (char*)c->base + i, 4);
 	return (int64_t)v;
@@ -269,6 +287,7 @@ int64_t bzy_mmap_get_long(void *m, int64_t i)
 	{
 		bzy_oob_abort(i, len);
 	}
+
 	int64_t v;
 	memcpy(&v, (char*)c->base + i, 8);
 	return v;
@@ -293,6 +312,7 @@ void bzy_mmap_put_int(void *m, int64_t i, int64_t v)
 	{
 		bzy_oob_abort(i, len);
 	}
+
 	int32_t t = (int32_t)v;
 	memcpy((char*)c->base + i, &t, 4);
 }
@@ -305,6 +325,7 @@ void bzy_mmap_put_long(void *m, int64_t i, int64_t v)
 	{
 		bzy_oob_abort(i, len);
 	}
+
 	memcpy((char*)c->base + i, &v, 8);
 }
 
@@ -317,6 +338,7 @@ void bzy_mmap_copy_into(void *m, void *dst, int64_t srcOff, int64_t n)
 	{
 		bzy_oob_abort(srcOff, len);
 	}
+
 	memcpy((char*)dst + 32, (char*)c->base + srcOff, (size_t)n);   /* Packed byte[] payload at +32. No syscall. */
 }
 
@@ -330,6 +352,7 @@ void bzy_mmap_copy_from(void *m, void *src, int64_t dstOff, int64_t n)
 	{
 		bzy_oob_abort(dstOff, len);
 	}
+
 	memcpy((char*)c->base + dstOff, (char*)src + 32, (size_t)n);   /* Packed byte[] payload at +32. */
 }
 
@@ -349,6 +372,7 @@ static void mmap_flush_run(void *p)
 		f->err = 1;
 		return;
 	}
+
 	if (!FlushFileBuffers((HANDLE)(intptr_t)f->c->src))
 	{
 		f->err = 1;
@@ -368,10 +392,12 @@ void bzy_mmap_flush(void *m)
 		bzy_io_fail("MappedFile.flush: map is closed.");
 		return;
 	}
+
 	if (MF_CTRL(m)->src < 0)
 	{
 		return;    /* Anonymous region: nothing to sync to disk. */
 	}
+
 	FlushCtx f = { MF_CTRL(m), 0 };
 	bzy_offload_run(mmap_flush_run, &f);
 	if (f.err)
@@ -386,6 +412,7 @@ void bzy_mmap_close(void *m)
 	{
 		return;
 	}
+
 	mf_teardown(MF_CTRL(m));
 	MF_CTRL(m) = NULL;
 	MF_CLOSED(m) = 1;

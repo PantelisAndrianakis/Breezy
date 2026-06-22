@@ -73,8 +73,10 @@ static void *dl_open_first(const char **names)
 			return (void*)h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return (void*)GetProcAddress((HMODULE)h, n);
@@ -90,8 +92,10 @@ static void *dl_open_first(const char **names)
 			return h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return dlsym(h, n);
@@ -106,6 +110,7 @@ static int tls_load(void)
 	{
 		return 1;
 	}
+
 	if (ossl.loaded == -1)
 	{
 		bzy_io_fail("TLS unavailable: OpenSSL not found.");
@@ -199,21 +204,25 @@ static void tls_sock_finalize(void *o)
 	{
 		return;
 	}
+
 	if (TLS_SSL(o))
 	{
 		ossl.SSL_free(TLS_SSL(o));
 		TLS_SSL(o) = NULL;
 	}
+
 	if (TLS_CTXOWN(o))
 	{
 		ossl.CTX_free(TLS_CTXOWN(o));
 		TLS_CTXOWN(o) = NULL;
 	}
+
 	if (TLS_TRANSPORT(o))
 	{
 		bzy_release(TLS_TRANSPORT(o));
 		TLS_TRANSPORT(o) = NULL;
 	}
+
 	TLS_CLOSED(o) = 1;
 }
 
@@ -223,16 +232,19 @@ static void tls_list_finalize(void *o)
 	{
 		return;
 	}
+
 	if (TLL_CTX(o))
 	{
 		ossl.CTX_free(TLL_CTX(o));
 		TLL_CTX(o) = NULL;
 	}
+
 	if (TLL_LISTENER(o))
 	{
 		bzy_release(TLL_LISTENER(o));
 		TLL_LISTENER(o) = NULL;
 	}
+
 	TLL_CLOSED(o) = 1;
 }
 
@@ -242,6 +254,7 @@ static void *tls_sock_vtable(void)
 	g_tls_sock_vtable[0] = (int64_t)&g_tls_sock_typeinfo[0];
 	return &g_tls_sock_vtable[1];
 }
+
 static void *tls_list_vtable(void)
 {
 	g_tls_list_typeinfo[0] = (int64_t)(void*)tls_list_finalize;
@@ -275,6 +288,7 @@ static int tls_flush(void *s)
 		{
 			return 0;    /* Nothing pending (mem BIO). */
 		}
+
 		if (bzy_sock_send_all(TLS_TRANSPORT(s), buf, n) < 0)
 		{
 			return -1;
@@ -293,14 +307,17 @@ static int tls_feed(void *s)
 	{
 		return -1;
 	}
+
 	if (n == 0)
 	{
 		return 0;
 	}
+
 	if (ossl.BIO_write(rbio, buf, n) != n)
 	{
 		return -1;
 	}
+
 	return 1;
 }
 
@@ -332,18 +349,22 @@ static int tls_run(void *s, int op_kind, void *buf, int len)
 			{
 				return -1;
 			}
+
 			return 1;
 		}
+
 		if (op_kind == 1 && ret > 0)
 		{
 			return ret;
 		}
+
 		if (op_kind == 2 && ret > 0)
 		{
 			if (tls_flush(s) < 0)
 			{
 				return -1;
 			}
+
 			return ret;
 		}
 
@@ -354,12 +375,15 @@ static int tls_run(void *s, int op_kind, void *buf, int len)
 			{
 				return 0;    /* Clean EOF on read. */
 			}
+
 			return -1;                                    /* Fatal. */
 		}
+
 		if (tls_flush(s) < 0)
 		{
 			return -1;    /* Always push handshake bytes first. */
 		}
+
 		if (err == BZ_SSL_ERROR_WANT_READ)
 		{
 			int f = tls_feed(s);
@@ -395,6 +419,7 @@ static int tls_attach_bios(void *ssl)
 	{
 		return -1;
 	}
+
 	ossl.SSL_set_bio(ssl, rbio, wbio);
 	return 0;
 }
@@ -414,6 +439,7 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 		bzy_release(transport);
 		return NULL;
 	}
+
 	if (caBundle)
 	{
 		ossl.CTX_load_verify_locations(ctx, caBundle, NULL);
@@ -422,6 +448,7 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 	{
 		ossl.CTX_set_default_verify_paths(ctx);
 	}
+
 	if (!insecure)
 	{
 		ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
@@ -434,15 +461,18 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 		{
 			ossl.SSL_free(ssl);
 		}
+
 		bzy_release(transport);
 		ossl.CTX_free(ctx);
 		return NULL;
 	}
+
 	if (!insecure)
 	{
 		ossl.SSL_set1_host(ssl, host);                                                 /* Verify hostname. */
 		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)host); /* SNI. */
 	}
+
 	ossl.SSL_set_connect_state(ssl);
 
 	void *s = tls_sock_wrap(transport, ssl, ctx);   /* The TlsSocket now owns transport + ssl + ctx. */
@@ -451,11 +481,13 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 		bzy_release(s);   /* rc 1 -> 0: the finalizer frees ssl/ctx and releases transport. */
 		return NULL;
 	}
+
 	if (!insecure && ossl.SSL_get_verify_result(ssl) != BZ_X509_V_OK)
 	{
 		bzy_release(s);
 		return NULL;
 	}
+
 	return s;
 }
 
@@ -480,6 +512,7 @@ void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
 		bzy_io_fail("Network.tlsConnect: TLS handshake or certificate verification failed.");
 		return NULL;
 	}
+
 	return s;
 }
 
@@ -495,6 +528,7 @@ void *bzy_tls_upgrade_client(void *transport, const char *host, int insecure)
 		bzy_release(transport);
 		return NULL;
 	}
+
 	return tls_client_session(transport, host, NULL, insecure);
 }
 
@@ -516,12 +550,14 @@ void *bzy_tls_listen(int64_t port, void *certPath, void *keyPath)
 		bzy_io_fail("Network.tlsListen: SSL_CTX_new failed.");
 		return NULL;
 	}
+
 	if (ossl.CTX_use_certificate_chain_file(ctx, bzy_str_data(certPath)) != 1)
 	{
 		ossl.CTX_free(ctx);
 		bzy_io_fail("Network.tlsListen: cannot load certificate chain.");
 		return NULL;
 	}
+
 	if (ossl.CTX_use_PrivateKey_file(ctx, bzy_str_data(keyPath), BZ_SSL_FILETYPE_PEM) != 1)
 	{
 		ossl.CTX_free(ctx);
@@ -562,10 +598,12 @@ void *bzy_tls_accept(void *l)
 		{
 			ossl.SSL_free(ssl);
 		}
+
 		bzy_release(transport);
 		bzy_io_fail("TlsListener.accept: SSL setup failed.");
 		return NULL;
 	}
+
 	ossl.SSL_set_accept_state(ssl);
 
 	void *s = tls_sock_wrap(transport, ssl, NULL);   /* Server conn shares the listener ctx. */
@@ -573,6 +611,7 @@ void *bzy_tls_accept(void *l)
 	{
 		bzy_io_fail("TlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
 	}
+
 	return s;
 }
 
@@ -583,6 +622,7 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 		bzy_io_fail("TlsSocket.read: socket is closed.");
 		return NULL;
 	}
+
 	int max = (int)(maxbytes > 0 ? maxbytes : 1);
 	/* Stage the plaintext on the stack for the common small read; only the rare
 	   large read touches the heap. The result byte[] must be sized to the actual
@@ -595,6 +635,7 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 		bzy_io_fail("TlsSocket.read: out of memory.");
 		return NULL;
 	}
+
 	int n = tls_run(s, 1, buf, max);
 	if (n < 0)
 	{
@@ -602,14 +643,17 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 		{
 			free(buf);
 		}
+
 		bzy_io_fail("TlsSocket.read: TLS read error.");
 		return NULL;
 	}
+
 	void *arr = tls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean EOF). */
 	if (buf != stackbuf)
 	{
 		free(buf);
 	}
+
 	return arr;
 }
 
@@ -620,18 +664,21 @@ int64_t bzy_tls_write(void *s, void *data)
 		bzy_io_fail("TlsSocket.write: socket is closed.");
 		return 0;
 	}
+
 	int len = (int)bzy_array_len(data);
 	const char *bytes = (const char*)data + 32;   /* Packed byte[] payload. */
 	if (len == 0)
 	{
 		return 0;
 	}
+
 	int n = tls_run(s, 2, (void*)bytes, len);
 	if (n < 0)
 	{
 		bzy_io_fail("TlsSocket.write: TLS write error.");
 		return 0;
 	}
+
 	return n;
 }
 
@@ -647,6 +694,7 @@ int bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms)
 	{
 		return -1;
 	}
+
 	return tls_run(s, 1, buf, max);   /* >0 bytes, 0 clean EOF, -1 error. */
 }
 
@@ -656,6 +704,7 @@ int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len)
 	{
 		return -1;
 	}
+
 	int64_t off = 0;
 	while (off < len)
 	{
@@ -666,8 +715,10 @@ int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len)
 		{
 			return -1;
 		}
+
 		off += n;
 	}
+
 	return off;
 }
 
@@ -677,11 +728,13 @@ void bzy_tls_close(void *s)
 	{
 		return;
 	}
+
 	if (TLS_SSL(s))
 	{
 		ossl.SSL_shutdown(TLS_SSL(s));
 		tls_flush(s);
 	}
+
 	tls_sock_finalize(s);
 }
 

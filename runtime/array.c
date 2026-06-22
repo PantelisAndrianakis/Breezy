@@ -33,6 +33,7 @@ void *bzy_array_new_sized(int64_t n, int64_t elem_size, int64_t elem_is_managed)
 	{
 		n = 0;
 	}
+
 	void *a = bzy_alloc(32 + n * elem_size);   /* Elements zeroed by bzy_alloc. */
 	*(void**)a = elem_is_managed ? array_obj_vtable() : array_val_vtable();
 	*(int64_t*)((char*)a + 24) = n;

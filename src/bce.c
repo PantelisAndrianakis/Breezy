@@ -182,6 +182,7 @@ static Env env_dup(const Env *s)
 		memcpy(d.off, s->off, (size_t)s->n * sizeof(*d.off));
 		memcpy(d.iv,  s->iv,  (size_t)s->n * sizeof(*d.iv));
 	}
+
 	if (s->an)
 	{
 		d.acap = s->an;
@@ -190,6 +191,7 @@ static Env env_dup(const Env *s)
 		memcpy(d.aoff, s->aoff, (size_t)s->an * sizeof(*d.aoff));
 		memcpy(d.alen, s->alen, (size_t)s->an * sizeof(*d.alen));
 	}
+
 	if (s->sbn)
 	{
 		d.sbcap = s->sbn;
@@ -198,6 +200,7 @@ static Env env_dup(const Env *s)
 		memcpy(d.sb_io,  s->sb_io,  (size_t)s->sbn * sizeof(*d.sb_io));
 		memcpy(d.sb_arr, s->sb_arr, (size_t)s->sbn * sizeof(*d.sb_arr));
 	}
+
 	return d;
 }
 
@@ -223,6 +226,7 @@ static void sb_set(Env *e, int io, int arr_off)
 		e->sb_io  = realloc(e->sb_io,  (size_t)e->sbcap * sizeof(*e->sb_io));
 		e->sb_arr = realloc(e->sb_arr, (size_t)e->sbcap * sizeof(*e->sb_arr));
 	}
+
 	e->sb_io[e->sbn] = io;
 	e->sb_arr[e->sbn] = arr_off;
 	e->sbn++;
@@ -343,6 +347,7 @@ static void env_set(Env *e, int off, Iv v)
 		e->off = realloc(e->off, (size_t)e->cap * sizeof(*e->off));
 		e->iv  = realloc(e->iv,  (size_t)e->cap * sizeof(*e->iv));
 	}
+
 	e->off[e->n] = off;
 	e->iv[e->n] = v;
 	e->n++;
@@ -383,6 +388,7 @@ static void alen_set(Env *e, int off, Iv v)
 		e->aoff = realloc(e->aoff, (size_t)e->acap * sizeof(*e->aoff));
 		e->alen = realloc(e->alen, (size_t)e->acap * sizeof(*e->alen));
 	}
+
 	e->aoff[e->an] = off;
 	e->alen[e->an] = v;
 	e->an++;
@@ -1010,6 +1016,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			Env dflt = env_dup(env);
 			bce_block(st->else_blk, &dflt);
 		}
+
 		for (int i = 0; i < mod.n; i++)
 		{
 			env_set(env, mod.off[i], IV_TOP);

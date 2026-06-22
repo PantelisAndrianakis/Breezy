@@ -25,22 +25,27 @@ static int64_t  *PQ_LEN(void *o)
 {
 	return (int64_t*)((char*)o + 24);
 }
+
 static int64_t  *PQ_CAP(void *o)
 {
 	return (int64_t*)((char*)o + 32);
 }
+
 static void    **PQ_DATA(void *o)
 {
 	return (void**)((char*)o + 40);
 }
+
 static int64_t  *PQ_KIND(void *o)
 {
 	return (int64_t*)((char*)o + 48);
 }
+
 static bzy_cmp_fn *PQ_CMP(void *o)
 {
 	return (bzy_cmp_fn*)((char*)o + 56);
 }
+
 static int64_t    *PQ_OBJSLOT(void *o)
 {
 	return (int64_t*)((char*)o + 64);

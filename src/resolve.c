@@ -801,10 +801,12 @@ static TypeKind simd_lane_kind(TypeKind v)
 	{
 		return TY_DOUBLE;
 	}
+
 	if (v==TY_I32X4 || v==TY_I32X8)
 	{
 		return TY_INT;
 	}
+
 	return TY_FLOAT;   /* f32x4 / f32x8. */
 }
 
@@ -829,6 +831,7 @@ static void resolve_simd(Expr *e)
 			}
 		}
 	}
+
 	if (strcmp(m,"pack")==0)
 	{
 		/* All-float lanes: two -> f64x2, four -> f32x4. All-int lanes: four -> i32x4. */
@@ -839,6 +842,7 @@ static void resolve_simd(Expr *e)
 			{
 				all_float=0;
 			}
+
 			if (!ty_is_int(e->args[i]->type.kind))
 			{
 				all_int=0;
@@ -878,6 +882,7 @@ static void resolve_simd(Expr *e)
 			{
 				all_float=0;
 			}
+
 			if (!ty_is_int(e->args[i]->type.kind))
 			{
 				all_int=0;
@@ -890,11 +895,13 @@ static void resolve_simd(Expr *e)
 			e->type.kind=TY_F64X4;
 			return;
 		}
+
 		if (e->arg_count==8 && all_float)
 		{
 			e->type.kind=TY_F32X8;
 			return;
 		}
+
 		if (e->arg_count==8 && all_int)
 		{
 			g_program_uses_avx2 = 1;
@@ -1354,6 +1361,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File predicate takes one path argument.",NULL);
 		}
+
 		file_arg_string(e,0);
 		e->type.kind = TY_BOOL;
 		return;
@@ -1367,6 +1375,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File mutation takes one path argument.",NULL);
 		}
+
 		file_arg_string(e,0);
 		e->type.kind = TY_VOID;
 		return;
@@ -1378,6 +1387,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File.readText takes one path argument.",NULL);
 		}
+
 		file_arg_string(e,0);
 		e->type.kind = TY_STRING;
 		return;
@@ -1389,6 +1399,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File.readLines takes one path argument.",NULL);
 		}
+
 		file_arg_string(e,0);
 		TypeRef el;
 		memset(&el,0,sizeof(el));
@@ -1404,6 +1415,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File.readBytes takes one path argument.",NULL);
 		}
+
 		file_arg_string(e,0);
 		TypeRef el;
 		memset(&el,0,sizeof(el));
@@ -1419,6 +1431,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File.writeText/appendText take (path, content).",NULL);
 		}
+
 		file_arg_string(e,0);
 		file_arg_string(e,1);
 		e->type.kind = TY_VOID;
@@ -1431,6 +1444,7 @@ static void resolve_file(Expr *e)
 		{
 			die(e->line,"File.writeBytes takes (path, byte[]).",NULL);
 		}
+
 		file_arg_string(e,0);
 		if (!file_is_byte_array(&e->args[1]->type))
 		{
@@ -1705,6 +1719,7 @@ static TypeRef *arg_types_of(Expr *e)
 	{
 		a[i] = e->args[i]->type;
 	}
+
 	return a;
 }
 
@@ -5865,6 +5880,7 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	{
 		T = typeref_deepcopy(rc->type.elem);
 	}
+
 	g_lam_count = lam_save;
 	g_lambda_seq = seq_save;
 
@@ -6192,11 +6208,13 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 	{
 		ch = c;
 	}
+
 	c = frame_expr_depth(e->rhs, depth_out, args_out);
 	if (c > ch)
 	{
 		ch = c;
 	}
+
 	if (is_call)
 	{
 		for (int i = 0; i < e->arg_count; i++)
@@ -6288,11 +6306,13 @@ static int frame_scratch_bytes(Expr *e, int *max_out)
 	{
 		child = c;
 	}
+
 	c = frame_scratch_bytes(e->rhs, max_out);
 	if (c > child)
 	{
 		child = c;
 	}
+
 	if (e->kind==EX_CALL || e->kind==EX_METHOD_CALL || e->kind==EX_NEW)
 	{
 		for (int i = 0; i < e->arg_count; i++)

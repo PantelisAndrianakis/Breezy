@@ -44,6 +44,7 @@ static void sb_reserve(Sb *s, size_t extra)
 		s->p = realloc(s->p, s->cap);
 	}
 }
+
 static void sb_putn(Sb *s, const char *b, size_t n)
 {
 	sb_reserve(s, n);
@@ -51,10 +52,12 @@ static void sb_putn(Sb *s, const char *b, size_t n)
 	s->len += n;
 	s->p[s->len] = '\0';
 }
+
 static void sb_puts(Sb *s, const char *b)
 {
 	sb_putn(s, b, strlen(b));
 }
+
 static void sb_putc(Sb *s, char c)
 {
 	sb_reserve(s, 1);
@@ -131,6 +134,7 @@ static unsigned hex4(const char *p)
 			v |= (unsigned)(c - 'A' + 10);
 		}
 	}
+
 	return v;
 }
 
@@ -199,6 +203,7 @@ static char *jparse_string_raw(JParser *jp)
 				sb_putc(&sb, e);
 				break;
 			}
+
 			if (*jp->p)
 			{
 				jp->p++;
@@ -210,14 +215,17 @@ static char *jparse_string_raw(JParser *jp)
 			jp->p++;
 		}
 	}
+
 	if (*jp->p == '"')
 	{
 		jp->p++;
 	}
+
 	if (!sb.p)
 	{
 		sb.p = calloc(1, 1);
 	}
+
 	return sb.p;
 }
 
@@ -244,12 +252,14 @@ static JVal *jparse_value(JParser *jp)
 			{
 				break;
 			}
+
 			char *key = jparse_string_raw(jp);
 			jskip(jp);
 			if (*jp->p == ':')
 			{
 				jp->p++;
 			}
+
 			JVal *val = jparse_value(jp);
 			v->keys = realloc(v->keys, sizeof(char *) * (v->npairs + 1));
 			v->vals = realloc(v->vals, sizeof(JVal *) * (v->npairs + 1));
@@ -262,6 +272,7 @@ static JVal *jparse_value(JParser *jp)
 				jp->p++;
 			}
 		}
+
 		if (*jp->p == '}')
 		{
 			jp->p++;
@@ -283,6 +294,7 @@ static JVal *jparse_value(JParser *jp)
 				jp->p++;
 			}
 		}
+
 		if (*jp->p == ']')
 		{
 			jp->p++;
@@ -312,6 +324,7 @@ static JVal *jparse_value(JParser *jp)
 		v->num = strtod(jp->p, &end);
 		jp->p = end;
 	}
+
 	v->raw = start;
 	v->rawlen = (int)(jp->p - start);
 	return v;
@@ -329,6 +342,7 @@ static void json_free(JVal *v)
 	{
 		return;
 	}
+
 	switch (v->type)
 	{
 	case J_STR:
@@ -353,6 +367,7 @@ static void json_free(JVal *v)
 	default:
 		break;
 	}
+
 	free(v);
 }
 
@@ -363,6 +378,7 @@ static JVal *jobj_get(JVal *o, const char *key)
 	{
 		return NULL;
 	}
+
 	for (int i = 0; i < o->npairs; i++)
 	{
 		if (strcmp(o->keys[i], key) == 0)
@@ -370,6 +386,7 @@ static JVal *jobj_get(JVal *o, const char *key)
 			return o->vals[i];
 		}
 	}
+
 	return NULL;
 }
 
@@ -388,14 +405,17 @@ static int read_line(char *buf, int max)
 			{
 				i--;
 			}
+
 			buf[i] = '\0';
 			return i;
 		}
+
 		if (i < max - 1)
 		{
 			buf[i++] = (char)c;
 		}
 	}
+
 	return -1;
 }
 
@@ -413,20 +433,24 @@ static char *read_message(void)
 		{
 			return NULL;   /* EOF. */
 		}
+
 		if (n == 0)
 		{
 			break;         /* Blank line: end of headers. */
 		}
+
 		if (strncmp(line, "Content-Length:", 15) == 0)
 		{
 			content_length = atoi(line + 15);
 		}
 		/* Any other header (e.g. Content-Type) is tolerated and ignored. */
 	}
+
 	if (content_length < 0 || content_length > (1 << 28))
 	{
 		return NULL;
 	}
+
 	char *body = malloc((size_t)content_length + 1);
 	size_t got = fread(body, 1, (size_t)content_length, stdin);
 	body[got] = '\0';
@@ -435,6 +459,7 @@ static char *read_message(void)
 		free(body);
 		return NULL;
 	}
+
 	return body;
 }
 
@@ -502,14 +527,17 @@ static int hexval(char c)
 	{
 		return c - '0';
 	}
+
 	if (c >= 'a' && c <= 'f')
 	{
 		return c - 'a' + 10;
 	}
+
 	if (c >= 'A' && c <= 'F')
 	{
 		return c - 'A' + 10;
 	}
+
 	return 0;
 }
 
@@ -522,6 +550,7 @@ static int has_nonspace(const char *t)
 			return 1;
 		}
 	}
+
 	return 0;
 }
 
@@ -581,6 +610,7 @@ static void docs_add(const char *uri, const char *path)
 			return;
 		}
 	}
+
 	g_uris = realloc(g_uris, sizeof(char *) * (g_ndocs + 1));
 	g_paths = realloc(g_paths, sizeof(char *) * (g_ndocs + 1));
 	g_uris[g_ndocs] = dupstr(uri);
@@ -602,6 +632,7 @@ static char *uri_to_path(const char *uri)
 			p = slash ? slash : p + strlen(p);
 		}
 	}
+
 	const char *q = p;
 #ifdef _WIN32
 	/* file:///c:/... -> drop the slash before the drive letter. */
@@ -609,6 +640,7 @@ static char *uri_to_path(const char *uri)
 	{
 		q++;
 	}
+
 #endif
 	Sb sb = {0};
 	for (; *q; q++)
@@ -623,10 +655,12 @@ static char *uri_to_path(const char *uri)
 			sb_putc(&sb, *q);
 		}
 	}
+
 	if (!sb.p)
 	{
 		sb.p = calloc(1, 1);
 	}
+
 	return sb.p;
 }
 
@@ -639,15 +673,18 @@ static char *path_to_uri(const char *p)
 	{
 		sb_putc(&sb, '/');   /* file:///C:/... */
 	}
+
 #endif
 	for (; *p; p++)
 	{
 		sb_putc(&sb, *p == '\\' ? '/' : *p);
 	}
+
 	if (!sb.p)
 	{
 		sb.p = calloc(1, 1);
 	}
+
 	return sb.p;
 }
 
@@ -664,6 +701,7 @@ static char *file_dir(const char *path)
 			slash = b;
 		}
 	}
+
 #endif
 	if (slash)
 	{
@@ -674,6 +712,7 @@ static char *file_dir(const char *path)
 		free(dir);
 		return dupstr(".");
 	}
+
 	return dir;
 }
 
@@ -689,6 +728,7 @@ static int has_breezy_toml(const char *dir)
 		fclose(f);
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -705,6 +745,7 @@ static char *project_root(const char *path)
 			free(dir);
 			return probe;
 		}
+
 		char *up = strrchr(probe, '/');
 #ifdef _WIN32
 		{
@@ -714,6 +755,7 @@ static char *project_root(const char *path)
 				up = b;
 			}
 		}
+
 #endif
 		if (!up || up == probe)
 		{
@@ -721,6 +763,7 @@ static char *project_root(const char *path)
 		}
 		*up = '\0';
 	}
+
 	free(probe);
 	return dir;
 }
@@ -735,10 +778,12 @@ static int same_file(const char *a, const char *b)
 		{
 			ca = '/';
 		}
+
 		if (cb == '\\')
 		{
 			cb = '/';
 		}
+
 #ifdef _WIN32
 		ca = (char)tolower((unsigned char)ca);
 		cb = (char)tolower((unsigned char)cb);
@@ -747,10 +792,12 @@ static int same_file(const char *a, const char *b)
 		{
 			return 0;
 		}
+
 		if (!ca)
 		{
 			return 1;
 		}
+
 		a++;
 		b++;
 	}
@@ -769,6 +816,7 @@ static int scrape_line(const char *t)
 			return n;
 		}
 	}
+
 	for (const char *p = t; *p; p++)
 	{
 		if (*p == ':' && isdigit((unsigned char)p[1]))
@@ -780,6 +828,7 @@ static int scrape_line(const char *t)
 			}
 		}
 	}
+
 	return 1;
 }
 
@@ -790,6 +839,7 @@ static char *first_line(const char *t)
 	{
 		n++;
 	}
+
 	char *r = malloc(n + 1);
 	memcpy(r, t, n);
 	r[n] = '\0';
@@ -804,10 +854,12 @@ static void send_diagnostics(const char *uri, int line0, int char0, const char *
 	{
 		line0 = 0;
 	}
+
 	if (char0 < 0)
 	{
 		char0 = 0;
 	}
+
 	Sb sb = {0};
 	sb_puts(&sb, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"");
 	sb_put_json_escaped(&sb, uri);
@@ -824,6 +876,7 @@ static void send_diagnostics(const char *uri, int line0, int char0, const char *
 		sb_put_json_escaped(&sb, msg);
 		sb_puts(&sb, "\"}");
 	}
+
 	sb_puts(&sb, "]}}");
 	send_framed(sb.p, sb.len);
 	free(sb.p);
@@ -863,8 +916,10 @@ static void check_and_publish(const char *trigger_uri)
 		{
 			sb_putn(&outp, chunk, r);
 		}
+
 		BZY_PCLOSE(pp);
 	}
+
 	free(cmd.p);
 
 	/* Decide: clean, a precise JSON diagnostic, or a scraped plain-text error. */
@@ -895,8 +950,10 @@ static void check_and_publish(const char *trigger_uri)
 			err_col = jcol ? (int)jcol->num : 0;
 			err_msg = dupstr(jmsg->str);
 		}
+
 		json_free(j);
 	}
+
 	if (!clean && !have_diag)
 	{
 		/* Non-JSON output: surface it so the error is never silently invisible. */
@@ -932,6 +989,7 @@ static void check_and_publish(const char *trigger_uri)
 		{
 			continue;
 		}
+
 		if (have_diag && same_file(g_paths[i], err_file))
 		{
 			send_diagnostics(g_uris[i], l0, c0, err_msg);
@@ -1023,5 +1081,6 @@ int lsp_main(const char *self_exe)
 		json_free(root);
 		free(msg);
 	}
+
 	return draining ? 0 : 1;
 }

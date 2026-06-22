@@ -104,6 +104,7 @@ static void advance(Scan *s)
 		{
 			s->col++;
 		}
+
 		s->p++;
 	}
 }
@@ -148,6 +149,7 @@ static void *parse_name(Scan *s)
 	{
 		advance(s);
 	}
+
 	return bzy_str_new(start, (int64_t)(s->p - start));
 }
 
@@ -168,6 +170,7 @@ static void tb_push(TextBuf *t, const char *bytes, size_t n)
 		{
 			nc *= 2;
 		}
+
 		t->data = (char*)realloc(t->data, nc);
 		t->cap = nc;
 	}
@@ -232,6 +235,7 @@ static void append_utf8(TextBuf *t, long cp)
 		b[3] = 0x80 | (cp & 0x3F);
 		n = 4;
 	}
+
 	tb_push(t, (char*)b, (size_t)n);
 }
 
@@ -250,6 +254,7 @@ static int decode_entity(Scan *s, TextBuf *t)
 			hex = 1;
 			advance(s);
 		}
+
 		long cp = 0;
 		int digits = 0;
 		while (!at_end(s) && peek(s) != ';')
@@ -272,6 +277,7 @@ static int decode_entity(Scan *s, TextBuf *t)
 				fail(s, "Bad numeric character reference.");
 				return 0;
 			}
+
 			cp = cp * (hex ? 16 : 10) + d;
 			digits++;
 			advance(s);
@@ -282,6 +288,7 @@ static int decode_entity(Scan *s, TextBuf *t)
 			fail(s, "Bad numeric character reference.");
 			return 0;
 		}
+
 		advance(s);   /* ';'. */
 		append_utf8(t, cp);
 		return 1;
@@ -292,11 +299,13 @@ static int decode_entity(Scan *s, TextBuf *t)
 	{
 		advance(s);
 	}
+
 	if (peek(s) != ';')
 	{
 		fail(s, "Unterminated entity reference.");
 		return 0;
 	}
+
 	size_t len = (size_t)(s->p - nm);
 	char rep;
 	if (len == 2 && !memcmp(nm, "lt", 2))
@@ -324,6 +333,7 @@ static int decode_entity(Scan *s, TextBuf *t)
 		fail(s, "Unknown entity reference.");
 		return 0;
 	}
+
 	advance(s);   /* ';'. */
 	tb_push(t, &rep, 1);
 	return 1;
@@ -337,10 +347,12 @@ static int match_lit(Scan *s, const char *lit)
 	{
 		return 0;
 	}
+
 	for (size_t i = 0; i < n; i++)
 	{
 		advance(s);
 	}
+
 	return 1;
 }
 
@@ -365,6 +377,7 @@ static void skip_misc(Scan *s)
 		{
 			break;
 		}
+
 		if (peek2(s) == '?')
 		{
 			match_lit(s, "<?");
@@ -406,12 +419,14 @@ static void parse_attrs(Scan *s, void *node)
 		{
 			break;
 		}
+
 		skip_ws(s);
 		if (peek(s) != '=')
 		{
 			fail(s, "Expected '=' after attribute name.");
 			break;
 		}
+
 		advance(s);
 		skip_ws(s);
 		int q = peek(s);
@@ -420,6 +435,7 @@ static void parse_attrs(Scan *s, void *node)
 			fail(s, "Expected a quoted attribute value.");
 			break;
 		}
+
 		advance(s);
 		TextBuf vb = { 0 };
 		while (!at_end(s) && peek(s) != q)
@@ -429,10 +445,12 @@ static void parse_attrs(Scan *s, void *node)
 			{
 				advance(s);
 			}
+
 			if (s->p > seg)
 			{
 				tb_push(&vb, seg, (size_t)(s->p - seg));
 			}
+
 			if (peek(s) == '&' && !decode_entity(s, &vb))
 			{
 				break;
@@ -449,6 +467,7 @@ static void parse_attrs(Scan *s, void *node)
 			}
 			break;
 		}
+
 		void *aval = bzy_str_new(vb.data ? vb.data : "", (int64_t)vb.len);
 		free(vb.data);
 		advance(s);   /* Closing quote. */
@@ -492,6 +511,7 @@ static void *parse_element(Scan *s)
 		fail(s, "Expected '<'.");
 		return NULL;
 	}
+
 	advance(s);
 
 	void *node = node_new();
@@ -501,6 +521,7 @@ static void *parse_element(Scan *s)
 		bzy_release(node);
 		return NULL;
 	}
+
 	NODE_SET(node, X_NAME, name);
 
 	parse_attrs(s, node);
@@ -520,6 +541,7 @@ static void *parse_element(Scan *s)
 			bzy_release(node);
 			return NULL;
 		}
+
 		advance(s);
 		NODE_SET(node, X_TEXT, bzy_str_new("", 0));
 		NODE_SET(node, X_KIDS, bzy_vec_new(4));   /* An empty children list. */
@@ -532,6 +554,7 @@ static void *parse_element(Scan *s)
 		bzy_release(node);
 		return NULL;
 	}
+
 	advance(s);
 
 	/* Content: direct text runs (into tb) interleaved with child elements. The
@@ -559,6 +582,7 @@ static void *parse_element(Scan *s)
 				{
 					break;
 				}
+
 				skip_ws(s);
 				if (peek(s) != '>')
 				{
@@ -566,6 +590,7 @@ static void *parse_element(Scan *s)
 					bzy_release(ename);
 					break;
 				}
+
 				advance(s);
 				if (!bzy_str_eq(ename, name))
 				{
@@ -573,6 +598,7 @@ static void *parse_element(Scan *s)
 					bzy_release(ename);
 					break;
 				}
+
 				bzy_release(ename);
 				break;
 			}
@@ -586,11 +612,13 @@ static void *parse_element(Scan *s)
 					{
 						advance(s);
 					}
+
 					if (s->end - s->p < 3)
 					{
 						fail(s, "Unterminated CDATA section.");
 						break;
 					}
+
 					tb_push(&tb, cs, (size_t)(s->p - cs));
 					match_lit(s, "]]>");
 					continue;
@@ -625,6 +653,7 @@ static void *parse_element(Scan *s)
 			{
 				break;
 			}
+
 			bzy_vec_push_back(kids, (int64_t)child);  /* Retains. */
 			bzy_release(child);                       /* Drop our +1; the vector owns it. */
 		}
@@ -637,10 +666,12 @@ static void *parse_element(Scan *s)
 				{
 					advance(s);
 				}
+
 				if (s->p > seg)
 				{
 					tb_push(&tb, seg, (size_t)(s->p - seg));
 				}
+
 				if (peek(s) == '&' && !decode_entity(s, &tb))
 				{
 					break;
@@ -656,6 +687,7 @@ static void *parse_element(Scan *s)
 		{
 			bzy_release(kids);
 		}
+
 		bzy_release(node);
 		return NULL;
 	}
@@ -666,6 +698,7 @@ static void *parse_element(Scan *s)
 	{
 		NODE_SET(node, X_KIDS, kids);
 	}
+
 	return node;
 }
 
@@ -686,6 +719,7 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	{
 		fail(&s, "expected a root element");
 	}
+
 	void *root = s.err ? NULL : parse_element(&s);
 	if (!s.err)
 	{

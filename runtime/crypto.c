@@ -21,8 +21,10 @@ static void *dl_open_first(const char **names)
 			return (void*)h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return (void*)GetProcAddress((HMODULE)h, n);
@@ -39,8 +41,10 @@ static void *dl_open_first(const char **names)
 			return h;
 		}
 	}
+
 	return NULL;
 }
+
 static void *dl_sym(void *h, const char *n)
 {
 	return dlsym(h, n);
@@ -66,6 +70,7 @@ int bzy_crypto_load(void)
 	{
 		return 1;
 	}
+
 	if (cc.loaded == -1)
 	{
 		return 0;

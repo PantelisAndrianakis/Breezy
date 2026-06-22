@@ -11,14 +11,17 @@ static void build(TypeTable *tt, Unit **units, const char **srcs, int n)
 		parser_init(&ps[i],srcs[i]);
 		units[i]=parse_unit(&ps[i]);
 	}
+
 	for (int i=0; i<n; i++)
 	{
 		types_register_unit_names(tt, units[i]);
 	}
+
 	for (int i=0; i<n; i++)
 	{
 		types_register_interfaces(tt, units[i]);
 	}
+
 	types_register_all_members(tt, units, n);
 }
 

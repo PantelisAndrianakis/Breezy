@@ -15,6 +15,7 @@ static void *track(void *p)
 		fprintf(stderr, "Ast: out of memory.\n");
 		exit(1);
 	}
+
 	g_nodes = grow_ensure(g_nodes, g_node_count, &g_node_cap, sizeof(*g_nodes));
 	g_nodes[g_node_count++] = p;
 	return p;
@@ -26,6 +27,7 @@ void ast_free_all(void)
 	{
 		free(g_nodes[i]);
 	}
+
 	g_node_count = 0;
 }
 
@@ -36,10 +38,12 @@ Expr *expr_new(ExprKind kind, int line)
 	e->line=line;
 	return e;
 }
+
 LambdaInfo *lambda_new(void)
 {
 	return track(calloc(1,sizeof(LambdaInfo)));
 }
+
 void lambda_add_param(LambdaInfo *l, const char *name, int has_type, TypeRef type)
 {
 	if (l->param_count >= (int)(sizeof(l->params)/sizeof(l->params[0])))
@@ -48,11 +52,13 @@ void lambda_add_param(LambdaInfo *l, const char *name, int has_type, TypeRef typ
 				(int)(sizeof(l->params)/sizeof(l->params[0])));
 		exit(1);
 	}
+
 	LambdaParam *pm = &l->params[l->param_count++];
 	snprintf(pm->name,sizeof(pm->name),"%s",name);
 	pm->has_type = has_type;
 	pm->type = type;
 }
+
 TypeRef *typeref_box(TypeRef t)
 {
 	TypeRef *p = track(calloc(1,sizeof(TypeRef)));
@@ -83,6 +89,7 @@ Block *block_new(void)
 	b->stmts = track(calloc(b->cap, sizeof(Stmt*)));
 	return b;
 }
+
 void block_push(Block *b, Stmt *s)
 {
 	if (b->count >= b->cap)
@@ -93,28 +100,35 @@ void block_push(Block *b, Stmt *s)
 		b->stmts = n;
 		b->cap = nc;
 	}
+
 	b->stmts[b->count++] = s;
 }
+
 Func      *func_new(void)
 {
 	return track(calloc(1,sizeof(Func)));
 }
+
 ClassDecl *class_new(void)
 {
 	return track(calloc(1,sizeof(ClassDecl)));
 }
+
 InterfaceDecl *interface_new(void)
 {
 	return track(calloc(1,sizeof(InterfaceDecl)));
 }
+
 EnumDecl *enum_new(void)
 {
 	return track(calloc(1,sizeof(EnumDecl)));
 }
+
 Unit      *unit_new(void)
 {
 	return track(calloc(1,sizeof(Unit)));
 }
+
 void unit_add_class(Unit *u, ClassDecl *c)
 {
 	if (u->class_count >= u->class_cap)
@@ -125,6 +139,7 @@ void unit_add_class(Unit *u, ClassDecl *c)
 		u->klasses = n;
 		u->class_cap = nc;
 	}
+
 	u->klasses[u->class_count++] = c;
 }
 
@@ -143,6 +158,7 @@ TypeRef typeref_deepcopy(const TypeRef *t)
 			r.targs[i]=typeref_box(typeref_deepcopy(t->targs[i]));
 		}
 	}
+
 	return r;
 }
 
@@ -179,6 +195,7 @@ Expr *expr_clone(const Expr *e)
 	{
 		expr_add_arg(n,expr_clone(e->args[i]));
 	}
+
 	return n;
 }
 
@@ -218,6 +235,7 @@ Block *block_clone(const Block *b)
 	{
 		block_push(n,stmt_clone(b->stmts[i]));
 	}
+
 	return n;
 }
 
@@ -241,6 +259,7 @@ Func *func_clone(const Func *f)
 		p->type=typeref_deepcopy(&f->params[i].type);
 		p->def=expr_clone(f->params[i].def);
 	}
+
 	n->body=block_clone(f->body);
 	return n;
 }
@@ -285,20 +304,24 @@ ClassDecl *classdecl_clone(const ClassDecl *c)
 		n->implements=grow_reserve(n->implements,c->implements_count,&n->implements_cap,sizeof(*n->implements));
 		strcpy(n->implements[i],c->implements[i]);
 	}
+
 	for (int i=0; i<c->field_count; i++)
 	{
 		Field *fl=class_add_field(n);
 		*fl=c->fields[i];
 		fl->type=typeref_deepcopy(&c->fields[i].type);
 	}
+
 	for (int i=0; i<c->method_count; i++)
 	{
 		class_add_method(n,func_clone(c->methods[i]));
 	}
+
 	for (int i=0; i<c->ctor_count; i++)
 	{
 		class_add_ctor(n,func_clone(c->ctors[i]));
 	}
+
 	n->ctor = n->ctor_count ? n->ctors[0] : NULL;
 	return n;
 }

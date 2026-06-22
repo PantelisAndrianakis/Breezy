@@ -1021,6 +1021,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			emit_bin_fp(e, in, "divsd");    /* IR_MOD never float. */
 			break;
 		}
+
 		int k;
 		if (in->b != IR_NO_REG && in->b < e->a->vreg_count
 				&& e->cis[in->b] && pow2_log(e->cval[in->b], &k))
@@ -1639,6 +1640,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 				{
 					lhead[in->blk_true] = 1;
 				}
+
 				if (in->op == IR_BRCOND && in->blk_false >= 0 && in->blk_false <= b)
 				{
 					lhead[in->blk_false] = 1;
@@ -1679,6 +1681,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			{
 				continue;
 			}
+
 			int u = h;
 			while (u >= 0 && !placed[u] && u != last_head)
 			{
@@ -1726,6 +1729,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 		{
 			cg_emit(cg, "    align 32");
 		}
+
 		cg_emit(cg, ".L%d:", e->blabel[b]);
 		IRBlock *blk = &f->blocks[b];
 		int next = (oi + 1 < nord) ? eord[oi + 1] : -1;
@@ -1769,6 +1773,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			}
 		}
 	}
+
 	free(eord);
 	free(lhead);
 }

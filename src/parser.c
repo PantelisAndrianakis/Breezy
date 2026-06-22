@@ -40,6 +40,7 @@ static int  match(Parser *p, TokenType tt)
 	{
 		return 0;
 	}
+
 	advance(p);
 	return 1;
 }
@@ -53,6 +54,7 @@ static Token expect(Parser *p, TokenType tt)
 				 token_type_name(tt), token_type_name(p->cur.type));
 		lexer_diag(p->lex.src, p->lex.file, p->cur.line, p->cur.col, msg, NULL);
 	}
+
 	Token t = p->cur;
 	advance(p);
 	return t;
@@ -106,6 +108,7 @@ static Expr *parse_or(Parser *p)
 		e->rhs=parse_xor(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -123,6 +126,7 @@ static Expr *parse_xor(Parser *p)
 		e->rhs=parse_and(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -141,6 +145,7 @@ static Expr *parse_and(Parser *p)
 		e->rhs=parse_bitor(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -159,6 +164,7 @@ static Expr *parse_bitor(Parser *p)
 		e->rhs=parse_bitxor(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -176,6 +182,7 @@ static Expr *parse_bitxor(Parser *p)
 		e->rhs=parse_bitand(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -194,6 +201,7 @@ static Expr *parse_bitand(Parser *p)
 		e->rhs=parse_comparison(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -229,6 +237,7 @@ static Expr *parse_comparison(Parser *p)
 		e->rhs=parse_shift(p);
 		return e;
 	}
+
 	return left;
 }
 
@@ -248,6 +257,7 @@ static Expr *parse_shift(Parser *p)
 		e->rhs=parse_additive(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -264,6 +274,7 @@ static Expr *parse_additive(Parser *p)
 		e->rhs=parse_multiplicative(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -280,6 +291,7 @@ static Expr *parse_multiplicative(Parser *p)
 		e->rhs=parse_unary(p);
 		left=e;
 	}
+
 	return left;
 }
 
@@ -295,6 +307,7 @@ static Expr *parse_unary(Parser *p)
 		e->lhs=parse_unary(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID
 			&& !looks_like_lambda(p))   /* (int n) => ... is a lambda, not a cast. */
 	{
@@ -306,6 +319,7 @@ static Expr *parse_unary(Parser *p)
 		e->lhs=parse_unary(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_NOT))
 	{
 		int line=p->cur.line;
@@ -315,6 +329,7 @@ static Expr *parse_unary(Parser *p)
 		e->lhs=parse_unary(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_TILDE))
 	{
 		int line=p->cur.line;
@@ -324,6 +339,7 @@ static Expr *parse_unary(Parser *p)
 		e->lhs=parse_unary(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_MINUS))
 	{
 		int line=p->cur.line;
@@ -333,6 +349,7 @@ static Expr *parse_unary(Parser *p)
 		e->lhs=parse_unary(p);
 		return e;
 	}
+
 	return parse_postfix(p);
 }
 
@@ -386,6 +403,7 @@ static Expr *parse_postfix(Parser *p)
 			e = f;
 		}
 	}
+
 	if (check(p,TOKEN_PLUSPLUS) || check(p,TOKEN_MINUSMINUS))
 	{
 		int op=p->cur.type, line=p->cur.line;
@@ -403,6 +421,7 @@ static Expr *parse_postfix(Parser *p)
 		t->lhs=e;
 		e=t;
 	}
+
 	return e;
 }
 
@@ -412,6 +431,7 @@ static int parse_args(Parser *p, Expr *e)
 	{
 		return 0;
 	}
+
 	do
 	{
 		expr_add_arg(e, parse_expr(p));
@@ -556,6 +576,7 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_FLOAT_LIT))
 	{
 		Expr *e=expr_new(EX_FLOAT,line);
@@ -564,6 +585,7 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_STR_LIT))
 	{
 		Expr *e=expr_new(EX_STR,line);
@@ -571,6 +593,7 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_TRUE) || check(p,TOKEN_FALSE))
 	{
 		Expr *e=expr_new(EX_BOOL,line);
@@ -578,17 +601,20 @@ static Expr *parse_primary(Parser *p)
 		advance(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_NULL))
 	{
 		Expr *e=expr_new(EX_NULL,line);
 		advance(p);
 		return e;
 	}
+
 	if (check(p,TOKEN_THIS))
 	{
 		advance(p);
 		return expr_new(EX_THIS,line);
 	}
+
 	if (check(p,TOKEN_NEW))
 	{
 		advance(p);
@@ -602,6 +628,7 @@ static Expr *parse_primary(Parser *p)
 			e->type=et;                       /* Carries elem (key) + elem2 (value). */
 			return e;
 		}
+
 		if (et.kind==TY_CHANNEL)
 		{
 			expect(p,TOKEN_LPAREN);
@@ -611,6 +638,7 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
+
 		if (et.kind==TY_GENERIC)
 		{
 			Expr *e=expr_new(EX_NEWGEN,line);
@@ -628,6 +656,7 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
+
 		if (check(p,TOKEN_LBRACKET))
 		{
 			advance(p);                       /* '[' */
@@ -650,6 +679,7 @@ static Expr *parse_primary(Parser *p)
 		expect(p,TOKEN_RPAREN);
 		return e;
 	}
+
 	if (check(p,TOKEN_IDENT) && is_namespace(p->cur.text) && p->peek.type==TOKEN_DOT)
 	{
 		char ns[64];
@@ -676,6 +706,7 @@ static Expr *parse_primary(Parser *p)
 		strcpy(e->name,m.text);
 		return e;
 	}
+
 	if (check(p,TOKEN_IDENT))
 	{
 		Token id=p->cur;
@@ -689,16 +720,19 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
+
 		Expr *e=expr_new(EX_IDENT,line);
 		strcpy(e->name,id.text);
 		return e;
 	}
+
 	if (match(p,TOKEN_LPAREN))
 	{
 		Expr *e=parse_expr(p);
 		expect(p,TOKEN_RPAREN);
 		return e;
 	}
+
 	fprintf(stderr,"line %d: Unexpected token '%s'\n", line, token_type_name(p->cur.type));
 	exit(1);
 }
@@ -855,6 +889,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		expect_gt(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_MAP))
 	{
 		advance(p);
@@ -870,6 +905,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		out->elem2=typeref_box(val);
 		return 1;
 	}
+
 	if (check(p,TOKEN_CHANNEL))
 	{
 		advance(p);
@@ -883,6 +919,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		out->elem2=NULL;
 		return 1;
 	}
+
 	if (scalar_type_kind(p->cur.type, &k))
 	{
 		out->kind=k;
@@ -890,6 +927,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_STRING))
 	{
 		out->kind=TY_STRING;
@@ -897,6 +935,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Timer")==0)
 	{
 		out->kind=TY_TIMER;
@@ -906,6 +945,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Entry")==0)
 	{
 		out->kind=TY_ENTRY;
@@ -915,6 +955,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Listener")==0)
 	{
 		out->kind=TY_LISTENER;
@@ -924,6 +965,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Socket")==0)
 	{
 		out->kind=TY_SOCKET;
@@ -933,6 +975,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"TlsSocket")==0)
 	{
 		out->kind=TY_TLSSOCKET;
@@ -942,6 +985,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"TlsListener")==0)
 	{
 		out->kind=TY_TLSLISTENER;
@@ -951,6 +995,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"DtlsSocket")==0)
 	{
 		out->kind=TY_DTLSSOCKET;
@@ -960,6 +1005,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"DtlsListener")==0)
 	{
 		out->kind=TY_DTLSLISTENER;
@@ -969,6 +1015,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Surface")==0)
 	{
 		out->kind=TY_SURFACE;
@@ -978,6 +1025,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"GlSurface")==0)
 	{
 		out->kind=TY_GLSURFACE;
@@ -987,6 +1035,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"MappedFile")==0)
 	{
 		out->kind=TY_MAPPEDFILE;
@@ -996,6 +1045,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"UdpSocket")==0)
 	{
 		out->kind=TY_UDPSOCKET;
@@ -1005,6 +1055,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Datagram")==0)
 	{
 		out->kind=TY_DATAGRAM;
@@ -1014,6 +1065,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"JsonValue")==0)
 	{
 		out->kind=TY_JSONVALUE;
@@ -1023,6 +1075,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"HttpRequest")==0)
 	{
 		out->kind=TY_HTTPREQUEST;
@@ -1032,6 +1085,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"HttpResponse")==0)
 	{
 		out->kind=TY_HTTPRESPONSE;
@@ -1041,6 +1095,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"PgConnection")==0)
 	{
 		out->kind=TY_PGCONNECTION;
@@ -1050,6 +1105,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"MyConnection")==0)
 	{
 		out->kind=TY_MYCONNECTION;
@@ -1059,6 +1115,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"DbResult")==0)
 	{
 		out->kind=TY_DBRESULT;
@@ -1068,6 +1125,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Row")==0)
 	{
 		out->kind=TY_DBROW;
@@ -1077,6 +1135,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"XmlNode")==0)
 	{
 		out->kind=TY_XMLNODE;
@@ -1096,6 +1155,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"FileWriter")==0)
 	{
 		out->kind=TY_FILEWRITER;
@@ -1105,6 +1165,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,"Logger")==0)
 	{
 		out->kind=TY_LOGGER;
@@ -1114,6 +1175,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT))
 	{
 		out->kind=TY_OBJECT;
@@ -1121,6 +1183,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		advance(p);
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -1220,11 +1283,13 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
+
 	TypeKind k;
 	if (scalar_type_kind(p->cur.type, &k) && k != TY_VOID)
 	{
 		return 1;
 	}
+
 	if (check(p,TOKEN_STRING))
 	{
 		return 1;
@@ -1240,6 +1305,7 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
+
 	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_IDENT)
 	{
 		return 1;
@@ -1249,6 +1315,7 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -1263,6 +1330,7 @@ static Stmt *parse_vardecl(Parser *p)
 	{
 		s->decl_init=parse_expr(p);
 	}
+
 	expect(p,TOKEN_SEMICOLON);
 	return s;
 }
@@ -1280,6 +1348,7 @@ static Stmt *parse_if(Parser *p)
 	{
 		s->else_blk=parse_block(p);
 	}
+
 	return s;
 }
 
@@ -1750,6 +1819,7 @@ static Stmt *parse_return(Parser *p)
 	{
 		s->ret_val=parse_expr(p);
 	}
+
 	expect(p,TOKEN_SEMICOLON);
 	return s;
 }
@@ -1765,12 +1835,14 @@ static Stmt *parse_assign_or_expr(Parser *p)
 			fprintf(stderr,"line %d: Invalid assignment target.\n",line);
 			exit(1);
 		}
+
 		Stmt *s=stmt_new(ST_ASSIGN,line);
 		s->target=first;
 		s->value=parse_expr(p);
 		expect(p,TOKEN_SEMICOLON);
 		return s;
 	}
+
 	int binop;
 	if (compound_to_binop(p->cur.type, &binop))
 	{
@@ -1785,6 +1857,7 @@ static Stmt *parse_assign_or_expr(Parser *p)
 		expect(p,TOKEN_SEMICOLON);
 		return s;
 	}
+
 	Stmt *s=stmt_new(ST_EXPR,line);
 	s->expr=first;
 	expect(p,TOKEN_SEMICOLON);
@@ -1821,42 +1894,52 @@ static Stmt *parse_statement(Parser *p)
 	{
 		return parse_vardecl(p);
 	}
+
 	if (check(p,TOKEN_IF))
 	{
 		return parse_if(p);
 	}
+
 	if (check(p,TOKEN_WHILE))
 	{
 		return parse_while(p);
 	}
+
 	if (check(p,TOKEN_FOREACH))
 	{
 		return parse_foreach(p);
 	}
+
 	if (check(p,TOKEN_FOR))
 	{
 		return parse_for(p);
 	}
+
 	if (check(p,TOKEN_SWITCH))
 	{
 		return parse_switch(p);
 	}
+
 	if (check(p,TOKEN_MATCH))
 	{
 		return parse_match(p);
 	}
+
 	if (check(p,TOKEN_SELECT))
 	{
 		return parse_select(p);
 	}
+
 	if (check(p,TOKEN_ASM))
 	{
 		return parse_asm(p);
 	}
+
 	if (check(p,TOKEN_RETURN))
 	{
 		return parse_return(p);
 	}
+
 	if (check(p,TOKEN_BREAK))
 	{
 		int line=p->cur.line;
@@ -1864,6 +1947,7 @@ static Stmt *parse_statement(Parser *p)
 		expect(p,TOKEN_SEMICOLON);
 		return stmt_new(ST_BREAK,line);
 	}
+
 	if (check(p,TOKEN_CONTINUE))
 	{
 		int line=p->cur.line;
@@ -1871,6 +1955,7 @@ static Stmt *parse_statement(Parser *p)
 		expect(p,TOKEN_SEMICOLON);
 		return stmt_new(ST_CONTINUE,line);
 	}
+
 	if (check(p,TOKEN_THROW))
 	{
 		int line=p->cur.line;
@@ -1880,10 +1965,12 @@ static Stmt *parse_statement(Parser *p)
 		expect(p,TOKEN_SEMICOLON);
 		return s;
 	}
+
 	if (check(p,TOKEN_TRY))
 	{
 		return parse_try(p);
 	}
+
 	if (check(p,TOKEN_SPAWN))
 	{
 		int line=p->cur.line;
@@ -1899,6 +1986,7 @@ static Stmt *parse_statement(Parser *p)
 		expect(p,TOKEN_SEMICOLON);
 		return s;
 	}
+
 	return parse_assign_or_expr(p);
 }
 
@@ -1910,6 +1998,7 @@ static Block *parse_block(Parser *p)
 	{
 		block_push(b, parse_statement(p));
 	}
+
 	expect(p,TOKEN_RBRACE);
 	return b;
 }
@@ -1943,9 +2032,11 @@ static void parse_one_param(Parser *p, Param *pm)
 			}
 			while (match(p,TOKEN_COMMA));
 		}
+
 		expect(p,TOKEN_RPAREN);
 		pm->type = fn;
 	}
+
 	Token pn=expect(p,TOKEN_IDENT);
 	strcpy(pm->name,pn.text);
 	if (match(p,TOKEN_ASSIGN))
@@ -1971,6 +2062,7 @@ static Func *parse_extern(Parser *p)
 		advance(p);
 		f->is_dynamic=1;
 	}
+
 	if (match(p,TOKEN_BLOCKING))
 	{
 		f->is_blocking=1;
@@ -2000,6 +2092,7 @@ static Func *parse_extern(Parser *p)
 		}
 		while (match(p,TOKEN_COMMA));
 	}
+
 	expect(p,TOKEN_RPAREN);
 	expect(p,TOKEN_SEMICOLON);   /* No body. */
 	f->body=NULL;
@@ -2022,6 +2115,7 @@ static Func *parse_function(Parser *p)
 		}
 		while (match(p,TOKEN_COMMA));
 	}
+
 	expect(p,TOKEN_RPAREN);
 	f->body=parse_block(p);
 	return f;
@@ -2151,6 +2245,7 @@ static ClassDecl *parse_class(Parser *p)
 				fprintf(stderr,"Too many constructors.\n");
 				exit(1);
 			}
+
 			class_add_ctor(c,f);
 			c->ctor=c->ctors[0];   /* Legacy alias. */
 			continue;
@@ -2162,6 +2257,7 @@ static ClassDecl *parse_class(Parser *p)
 			fprintf(stderr,"line %d: Expected member type.\n",p->cur.line);
 			exit(1);
 		}
+
 		Token mname=expect(p,TOKEN_IDENT);
 		if (check(p,TOKEN_LPAREN))
 		{
@@ -2178,6 +2274,7 @@ static ClassDecl *parse_class(Parser *p)
 				}
 				while (match(p,TOKEN_COMMA));
 			}
+
 			expect(p,TOKEN_RPAREN);
 			f->body=parse_block(p);
 			f->is_static=member_static;
@@ -2199,6 +2296,7 @@ static ClassDecl *parse_class(Parser *p)
 			fl->init=init;
 		}
 	}
+
 	expect(p,TOKEN_RBRACE);
 	return c;
 }
@@ -2291,6 +2389,7 @@ static EnumDecl *parse_enum(Parser *p)
 								fprintf(stderr,"Too many variant fields.\n");
 								exit(1);
 							}
+
 							Param pm;
 							memset(&pm,0,sizeof(pm));
 							parse_one_param(p,&pm);
@@ -2309,6 +2408,7 @@ static EnumDecl *parse_enum(Parser *p)
 								fprintf(stderr,"Too many constant arguments.\n");
 								exit(1);
 							}
+
 							c->args[c->arg_count++]=parse_expr(p);
 						}
 						while (match(p,TOKEN_COMMA));
@@ -2328,6 +2428,7 @@ static EnumDecl *parse_enum(Parser *p)
 						fprintf(stderr,"Too many constant overrides.\n");
 						exit(1);
 					}
+
 					TypeRef rt;
 					parse_type(p,&rt);
 					Func *f=func_new();
@@ -2391,6 +2492,7 @@ static EnumDecl *parse_enum(Parser *p)
 			fprintf(stderr,"line %d: Expected member type.\n",p->cur.line);
 			exit(1);
 		}
+
 		Token mname=expect(p,TOKEN_IDENT);
 		if (check(p,TOKEN_LPAREN))
 		{
@@ -2472,5 +2574,6 @@ Unit *parse_unit(Parser *p)
 			u->funcs[u->func_count++]=parse_function(p);
 		}
 	}
+
 	return u;
 }

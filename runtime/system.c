@@ -409,6 +409,7 @@ void bzy_sys_raw_mode(int64_t on)
 		{
 			return;
 		}
+
 		if (!GetConsoleMode(g_raw_in, &g_raw_saved_mode))
 		{
 			return;   /* Not a console (piped/redirected): no-op. */
@@ -423,6 +424,7 @@ void bzy_sys_raw_mode(int64_t on)
 		{
 			return;   /* Piped/redirected stdin: no-op. */
 		}
+
 		if (tcgetattr(STDIN_FILENO, &g_raw_saved_termios) != 0)
 		{
 			return;
@@ -460,6 +462,7 @@ void bzy_sys_mouse_mode(int64_t on)
 		{
 			return;
 		}
+
 		if (!GetConsoleMode(h, &g_mouse_saved_mode))
 		{
 			return;   /* Not a console (piped): no-op. */
@@ -510,6 +513,7 @@ static void in_drain(void)
 		{
 			break;   /* Full: drop the remainder this tick. */
 		}
+
 		g_in_buf[g_in_tail] = tmp[i];
 		g_in_tail = next;
 	}
@@ -519,10 +523,12 @@ static int  in_count(void)
 {
 	return (g_in_tail - g_in_head + BZY_IN_CAP) % BZY_IN_CAP;
 }
+
 static int  in_peek(int i)
 {
 	return g_in_buf[(g_in_head + i) % BZY_IN_CAP];
 }
+
 static void in_advance(int k)
 {
 	g_in_head = (g_in_head + k) % BZY_IN_CAP;
@@ -537,10 +543,12 @@ static int64_t mouse_pack(int x, int y, int flags)
 	{
 		x = 0;
 	}
+
 	if (y < 0)
 	{
 		y = 0;
 	}
+
 	return ((int64_t)(x & 0xFFFF) << 32) | ((int64_t)(y & 0xFFFF) << 16) | (int64_t)(flags & 0xFFFF);
 }
 
@@ -558,10 +566,12 @@ int64_t bzy_sys_poll_key(void)
 		{
 			return -1;
 		}
+
 		if (!PeekConsoleInput(h, &rec, 1, &nread) || nread == 0)
 		{
 			return -1;
 		}
+
 		if (rec.EventType == KEY_EVENT)
 		{
 			if (rec.Event.KeyEvent.bKeyDown && rec.Event.KeyEvent.uChar.AsciiChar)
@@ -569,9 +579,11 @@ int64_t bzy_sys_poll_key(void)
 				ReadConsoleInput(h, &rec, 1, &nread);   /* Consume the key. */
 				return (int64_t)(unsigned char)rec.Event.KeyEvent.uChar.AsciiChar;
 			}
+
 			ReadConsoleInput(h, &rec, 1, &nread);       /* Drop key-up / modifier. */
 			continue;
 		}
+
 		return -1;   /* Mouse (or other) at head: leave it for pollMouse. */
 	}
 #else
@@ -589,6 +601,7 @@ int64_t bzy_sys_poll_key(void)
 		{
 			return -1;            /* Incomplete: wait one tick for the 3rd byte. */
 		}
+
 		if (in_peek(2) == '<')
 		{
 			return -1;            /* Mouse sequence: pollMouse owns it. */
@@ -613,14 +626,17 @@ int64_t bzy_sys_poll_mouse(void)
 	{
 		return -1;
 	}
+
 	if (!PeekConsoleInput(h, &rec, 1, &nread) || nread == 0)
 	{
 		return -1;
 	}
+
 	if (rec.EventType != MOUSE_EVENT)
 	{
 		return -1;   /* Key at head: leave it for pollKey. */
 	}
+
 	ReadConsoleInput(h, &rec, 1, &nread);
 
 	MOUSE_EVENT_RECORD *me = &rec.Event.MouseEvent;
@@ -639,20 +655,25 @@ int64_t bzy_sys_poll_mouse(void)
 		{
 			flags |= 32;
 		}
+
 		if (bs & FROM_LEFT_1ST_BUTTON_PRESSED)
 		{
 			flags |= 1;
 		}
+
 		if (bs & RIGHTMOST_BUTTON_PRESSED)
 		{
 			flags |= 2;
 		}
+
 		if (bs & FROM_LEFT_2ND_BUTTON_PRESSED)
 		{
 			flags |= 4;
 		}
+
 		flags |= bs ? 8 : 16;   /* Any button down = press; none = release. */
 	}
+
 	return mouse_pack(x, y, flags);
 #else
 	in_drain();
@@ -678,6 +699,7 @@ int64_t bzy_sys_poll_mouse(void)
 			{
 				vals[vi++] = num;
 			}
+
 			num = 0;
 		}
 		else if (c == 'M' || c == 'm')
@@ -686,6 +708,7 @@ int64_t bzy_sys_poll_mouse(void)
 			{
 				vals[vi++] = num;
 			}
+
 			fin = c;
 			i++;            /* Consume the final byte too. */
 			complete = 1;
@@ -697,6 +720,7 @@ int64_t bzy_sys_poll_mouse(void)
 			return -1;
 		}
 	}
+
 	if (!complete)
 	{
 		return -1;          /* Incomplete sequence: wait for more bytes. */
@@ -719,6 +743,7 @@ int64_t bzy_sys_poll_mouse(void)
 		{
 			flags |= 32;    /* Motion. */
 		}
+
 		if (btn == 0)
 		{
 			flags |= 1;    /* Left. */
@@ -731,8 +756,10 @@ int64_t bzy_sys_poll_mouse(void)
 		{
 			flags |= 4;    /* Middle. */
 		}
+
 		flags |= (fin == 'M') ? 8 : 16;              /* Press / release. */
 	}
+
 	return mouse_pack(x, y, flags);
 #endif
 }
