@@ -884,11 +884,11 @@ static void send_diagnostics(const char *uri, int line0, int char0, const char *
 
 /* Run `breezy --check <root>` for the document's project, translate the single
    diagnostic (or the clean result), and publish to every open document. */
-static void check_and_publish(const char *trigger_uri)
+/* Run `<self> <flag> "<root>" 2>&1` and return its captured stdout (malloc'd, caller
+   frees; NULL if there was none). The shared subprocess driver for --check (publish)
+   and --symbols (hover/definition). */
+static char *run_self_capture(const char *flag, const char *root)
 {
-	char *path = uri_to_path(trigger_uri);
-	char *root = project_root(path);
-
 	Sb cmd = {0};
 #ifdef _WIN32
 	/* _popen runs `cmd /c <command>`; when <command> begins with a quote, cmd
@@ -899,7 +899,9 @@ static void check_and_publish(const char *trigger_uri)
 #endif
 	sb_putc(&cmd, '"');
 	sb_puts(&cmd, g_self_exe);
-	sb_puts(&cmd, "\" --check \"");
+	sb_puts(&cmd, "\" ");
+	sb_puts(&cmd, flag);
+	sb_puts(&cmd, " \"");
 	sb_puts(&cmd, root);
 	sb_puts(&cmd, "\" 2>&1");   /* Capture stderr too: not every compiler error is JSON. */
 #ifdef _WIN32
@@ -921,6 +923,15 @@ static void check_and_publish(const char *trigger_uri)
 	}
 
 	free(cmd.p);
+	return outp.p;
+}
+
+static void check_and_publish(const char *trigger_uri)
+{
+	char *path = uri_to_path(trigger_uri);
+	char *root = project_root(path);
+
+	char *out = run_self_capture("--check", root);
 
 	/* Decide: clean, a precise JSON diagnostic, or a scraped plain-text error. */
 	int clean = 0, have_diag = 0;
@@ -928,7 +939,7 @@ static void check_and_publish(const char *trigger_uri)
 	char *err_msg = NULL;
 	int err_line = 0, err_col = 0;   /* 1-based as the compiler reports. */
 
-	const char *text = outp.p ? outp.p : "";
+	const char *text = out ? out : "";
 	const char *brace = strchr(text, '{');
 	if (brace)
 	{
@@ -1010,7 +1021,94 @@ static void check_and_publish(const char *trigger_uri)
 
 	free(err_file);
 	free(err_msg);
-	free(outp.p);
+	free(out);
+	free(root);
+	free(path);
+}
+
+/* textDocument/hover: find the named occurrence whose span contains the cursor in the
+   --symbols index for the file's project, and reply its "name : type". Replies null
+   when the cursor is not on a known symbol. */
+static void handle_hover(JVal *id, JVal *params)
+{
+	JVal *td  = jobj_get(params, "textDocument");
+	JVal *uri = jobj_get(td, "uri");
+	JVal *pos = jobj_get(params, "position");
+	JVal *jl  = jobj_get(pos, "line");
+	JVal *jc  = jobj_get(pos, "character");
+	if (!uri || uri->type != J_STR || !jl || jl->type != J_NUM || !jc || jc->type != J_NUM)
+	{
+		reply_result(id, "null");
+		return;
+	}
+
+	int line1 = (int)jl->num + 1;   /* LSP 0-based -> the compiler's 1-based. */
+	int char1 = (int)jc->num + 1;
+	char *path = uri_to_path(uri->str);
+	char *root = project_root(path);
+	char *out  = run_self_capture("--symbols", root);
+
+	const char *text  = out ? out : "";
+	const char *brace = strchr(text, '{');
+	char *hovertext = NULL;   /* "name : type" of the occurrence under the cursor. */
+	if (brace)
+	{
+		JVal *j = json_parse(brace);
+		JVal *syms = jobj_get(j, "symbols");
+		if (syms && syms->type == J_ARR)
+		{
+			for (int i = 0; i < syms->nitems; i++)
+			{
+				JVal *s  = syms->items[i];
+				JVal *sf = jobj_get(s, "file");
+				JVal *sl = jobj_get(s, "line");
+				JVal *sc = jobj_get(s, "col");
+				JVal *se = jobj_get(s, "endCol");
+				JVal *sn = jobj_get(s, "name");
+				JVal *st = jobj_get(s, "type");
+				if (!sf || sf->type != J_STR || !sl || !sc || !se
+						|| !sn || sn->type != J_STR || !st || st->type != J_STR)
+				{
+					continue;
+				}
+				if ((int)sl->num != line1 || char1 < (int)sc->num || char1 >= (int)se->num)
+				{
+					continue;
+				}
+				if (!same_file(sf->str, path))
+				{
+					continue;
+				}
+
+				Sb t = {0};
+				sb_puts(&t, sn->str);
+				sb_puts(&t, " : ");
+				sb_puts(&t, st->str);
+				hovertext = dupstr(t.p ? t.p : "");
+				free(t.p);
+				break;
+			}
+		}
+
+		json_free(j);
+	}
+
+	if (hovertext)
+	{
+		Sb r = {0};
+		sb_puts(&r, "{\"contents\":{\"kind\":\"plaintext\",\"value\":\"");
+		sb_put_json_escaped(&r, hovertext);
+		sb_puts(&r, "\"}}");
+		reply_result(id, r.p);
+		free(r.p);
+		free(hovertext);
+	}
+	else
+	{
+		reply_result(id, "null");
+	}
+
+	free(out);
 	free(root);
 	free(path);
 }
@@ -1036,7 +1134,7 @@ int lsp_main(const char *self_exe)
 
 		if (strcmp(m, "initialize") == 0)
 		{
-			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1}}");
+			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true}}");
 		}
 		else if (strcmp(m, "initialized") == 0)
 		{
@@ -1057,8 +1155,12 @@ int lsp_main(const char *self_exe)
 		}
 		else if (strcmp(m, "textDocument/didChange") == 0)
 		{
-			/* v1 checks on open/save (disk is authoritative then), not on the
-			   dirty buffer. Live-as-you-type (a dirty-buffer overlay) is G.2. */
+			/* v1 checks on open/save (disk is authoritative then), not on the dirty
+			   buffer. Live-as-you-type (a dirty-buffer overlay) is a later follow-up. */
+		}
+		else if (strcmp(m, "textDocument/hover") == 0)
+		{
+			handle_hover(id, jobj_get(root, "params"));
 		}
 		else if (strcmp(m, "shutdown") == 0)
 		{

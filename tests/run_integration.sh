@@ -533,4 +533,19 @@ else
     echo "  lsp_symbols: FAIL (got '$lsp_sym')"; fail=1
 fi
 
+# Hover: didOpen the typed fixture, then hover over the `c` occurrence (0-based
+# line 14, char 9) and assert the reply carries its "name : type".
+lsp_hov() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\"},\"position\":{\"line\":14,\"character\":9}}}"
+}
+lsp_hout="$(lsp_hov | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_hout" | grep -q 'c : Counter' \
+   && echo "$lsp_hout" | grep -q 'hoverProvider'; then
+    echo "  lsp_hover: OK"
+else
+    echo "  lsp_hover: FAIL (got '$lsp_hout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi
