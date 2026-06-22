@@ -48,6 +48,19 @@ static uint32_t le24(const unsigned char *p)
 {
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
 }
+static uint32_t le32(const unsigned char *p)
+{
+	return le24(p) | ((uint32_t)p[3] << 24);
+}
+static uint64_t le64(const unsigned char *p)
+{
+	uint64_t v = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		v |= (uint64_t)p[i] << (8 * i);
+	}
+	return v;
+}
 
 /* Decode a length-encoded integer; *adv receives the bytes consumed. A leading
    0xfb (NULL) or 0xfe-as-EOF is the caller's job to detect before calling. */
@@ -106,9 +119,6 @@ static const char *lenenc_str(const unsigned char **p, const unsigned char *end,
 	*slen = (int64_t)n;
 	return s;
 }
-
-/* (le32 returns with the prepared-statement id, Task 7; w_le16 with the param
-   types, Task 7.) */
 
 /* ---- the buffered packet reader ---------------------------------------------- */
 
@@ -209,10 +219,43 @@ static void w_u8(Wbuf *w, unsigned char v)
 	w_bytes(w, &v, 1);
 }
 
+static void w_le16(Wbuf *w, uint32_t v)
+{
+	unsigned char b[2] = { (unsigned char)v, (unsigned char)(v >> 8) };
+	w_bytes(w, b, 2);
+}
+
 static void w_le32(Wbuf *w, uint32_t v)
 {
 	unsigned char b[4] = { (unsigned char)v, (unsigned char)(v >> 8), (unsigned char)(v >> 16), (unsigned char)(v >> 24) };
 	w_bytes(w, b, 4);
+}
+
+/* Write a length-encoded integer (for a prepared-parameter value length). */
+static void w_lenenc(Wbuf *w, uint64_t n)
+{
+	if (n < 251)
+	{
+		w_u8(w, (unsigned char)n);
+	}
+	else if (n < 65536)
+	{
+		w_u8(w, 0xfc);
+		w_le16(w, (uint32_t)n);
+	}
+	else if (n < 16777216)
+	{
+		w_u8(w, 0xfd);
+		w_u8(w, (unsigned char)n);
+		w_u8(w, (unsigned char)(n >> 8));
+		w_u8(w, (unsigned char)(n >> 16));
+	}
+	else
+	{
+		w_u8(w, 0xfe);
+		w_le32(w, (uint32_t)n);
+		w_le32(w, (uint32_t)(n >> 32));
+	}
 }
 
 static void w_cstr(Wbuf *w, const char *s)
@@ -822,4 +865,359 @@ void *bzy_my_query(void *conn, void *sql)
 	Reader r = { 0 };
 	r.sock = sock;
 	return my_collect(&r);
+}
+
+/* ---- the prepared-statement (binary) protocol -------------------------------- */
+
+/* Parse a ColumnDefinition41: 6 length-encoded strings (we keep `name`, the 5th),
+   a 0x0c marker, then charset(2) column_length(4) type(1) flags(2) decimals(1).
+   Sets *type and *is_unsigned; returns an owned name string. */
+static void *parse_col_def(const unsigned char *payload, int64_t plen, int *type, int *is_unsigned)
+{
+	const unsigned char *p = payload;
+	const unsigned char *end = payload + plen;
+	int isnull;
+	int64_t sl;
+	lenenc_str(&p, end, &sl, &isnull);   /* catalog. */
+	lenenc_str(&p, end, &sl, &isnull);   /* schema. */
+	lenenc_str(&p, end, &sl, &isnull);   /* table. */
+	lenenc_str(&p, end, &sl, &isnull);   /* org_table. */
+	const char *name = lenenc_str(&p, end, &sl, &isnull);   /* name. */
+	int64_t namelen = sl;
+	lenenc_str(&p, end, &sl, &isnull);   /* org_name. */
+
+	int64_t adv;
+	lenenc_int(p, &adv);                 /* length of the fixed-length fields (0x0c). */
+	p += adv;
+	*type = 0xfd;                        /* Fallback: treat as a string. */
+	*is_unsigned = 0;
+	if (p + 9 <= end)
+	{
+		p += 2;                          /* character set. */
+		p += 4;                          /* column length. */
+		*type = *p;
+		p += 1;
+		uint32_t flags = le16(p);
+		*is_unsigned = (flags & 0x0020) ? 1 : 0;   /* UNSIGNED_FLAG. */
+	}
+
+	return bzy_str_new(name ? name : "", namelen);
+}
+
+/* Decode one non-NULL binary-protocol value to its text form (the shared result
+   model stores text). Fixed-width numerics and temporals are formatted; every other
+   type (string/blob/decimal/bit/enum/set/json/geometry) is a length-encoded string. */
+static void *decode_bin_value(const unsigned char **p, const unsigned char *end, int type, int is_unsigned)
+{
+	char tmp[64];
+	switch (type)
+	{
+		case 0x01:   /* TINY. */
+		{
+			unsigned char b = (*p)[0];
+			(*p) += 1;
+			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%u", (unsigned)b); }
+			else { snprintf(tmp, sizeof(tmp), "%d", (int)(int8_t)b); }
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x02:   /* SHORT. */
+		case 0x0d:   /* YEAR. */
+		{
+			uint32_t u = le16(*p);
+			(*p) += 2;
+			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%u", u); }
+			else { snprintf(tmp, sizeof(tmp), "%d", (int)(int16_t)u); }
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x03:   /* LONG. */
+		case 0x09:   /* INT24. */
+		{
+			uint32_t u = le32(*p);
+			(*p) += 4;
+			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%u", u); }
+			else { snprintf(tmp, sizeof(tmp), "%d", (int)(int32_t)u); }
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x08:   /* LONGLONG. */
+		{
+			uint64_t u = le64(*p);
+			(*p) += 8;
+			if (is_unsigned) { snprintf(tmp, sizeof(tmp), "%llu", (unsigned long long)u); }
+			else { snprintf(tmp, sizeof(tmp), "%lld", (long long)(int64_t)u); }
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x04:   /* FLOAT. */
+		{
+			uint32_t bits = le32(*p);
+			(*p) += 4;
+			float f;
+			memcpy(&f, &bits, 4);
+			snprintf(tmp, sizeof(tmp), "%g", (double)f);
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x05:   /* DOUBLE. */
+		{
+			uint64_t bits = le64(*p);
+			(*p) += 8;
+			double d;
+			memcpy(&d, &bits, 8);
+			snprintf(tmp, sizeof(tmp), "%.17g", d);
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x0a:   /* DATE. */
+		case 0x07:   /* TIMESTAMP. */
+		case 0x0c:   /* DATETIME. */
+		{
+			unsigned char L = (*p)[0];
+			(*p) += 1;
+			int year = 0, mon = 0, day = 0, hh = 0, mm = 0, ss = 0;
+			uint32_t micro = 0;
+			if (L >= 4) { year = (int)le16(*p); mon = (*p)[2]; day = (*p)[3]; }
+			if (L >= 7) { hh = (*p)[4]; mm = (*p)[5]; ss = (*p)[6]; }
+			if (L >= 11) { micro = le32(*p + 7); }
+			(*p) += L;
+			if (L == 0) { snprintf(tmp, sizeof(tmp), "0000-00-00"); }
+			else if (L == 4) { snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d", year, mon, day); }
+			else if (L >= 11) { snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d %02d:%02d:%02d.%06u", year, mon, day, hh, mm, ss, micro); }
+			else { snprintf(tmp, sizeof(tmp), "%04d-%02d-%02d %02d:%02d:%02d", year, mon, day, hh, mm, ss); }
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		case 0x0b:   /* TIME. */
+		{
+			unsigned char L = (*p)[0];
+			(*p) += 1;
+			int neg = 0, hh = 0, mm = 0, ss = 0;
+			uint32_t days = 0, micro = 0;
+			if (L >= 8) { neg = (*p)[0]; days = le32(*p + 1); hh = (*p)[5]; mm = (*p)[6]; ss = (*p)[7]; }
+			if (L >= 12) { micro = le32(*p + 8); }
+			(*p) += L;
+			long total_h = (long)days * 24 + hh;
+			if (L == 0) { snprintf(tmp, sizeof(tmp), "00:00:00"); }
+			else if (L >= 12) { snprintf(tmp, sizeof(tmp), "%s%ld:%02d:%02d.%06u", neg ? "-" : "", total_h, mm, ss, micro); }
+			else { snprintf(tmp, sizeof(tmp), "%s%ld:%02d:%02d", neg ? "-" : "", total_h, mm, ss); }
+			return bzy_str_new(tmp, (int64_t)strlen(tmp));
+		}
+		default:     /* DECIMAL/VARCHAR/VAR_STRING/STRING/BLOB/BIT/ENUM/SET/JSON/... */
+		{
+			int64_t adv;
+			uint64_t n = lenenc_int(*p, &adv);
+			(*p) += adv;
+			const char *s = (const char*)*p;
+			if (*p + n > end) { n = (uint64_t)(end - *p); }
+			(*p) += n;
+			return bzy_str_new(s, (int64_t)n);
+		}
+	}
+}
+
+/* Decode the EXECUTE response (binary-protocol resultset) into a DbResult. */
+static void *my_collect_binary(Reader *r)
+{
+	unsigned char *payload;
+	int64_t plen;
+	int seq;
+	if (!rd_packet(r, &payload, &plen, &seq))
+	{
+		bzy_db_set_error("Connection closed during the query.");
+		free(r->buf);
+		return NULL;
+	}
+
+	unsigned char m0 = (plen >= 1) ? payload[0] : 0xff;
+	if (m0 == 0xff) { set_error_from_err(payload, plen); free(r->buf); return NULL; }
+	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
+	{
+		int64_t adv;
+		uint64_t affected = lenenc_int(payload + 1, &adv);
+		free(r->buf);
+		return bzy_db_result_new(NULL, NULL, (int64_t)affected);
+	}
+
+	int64_t adv;
+	uint64_t ncols = lenenc_int(payload, &adv);
+	void *colnames = bzy_array_new((int64_t)ncols, 1);
+	int *types = (int*)malloc((size_t)ncols * sizeof(int));
+	int *uns = (int*)malloc((size_t)ncols * sizeof(int));
+
+	for (uint64_t c = 0; c < ncols; c++)             /* Column definitions (with types). */
+	{
+		if (!rd_packet(r, &payload, &plen, &seq))
+		{
+			bzy_db_set_error("Truncated MySQL column definitions.");
+			free(types);
+			free(uns);
+			bzy_release(colnames);
+			free(r->buf);
+			return NULL;
+		}
+
+		int ty, un;
+		arr_set(colnames, (int64_t)c, parse_col_def(payload, plen, &ty, &un));
+		types[c] = ty;
+		uns[c] = un;
+	}
+
+	rd_packet(r, &payload, &plen, &seq);             /* EOF after the column block. */
+
+	void  **rowbuf = NULL;
+	int64_t nrows = 0, rowcap = 0;
+	int     failed = 0;
+	for (;;)
+	{
+		if (!rd_packet(r, &payload, &plen, &seq))
+		{
+			failed = 1;
+			bzy_db_set_error("Connection closed mid-result.");
+			break;
+		}
+
+		unsigned char m = (plen >= 1) ? payload[0] : 0;
+		if (m == 0xfe && plen < 9) { break; }        /* EOF: end of rows. */
+		if (m == 0xff) { set_error_from_err(payload, plen); failed = 1; break; }
+
+		/* Binary row: a 0x00 header, a NULL bitmap, then each non-NULL value. */
+		const unsigned char *p = payload + 1;
+		const unsigned char *end = payload + plen;
+		int64_t nbm = ((int64_t)ncols + 7 + 2) / 8;
+		const unsigned char *bitmap = p;
+		p += nbm;
+		void *values = bzy_array_new((int64_t)ncols, 1);
+		for (uint64_t c = 0; c < ncols; c++)
+		{
+			int null_bit = (bitmap[(c + 2) / 8] >> ((c + 2) % 8)) & 1;
+			if (!null_bit) { arr_set(values, (int64_t)c, decode_bin_value(&p, end, types[c], uns[c])); }
+		}
+
+		void *row = bzy_db_row_new(values, colnames);
+		if (nrows >= rowcap)
+		{
+			rowcap = rowcap ? rowcap * 2 : 16;
+			rowbuf = (void**)realloc(rowbuf, (size_t)rowcap * sizeof(void*));
+		}
+		rowbuf[nrows++] = row;
+	}
+
+	free(types);
+	free(uns);
+	free(r->buf);
+	if (failed)
+	{
+		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
+		free(rowbuf);
+		bzy_release(colnames);
+		return NULL;
+	}
+
+	void *rows = bzy_array_new(nrows, 1);
+	for (int64_t i = 0; i < nrows; i++) { arr_set(rows, i, rowbuf[i]); }
+	free(rowbuf);
+	return bzy_db_result_new(colnames, rows, nrows);
+}
+
+/* Run a parameterized query via the prepared-statement protocol: PREPARE, EXECUTE
+   with the values bound as text-format (VAR_STRING) parameters -- never spliced into
+   SQL, so injection-safe -- then CLOSE. `params` is a managed string[]; a NULL slot
+   binds SQL NULL. */
+void *bzy_my_query_params(void *conn, void *sql, void *params)
+{
+	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	void *sock = *(void**)((char*)conn + MYC_SOCK);
+
+	int64_t nparams = params ? *(int64_t*)((char*)params + 24) : 0;
+	void  **pslots = params ? (void**)((char*)params + 32) : NULL;
+
+	/* COM_STMT_PREPARE. */
+	{
+		const char *s = bzy_str_data(sql);
+		int64_t sl = bzy_str_len(sql);
+		Wbuf w = { 0 };
+		w_u8(&w, 0x16);
+		w_bytes(&w, s, sl);
+		int oks = send_packet(sock, 0, w.p, w.len);
+		free(w.p);
+		if (!oks) { bzy_db_set_error("Failed to send the prepare."); return NULL; }
+	}
+
+	Reader r = { 0 };
+	r.sock = sock;
+	unsigned char *payload;
+	int64_t plen;
+	int seq;
+	if (!rd_packet(&r, &payload, &plen, &seq))
+	{
+		bzy_db_set_error("Connection closed during prepare.");
+		free(r.buf);
+		return NULL;
+	}
+	if (plen >= 1 && payload[0] == 0xff)
+	{
+		set_error_from_err(payload, plen);
+		free(r.buf);
+		return NULL;
+	}
+
+	/* COM_STMT_PREPARE_OK: 0x00, statement id (4), columns (2), params (2), ... */
+	uint32_t stmt_id = le32(payload + 1);
+	int num_cols = (int)le16(payload + 5);
+	int num_params = (int)le16(payload + 7);
+
+	for (int i = 0; i < num_params; i++) { rd_packet(&r, &payload, &plen, &seq); }   /* Param defs. */
+	if (num_params > 0) { rd_packet(&r, &payload, &plen, &seq); }                     /* EOF. */
+	for (int i = 0; i < num_cols; i++) { rd_packet(&r, &payload, &plen, &seq); }      /* Col defs (re-read at EXECUTE). */
+	if (num_cols > 0) { rd_packet(&r, &payload, &plen, &seq); }                       /* EOF. */
+
+	/* COM_STMT_EXECUTE. */
+	{
+		Wbuf w = { 0 };
+		w_u8(&w, 0x17);
+		w_le32(&w, stmt_id);
+		w_u8(&w, 0x00);                  /* Flags: no cursor. */
+		w_le32(&w, 1);                   /* Iteration count. */
+		if (nparams > 0)
+		{
+			int64_t nbm = (nparams + 7) / 8;
+			for (int64_t i = 0; i < nbm; i++)
+			{
+				unsigned char byte = 0;
+				for (int b = 0; b < 8; b++)
+				{
+					int64_t idx = i * 8 + b;
+					if (idx < nparams && pslots[idx] == NULL) { byte |= (unsigned char)(1 << b); }
+				}
+				w_u8(&w, byte);
+			}
+			w_u8(&w, 0x01);              /* new_params_bound_flag. */
+			for (int64_t i = 0; i < nparams; i++)
+			{
+				w_u8(&w, 0xfd);          /* MYSQL_TYPE_VAR_STRING. */
+				w_u8(&w, 0x00);          /* Unsigned flag. */
+			}
+			for (int64_t i = 0; i < nparams; i++)
+			{
+				void *v = pslots[i];
+				if (v)
+				{
+					int64_t vl = bzy_str_len(v);
+					w_lenenc(&w, (uint64_t)vl);
+					w_bytes(&w, bzy_str_data(v), vl);
+				}
+			}
+		}
+		int oks = send_packet(sock, 0, w.p, w.len);
+		free(w.p);
+		if (!oks) { bzy_db_set_error("Failed to send the execute."); free(r.buf); return NULL; }
+	}
+
+	void *result = my_collect_binary(&r);   /* Frees r.buf. */
+
+	/* COM_STMT_CLOSE (best effort; the result is already decoded). */
+	{
+		Wbuf w = { 0 };
+		w_u8(&w, 0x19);
+		w_le32(&w, stmt_id);
+		send_packet(sock, 0, w.p, w.len);
+		free(w.p);
+	}
+
+	return result;
 }

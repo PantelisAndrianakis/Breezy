@@ -1301,9 +1301,12 @@ static void resolve_mysql(Expr *e)
 
 	if (strcmp(m,"query")==0)
 	{
-		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_MYCONNECTION || e->args[1]->type.kind!=TY_STRING)
+		int ok2 = (e->arg_count==2 && e->args[0]->type.kind==TY_MYCONNECTION && e->args[1]->type.kind==TY_STRING);
+		int ok3 = (e->arg_count==3 && e->args[0]->type.kind==TY_MYCONNECTION && e->args[1]->type.kind==TY_STRING
+				   && e->args[2]->type.kind==TY_ARRAY && e->args[2]->type.elem && e->args[2]->type.elem->kind==TY_STRING);
+		if (!ok2 && !ok3)
 		{
-			die(e->line,"Mysql.query(connection, sql) takes a MyConnection and a string.",NULL);
+			die(e->line,"Mysql.query(connection, sql [, string[] params]) takes a MyConnection, a string, and an optional string array.",NULL);
 		}
 
 		e->type.kind = TY_DBRESULT;

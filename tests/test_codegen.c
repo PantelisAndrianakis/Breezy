@@ -1440,6 +1440,14 @@ static void test_pg_query_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_db_get_string_named") != NULL, 1);/* getString(string) by name. */
 }
 
+static void test_my_query_params_lowers(void)
+{
+	emit("void main(){ MyConnection c = Mysql.connect(\"h\",3306,\"u\",\"p\",\"d\");"
+		 " string[] a = new string[1]; a[0] = \"x\";"
+		 " DbResult r = Mysql.query(c, \"select ?\", a); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_my_query_params") != NULL, 1);   /* The 3-arg overload. */
+}
+
 static void test_pg_query_params_lowers(void)
 {
 	emit("void main(){ PgConnection c = Postgres.connect(\"h\",5432,\"u\",\"p\",\"d\");"
@@ -1675,6 +1683,7 @@ int main(void)
 	RUN(test_pg_connect_lowers);
 	RUN(test_my_connect_lowers);
 	RUN(test_pg_query_lowers);
+	RUN(test_my_query_params_lowers);
 	RUN(test_pg_query_params_lowers);
 	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
