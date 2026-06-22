@@ -1440,6 +1440,14 @@ static void test_pg_query_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_db_get_string_named") != NULL, 1);/* getString(string) by name. */
 }
 
+static void test_my_query_lowers(void)
+{
+	emit("void main(){ MyConnection c = Mysql.connect(\"h\",3306,\"u\",\"p\",\"d\");"
+		 " DbResult r = Mysql.query(c, \"select 1\"); Row w = r.row(0); print(w.getLong(0)); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_my_query") != NULL, 1);   /* The query call. */
+	ASSERT_INT(strstr(g_asm, "bzy_db_row") != NULL, 1);     /* row(i) (shared accessor). */
+}
+
 static void test_my_query_params_lowers(void)
 {
 	emit("void main(){ MyConnection c = Mysql.connect(\"h\",3306,\"u\",\"p\",\"d\");"
@@ -1683,6 +1691,7 @@ int main(void)
 	RUN(test_pg_connect_lowers);
 	RUN(test_my_connect_lowers);
 	RUN(test_pg_query_lowers);
+	RUN(test_my_query_lowers);
 	RUN(test_my_query_params_lowers);
 	RUN(test_pg_query_params_lowers);
 	RUN(test_xml_fields_lower);
