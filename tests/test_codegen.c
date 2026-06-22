@@ -1421,6 +1421,17 @@ static void test_pg_connect_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_pg_close") != NULL, 1);     /* close lowering. */
 }
 
+static void test_pg_query_lowers(void)
+{
+	emit("void main(){ PgConnection c = Postgres.connect(\"h\",5432,\"u\",\"p\",\"d\");"
+		 " DbResult r = Postgres.query(c, \"select 1\"); Row w = r.row(0);"
+		 " print(w.getLong(0)); print(w.getString(\"name\")); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_pg_query") != NULL, 1);            /* The query call. */
+	ASSERT_INT(strstr(g_asm, "bzy_db_row") != NULL, 1);             /* row(i). */
+	ASSERT_INT(strstr(g_asm, "bzy_db_get_long") != NULL, 1);        /* getLong(int) by index. */
+	ASSERT_INT(strstr(g_asm, "bzy_db_get_string_named") != NULL, 1);/* getString(string) by name. */
+}
+
 static void test_xml_fields_lower(void)
 {
 	emit("void main(){ XmlNode r = Xml.parse(\"<a x='1'>hi</a>\"); print(r.name); print(r.text); print(r.attrCount); }", TARGET_LINUX);
@@ -1646,6 +1657,7 @@ int main(void)
 	RUN(test_json_parse_lowers);
 	RUN(test_http_read_request_lowers);
 	RUN(test_pg_connect_lowers);
+	RUN(test_pg_query_lowers);
 	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);

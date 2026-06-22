@@ -5971,29 +5971,11 @@ static void cg_http_method(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 }
 
-/* Postgres.* namespace calls. connect can fail (sets the error sink + returns
-   NULL), so its lowering appends the bzy_db_check raise, the cg_http readRequest
-   pattern. */
-static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
+/* Raise a pending DbException after a call whose result is in rax (connect,
+   query, DbResult.row/columnName can all set the error sink). Preserves rax. */
+static void cg_db_check_after(Codegen *cg)
 {
-	const char *m = e->name + 9;   /* After "Postgres.". */
-	if (strcmp(m,"connect")!=0)
-	{
-		fprintf(stderr,"Codegen: unknown Postgres method '%s'\n", m);
-		exit(1);
-	}
-
-	/* (host, port, user, password, database) -> PgConnection. port widens to 64-bit. */
-	TypeRef ps[5];
-	ps[0]=e->args[0]->type;
-	memset(&ps[1],0,sizeof(ps[1]));
-	ps[1].kind=TY_LONG;
-	ps[2]=e->args[2]->type;
-	ps[3]=e->args[3]->type;
-	ps[4]=e->args[4]->type;
-	cg_call_with_args(cg,tt,"bzy_pg_connect",NULL,e->args,5,0,1,0,ps,5,0);
-
-	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve across the check. */
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 	int hk = cg_label(cg);
 	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), hk);
 	cg_emit(cg,".L%d:", hk);
@@ -6002,13 +5984,123 @@ static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
 }
 
-/* DbResult/Row/PgConnection methods. Task 4 wires PgConnection.close(); the
-   DbResult/Row accessors arrive in Task 6. */
+/* Postgres.* namespace calls. connect and query can fail (set the error sink +
+   return NULL), so their lowering appends the bzy_db_check raise. */
+static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 9;   /* After "Postgres.". */
+	if (strcmp(m,"connect")==0)
+	{
+		/* (host, port, user, password, database) -> PgConnection. port widens to 64-bit. */
+		TypeRef ps[5];
+		ps[0]=e->args[0]->type;
+		memset(&ps[1],0,sizeof(ps[1]));
+		ps[1].kind=TY_LONG;
+		ps[2]=e->args[2]->type;
+		ps[3]=e->args[3]->type;
+		ps[4]=e->args[4]->type;
+		cg_call_with_args(cg,tt,"bzy_pg_connect",NULL,e->args,5,0,1,0,ps,5,0);
+		cg_db_check_after(cg);
+		return;
+	}
+
+	if (strcmp(m,"query")==0)
+	{
+		/* (connection, sql) -> DbResult. */
+		TypeRef ps[2];
+		ps[0]=e->args[0]->type;
+		ps[1]=e->args[1]->type;
+		cg_call_with_args(cg,tt,"bzy_pg_query",NULL,e->args,2,0,1,0,ps,2,0);
+		cg_db_check_after(cg);
+		return;
+	}
+
+	fprintf(stderr,"Codegen: unknown Postgres method '%s'\n", m);
+	exit(1);
+}
+
+/* PgConnection/DbResult/Row methods. row()/columnName() can throw on a bad index
+   (bzy_db_check); the Row getters never throw (NULL/OOB -> type zero). The Row
+   getters pick a by-index or by-name runtime symbol from the argument type. */
 static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
-	if (e->lhs->type.kind==TY_PGCONNECTION && strcmp(e->name,"close")==0)
+	TypeKind lt = e->lhs->type.kind;
+	const char *n = e->name;
+
+	if (lt==TY_PGCONNECTION && strcmp(n,"close")==0)
 	{
 		cg_call_with_args(cg,tt,"bzy_pg_close",e->lhs,e->args,0,0,0,0,NULL,0,0);
+		return;
+	}
+
+	if (lt==TY_DBRESULT)
+	{
+		if (strcmp(n,"rowCount")==0)
+		{
+			cg_call_with_args(cg,tt,"bzy_db_row_count",e->lhs,e->args,0,0,0,0,NULL,0,0);
+			return;
+		}
+		if (strcmp(n,"columnCount")==0)
+		{
+			cg_call_with_args(cg,tt,"bzy_db_col_count",e->lhs,e->args,0,0,0,0,NULL,0,0);
+			return;
+		}
+
+		TypeRef ps[1];
+		memset(&ps[0],0,sizeof(ps[0]));
+		ps[0].kind=TY_LONG;                         /* Widen the index to 64-bit. */
+		if (strcmp(n,"row")==0)
+		{
+			cg_call_with_args(cg,tt,"bzy_db_row",e->lhs,e->args,1,0,1,0,ps,1,0);
+			cg_db_check_after(cg);                  /* Index out of range -> DbException. */
+			return;
+		}
+		if (strcmp(n,"columnName")==0)
+		{
+			cg_call_with_args(cg,tt,"bzy_db_col_name",e->lhs,e->args,1,0,1,0,ps,1,0);
+			cg_db_check_after(cg);
+			return;
+		}
+
+		fprintf(stderr,"Codegen: unknown DbResult method '%s'\n", n);
+		exit(1);
+	}
+
+	if (lt==TY_DBROW)
+	{
+		if (strcmp(n,"columnCount")==0)
+		{
+			cg_call_with_args(cg,tt,"bzy_db_row_columns",e->lhs,e->args,0,0,0,0,NULL,0,0);
+			return;
+		}
+
+		int byname = (e->arg_count==1 && e->args[0]->type.kind==TY_STRING);
+		int is_fp = 0;
+		const char *fn = NULL;
+		if (strcmp(n,"getString")==0)      { fn = byname ? "bzy_db_get_string_named" : "bzy_db_get_string"; }
+		else if (strcmp(n,"getInt")==0)    { fn = byname ? "bzy_db_get_long_named"   : "bzy_db_get_long"; }
+		else if (strcmp(n,"getLong")==0)   { fn = byname ? "bzy_db_get_long_named"   : "bzy_db_get_long"; }
+		else if (strcmp(n,"getDouble")==0) { fn = byname ? "bzy_db_get_double_named" : "bzy_db_get_double"; is_fp = 1; }
+		else if (strcmp(n,"getBool")==0)   { fn = byname ? "bzy_db_get_bool_named"   : "bzy_db_get_bool"; }
+		else if (strcmp(n,"isNull")==0)    { fn = byname ? "bzy_db_is_null_named"    : "bzy_db_is_null"; }
+		if (!fn)
+		{
+			fprintf(stderr,"Codegen: unknown Row method '%s'\n", n);
+			exit(1);
+		}
+
+		TypeRef ps[1];
+		if (byname)
+		{
+			ps[0]=e->args[0]->type;                 /* string column name. */
+		}
+		else
+		{
+			memset(&ps[0],0,sizeof(ps[0]));
+			ps[0].kind=TY_LONG;                     /* Widen the index to 64-bit. */
+		}
+
+		cg_call_with_args(cg,tt,fn,e->lhs,e->args,1,0,ty_is_managed(e->type.kind),is_fp,ps,1,0);
 		return;
 	}
 
@@ -12745,7 +12837,23 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_http_send_request");
 	cg_emit(cg,"extern bzy_pg_connect");
 	cg_emit(cg,"extern bzy_pg_close");
+	cg_emit(cg,"extern bzy_pg_query");
 	cg_emit(cg,"extern bzy_db_check");
+	cg_emit(cg,"extern bzy_db_row_count");
+	cg_emit(cg,"extern bzy_db_col_count");
+	cg_emit(cg,"extern bzy_db_row");
+	cg_emit(cg,"extern bzy_db_col_name");
+	cg_emit(cg,"extern bzy_db_row_columns");
+	cg_emit(cg,"extern bzy_db_get_string");
+	cg_emit(cg,"extern bzy_db_get_long");
+	cg_emit(cg,"extern bzy_db_get_double");
+	cg_emit(cg,"extern bzy_db_get_bool");
+	cg_emit(cg,"extern bzy_db_is_null");
+	cg_emit(cg,"extern bzy_db_get_string_named");
+	cg_emit(cg,"extern bzy_db_get_long_named");
+	cg_emit(cg,"extern bzy_db_get_double_named");
+	cg_emit(cg,"extern bzy_db_get_bool_named");
+	cg_emit(cg,"extern bzy_db_is_null_named");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");

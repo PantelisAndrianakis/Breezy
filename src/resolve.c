@@ -1235,6 +1235,17 @@ static void resolve_postgres(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"query")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_PGCONNECTION || e->args[1]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Postgres.query(connection, sql) takes a PgConnection and a string.",NULL);
+		}
+
+		e->type.kind = TY_DBRESULT;
+		return;
+	}
+
 	die(e->line,"Unknown Postgres method: ",m);
 }
 
@@ -3294,6 +3305,80 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Unknown PgConnection method: ",e->name);
 			}
 
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_DBRESULT)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"rowCount")==0 || strcmp(e->name,"columnCount")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"DbResult.rowCount()/columnCount() take no arguments.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"row")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"DbResult.row(index) takes one int.",NULL);
+				}
+
+				e->type.kind=TY_DBROW;
+			}
+			else if (strcmp(e->name,"columnName")==0)
+			{
+				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				{
+					die(e->line,"DbResult.columnName(index) takes one int.",NULL);
+				}
+
+				e->type.kind=TY_STRING;
+			}
+			else
+			{
+				die(e->line,"Unknown DbResult method: ",e->name);
+			}
+
+			break;
+		}
+
+		if (e->lhs->type.kind==TY_DBROW)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"columnCount")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"Row.columnCount() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_INT;
+				break;
+			}
+
+			int is_getter = strcmp(e->name,"getString")==0 || strcmp(e->name,"getInt")==0
+				|| strcmp(e->name,"getLong")==0 || strcmp(e->name,"getDouble")==0
+				|| strcmp(e->name,"getBool")==0 || strcmp(e->name,"isNull")==0;
+			if (!is_getter)
+			{
+				die(e->line,"Unknown Row method: ",e->name);
+			}
+
+			/* Every getter accepts a column index (int) or a column name (string). */
+			if (e->arg_count!=1 || !(ty_is_int(e->args[0]->type.kind) || e->args[0]->type.kind==TY_STRING))
+			{
+				die(e->line,"Row getters take one column index (int) or name (string).",NULL);
+			}
+
+			if (strcmp(e->name,"getString")==0)      { e->type.kind=TY_STRING; }
+			else if (strcmp(e->name,"getInt")==0)    { e->type.kind=TY_INT; }
+			else if (strcmp(e->name,"getLong")==0)   { e->type.kind=TY_LONG; }
+			else if (strcmp(e->name,"getDouble")==0) { e->type.kind=TY_DOUBLE; }
+			else                                     { e->type.kind=TY_BOOL; }   /* getBool / isNull. */
 			break;
 		}
 

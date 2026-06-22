@@ -22,8 +22,10 @@ extern int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);
 extern void *bzy_socket_connect(void *host, int64_t port);
 extern void  bzy_socket_close(void *s);
 
-/* Shared result model (dbresult.c) -- the error sink used for a failed handshake. */
+/* Shared result model (dbresult.c): the error sink + the node builders. */
 extern void bzy_db_set_error(const char *msg);
+extern void *bzy_db_result_new(void *colnames, void *rows, int64_t rowcount);
+extern void *bzy_db_row_new(void *values, void *colnames);
 
 /* Authentication crypto (crypto.c, libcrypto bound lazily). */
 extern int  bzy_crypto_load(void);
@@ -621,4 +623,132 @@ void bzy_pg_close(void *conn)
 		bzy_sock_send_all(sock, term, 5);
 		bzy_socket_close(sock);
 	}
+}
+
+/* ---- the simple query protocol ----------------------------------------------- */
+
+static int16_t be16(const char *p)
+{
+	return (int16_t)(((uint16_t)(unsigned char)p[0] << 8) | (uint16_t)(unsigned char)p[1]);
+}
+
+static void arr_set(void *arr, int64_t i, void *p)
+{
+	((void**)((char*)arr + 32))[i] = p;   /* Array slots live at +32. */
+}
+
+/* The trailing integer of a CommandComplete tag: "SELECT 5", "INSERT 0 3" -> 5/3. */
+static int64_t cc_rowcount(const char *tag)
+{
+	int64_t len = (int64_t)strlen(tag);
+	int64_t end = len;
+	while (end > 0 && (tag[end - 1] < '0' || tag[end - 1] > '9')) { end--; }
+	int64_t start = end;
+	while (start > 0 && tag[start - 1] >= '0' && tag[start - 1] <= '9') { start--; }
+	if (start == end) { return 0; }
+	return strtoll(tag + start, NULL, 10);
+}
+
+/* Run one simple Query and decode the result into a DbResult. On a server error the
+   error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns;
+   the stream is still drained to ReadyForQuery so the connection stays usable. */
+void *bzy_pg_query(void *conn, void *sql)
+{
+	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	void *sock = *(void**)((char*)conn + PGC_SOCK);
+
+	const char *s = bzy_str_data(sql);
+	if (!send_tagged(sock, 'Q', s, (int64_t)strlen(s) + 1))
+	{
+		bzy_db_set_error("Failed to send the query.");
+		return NULL;
+	}
+
+	Reader r = { 0 };
+	r.sock = sock;
+
+	void   *colnames = NULL;
+	void  **rowbuf = NULL;
+	int64_t nrows = 0, rowcap = 0;
+	int64_t rowcount = 0;
+	int     failed = 0;
+
+	char tag;
+	char *body;
+	int64_t blen;
+	while (rd_msg(&r, &tag, &body, &blen))
+	{
+		if (tag == 'T')                              /* RowDescription. */
+		{
+			int64_t ncols = be16(body);
+			colnames = bzy_array_new(ncols, 1);
+			int64_t off = 2;
+			for (int64_t c = 0; c < ncols; c++)
+			{
+				const char *name = body + off;
+				int64_t nl = (int64_t)strlen(name);
+				arr_set(colnames, c, bzy_str_new(name, nl));
+				off += nl + 1 + 18;                  /* NUL + 18 bytes of fixed fields. */
+			}
+		}
+		else if (tag == 'D')                         /* DataRow. */
+		{
+			int64_t nc = be16(body);
+			void *values = bzy_array_new(nc, 1);
+			int64_t off = 2;
+			for (int64_t c = 0; c < nc; c++)
+			{
+				int32_t vlen = be32(body + off);
+				off += 4;
+				if (vlen >= 0)                       /* vlen -1 = SQL NULL -> leave the slot NULL. */
+				{
+					arr_set(values, c, bzy_str_new(body + off, vlen));
+					off += vlen;
+				}
+			}
+
+			void *row = bzy_db_row_new(values, colnames);
+			if (nrows >= rowcap)
+			{
+				rowcap = rowcap ? rowcap * 2 : 16;
+				rowbuf = (void**)realloc(rowbuf, (size_t)rowcap * sizeof(void*));
+			}
+			rowbuf[nrows++] = row;
+		}
+		else if (tag == 'C')                         /* CommandComplete. */
+		{
+			rowcount = cc_rowcount(body);
+		}
+		else if (tag == 'E')                         /* ErrorResponse. */
+		{
+			set_error_from_response(body, blen);
+			failed = 1;                              /* Drain to ReadyForQuery, then bail. */
+		}
+		else if (tag == 'Z')                         /* ReadyForQuery. */
+		{
+			break;
+		}
+		/* 'I' EmptyQuery, 'N' Notice, 'S' ParameterStatus: skipped. */
+	}
+
+	free(r.buf);
+
+	if (failed || r.eof)
+	{
+		if (!failed) { bzy_db_set_error("Connection closed during the query."); }
+		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
+		free(rowbuf);
+		bzy_release(colnames);
+		return NULL;
+	}
+
+	void *rows = NULL;
+	if (colnames != NULL)                            /* A row-returning query (even 0 rows). */
+	{
+		rows = bzy_array_new(nrows, 1);
+		for (int64_t i = 0; i < nrows; i++) { arr_set(rows, i, rowbuf[i]); }
+	}
+
+	free(rowbuf);
+	return bzy_db_result_new(colnames, rows, nrows > 0 ? nrows : rowcount);
 }
