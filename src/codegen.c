@@ -6030,6 +6030,29 @@ static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
 	exit(1);
 }
 
+/* Mysql.* namespace calls (mirrors cg_postgres; the shared DbResult/Row surface is
+   reused). connect can fail, so its lowering appends the bzy_db_check raise. */
+static void cg_mysql(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 6;   /* After "Mysql.". */
+	if (strcmp(m,"connect")==0)
+	{
+		TypeRef ps[5];
+		ps[0]=e->args[0]->type;
+		memset(&ps[1],0,sizeof(ps[1]));
+		ps[1].kind=TY_LONG;
+		ps[2]=e->args[2]->type;
+		ps[3]=e->args[3]->type;
+		ps[4]=e->args[4]->type;
+		cg_call_with_args(cg,tt,"bzy_my_connect",NULL,e->args,5,0,1,0,ps,5,0);
+		cg_db_check_after(cg);
+		return;
+	}
+
+	fprintf(stderr,"Codegen: unknown Mysql method '%s'\n", m);
+	exit(1);
+}
+
 /* PgConnection/DbResult/Row methods. row()/columnName() can throw on a bad index
    (bzy_db_check); the Row getters never throw (NULL/OOB -> type zero). The Row
    getters pick a by-index or by-name runtime symbol from the argument type. */
@@ -6041,6 +6064,12 @@ static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (lt==TY_PGCONNECTION && strcmp(n,"close")==0)
 	{
 		cg_call_with_args(cg,tt,"bzy_pg_close",e->lhs,e->args,0,0,0,0,NULL,0,0);
+		return;
+	}
+
+	if (lt==TY_MYCONNECTION && strcmp(n,"close")==0)
+	{
+		cg_call_with_args(cg,tt,"bzy_my_close",e->lhs,e->args,0,0,0,0,NULL,0,0);
 		return;
 	}
 
@@ -8196,7 +8225,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_http_method(cg,tt,e);
 		}
-		else if (e->lhs->type.kind==TY_PGCONNECTION || e->lhs->type.kind==TY_DBRESULT || e->lhs->type.kind==TY_DBROW)
+		else if (e->lhs->type.kind==TY_PGCONNECTION || e->lhs->type.kind==TY_MYCONNECTION || e->lhs->type.kind==TY_DBRESULT || e->lhs->type.kind==TY_DBROW)
 		{
 			cg_db_method(cg,tt,e);
 		}
@@ -8382,6 +8411,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Postgres.",9)==0)
 		{
 			cg_postgres(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Mysql.",6)==0)
+		{
+			cg_mysql(cg,tt,e);
 		}
 		else
 		{
@@ -12849,6 +12882,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_pg_connect");
 	cg_emit(cg,"extern bzy_pg_close");
 	cg_emit(cg,"extern bzy_pg_query");
+	cg_emit(cg,"extern bzy_my_connect");
+	cg_emit(cg,"extern bzy_my_close");
 	cg_emit(cg,"extern bzy_pg_query_params");
 	cg_emit(cg,"extern bzy_db_check");
 	cg_emit(cg,"extern bzy_db_row_count");

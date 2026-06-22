@@ -1421,6 +1421,14 @@ static void test_pg_connect_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_pg_close") != NULL, 1);     /* close lowering. */
 }
 
+static void test_my_connect_lowers(void)
+{
+	emit("void main(){ MyConnection c = Mysql.connect(\"h\",3306,\"u\",\"p\",\"d\"); c.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_my_connect") != NULL, 1);   /* The connect call. */
+	ASSERT_INT(strstr(g_asm, "bzy_db_check") != NULL, 1);     /* connect failure -> DbException */
+	ASSERT_INT(strstr(g_asm, "bzy_my_close") != NULL, 1);     /* close lowering. */
+}
+
 static void test_pg_query_lowers(void)
 {
 	emit("void main(){ PgConnection c = Postgres.connect(\"h\",5432,\"u\",\"p\",\"d\");"
@@ -1665,6 +1673,7 @@ int main(void)
 	RUN(test_json_parse_lowers);
 	RUN(test_http_read_request_lowers);
 	RUN(test_pg_connect_lowers);
+	RUN(test_my_connect_lowers);
 	RUN(test_pg_query_lowers);
 	RUN(test_pg_query_params_lowers);
 	RUN(test_xml_fields_lower);

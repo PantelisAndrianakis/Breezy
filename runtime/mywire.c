@@ -18,6 +18,8 @@
 
 extern int     bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms);
 extern int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);
+extern void *bzy_socket_connect(void *host, int64_t port);
+extern void  bzy_socket_close(void *s);
 extern void bzy_db_set_error(const char *msg);
 
 /* Client capability flags we advertise. */
@@ -302,4 +304,58 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 
 	free(r.buf);
 	return ok;
+}
+
+/* ---- the MyConnection node + the Breezy entry points -------------------------- */
+
+/* MyConnection: sock@24, size 32, typeinfo {0,1,24} (one managed slot). */
+#define MYC_SOCK 24
+#define MYC_SIZE 32
+
+static int64_t g_myc_ti[3] = { 0, 1, MYC_SOCK };
+static int64_t g_myc_vt[2];
+static int     g_myc_vt_built;
+
+static void *myc_vtable(void)
+{
+	if (!g_myc_vt_built) { g_myc_vt[0] = (int64_t)&g_myc_ti[0]; g_myc_vt_built = 1; }
+	return &g_myc_vt[1];
+}
+
+/* Connect, handshake, and wrap the socket in a MyConnection. On any failure the
+   error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns. */
+void *bzy_my_connect(void *host, int64_t port, void *user, void *pass, void *db)
+{
+	void *sock = bzy_socket_connect(host, port);
+	if (!sock)
+	{
+		bzy_db_set_error("Could not connect to the MySQL server.");
+		return NULL;
+	}
+
+	if (!bzy_my_run_handshake(sock, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db)))
+	{
+		bzy_socket_close(sock);
+		bzy_release(sock);
+		return NULL;
+	}
+
+	void *n = bzy_alloc(MYC_SIZE);
+	*(void**)n = myc_vtable();
+	*(void**)((char*)n + MYC_SOCK) = sock;   /* Transfer the +1 from bzy_socket_connect. */
+	return n;
+}
+
+/* Send COM_QUIT and close the socket (idempotent; the node keeps its +1 Socket
+   reference, released when the MyConnection is released). */
+void bzy_my_close(void *conn)
+{
+	if (!conn) { return; }
+	void *sock = *(void**)((char*)conn + MYC_SOCK);
+	if (sock)
+	{
+		char quit[1] = { 0x01 };   /* COM_QUIT, packet seq 0. */
+		send_packet(sock, 0, quit, 1);
+		bzy_socket_close(sock);
+	}
 }
