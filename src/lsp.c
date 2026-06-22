@@ -18,6 +18,11 @@
 #ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
+#define BZY_POPEN  _popen
+#define BZY_PCLOSE _pclose
+#else
+#define BZY_POPEN  popen
+#define BZY_PCLOSE pclose
 #endif
 
 /* argv[0]: the path this server re-invokes with --check (set in lsp_main). */
@@ -481,6 +486,477 @@ static void reply_method_not_found(JVal *id)
 	free(sb.p);
 }
 
+/* ---- diagnostics: re-invoke --check, translate, publish ---- */
+
+static char *dupstr(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *r = malloc(n);
+	memcpy(r, s, n);
+	return r;
+}
+
+static int hexval(char c)
+{
+	if (c >= '0' && c <= '9')
+	{
+		return c - '0';
+	}
+	if (c >= 'a' && c <= 'f')
+	{
+		return c - 'a' + 10;
+	}
+	if (c >= 'A' && c <= 'F')
+	{
+		return c - 'A' + 10;
+	}
+	return 0;
+}
+
+static int has_nonspace(const char *t)
+{
+	for (; t && *t; t++)
+	{
+		if (!isspace((unsigned char)*t))
+		{
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* JSON-escape a string into the builder (for uri + message values). */
+static void sb_put_json_escaped(Sb *sb, const char *s)
+{
+	for (; s && *s; s++)
+	{
+		unsigned char c = (unsigned char)*s;
+		switch (c)
+		{
+		case '"':
+			sb_puts(sb, "\\\"");
+			break;
+		case '\\':
+			sb_puts(sb, "\\\\");
+			break;
+		case '\n':
+			sb_puts(sb, "\\n");
+			break;
+		case '\r':
+			sb_puts(sb, "\\r");
+			break;
+		case '\t':
+			sb_puts(sb, "\\t");
+			break;
+		default:
+			if (c < 0x20)
+			{
+				char b[8];
+				snprintf(b, sizeof(b), "\\u%04x", c);
+				sb_puts(sb, b);
+			}
+			else
+			{
+				sb_putc(sb, (char)c);
+			}
+			break;
+		}
+	}
+}
+
+/* The open-document store: exact editor URIs + their decoded filesystem paths.
+   v1 needs the open set so a clean check clears every open doc, and an error in
+   one file leaves the others clear. (No didClose handling yet: the set only
+   grows for the session -- negligible.) */
+static char **g_uris;
+static char **g_paths;
+static int    g_ndocs;
+
+static void docs_add(const char *uri, const char *path)
+{
+	for (int i = 0; i < g_ndocs; i++)
+	{
+		if (strcmp(g_uris[i], uri) == 0)
+		{
+			return;
+		}
+	}
+	g_uris = realloc(g_uris, sizeof(char *) * (g_ndocs + 1));
+	g_paths = realloc(g_paths, sizeof(char *) * (g_ndocs + 1));
+	g_uris[g_ndocs] = dupstr(uri);
+	g_paths[g_ndocs] = dupstr(path);
+	g_ndocs++;
+}
+
+/* file:///c:/a/b -> c:/a/b ; file:///home/x -> /home/x ; percent-decode. */
+static char *uri_to_path(const char *uri)
+{
+	const char *p = uri;
+	if (strncmp(p, "file://", 7) == 0)
+	{
+		p += 7;
+		/* Skip an authority (file://host/path) if one is present. */
+		if (*p && *p != '/')
+		{
+			const char *slash = strchr(p, '/');
+			p = slash ? slash : p + strlen(p);
+		}
+	}
+	const char *q = p;
+#ifdef _WIN32
+	/* file:///c:/... -> drop the slash before the drive letter. */
+	if (q[0] == '/' && isalpha((unsigned char)q[1]) && q[2] == ':')
+	{
+		q++;
+	}
+#endif
+	Sb sb = {0};
+	for (; *q; q++)
+	{
+		if (*q == '%' && isxdigit((unsigned char)q[1]) && isxdigit((unsigned char)q[2]))
+		{
+			sb_putc(&sb, (char)((hexval(q[1]) << 4) | hexval(q[2])));
+			q += 2;
+		}
+		else
+		{
+			sb_putc(&sb, *q);
+		}
+	}
+	if (!sb.p)
+	{
+		sb.p = calloc(1, 1);
+	}
+	return sb.p;
+}
+
+static char *path_to_uri(const char *p)
+{
+	Sb sb = {0};
+	sb_puts(&sb, "file://");
+#ifdef _WIN32
+	if (isalpha((unsigned char)p[0]) && p[1] == ':')
+	{
+		sb_putc(&sb, '/');   /* file:///C:/... */
+	}
+#endif
+	for (; *p; p++)
+	{
+		sb_putc(&sb, *p == '\\' ? '/' : *p);
+	}
+	if (!sb.p)
+	{
+		sb.p = calloc(1, 1);
+	}
+	return sb.p;
+}
+
+/* The directory part of a path (a copy; "." if the path has no separator). */
+static char *file_dir(const char *path)
+{
+	char *dir = dupstr(path);
+	char *slash = strrchr(dir, '/');
+#ifdef _WIN32
+	{
+		char *b = strrchr(dir, '\\');
+		if (b && (!slash || b > slash))
+		{
+			slash = b;
+		}
+	}
+#endif
+	if (slash)
+	{
+		*slash = '\0';
+	}
+	else
+	{
+		free(dir);
+		return dupstr(".");
+	}
+	return dir;
+}
+
+static int has_breezy_toml(const char *dir)
+{
+	Sb t = {0};
+	sb_puts(&t, dir);
+	sb_puts(&t, "/breezy.toml");
+	FILE *f = fopen(t.p, "rb");
+	free(t.p);
+	if (f)
+	{
+		fclose(f);
+		return 1;
+	}
+	return 0;
+}
+
+/* The project root for a file: the nearest ancestor holding a breezy.toml, else
+   the file's own directory (matches how `breezy <dir>` scopes a project). */
+static char *project_root(const char *path)
+{
+	char *dir = file_dir(path);
+	char *probe = dupstr(dir);
+	for (;;)
+	{
+		if (has_breezy_toml(probe))
+		{
+			free(dir);
+			return probe;
+		}
+		char *up = strrchr(probe, '/');
+#ifdef _WIN32
+		{
+			char *b = strrchr(probe, '\\');
+			if (b && (!up || b > up))
+			{
+				up = b;
+			}
+		}
+#endif
+		if (!up || up == probe)
+		{
+			break;
+		}
+		*up = '\0';
+	}
+	free(probe);
+	return dir;
+}
+
+/* Path equality, separator- and (on Windows) case-insensitive. */
+static int same_file(const char *a, const char *b)
+{
+	for (;;)
+	{
+		char ca = *a, cb = *b;
+		if (ca == '\\')
+		{
+			ca = '/';
+		}
+		if (cb == '\\')
+		{
+			cb = '/';
+		}
+#ifdef _WIN32
+		ca = (char)tolower((unsigned char)ca);
+		cb = (char)tolower((unsigned char)cb);
+#endif
+		if (ca != cb)
+		{
+			return 0;
+		}
+		if (!ca)
+		{
+			return 1;
+		}
+		a++;
+		b++;
+	}
+}
+
+/* Best-effort 1-based line scrape from a plain-text compiler error (the parser
+   paths that print "line N: ..." to stderr instead of the JSON diagnostic). */
+static int scrape_line(const char *t)
+{
+	const char *m = strstr(t, "line ");
+	if (m)
+	{
+		int n = atoi(m + 5);
+		if (n > 0)
+		{
+			return n;
+		}
+	}
+	for (const char *p = t; *p; p++)
+	{
+		if (*p == ':' && isdigit((unsigned char)p[1]))
+		{
+			int n = atoi(p + 1);
+			if (n > 0)
+			{
+				return n;
+			}
+		}
+	}
+	return 1;
+}
+
+static char *first_line(const char *t)
+{
+	size_t n = 0;
+	while (t[n] && t[n] != '\n' && t[n] != '\r')
+	{
+		n++;
+	}
+	char *r = malloc(n + 1);
+	memcpy(r, t, n);
+	r[n] = '\0';
+	return r;
+}
+
+/* Publish diagnostics for one URI. msg==NULL clears (empty array); otherwise a
+   single Error diagnostic. line0/char0 are already 0-based (LSP positions). */
+static void send_diagnostics(const char *uri, int line0, int char0, const char *msg)
+{
+	if (line0 < 0)
+	{
+		line0 = 0;
+	}
+	if (char0 < 0)
+	{
+		char0 = 0;
+	}
+	Sb sb = {0};
+	sb_puts(&sb, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"");
+	sb_put_json_escaped(&sb, uri);
+	sb_puts(&sb, "\",\"diagnostics\":[");
+	if (msg)
+	{
+		char range[160];
+		snprintf(range, sizeof(range),
+				 "{\"range\":{\"start\":{\"line\":%d,\"character\":%d},"
+				 "\"end\":{\"line\":%d,\"character\":%d}},"
+				 "\"severity\":1,\"source\":\"breezy\",\"message\":\"",
+				 line0, char0, line0, char0 + 1);
+		sb_puts(&sb, range);
+		sb_put_json_escaped(&sb, msg);
+		sb_puts(&sb, "\"}");
+	}
+	sb_puts(&sb, "]}}");
+	send_framed(sb.p, sb.len);
+	free(sb.p);
+}
+
+/* Run `breezy --check <root>` for the document's project, translate the single
+   diagnostic (or the clean result), and publish to every open document. */
+static void check_and_publish(const char *trigger_uri)
+{
+	char *path = uri_to_path(trigger_uri);
+	char *root = project_root(path);
+
+	Sb cmd = {0};
+#ifdef _WIN32
+	/* _popen runs `cmd /c <command>`; when <command> begins with a quote, cmd
+	   strips the first and last quote, which would break the inner quoting of a
+	   spaced path. Wrap the whole command in an extra quote pair so cmd strips
+	   that outer layer and leaves the inner quotes intact. */
+	sb_putc(&cmd, '"');
+#endif
+	sb_putc(&cmd, '"');
+	sb_puts(&cmd, g_self_exe);
+	sb_puts(&cmd, "\" --check \"");
+	sb_puts(&cmd, root);
+	sb_puts(&cmd, "\" 2>&1");   /* Capture stderr too: not every compiler error is JSON. */
+#ifdef _WIN32
+	sb_putc(&cmd, '"');
+#endif
+
+	Sb outp = {0};
+	FILE *pp = BZY_POPEN(cmd.p, "r");
+	if (pp)
+	{
+		char chunk[1024];
+		size_t r;
+		while ((r = fread(chunk, 1, sizeof(chunk), pp)) > 0)
+		{
+			sb_putn(&outp, chunk, r);
+		}
+		BZY_PCLOSE(pp);
+	}
+	free(cmd.p);
+
+	/* Decide: clean, a precise JSON diagnostic, or a scraped plain-text error. */
+	int clean = 0, have_diag = 0;
+	char *err_file = NULL;
+	char *err_msg = NULL;
+	int err_line = 0, err_col = 0;   /* 1-based as the compiler reports. */
+
+	const char *text = outp.p ? outp.p : "";
+	const char *brace = strchr(text, '{');
+	if (brace)
+	{
+		JVal *j = json_parse(brace);
+		JVal *ok = jobj_get(j, "ok");
+		JVal *jline = jobj_get(j, "line");
+		JVal *jmsg = jobj_get(j, "message");
+		if (ok && ok->type == J_BOOL && ok->bval)
+		{
+			clean = 1;
+		}
+		else if (jline && jmsg && jmsg->type == J_STR)
+		{
+			JVal *jfile = jobj_get(j, "file");
+			JVal *jcol = jobj_get(j, "col");
+			have_diag = 1;
+			err_file = dupstr((jfile && jfile->type == J_STR) ? jfile->str : path);
+			err_line = (int)jline->num;
+			err_col = jcol ? (int)jcol->num : 0;
+			err_msg = dupstr(jmsg->str);
+		}
+		json_free(j);
+	}
+	if (!clean && !have_diag)
+	{
+		/* Non-JSON output: surface it so the error is never silently invisible. */
+		if (has_nonspace(text))
+		{
+			have_diag = 1;
+			err_file = dupstr(path);   /* Best guess: the triggering file. */
+			err_msg = first_line(text);
+			err_line = scrape_line(text);
+			err_col = 0;
+		}
+		else
+		{
+			clean = 1;   /* No output, no error: treat as clean. */
+		}
+	}
+
+	/* 1-based (compiler) -> 0-based (LSP). col 0 (resolve errors) maps to 0. */
+	int l0 = err_line > 0 ? err_line - 1 : 0;
+	int c0 = err_col > 0 ? err_col - 1 : 0;
+
+	/* Publish to every open document IN THIS PROJECT: the error's file gets the
+	   diagnostic, the project's other open files are cleared. Documents in other
+	   projects are left untouched (a clean check here must not wipe their
+	   squiggles). */
+	int matched = 0;
+	for (int i = 0; i < g_ndocs; i++)
+	{
+		char *ri = project_root(g_paths[i]);
+		int covered = same_file(ri, root);
+		free(ri);
+		if (!covered)
+		{
+			continue;
+		}
+		if (have_diag && same_file(g_paths[i], err_file))
+		{
+			send_diagnostics(g_uris[i], l0, c0, err_msg);
+			matched = 1;
+		}
+		else
+		{
+			send_diagnostics(g_uris[i], 0, 0, NULL);
+		}
+	}
+	/* Error in a file that is not currently open: publish under a derived URI. */
+	if (have_diag && !matched)
+	{
+		char *euri = path_to_uri(err_file);
+		send_diagnostics(euri, l0, c0, err_msg);
+		free(euri);
+	}
+
+	free(err_file);
+	free(err_msg);
+	free(outp.p);
+	free(root);
+	free(path);
+}
+
 /* ---- server loop ---- */
 
 int lsp_main(const char *self_exe)
@@ -511,11 +987,20 @@ int lsp_main(const char *self_exe)
 		else if (strcmp(m, "textDocument/didOpen") == 0
 				 || strcmp(m, "textDocument/didSave") == 0)
 		{
-			/* Task 2: check the document and publish diagnostics. */
+			JVal *td = jobj_get(jobj_get(root, "params"), "textDocument");
+			JVal *uri = jobj_get(td, "uri");
+			if (uri && uri->type == J_STR)
+			{
+				char *path = uri_to_path(uri->str);
+				docs_add(uri->str, path);
+				free(path);
+				check_and_publish(uri->str);
+			}
 		}
 		else if (strcmp(m, "textDocument/didChange") == 0)
 		{
-			/* Task 2: record the dirty buffer; v1 does not check on change. */
+			/* v1 checks on open/save (disk is authoritative then), not on the
+			   dirty buffer. Live-as-you-type (a dirty-buffer overlay) is G.2. */
 		}
 		else if (strcmp(m, "shutdown") == 0)
 		{

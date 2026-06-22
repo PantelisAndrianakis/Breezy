@@ -496,5 +496,27 @@ if echo "$lsp_out" | grep -q '"capabilities"' \
 else
     echo "  lsp_lifecycle: FAIL (got '$lsp_out')"; fail=1
 fi
+# Diagnostics: didOpen a known-bad file -> a publishDiagnostics carrying the
+# compiler's own line:col (0-based), and didOpen a clean file in its own project
+# -> an empty diagnostics array. URIs use the native path form (pwd -W on
+# Windows) so breezy --check receives a path it can open.
+lsp_w="$(pwd -W 2>/dev/null || pwd)"; case "$lsp_w" in /*) lsp_b="file://$lsp_w";; *) lsp_b="file:///$lsp_w";; esac
+lsp_diag() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame '{"jsonrpc":"2.0","method":"initialized","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/bad/bad.bzy\",\"version\":1,\"text\":\"\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/good/good.bzy\",\"version\":1,\"text\":\"\"}}}"
+    lsp_frame '{"jsonrpc":"2.0","method":"exit"}'
+}
+lsp_dout="$(lsp_diag | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_dout" | grep -q 'publishDiagnostics' \
+   && echo "$lsp_dout" | grep -q 'bad/bad.bzy' \
+   && echo "$lsp_dout" | grep -q '"line":3' \
+   && echo "$lsp_dout" | grep -q "Expected ';'" \
+   && echo "$lsp_dout" | grep -q '"diagnostics":\[\]'; then
+    echo "  lsp_diagnostics: OK"
+else
+    echo "  lsp_diagnostics: FAIL (got '$lsp_dout')"; fail=1
+fi
 
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi
