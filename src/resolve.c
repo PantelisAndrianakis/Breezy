@@ -1267,6 +1267,17 @@ static void resolve_mysql(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"query")==0)
+	{
+		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_MYCONNECTION || e->args[1]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Mysql.query(connection, sql) takes a MyConnection and a string.",NULL);
+		}
+
+		e->type.kind = TY_DBRESULT;
+		return;
+	}
+
 	die(e->line,"Unknown Mysql method: ",m);
 }
 

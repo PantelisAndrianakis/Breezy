@@ -6049,6 +6049,16 @@ static void cg_mysql(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"query")==0)
+	{
+		TypeRef ps[2];
+		ps[0]=e->args[0]->type;
+		ps[1]=e->args[1]->type;
+		cg_call_with_args(cg,tt,"bzy_my_query",NULL,e->args,2,0,1,0,ps,2,0);
+		cg_db_check_after(cg);
+		return;
+	}
+
 	fprintf(stderr,"Codegen: unknown Mysql method '%s'\n", m);
 	exit(1);
 }
@@ -12884,6 +12894,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_pg_query");
 	cg_emit(cg,"extern bzy_my_connect");
 	cg_emit(cg,"extern bzy_my_close");
+	cg_emit(cg,"extern bzy_my_query");
 	cg_emit(cg,"extern bzy_pg_query_params");
 	cg_emit(cg,"extern bzy_db_check");
 	cg_emit(cg,"extern bzy_db_row_count");

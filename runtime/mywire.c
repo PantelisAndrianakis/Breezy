@@ -21,6 +21,8 @@ extern int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);
 extern void *bzy_socket_connect(void *host, int64_t port);
 extern void  bzy_socket_close(void *s);
 extern void bzy_db_set_error(const char *msg);
+extern void *bzy_db_result_new(void *colnames, void *rows, int64_t rowcount);
+extern void *bzy_db_row_new(void *values, void *colnames);
 
 /* Authentication crypto (crypto.c, libcrypto bound lazily). */
 extern int  bzy_crypto_load(void);
@@ -38,10 +40,43 @@ extern void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char
 
 /* ---- little-endian readers --------------------------------------------------- */
 
+static uint32_t le16(const unsigned char *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
 static uint32_t le24(const unsigned char *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16); }
 
-/* (le16/le32 + the length-encoded-integer decoder arrive with the query decode,
-   Task 6; w_le16 with the prepared-param types, Task 7.) */
+/* Decode a length-encoded integer; *adv receives the bytes consumed. A leading
+   0xfb (NULL) or 0xfe-as-EOF is the caller's job to detect before calling. */
+static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
+{
+	unsigned char c = p[0];
+	if (c < 0xfb) { *adv = 1; return c; }
+	if (c == 0xfc) { *adv = 3; return le16(p + 1); }
+	if (c == 0xfd) { *adv = 4; return le24(p + 1); }
+	*adv = 9;   /* 0xfe: 8-byte. */
+	uint64_t v = 0;
+	for (int i = 0; i < 8; i++) { v |= (uint64_t)p[1 + i] << (8 * i); }
+	return v;
+}
+
+/* Read a length-encoded string in [*p, end); advances *p, sets *slen, and sets
+   *isnull on a 0xfb NULL marker. Returns the data pointer (NULL when NULL). */
+static const char *lenenc_str(const unsigned char **p, const unsigned char *end, int64_t *slen, int *isnull)
+{
+	*isnull = 0;
+	*slen = 0;
+	if (*p >= end) { return NULL; }
+	if (**p == 0xfb) { *isnull = 1; (*p)++; return NULL; }
+	int64_t adv;
+	uint64_t n = lenenc_int(*p, &adv);
+	*p += adv;
+	const char *s = (const char*)*p;
+	if (*p + n > end) { n = (uint64_t)(end - *p); }   /* Defensive clamp. */
+	*p += n;
+	*slen = (int64_t)n;
+	return s;
+}
+
+/* (le32 returns with the prepared-statement id, Task 7; w_le16 with the param
+   types, Task 7.) */
 
 /* ---- the buffered packet reader ---------------------------------------------- */
 
@@ -453,4 +488,149 @@ void bzy_my_close(void *conn)
 		send_packet(sock, 0, quit, 1);
 		bzy_socket_close(sock);
 	}
+}
+
+/* ---- the text-protocol query ------------------------------------------------- */
+
+static void arr_set(void *arr, int64_t i, void *p)
+{
+	((void**)((char*)arr + 32))[i] = p;   /* Array slots live at +32. */
+}
+
+/* Decode a COM_QUERY response into a DbResult: a column count, that many
+   ColumnDefinition41 packets (we keep the `name`), an EOF, then text rows until
+   EOF, or an OK packet (non-row -> affected count) / ERR. Frees the reader buffer. */
+static void *my_collect(Reader *r)
+{
+	unsigned char *payload;
+	int64_t plen;
+	int seq;
+	if (!rd_packet(r, &payload, &plen, &seq))
+	{
+		bzy_db_set_error("Connection closed during the query.");
+		free(r->buf);
+		return NULL;
+	}
+
+	unsigned char m0 = (plen >= 1) ? payload[0] : 0xff;
+	if (m0 == 0xff) { set_error_from_err(payload, plen); free(r->buf); return NULL; }
+	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
+	{
+		int64_t adv;
+		uint64_t affected = lenenc_int(payload + 1, &adv);
+		free(r->buf);
+		return bzy_db_result_new(NULL, NULL, (int64_t)affected);
+	}
+	if (m0 == 0xfb)
+	{
+		bzy_db_set_error("MySQL LOCAL INFILE is not supported.");
+		free(r->buf);
+		return NULL;
+	}
+
+	int64_t adv;
+	uint64_t ncols = lenenc_int(payload, &adv);
+	void *colnames = bzy_array_new((int64_t)ncols, 1);
+
+	for (uint64_t c = 0; c < ncols; c++)             /* ColumnDefinition41 packets. */
+	{
+		if (!rd_packet(r, &payload, &plen, &seq))
+		{
+			bzy_db_set_error("Truncated MySQL column definitions.");
+			bzy_release(colnames);
+			free(r->buf);
+			return NULL;
+		}
+
+		const unsigned char *p = payload;
+		const unsigned char *end = payload + plen;
+		int isnull;
+		int64_t sl;
+		lenenc_str(&p, end, &sl, &isnull);            /* catalog. */
+		lenenc_str(&p, end, &sl, &isnull);            /* schema. */
+		lenenc_str(&p, end, &sl, &isnull);            /* table. */
+		lenenc_str(&p, end, &sl, &isnull);            /* org_table. */
+		const char *name = lenenc_str(&p, end, &sl, &isnull);   /* name. */
+		arr_set(colnames, (int64_t)c, bzy_str_new(name ? name : "", sl));
+	}
+
+	/* An EOF packet follows the column block (CLIENT_DEPRECATE_EOF is not set). */
+	if (!rd_packet(r, &payload, &plen, &seq))
+	{
+		bzy_db_set_error("Truncated MySQL result (no column EOF).");
+		bzy_release(colnames);
+		free(r->buf);
+		return NULL;
+	}
+
+	void  **rowbuf = NULL;
+	int64_t nrows = 0, rowcap = 0;
+	int     failed = 0;
+	for (;;)
+	{
+		if (!rd_packet(r, &payload, &plen, &seq))
+		{
+			failed = 1;
+			bzy_db_set_error("Connection closed mid-result.");
+			break;
+		}
+
+		unsigned char m = (plen >= 1) ? payload[0] : 0;
+		if (m == 0xfe && plen < 9) { break; }         /* EOF: end of rows. */
+		if (m == 0xff) { set_error_from_err(payload, plen); failed = 1; break; }
+
+		void *values = bzy_array_new((int64_t)ncols, 1);
+		const unsigned char *p = payload;
+		const unsigned char *end = payload + plen;
+		for (uint64_t c = 0; c < ncols; c++)
+		{
+			int isnull;
+			int64_t sl;
+			const char *v = lenenc_str(&p, end, &sl, &isnull);
+			if (!isnull) { arr_set(values, (int64_t)c, bzy_str_new(v ? v : "", sl)); }
+		}
+
+		void *row = bzy_db_row_new(values, colnames);
+		if (nrows >= rowcap)
+		{
+			rowcap = rowcap ? rowcap * 2 : 16;
+			rowbuf = (void**)realloc(rowbuf, (size_t)rowcap * sizeof(void*));
+		}
+		rowbuf[nrows++] = row;
+	}
+
+	free(r->buf);
+	if (failed)
+	{
+		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
+		free(rowbuf);
+		bzy_release(colnames);
+		return NULL;
+	}
+
+	void *rows = bzy_array_new(nrows, 1);
+	for (int64_t i = 0; i < nrows; i++) { arr_set(rows, i, rowbuf[i]); }
+	free(rowbuf);
+	return bzy_db_result_new(colnames, rows, nrows);
+}
+
+/* Run a COM_QUERY and decode the result. On a server error the error sink is set
+   (the codegen-emitted bzy_db_check raises it) and NULL returns. */
+void *bzy_my_query(void *conn, void *sql)
+{
+	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	void *sock = *(void**)((char*)conn + MYC_SOCK);
+
+	const char *s = bzy_str_data(sql);
+	int64_t sl = bzy_str_len(sql);
+	Wbuf w = { 0 };
+	w_u8(&w, 0x03);                                  /* COM_QUERY. */
+	w_bytes(&w, s, sl);
+	int oks = send_packet(sock, 0, w.p, w.len);
+	free(w.p);
+	if (!oks) { bzy_db_set_error("Failed to send the query."); return NULL; }
+
+	Reader r = { 0 };
+	r.sock = sock;
+	return my_collect(&r);
 }
