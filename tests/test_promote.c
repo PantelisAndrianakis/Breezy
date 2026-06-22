@@ -3,6 +3,7 @@
 #include "types.h"
 #include "resolve.h"
 #include "prelude.h"
+#include "generics.h"   /* Drop uninstantiated generic templates (Pool<T>) before resolve, like the driver. */
 #include "ast.h"
 #include <string.h>
 
@@ -26,6 +27,8 @@ static Func *resolve_one(const char *src, const char *fname)
 	parser_init(&parsers[np], src);
 	units[np] = parse_unit(&parsers[np]);
 	int total = np + 1;
+
+	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &total, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
 
 	types_init(&tt);
 	types_register_builtins(&tt);

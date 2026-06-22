@@ -1,0 +1,25 @@
+// Pool<T> hands out reusable resources and takes them back. Mutating a resource,
+// releasing it, then re-acquiring must return the SAME object (reuse), not a fresh
+// one from the factory — so the mutated value survives the round trip.
+class Box
+{
+	int v;
+	Box(int v)
+	{
+		this.v = v;
+	}
+}
+
+void main()
+{
+	()->Box make = () => new Box(10);
+	Pool<Box> pool = new Pool<Box>(2, make);
+	Box a = pool.acquire();
+	Box b = pool.acquire();
+	a.v = 5;
+	pool.release(a);
+	Box c = pool.acquire();   // the freed `a`, not a new Box(10)
+	print(c.v);               // 5 proves reuse, not re-manufacture
+	pool.release(b);
+	pool.release(c);
+}

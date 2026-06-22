@@ -435,8 +435,42 @@ static const char RESULT[] =
 	"	Err(E e);\n"
 	"}\n";
 
-const char *BZY_PRELUDE[] = { VEC2I, VEC2L, VEC2F, VEC2D, VEC3I, VEC3L, VEC3F, VEC3D, DATETIME, OPTION, RESULT };
-const int   BZY_PRELUDE_COUNT = 11;
+/* Pool<T>: a bounded pool of reusable resources, backed by a buffered channel
+   used as a free-list. The constructor opens `size` resources from the factory
+   up front; acquire() hands one out (parking the breeze when all are checked
+   out), release() returns one. The connection pool is Pool<PgConnection> /
+   Pool<MyConnection>; the same class pools any reusable resource. Generic, so it
+   costs nothing until instantiated. The factory must be bound to a ()->T variable
+   before `new Pool<T>(...)` (a lambda literal is not inferred through a generic
+   constructor parameter). See documentation/stdlib/pool.md.
+   ponytail: fixed size, no lazy-grow / idle-eviction / validate-on-borrow /
+   acquire-timeout / closeAll — each is a measured follow-up, not v1. */
+static const char POOL[] =
+	"class Pool<T>\n"
+	"{\n"
+	"	channel<T> free;\n"
+	"	Pool(int size, ()->T factory)\n"
+	"	{\n"
+	"		this.free = new channel<T>(size);\n"
+	"		int i = 0;\n"
+	"		while (i < size)\n"
+	"		{\n"
+	"			this.free.send(factory());\n"
+	"			i = i + 1;\n"
+	"		}\n"
+	"	}\n"
+	"	T acquire()\n"
+	"	{\n"
+	"		return this.free.recv();\n"
+	"	}\n"
+	"	void release(T r)\n"
+	"	{\n"
+	"		this.free.send(r);\n"
+	"	}\n"
+	"}\n";
+
+const char *BZY_PRELUDE[] = { VEC2I, VEC2L, VEC2F, VEC2D, VEC3I, VEC3L, VEC3F, VEC3D, DATETIME, OPTION, RESULT, POOL };
+const int   BZY_PRELUDE_COUNT = 12;
 
 /* ---- Desktop GUI prelude (Breezy source). ---- */
 

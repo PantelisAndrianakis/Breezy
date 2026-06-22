@@ -6,6 +6,7 @@
 #include "config.h"   /* bzy_config_reset_cache: toggle BZY_IR for the SIMD case. */
 #include "prelude.h"
 #include "overload.h"
+#include "generics.h"   /* Mirror the driver: drop uninstantiated generic templates (e.g. the Pool<T> prelude class) before resolve/codegen. */
 #include "grow.h"
 #include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
 
@@ -37,6 +38,11 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 		units[np + j] = parse_unit(&parsers[np + j]);
 	}
 	int total = np + nsrc;
+
+	/* Mirror main.c: lower generics (drops uninstantiated templates like Pool<T>)
+	   so resolve/codegen never see a live template. No realloc — total stays well
+	   under MAX_U — so `units` is compacted in place. */
+	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &total, &gc); }
 
 	types_init(&tt);
 	types_register_builtins(&tt);
@@ -101,6 +107,8 @@ static TypeTable *build_tt(const char **srcs, int nsrc)
 	}
 	int total = np + nsrc;
 
+	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &total, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
+
 	types_init(&tt);
 	types_register_builtins(&tt);
 	for (int i = 0; i < total; i++) { types_register_unit_names(&tt, units[i]); }
@@ -163,6 +171,8 @@ static void emit_desktop(const char *src, Target target)
 	parser_init(&parsers[n], src);
 	units[n] = parse_unit(&parsers[n]);
 	n++;
+
+	{ Unit **gu = units; int gc = MAX_U; generics_expand(&gu, &n, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
 
 	types_init(&tt);
 	types_register_builtins(&tt);

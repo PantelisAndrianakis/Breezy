@@ -937,8 +937,8 @@ static void test_region_lowers_bitwise_not(void)
 static char g_full_asm[1 << 16];
 static void emit_unit_asm(const char *src, Target target)
 {
-	static Parser parsers[12];
-	static Unit *units[12];
+	static Parser parsers[16];
+	static Unit *units[16];
 	static TypeTable tt;
 	int np = BZY_PRELUDE_COUNT;
 	for (int i = 0; i < np; i++)
@@ -950,6 +950,9 @@ static void emit_unit_asm(const char *src, Target target)
 	parser_init(&parsers[np], src);
 	units[np] = parse_unit(&parsers[np]);
 	int total = np + 1;
+
+	{ Unit **gu = units; int gc = 16; generics_expand(&gu, &total, &gc); }   /* Drop uninstantiated templates (Pool<T>), like main.c. */
+
 	types_init(&tt);
 	types_register_builtins(&tt);
 	for (int i = 0; i < total; i++)
