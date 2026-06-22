@@ -167,8 +167,11 @@ DtlsSocket c = l.accept();            // Parks: discovers a peer, runs the hands
   port. Works on **both platforms**: POSIX uses a connected socket per peer; Windows
   uses a single-socket demultiplexer (connected-per-peer routing is unreliable there),
   transparent to the API.
-- `DtlsSocket.read(max)` / `write(byte[])` / `close()` - one record each; keep a
-  `write` payload at or below the link MTU (~1200 bytes).
+- `DtlsSocket.read(max)` / `write(byte[])` / `close()` - one record each. `read`
+  returns exactly one decrypted datagram record (possibly fewer than `max` bytes), so a
+  caller wanting a fixed length loops until it has them; `write` emits one record, so
+  keep its payload at or below the link MTU (~1200 bytes) — larger plaintext is a
+  datagram-protocol error, not a stream to be fragmented.
 
 The runtime pins a conservative 1200-byte link MTU and drives DTLS handshake
 retransmission itself (UDP does not guarantee delivery), so a lost handshake flight
