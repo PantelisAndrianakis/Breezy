@@ -251,7 +251,7 @@ void bzy_coroutine_switch(BzyCoroutine *to)
 	t_current = to;
 #if defined(__SANITIZE_ADDRESS__)
 	__sanitizer_start_switch_fiber(&from->asan_fake, to->stack_lo,
-		(size_t)((char*)to->stack_hi - (char*)to->stack_lo));
+								   (size_t)((char*)to->stack_hi - (char*)to->stack_lo));
 #endif
 	bzy_ctx_switch(&from->sp, to->sp, to->stack_hi, to->stack_lo);
 #if defined(__SANITIZE_ADDRESS__)

@@ -42,39 +42,77 @@ static int     g_resp_vt_built;
 
 static void *req_vtable(void)
 {
-	if (!g_req_vt_built) { g_req_vt[0] = (int64_t)&g_req_ti[0]; g_req_vt_built = 1; }
+	if (!g_req_vt_built)
+	{
+		g_req_vt[0] = (int64_t)&g_req_ti[0];
+		g_req_vt_built = 1;
+	}
 	return &g_req_vt[1];
 }
 
 static void *resp_vtable(void)
 {
-	if (!g_resp_vt_built) { g_resp_vt[0] = (int64_t)&g_resp_ti[0]; g_resp_vt_built = 1; }
+	if (!g_resp_vt_built)
+	{
+		g_resp_vt[0] = (int64_t)&g_resp_ti[0];
+		g_resp_vt_built = 1;
+	}
 	return &g_resp_vt[1];
 }
 
-static void *req_new(void)  { void *n = bzy_alloc(H_SIZE); *(void**)n = req_vtable();  return n; }
-static void *resp_new(void) { void *n = bzy_alloc(H_SIZE); *(void**)n = resp_vtable(); return n; }
+static void *req_new(void)
+{
+	void *n = bzy_alloc(H_SIZE);
+	*(void**)n = req_vtable();
+	return n;
+}
+static void *resp_new(void)
+{
+	void *n = bzy_alloc(H_SIZE);
+	*(void**)n = resp_vtable();
+	return n;
+}
 
-static void arr_set(void *arr, int64_t i, void *p) { ((void**)((char*)arr + 32))[i] = p; }
+static void arr_set(void *arr, int64_t i, void *p)
+{
+	((void**)((char*)arr + 32))[i] = p;
+}
 
 /* ---- the buffered socket reader --------------------------------------------- */
 
-typedef struct { void *sock; char *buf; int64_t len, cap, pos; int eof; const char *err; } Reader;
+typedef struct
+{
+	void *sock;
+	char *buf;
+	int64_t len, cap, pos;
+	int eof;
+	const char *err;
+} Reader;
 
 /* Append more bytes from the socket; sets eof at a clean close. Returns 1 if any
    bytes were added, 0 at EOF. */
 static int rd_fill(Reader *r)
 {
-	if (r->eof) { return 0; }
+	if (r->eof)
+	{
+		return 0;
+	}
 	if (r->len + 65536 > r->cap)
 	{
 		r->cap = r->cap ? r->cap * 2 : 65536;
-		if (r->cap < r->len + 65536) { r->cap = r->len + 65536; }
+		if (r->cap < r->len + 65536)
+		{
+			r->cap = r->len + 65536;
+		}
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
 	int n = bzy_sock_recv(r->sock, r->buf + r->len, 65536, -1);
-	if (n <= 0) { r->eof = 1; return 0; }
+	if (n <= 0)
+	{
+		r->eof = 1;
+		return 0;
+	}
 	r->len += n;
 	return 1;
 }
@@ -88,11 +126,17 @@ static int64_t rd_find_crlf(Reader *r, int64_t from)
 	{
 		for (int64_t i = scan; i + 1 < r->len; i++)
 		{
-			if (r->buf[i] == '\r' && r->buf[i + 1] == '\n') { return i; }
+			if (r->buf[i] == '\r' && r->buf[i + 1] == '\n')
+			{
+				return i;
+			}
 		}
 
 		scan = r->len > 0 ? r->len - 1 : 0;   /* A CR may sit at the fill boundary. */
-		if (!rd_fill(r)) { return -1; }
+		if (!rd_fill(r))
+		{
+			return -1;
+		}
 	}
 }
 
@@ -101,7 +145,10 @@ static int rd_ensure(Reader *r, int64_t need)
 {
 	while (r->len - r->pos < need)
 	{
-		if (!rd_fill(r)) { return 0; }
+		if (!rd_fill(r))
+		{
+			return 0;
+		}
 	}
 
 	return 1;
@@ -109,7 +156,12 @@ static int rd_ensure(Reader *r, int64_t need)
 
 /* ---- header collection (parallel owned-string arrays, XML-attr style) -------- */
 
-typedef struct { void **names; void **vals; int count, cap; } Hdrs;
+typedef struct
+{
+	void **names;
+	void **vals;
+	int count, cap;
+} Hdrs;
 
 static void hdr_push(Hdrs *h, void *name, void *val)
 {
@@ -127,7 +179,11 @@ static void hdr_push(Hdrs *h, void *name, void *val)
 
 static void hdr_free(Hdrs *h)
 {
-	for (int i = 0; i < h->count; i++) { bzy_release(h->names[i]); bzy_release(h->vals[i]); }
+	for (int i = 0; i < h->count; i++)
+	{
+		bzy_release(h->names[i]);
+		bzy_release(h->vals[i]);
+	}
 	free(h->names);
 	free(h->vals);
 }
@@ -139,7 +195,11 @@ static void hdr_store(void *node, Hdrs *h)
 	{
 		void *names = bzy_array_new(h->count, 1);
 		void *vals  = bzy_array_new(h->count, 1);
-		for (int i = 0; i < h->count; i++) { arr_set(names, i, h->names[i]); arr_set(vals, i, h->vals[i]); }
+		for (int i = 0; i < h->count; i++)
+		{
+			arr_set(names, i, h->names[i]);
+			arr_set(vals, i, h->vals[i]);
+		}
 		HSET(node, H_HNAMES, names);
 		HSET(node, H_HVALS, vals);
 	}
@@ -152,7 +212,10 @@ static void hdr_store(void *node, Hdrs *h)
 static int64_t hdr_index(void *node, void *name)
 {
 	void *names = HGET(node, H_HNAMES);
-	if (!names) { return -1; }
+	if (!names)
+	{
+		return -1;
+	}
 	int64_t n = *(int64_t*)((char*)names + 24);
 	void **slots = (void**)((char*)names + 32);
 	const char *k = bzy_str_data(name);
@@ -165,10 +228,17 @@ static int64_t hdr_index(void *node, void *name)
 			int eq = 1;
 			for (int64_t j = 0; j < kl; j++)
 			{
-				if (tolower((unsigned char)p[j]) != tolower((unsigned char)k[j])) { eq = 0; break; }
+				if (tolower((unsigned char)p[j]) != tolower((unsigned char)k[j]))
+				{
+					eq = 0;
+					break;
+				}
 			}
 
-			if (eq) { return i; }
+			if (eq)
+			{
+				return i;
+			}
 		}
 	}
 
@@ -190,17 +260,42 @@ static int parse_headers(Reader *r, Hdrs *h)
 	for (;;)
 	{
 		int64_t cr = rd_find_crlf(r, r->pos);
-		if (cr < 0) { r->err = "Unterminated header block."; return 0; }
-		if (cr == r->pos) { r->pos = cr + 2; return 1; }   /* Blank line: end of headers. */
+		if (cr < 0)
+		{
+			r->err = "Unterminated header block.";
+			return 0;
+		}
+		if (cr == r->pos)
+		{
+			r->pos = cr + 2;    /* Blank line: end of headers. */
+			return 1;
+		}
 
 		int64_t colon = -1;
-		for (int64_t i = r->pos; i < cr; i++) { if (r->buf[i] == ':') { colon = i; break; } }
-		if (colon < 0) { r->err = "Malformed header line."; return 0; }
+		for (int64_t i = r->pos; i < cr; i++)
+		{
+			if (r->buf[i] == ':')
+			{
+				colon = i;
+				break;
+			}
+		}
+		if (colon < 0)
+		{
+			r->err = "Malformed header line.";
+			return 0;
+		}
 
 		void *name = bzy_str_new(r->buf + r->pos, colon - r->pos);
 		int64_t vs = colon + 1, ve = cr;
-		while (vs < ve && (r->buf[vs] == ' ' || r->buf[vs] == '\t')) { vs++; }   /* Trim OWS. */
-		while (ve > vs && (r->buf[ve - 1] == ' ' || r->buf[ve - 1] == '\t')) { ve--; }
+		while (vs < ve && (r->buf[vs] == ' ' || r->buf[vs] == '\t'))
+		{
+			vs++;    /* Trim OWS. */
+		}
+		while (ve > vs && (r->buf[ve - 1] == ' ' || r->buf[ve - 1] == '\t'))
+		{
+			ve--;
+		}
 		void *val = bzy_str_new(r->buf + vs, ve - vs);
 		hdr_push(h, name, val);
 		r->pos = cr + 2;
@@ -215,12 +310,12 @@ static int has_chunked(void *val)
 	for (int64_t i = 0; i + 7 <= n; i++)
 	{
 		if (tolower((unsigned char)p[i]) == 'c'
-			&& tolower((unsigned char)p[i + 1]) == 'h'
-			&& tolower((unsigned char)p[i + 2]) == 'u'
-			&& tolower((unsigned char)p[i + 3]) == 'n'
-			&& tolower((unsigned char)p[i + 4]) == 'k'
-			&& tolower((unsigned char)p[i + 5]) == 'e'
-			&& tolower((unsigned char)p[i + 6]) == 'd')
+				&& tolower((unsigned char)p[i + 1]) == 'h'
+				&& tolower((unsigned char)p[i + 2]) == 'u'
+				&& tolower((unsigned char)p[i + 3]) == 'n'
+				&& tolower((unsigned char)p[i + 4]) == 'k'
+				&& tolower((unsigned char)p[i + 5]) == 'e'
+				&& tolower((unsigned char)p[i + 6]) == 'd')
 		{
 			return 1;
 		}
@@ -249,29 +344,68 @@ static void *parse_body(Reader *r, void *node)
 		for (;;)
 		{
 			int64_t cr = rd_find_crlf(r, r->pos);
-			if (cr < 0) { free(out); r->err = "Bad chunk size."; return NULL; }
+			if (cr < 0)
+			{
+				free(out);
+				r->err = "Bad chunk size.";
+				return NULL;
+			}
 			long sz = strtol(r->buf + r->pos, NULL, 16);
 			r->pos = cr + 2;
-			if (sz < 0) { free(out); r->err = "Bad chunk size."; return NULL; }
-			if (sz == 0) { break; }
-			if (!rd_ensure(r, sz + 2)) { free(out); r->err = "Truncated chunk."; return NULL; }
-			if (olen + (size_t)sz > ocap) { ocap = (olen + (size_t)sz) * 2 + 16; out = (char*)realloc(out, ocap); }
+			if (sz < 0)
+			{
+				free(out);
+				r->err = "Bad chunk size.";
+				return NULL;
+			}
+			if (sz == 0)
+			{
+				break;
+			}
+			if (!rd_ensure(r, sz + 2))
+			{
+				free(out);
+				r->err = "Truncated chunk.";
+				return NULL;
+			}
+			if (olen + (size_t)sz > ocap)
+			{
+				ocap = (olen + (size_t)sz) * 2 + 16;
+				out = (char*)realloc(out, ocap);
+			}
 			memcpy(out + olen, r->buf + r->pos, (size_t)sz);
 			olen += (size_t)sz;
 			r->pos += sz + 2;   /* Chunk data + its trailing CRLF. */
 		}
 
 		int64_t cr = rd_find_crlf(r, r->pos);   /* CRLF after the 0-chunk (trailers ignored). */
-		if (cr >= 0) { r->pos = cr + 2; }
+		if (cr >= 0)
+		{
+			r->pos = cr + 2;
+		}
 		void *s = bzy_str_new(out ? out : "", (int64_t)olen);
 		free(out);
 		return s;
 	}
 
 	int64_t want = 0;
-	if (cl) { want = strtoll(bzy_str_data(cl), NULL, 10); if (want < 0) { want = 0; } }
-	if (want == 0) { return bzy_str_new("", 0); }
-	if (!rd_ensure(r, want)) { r->err = "Body shorter than Content-Length."; return NULL; }
+	if (cl)
+	{
+		want = strtoll(bzy_str_data(cl), NULL, 10);
+		if (want < 0)
+		{
+			want = 0;
+		}
+	}
+	if (want == 0)
+	{
+		return bzy_str_new("", 0);
+	}
+	if (!rd_ensure(r, want))
+	{
+		r->err = "Body shorter than Content-Length.";
+		return NULL;
+	}
 	void *s = bzy_str_new(r->buf + r->pos, want);
 	r->pos += want;
 	return s;
@@ -286,7 +420,11 @@ static void *parse_request(Reader *r, int *was_eof)
 	int64_t cr = rd_find_crlf(r, 0);
 	if (cr < 0)
 	{
-		if (r->len == 0) { *was_eof = 1; return NULL; }   /* Clean close at a boundary. */
+		if (r->len == 0)
+		{
+			*was_eof = 1;    /* Clean close at a boundary. */
+			return NULL;
+		}
 		r->err = "Unterminated request line.";
 		return NULL;
 	}
@@ -296,12 +434,23 @@ static void *parse_request(Reader *r, int *was_eof)
 	{
 		if (r->buf[i] == ' ')
 		{
-			if (sp1 < 0) { sp1 = i; }
-			else { sp2 = i; break; }
+			if (sp1 < 0)
+			{
+				sp1 = i;
+			}
+			else
+			{
+				sp2 = i;
+				break;
+			}
 		}
 	}
 
-	if (sp1 < 0 || sp2 < 0) { r->err = "Malformed request line."; return NULL; }
+	if (sp1 < 0 || sp2 < 0)
+	{
+		r->err = "Malformed request line.";
+		return NULL;
+	}
 
 	void *node = req_new();
 	HSET(node, H_METHOD,  bzy_str_new(r->buf, sp1));
@@ -310,11 +459,20 @@ static void *parse_request(Reader *r, int *was_eof)
 	r->pos = cr + 2;
 
 	Hdrs h = { 0 };
-	if (!parse_headers(r, &h)) { hdr_free(&h); bzy_release(node); return NULL; }
+	if (!parse_headers(r, &h))
+	{
+		hdr_free(&h);
+		bzy_release(node);
+		return NULL;
+	}
 	hdr_store(node, &h);
 
 	void *body = parse_body(r, node);
-	if (!body) { bzy_release(node); return NULL; }
+	if (!body)
+	{
+		bzy_release(node);
+		return NULL;
+	}
 	HSET(node, H_BODY, body);
 	return node;
 }
@@ -328,7 +486,11 @@ static void *parse_response(Reader *r, int *was_eof)
 	int64_t cr = rd_find_crlf(r, 0);
 	if (cr < 0)
 	{
-		if (r->len == 0) { *was_eof = 1; return NULL; }
+		if (r->len == 0)
+		{
+			*was_eof = 1;
+			return NULL;
+		}
 		r->err = "Unterminated status line.";
 		return NULL;
 	}
@@ -338,12 +500,23 @@ static void *parse_response(Reader *r, int *was_eof)
 	{
 		if (r->buf[i] == ' ')
 		{
-			if (sp1 < 0) { sp1 = i; }
-			else { sp2 = i; break; }
+			if (sp1 < 0)
+			{
+				sp1 = i;
+			}
+			else
+			{
+				sp2 = i;
+				break;
+			}
 		}
 	}
 
-	if (sp1 < 0) { r->err = "Malformed status line."; return NULL; }
+	if (sp1 < 0)
+	{
+		r->err = "Malformed status line.";
+		return NULL;
+	}
 	int64_t rs = sp2 >= 0 ? sp2 + 1 : cr;   /* Reason may be empty (no second space). */
 
 	void *node = resp_new();
@@ -352,11 +525,20 @@ static void *parse_response(Reader *r, int *was_eof)
 	r->pos = cr + 2;
 
 	Hdrs h = { 0 };
-	if (!parse_headers(r, &h)) { hdr_free(&h); bzy_release(node); return NULL; }
+	if (!parse_headers(r, &h))
+	{
+		hdr_free(&h);
+		bzy_release(node);
+		return NULL;
+	}
 	hdr_store(node, &h);
 
 	void *body = parse_body(r, node);
-	if (!body) { bzy_release(node); return NULL; }
+	if (!body)
+	{
+		bzy_release(node);
+		return NULL;
+	}
 	HSET(node, H_BODY, body);
 	return node;
 }
@@ -378,7 +560,10 @@ void *bzy_http_read_request(void *sock)
 	int was_eof = 0;
 	void *node = parse_request(&r, &was_eof);
 	free(r.buf);
-	if (!node && !was_eof) { g_http_error = r.err ? r.err : "Malformed HTTP request."; }
+	if (!node && !was_eof)
+	{
+		g_http_error = r.err ? r.err : "Malformed HTTP request.";
+	}
 	return node;
 }
 
@@ -390,13 +575,19 @@ void *bzy_http_read_response(void *sock)
 	int was_eof = 0;
 	void *node = parse_response(&r, &was_eof);
 	free(r.buf);
-	if (!node && !was_eof) { g_http_error = r.err ? r.err : "Malformed HTTP response."; }
+	if (!node && !was_eof)
+	{
+		g_http_error = r.err ? r.err : "Malformed HTTP response.";
+	}
 	return node;
 }
 
 void bzy_http_check(int64_t pc, int64_t frame)
 {
-	if (!g_http_error) { return; }
+	if (!g_http_error)
+	{
+		return;
+	}
 	void *msg = bzy_str_new(g_http_error, (int64_t)strlen(g_http_error));
 	g_http_error = NULL;
 	void *exc = bzy_alloc(32);
@@ -411,7 +602,10 @@ void bzy_http_check(int64_t pc, int64_t frame)
 void *bzy_http_header(void *node, void *name)
 {
 	int64_t i = hdr_index(node, name);
-	if (i < 0) { return bzy_str_new("", 0); }
+	if (i < 0)
+	{
+		return bzy_str_new("", 0);
+	}
 	void *v = hdr_val_at(node, i);
 	bzy_retain(v);
 	return v;
@@ -429,7 +623,10 @@ void *bzy_http_header_names(void *node)
 	void *names = HGET(node, H_HNAMES);
 	int64_t n = names ? *(int64_t*)((char*)names + 24) : 0;
 	void **slots = names ? (void**)((char*)names + 32) : NULL;
-	for (int64_t i = 0; i < n; i++) { bzy_vec_push_back(list, (int64_t)slots[i]); }
+	for (int64_t i = 0; i < n; i++)
+	{
+		bzy_vec_push_back(list, (int64_t)slots[i]);
+	}
 	return list;
 }
 
@@ -441,14 +638,21 @@ void *bzy_http_body_bytes(void *node)
 
 /* ---- builders + serializer -------------------------------------------------- */
 
-typedef struct { char *data; size_t len, cap; } TextBuf;
+typedef struct
+{
+	char *data;
+	size_t len, cap;
+} TextBuf;
 
 static void tb_push(TextBuf *t, const char *bytes, size_t n)
 {
 	if (t->len + n > t->cap)
 	{
 		size_t nc = t->cap ? t->cap : 256;
-		while (nc < t->len + n) { nc *= 2; }
+		while (nc < t->len + n)
+		{
+			nc *= 2;
+		}
 		t->data = (char*)realloc(t->data, nc);
 		t->cap = nc;
 	}
@@ -457,26 +661,43 @@ static void tb_push(TextBuf *t, const char *bytes, size_t n)
 	t->len += n;
 }
 
-static void tb_str(TextBuf *t, void *s) { tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s)); }
+static void tb_str(TextBuf *t, void *s)
+{
+	tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s));
+}
 
 static const char *status_reason(int64_t code)
 {
 	switch (code)
 	{
-		case 200: return "OK";
-		case 201: return "Created";
-		case 204: return "No Content";
-		case 301: return "Moved Permanently";
-		case 302: return "Found";
-		case 304: return "Not Modified";
-		case 400: return "Bad Request";
-		case 401: return "Unauthorized";
-		case 403: return "Forbidden";
-		case 404: return "Not Found";
-		case 405: return "Method Not Allowed";
-		case 500: return "Internal Server Error";
-		case 503: return "Service Unavailable";
-		default:  return "Status";
+	case 200:
+		return "OK";
+	case 201:
+		return "Created";
+	case 204:
+		return "No Content";
+	case 301:
+		return "Moved Permanently";
+	case 302:
+		return "Found";
+	case 304:
+		return "Not Modified";
+	case 400:
+		return "Bad Request";
+	case 401:
+		return "Unauthorized";
+	case 403:
+		return "Forbidden";
+	case 404:
+		return "Not Found";
+	case 405:
+		return "Method Not Allowed";
+	case 500:
+		return "Internal Server Error";
+	case 503:
+		return "Service Unavailable";
+	default:
+		return "Status";
 	}
 }
 
@@ -521,16 +742,28 @@ void bzy_http_set_header(void *node, void *name, void *val)
 	void *nn = bzy_array_new(cnt + 1, 1), *nv = bzy_array_new(cnt + 1, 1);
 	for (int64_t k = 0; k < cnt; k++)
 	{
-		void *kn = ((void**)((char*)on + 32))[k]; bzy_retain(kn); arr_set(nn, k, kn);
-		void *kv = ((void**)((char*)ov + 32))[k]; bzy_retain(kv); arr_set(nv, k, kv);
+		void *kn = ((void**)((char*)on + 32))[k];
+		bzy_retain(kn);
+		arr_set(nn, k, kn);
+		void *kv = ((void**)((char*)ov + 32))[k];
+		bzy_retain(kv);
+		arr_set(nv, k, kv);
 	}
 
-	bzy_retain(name); arr_set(nn, cnt, name);
-	bzy_retain(val);  arr_set(nv, cnt, val);
+	bzy_retain(name);
+	arr_set(nn, cnt, name);
+	bzy_retain(val);
+	arr_set(nv, cnt, val);
 	HSET(node, H_HNAMES, nn);
 	HSET(node, H_HVALS, nv);
-	if (on) { bzy_release(on); }
-	if (ov) { bzy_release(ov); }
+	if (on)
+	{
+		bzy_release(on);
+	}
+	if (ov)
+	{
+		bzy_release(ov);
+	}
 }
 
 /* Set the body of a built node (retains). */
@@ -539,14 +772,20 @@ void bzy_http_set_body(void *node, void *str)
 	void *old = HGET(node, H_BODY);
 	bzy_retain(str);
 	HSET(node, H_BODY, str);
-	if (old) { bzy_release(old); }
+	if (old)
+	{
+		bzy_release(old);
+	}
 }
 
 /* Append the node's headers to the buffer, skipping any Content-Length (derived). */
 static void emit_headers(TextBuf *t, void *node)
 {
 	void *names = HGET(node, H_HNAMES);
-	if (!names) { return; }
+	if (!names)
+	{
+		return;
+	}
 	int64_t n = *(int64_t*)((char*)names + 24);
 	void **ns = (void**)((char*)names + 32);
 	void **vs = (void**)((char*)HGET(node, H_HVALS) + 32);
@@ -555,7 +794,10 @@ static void emit_headers(TextBuf *t, void *node)
 	bzy_release(kcl);
 	for (int64_t i = 0; i < n; i++)
 	{
-		if (i == skip) { continue; }
+		if (i == skip)
+		{
+			continue;
+		}
 		tb_str(t, ns[i]);
 		tb_push(t, ": ", 2);
 		tb_str(t, vs[i]);
@@ -571,7 +813,10 @@ static void emit_body(TextBuf *t, void *node)
 	char cl[48];
 	int k = snprintf(cl, sizeof cl, "Content-Length: %lld\r\n\r\n", (long long)blen);
 	tb_push(t, cl, (size_t)k);
-	if (blen > 0) { tb_str(t, body); }
+	if (blen > 0)
+	{
+		tb_str(t, body);
+	}
 }
 
 /* Serialize a response (status line + headers + Content-Length + body) and write

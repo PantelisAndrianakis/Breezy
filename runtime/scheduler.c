@@ -5,11 +5,11 @@
 #include <stdio.h>
 #include <stddef.h>   /* offsetof, for recovering the Breeze from its inline argbuf. */
 #ifdef _WIN32
-  #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #else
-  #include <pthread.h>
-  #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
+#include <pthread.h>
+#include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
 #endif
 
 #define SCHED_SPIN 1024 /* find_work() polls this many times before a worker commits to a

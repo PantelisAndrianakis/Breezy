@@ -66,7 +66,7 @@ const char *token_type_name(TokenType t);
 /* Print a diagnostic with a `file:line:col:` header and a caret pointing at
    the offending column, then exit(1). `arg` is appended to `msg` if non-NULL. */
 void        lexer_diag(const char *src, const char *file, int line, int col,
-                       const char *msg, const char *arg);
+					   const char *msg, const char *arg);
 
 /* Toggle JSON diagnostic output (one object on stdout, then exit). For --check. */
 void        lexer_diag_json(int on);

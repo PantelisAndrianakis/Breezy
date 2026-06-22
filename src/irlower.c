@@ -230,16 +230,26 @@ static IROp tok_arith_op(int t, int *ok)
 	*ok = 1;
 	switch (t)
 	{
-	case TOKEN_PLUS:    return IR_ADD;
-	case TOKEN_MINUS:   return IR_SUB;
-	case TOKEN_STAR:    return IR_MUL;
-	case TOKEN_SLASH:   return IR_DIV;
-	case TOKEN_PERCENT: return IR_MOD;
-	case TOKEN_AMP:     return IR_AND;
-	case TOKEN_PIPE:    return IR_OR;
-	case TOKEN_CARET:   return IR_XOR;
-	case TOKEN_SHL:     return IR_SHL;
-	case TOKEN_SHR:     return IR_SHR;
+	case TOKEN_PLUS:
+		return IR_ADD;
+	case TOKEN_MINUS:
+		return IR_SUB;
+	case TOKEN_STAR:
+		return IR_MUL;
+	case TOKEN_SLASH:
+		return IR_DIV;
+	case TOKEN_PERCENT:
+		return IR_MOD;
+	case TOKEN_AMP:
+		return IR_AND;
+	case TOKEN_PIPE:
+		return IR_OR;
+	case TOKEN_CARET:
+		return IR_XOR;
+	case TOKEN_SHL:
+		return IR_SHL;
+	case TOKEN_SHR:
+		return IR_SHR;
 	default:
 		*ok = 0;
 		return IR_ADD;   /* &&, ||, etc. - not in v1. */
@@ -461,7 +471,11 @@ static IRReg low_expr(Low *L, const Expr *e)
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
 		in->dst = r;
-		union { double d; long long ll; } u;
+		union
+		{
+			double d;
+			long long ll;
+		} u;
 		u.d = e->float_val;
 		in->imm = u.ll;
 		in->line = e->line;
@@ -591,9 +605,9 @@ static IRReg low_expr(Low *L, const Expr *e)
 		   exactly the zero-extension the hardware movzx produces, so the cast
 		   and the mask fold away. The canonical byte-parsing idiom. */
 		if (e->op == TOKEN_AMP && e->rhs->kind == EX_INT && e->rhs->int_val == 255
-			&& e->lhs->kind == EX_CAST && ty_is_int(e->lhs->type.kind)
-			&& e->lhs->lhs->kind == EX_INDEX
-			&& e->lhs->lhs->type.kind == TY_BYTE)
+				&& e->lhs->kind == EX_CAST && ty_is_int(e->lhs->type.kind)
+				&& e->lhs->lhs->kind == EX_INDEX
+				&& e->lhs->lhs->type.kind == TY_BYTE)
 		{
 			const Expr *ix = e->lhs->lhs;
 			IRReg base = low_expr(L, ix->lhs);
@@ -653,7 +667,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 		   no cl load, and one fewer value for the allocator. The hardware masks the
 		   count to 6 bits, so [0, 63] matches the variable form exactly. */
 		if ((op == IR_SHL || op == IR_SHR) && e->rhs->kind == EX_INT
-			&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63)
+				&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63)
 		{
 			IRReg la = low_expr(L, e->lhs);
 			IRReg r = ir_reg(L->f);
@@ -773,7 +787,7 @@ static int stmt_writes_off(const Stmt *s, int off)
 	}
 
 	if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT
-		&& s->target->anno_int == off)
+			&& s->target->anno_int == off)
 	{
 		return 1;
 	}
@@ -784,8 +798,8 @@ static int stmt_writes_off(const Stmt *s, int off)
 	}
 
 	if (s->kind == ST_EXPR && s->expr && s->expr->kind == EX_INCDEC
-		&& s->expr->lhs && s->expr->lhs->kind == EX_IDENT
-		&& s->expr->lhs->anno_int == off)
+			&& s->expr->lhs && s->expr->lhs->kind == EX_IDENT
+			&& s->expr->lhs->anno_int == off)
 	{
 		return 1;
 	}
@@ -1027,12 +1041,12 @@ static void low_stmt(Low *L, const Stmt *s)
 		   branchless select: x = cmp ? EXPR : x via cmov. Kills the data-
 		   dependent misprediction the max/min/clamp patterns otherwise pay. */
 		if (!s->else_blk && s->then_blk && s->then_blk->count == 1
-			&& s->cond->kind == EX_BINARY && tok_is_cmp(s->cond->op)
-			&& ty_is_int(s->cond->lhs->type.kind))
+				&& s->cond->kind == EX_BINARY && tok_is_cmp(s->cond->op)
+				&& ty_is_int(s->cond->lhs->type.kind))
 		{
 			const Stmt *as = s->then_blk->stmts[0];
 			if (as->kind == ST_ASSIGN && as->target->kind == EX_IDENT
-				&& as->target->anno_int > 0 && ty_is_int(as->target->type.kind))
+					&& as->target->anno_int > 0 && ty_is_int(as->target->type.kind))
 			{
 				int budget = 6;
 				int ok = sel_expr_ok(s->cond->lhs, &budget)
@@ -1139,8 +1153,8 @@ static void low_stmt(Low *L, const Stmt *s)
 		   not break/continue; the trip and size caps bound code growth. */
 		long long trips = const_trip_count(s);
 		if (trips >= 2 && trips <= 16 && L->cc_n < 8
-			&& trips * (long long)block_stmt_count(s->then_blk) <= 96
-			&& !block_has_breakcont(s->then_blk))
+				&& trips * (long long)block_stmt_count(s->then_blk) <= 96
+				&& !block_has_breakcont(s->then_blk))
 		{
 			int iv_off = (s->for_init->kind == ST_VARDECL)
 						 ? s->for_init->decl_offset
@@ -1476,16 +1490,16 @@ static long long const_trip_count(const Stmt *s)
 
 	const Expr *c = s->cond;
 	if (c->kind != EX_BINARY || (c->op != TOKEN_LT && c->op != TOKEN_LTE)
-		|| c->lhs->kind != EX_IDENT || c->lhs->anno_int != ctr || !const_int(c->rhs, &c1))
+			|| c->lhs->kind != EX_IDENT || c->lhs->anno_int != ctr || !const_int(c->rhs, &c1))
 	{
 		return -1;
 	}
 
 	const Stmt *p = s->for_post;
 	if (p->kind != ST_ASSIGN || p->target->kind != EX_IDENT || p->target->anno_int != ctr
-		|| p->value->kind != EX_BINARY || p->value->op != TOKEN_PLUS
-		|| p->value->lhs->kind != EX_IDENT || p->value->lhs->anno_int != ctr
-		|| !const_int(p->value->rhs, &c2) || c2 <= 0)
+			|| p->value->kind != EX_BINARY || p->value->op != TOKEN_PLUS
+			|| p->value->lhs->kind != EX_IDENT || p->value->lhs->anno_int != ctr
+			|| !const_int(p->value->rhs, &c2) || c2 <= 0)
 	{
 		return -1;
 	}

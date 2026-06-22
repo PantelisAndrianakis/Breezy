@@ -74,8 +74,8 @@ static Iv iv_add(Iv a, Iv b)
 {
 	long long lo, hi;
 	if (!a.known || !b.known
-		|| __builtin_add_overflow(a.lo, b.lo, &lo)
-		|| __builtin_add_overflow(a.hi, b.hi, &hi))
+			|| __builtin_add_overflow(a.lo, b.lo, &lo)
+			|| __builtin_add_overflow(a.hi, b.hi, &hi))
 	{
 		return IV_TOP;
 	}
@@ -88,8 +88,8 @@ static Iv iv_sub(Iv a, Iv b)
 {
 	long long lo, hi;
 	if (!a.known || !b.known
-		|| __builtin_sub_overflow(a.lo, b.hi, &lo)
-		|| __builtin_sub_overflow(a.hi, b.lo, &hi))
+			|| __builtin_sub_overflow(a.lo, b.hi, &lo)
+			|| __builtin_sub_overflow(a.hi, b.lo, &hi))
 	{
 		return IV_TOP;
 	}
@@ -107,9 +107,9 @@ static Iv iv_mul(Iv a, Iv b)
 
 	long long c[4];
 	if (__builtin_mul_overflow(a.lo, b.lo, &c[0])
-		|| __builtin_mul_overflow(a.lo, b.hi, &c[1])
-		|| __builtin_mul_overflow(a.hi, b.lo, &c[2])
-		|| __builtin_mul_overflow(a.hi, b.hi, &c[3]))
+			|| __builtin_mul_overflow(a.lo, b.hi, &c[1])
+			|| __builtin_mul_overflow(a.hi, b.lo, &c[2])
+			|| __builtin_mul_overflow(a.hi, b.hi, &c[3]))
 	{
 		return IV_TOP;
 	}
@@ -664,7 +664,7 @@ static void mark_indexes(Expr *e, Env *env)
 		/* Symbolic guard: arr[i] where i is provably in [0, arr.length) from the
 		   enclosing `for (i; i < arr.length; i++)` over this same array. */
 		if (e->rhs->kind == EX_IDENT
-			&& sb_has(env, e->rhs->anno_int, e->lhs->anno_int))
+				&& sb_has(env, e->rhs->anno_int, e->lhs->anno_int))
 		{
 			e->anno_index_safe = 1;
 		}
@@ -674,7 +674,7 @@ static void mark_indexes(Expr *e, Env *env)
 		   since, so the earlier check guards this access - drop the redundant one.
 		   Only plain-local base and index qualify; anything else is left checked. */
 		if (!e->anno_index_safe && e->rhs->kind == EX_IDENT
-			&& e->lhs->anno_int != 0 && e->rhs->anno_int != 0)
+				&& e->lhs->anno_int != 0 && e->rhs->anno_int != 0)
 		{
 			if (ck_has(env, e->lhs->anno_int, e->rhs->anno_int))
 			{
@@ -773,10 +773,10 @@ static void bce_loop(Stmt *st, Env *env)
 		int step_down_ok = 0;
 		Stmt *post = st->for_post;
 		if (post->kind == ST_ASSIGN && post->target && post->target->kind == EX_IDENT
-			&& post->target->anno_int == io && post->value
-			&& post->value->kind == EX_BINARY && post->value->op == TOKEN_PLUS
-			&& post->value->lhs->kind == EX_IDENT && post->value->lhs->anno_int == io
-			&& post->value->rhs->kind == EX_INT && post->value->rhs->int_val > 0)
+				&& post->target->anno_int == io && post->value
+				&& post->value->kind == EX_BINARY && post->value->op == TOKEN_PLUS
+				&& post->value->lhs->kind == EX_IDENT && post->value->lhs->anno_int == io
+				&& post->value->rhs->kind == EX_INT && post->value->rhs->int_val > 0)
 		{
 			step_ok = 1;
 		}
@@ -827,8 +827,8 @@ static void bce_loop(Stmt *st, Env *env)
 			   the guard checked at loop entry. */
 			Expr *bnd = cond->rhs;
 			if (cond->op == TOKEN_LT && lo_iv.known && lo_iv.lo >= 0
-				&& bnd->kind == EX_FIELD && bnd->lhs && bnd->lhs->kind == EX_IDENT
-				&& bnd->lhs->type.kind == TY_ARRAY && strcmp(bnd->name, "length") == 0)
+					&& bnd->kind == EX_FIELD && bnd->lhs && bnd->lhs->kind == EX_IDENT
+					&& bnd->lhs->type.kind == TY_ARRAY && strcmp(bnd->name, "length") == 0)
 			{
 				int arr_off = bnd->lhs->anno_int;
 				if (arr_off != 0 && !off_has(&body_mod, arr_off) && !off_has(&body_mod, io))

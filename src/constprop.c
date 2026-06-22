@@ -171,8 +171,8 @@ void constprop_annotate(Func *f)
 		long long val = 0;
 		int ok = 0;
 		if (s->kind == ST_VARDECL
-			&& (s->decl_type.kind == TY_LONG || s->decl_type.kind == TY_ULONG)
-			&& s->decl_offset > 0 && s->decl_init && s->decl_init->kind == EX_INT)
+				&& (s->decl_type.kind == TY_LONG || s->decl_type.kind == TY_ULONG)
+				&& s->decl_offset > 0 && s->decl_init && s->decl_init->kind == EX_INT)
 		{
 			off = s->decl_offset;
 			val = s->decl_init->int_val;

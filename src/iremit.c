@@ -144,7 +144,7 @@ static void compute_nonneg(IRFunc *f, IRAlloc *a, char *nn)
 				{
 					IRInstr *in = &blk->instrs[i];
 					if (in->dst >= 0 && in->dst < f->vreg_count && !nn[in->dst]
-						&& val_nonneg(f, a, in, nn, nnl))
+							&& val_nonneg(f, a, in, nn, nnl))
 					{
 						nn[in->dst] = 1;
 						inner = 1;
@@ -221,13 +221,20 @@ static const char *setcc_op(int cmp_op, int uns)
 {
 	switch (cmp_op)
 	{
-	case TOKEN_EQ:  return "sete";
-	case TOKEN_NEQ: return "setne";
-	case TOKEN_LT:  return uns ? "setb"  : "setl";
-	case TOKEN_GT:  return uns ? "seta"  : "setg";
-	case TOKEN_LTE: return uns ? "setbe" : "setle";
-	case TOKEN_GTE: return uns ? "setae" : "setge";
-	default:        return "sete";
+	case TOKEN_EQ:
+		return "sete";
+	case TOKEN_NEQ:
+		return "setne";
+	case TOKEN_LT:
+		return uns ? "setb"  : "setl";
+	case TOKEN_GT:
+		return uns ? "seta"  : "setg";
+	case TOKEN_LTE:
+		return uns ? "setbe" : "setle";
+	case TOKEN_GTE:
+		return uns ? "setae" : "setge";
+	default:
+		return "sete";
 	}
 }
 
@@ -235,13 +242,20 @@ static const char *jcc_op(int cmp_op, int uns)
 {
 	switch (cmp_op)
 	{
-	case TOKEN_EQ:  return "je";
-	case TOKEN_NEQ: return "jne";
-	case TOKEN_LT:  return uns ? "jb"  : "jl";
-	case TOKEN_GT:  return uns ? "ja"  : "jg";
-	case TOKEN_LTE: return uns ? "jbe" : "jle";
-	case TOKEN_GTE: return uns ? "jae" : "jge";
-	default:        return "je";
+	case TOKEN_EQ:
+		return "je";
+	case TOKEN_NEQ:
+		return "jne";
+	case TOKEN_LT:
+		return uns ? "jb"  : "jl";
+	case TOKEN_GT:
+		return uns ? "ja"  : "jg";
+	case TOKEN_LTE:
+		return uns ? "jbe" : "jle";
+	case TOKEN_GTE:
+		return uns ? "jae" : "jge";
+	default:
+		return "je";
 	}
 }
 
@@ -250,13 +264,20 @@ static int cmp_invert(int cmp_op)
 {
 	switch (cmp_op)
 	{
-	case TOKEN_EQ:  return TOKEN_NEQ;
-	case TOKEN_NEQ: return TOKEN_EQ;
-	case TOKEN_LT:  return TOKEN_GTE;
-	case TOKEN_GTE: return TOKEN_LT;
-	case TOKEN_GT:  return TOKEN_LTE;
-	case TOKEN_LTE: return TOKEN_GT;
-	default:        return cmp_op;
+	case TOKEN_EQ:
+		return TOKEN_NEQ;
+	case TOKEN_NEQ:
+		return TOKEN_EQ;
+	case TOKEN_LT:
+		return TOKEN_GTE;
+	case TOKEN_GTE:
+		return TOKEN_LT;
+	case TOKEN_GT:
+		return TOKEN_LTE;
+	case TOKEN_LTE:
+		return TOKEN_GT;
+	default:
+		return cmp_op;
 	}
 }
 
@@ -265,7 +286,7 @@ static int cmp_invert(int cmp_op)
    condition when it is the true side that falls through. `next` is the next block
    index, or -1. */
 static void emit_two_way(Emit *e, const char *jcc, int cmp_op_for_inv, int uns,
-                         int tblk, int fblk, int next)
+						 int tblk, int fblk, int next)
 {
 	Codegen *cg = e->cg;
 	if (fblk == next)
@@ -347,7 +368,7 @@ static void finish_dst(Emit *e, IRReg v)
 	if (ra_vreg_reg(e->a, v) < 0)
 	{
 		cg_emit(e->cg, "    %s [rbp - %d], %s", mov_for(e, v),
-			e->spill_base + ra_vreg_slot(e->a, v) * 8, scratch_for(e, v));
+				e->spill_base + ra_vreg_slot(e->a, v) * 8, scratch_for(e, v));
 	}
 }
 
@@ -387,7 +408,10 @@ static void store_local_from(Emit *e, long long disp, const char *src, int fp)
    element loads/stores). Falls back to the 64-bit name for an unknown register. */
 static const char *reg_low(const char *r, int bytes)
 {
-	static const struct { const char *q, *d, *w, *b; } m[] =
+	static const struct
+	{
+		const char *q, *d, *w, *b;
+	} m[] =
 	{
 		{ "rax", "eax", "ax", "al" },   { "rbx", "ebx", "bx", "bl" },
 		{ "rcx", "ecx", "cx", "cl" },   { "rdx", "edx", "dx", "dl" },
@@ -593,7 +617,7 @@ static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
 static int const_imm32(Emit *e, IRReg v, long long *out)
 {
 	if (v >= 0 && v < e->a->vreg_count && e->cis[v]
-		&& e->cval[v] >= -2147483648LL && e->cval[v] <= 2147483647LL)
+			&& e->cval[v] >= -2147483648LL && e->cval[v] <= 2147483647LL)
 	{
 		*out = e->cval[v];
 		return 1;
@@ -957,27 +981,49 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		break;
 	}
 	case IR_ADD:
-		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "addsd"); break; }
+		if (ty_is_float(in->type))
+		{
+			emit_bin_fp(e, in, "addsd");
+			break;
+		}
 		emit_bin(e, in, "add", 1);
 		break;
 	case IR_SUB:
-		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "subsd"); break; }
+		if (ty_is_float(in->type))
+		{
+			emit_bin_fp(e, in, "subsd");
+			break;
+		}
 		emit_bin(e, in, "sub", 0);
 		break;
 	case IR_MUL:
-		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "mulsd"); break; }
+		if (ty_is_float(in->type))
+		{
+			emit_bin_fp(e, in, "mulsd");
+			break;
+		}
 		emit_bin(e, in, "imul", 1);
 		break;
-	case IR_AND: emit_bin(e, in, "and", 1);  break;
-	case IR_OR:  emit_bin(e, in, "or", 1);   break;
-	case IR_XOR: emit_bin(e, in, "xor", 1);  break;
+	case IR_AND:
+		emit_bin(e, in, "and", 1);
+		break;
+	case IR_OR:
+		emit_bin(e, in, "or", 1);
+		break;
+	case IR_XOR:
+		emit_bin(e, in, "xor", 1);
+		break;
 	case IR_DIV:
 	case IR_MOD:
 	{
-		if (ty_is_float(in->type)) { emit_bin_fp(e, in, "divsd"); break; }   /* IR_MOD never float. */
+		if (ty_is_float(in->type))
+		{
+			emit_bin_fp(e, in, "divsd");    /* IR_MOD never float. */
+			break;
+		}
 		int k;
 		if (in->b != IR_NO_REG && in->b < e->a->vreg_count
-			&& e->cis[in->b] && pow2_log(e->cval[in->b], &k))
+				&& e->cis[in->b] && pow2_log(e->cval[in->b], &k))
 		{
 			emit_divmod_pow2(e, in, k);
 			break;
@@ -1698,12 +1744,12 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			}
 
 			if (in->op == IR_MOD && in->b != IR_NO_REG && in->b < f->vreg_count
-				&& e->cis[in->b] && pow2_log(e->cval[in->b], &k) && k <= 31
-				&& j + 1 < blk->count
-				&& blk->instrs[j].op == IR_CMP && blk->instrs[j].a == in->dst
-				&& (blk->instrs[j].cmp_op == TOKEN_EQ || blk->instrs[j].cmp_op == TOKEN_NEQ)
-				&& const_imm32(e, blk->instrs[j].b, &zero) && zero == 0
-				&& blk->instrs[j + 1].op == IR_BRCOND && blk->instrs[j + 1].a == blk->instrs[j].dst)
+					&& e->cis[in->b] && pow2_log(e->cval[in->b], &k) && k <= 31
+					&& j + 1 < blk->count
+					&& blk->instrs[j].op == IR_CMP && blk->instrs[j].a == in->dst
+					&& (blk->instrs[j].cmp_op == TOKEN_EQ || blk->instrs[j].cmp_op == TOKEN_NEQ)
+					&& const_imm32(e, blk->instrs[j].b, &zero) && zero == 0
+					&& blk->instrs[j + 1].op == IR_BRCOND && blk->instrs[j + 1].a == blk->instrs[j].dst)
 			{
 				emit_divisibility_branch(e, in, &blk->instrs[j], &blk->instrs[j + 1], k, next);
 				i = j + 2;
@@ -1889,7 +1935,7 @@ static int vec_idx_slot(const Expr *e, int slot_i)
 	}
 
 	if (e->rhs->anno_int != slot_i || !e->anno_index_safe
-		|| (e->type.kind != TY_INT && e->type.kind != TY_DOUBLE))
+			|| (e->type.kind != TY_INT && e->type.kind != TY_DOUBLE))
 	{
 		return -1;
 	}
@@ -1951,8 +1997,8 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 	}
 
 	if (e->kind == EX_BINARY
-		&& (e->type.kind == TY_INT || e->type.kind == TY_DOUBLE)
-		&& (e->op == TOKEN_PLUS || e->op == TOKEN_MINUS || e->op == TOKEN_STAR))
+			&& (e->type.kind == TY_INT || e->type.kind == TY_DOUBLE)
+			&& (e->op == TOKEN_PLUS || e->op == TOKEN_MINUS || e->op == TOKEN_STAR))
 	{
 		VecNode *l = vec_build_tree(v, e->lhs, slot_i);
 		VecNode *r = vec_build_tree(v, e->rhs, slot_i);
@@ -1978,7 +2024,11 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 /* One product term of a sum-of-products: scalar(k_slot) * load(ld_slot). Defined
    here (ahead of vec_analyze, which validates the reduction shape) and used by the
    flatteners below. */
-typedef struct { int k_slot; int ld_slot; } VecTerm;
+typedef struct
+{
+	int k_slot;
+	int ld_slot;
+} VecTerm;
 static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *nt, int *nacc, int max);
 
 /* The strict vectorizability gate. Fills `v` and returns v->ok. Pure over the
@@ -2011,7 +2061,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	int slot_i;
 	const Stmt *in = s->for_init;
 	if (in->kind == ST_VARDECL && in->decl_init
-		&& in->decl_init->kind == EX_INT && in->decl_init->int_val == 0)
+			&& in->decl_init->kind == EX_INT && in->decl_init->int_val == 0)
 	{
 		slot_i = in->decl_offset;
 	}
@@ -2029,7 +2079,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	/* (1) bound: i < C (constant) or i < n (a runtime int local). */
 	const Expr *c = s->cond;
 	if (c->kind != EX_BINARY || c->op != TOKEN_LT
-		|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i || !c->rhs)
+			|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i || !c->rhs)
 	{
 		v->reason = "bound";
 		return 0;
@@ -2057,9 +2107,9 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	/* (1) step: i = i + 1. */
 	const Stmt *po = s->for_post;
 	if (po->kind != ST_ASSIGN || po->target->kind != EX_IDENT || po->target->anno_int != slot_i
-		|| po->value->kind != EX_BINARY || po->value->op != TOKEN_PLUS
-		|| po->value->lhs->kind != EX_IDENT || po->value->lhs->anno_int != slot_i
-		|| po->value->rhs->kind != EX_INT || po->value->rhs->int_val != 1)
+			|| po->value->kind != EX_BINARY || po->value->op != TOKEN_PLUS
+			|| po->value->lhs->kind != EX_IDENT || po->value->lhs->anno_int != slot_i
+			|| po->value->rhs->kind != EX_INT || po->value->rhs->int_val != 1)
 	{
 		v->reason = "step";
 		return 0;
@@ -2164,10 +2214,14 @@ static const char *vec_packed_op(int tok)
 {
 	switch (tok)
 	{
-	case TOKEN_PLUS:  return "paddd";
-	case TOKEN_MINUS: return "psubd";
-	case TOKEN_STAR:  return "pmulld";
-	default:          return NULL;
+	case TOKEN_PLUS:
+		return "paddd";
+	case TOKEN_MINUS:
+		return "psubd";
+	case TOKEN_STAR:
+		return "pmulld";
+	default:
+		return NULL;
 	}
 }
 
@@ -2176,10 +2230,14 @@ static const char *vec_scalar_op(int tok)
 {
 	switch (tok)
 	{
-	case TOKEN_PLUS:  return "add";
-	case TOKEN_MINUS: return "sub";
-	case TOKEN_STAR:  return "imul";
-	default:          return NULL;
+	case TOKEN_PLUS:
+		return "add";
+	case TOKEN_MINUS:
+		return "sub";
+	case TOKEN_STAR:
+		return "imul";
+	default:
+		return NULL;
 	}
 }
 
@@ -2188,10 +2246,14 @@ static const char *vec_packed_op_fp(int tok)
 {
 	switch (tok)
 	{
-	case TOKEN_PLUS:  return "addpd";
-	case TOKEN_MINUS: return "subpd";
-	case TOKEN_STAR:  return "mulpd";
-	default:          return NULL;
+	case TOKEN_PLUS:
+		return "addpd";
+	case TOKEN_MINUS:
+		return "subpd";
+	case TOKEN_STAR:
+		return "mulpd";
+	default:
+		return NULL;
 	}
 }
 
@@ -2200,10 +2262,14 @@ static const char *vec_scalar_op_fp(int tok)
 {
 	switch (tok)
 	{
-	case TOKEN_PLUS:  return "addsd";
-	case TOKEN_MINUS: return "subsd";
-	case TOKEN_STAR:  return "mulsd";
-	default:          return NULL;
+	case TOKEN_PLUS:
+		return "addsd";
+	case TOKEN_MINUS:
+		return "subsd";
+	case TOKEN_STAR:
+		return "mulsd";
+	default:
+		return NULL;
 	}
 }
 
@@ -2280,7 +2346,7 @@ static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *n
 	if (n->kind == VN_BINOP && n->op == TOKEN_PLUS)
 	{
 		return vec_sop_reduce(n->l, acc_slot, terms, nt, nacc, max)
-			&& vec_sop_reduce(n->r, acc_slot, terms, nt, nacc, max);
+			   && vec_sop_reduce(n->r, acc_slot, terms, nt, nacc, max);
 	}
 
 	if (*nt >= max || !vec_sop_term(n, &terms[*nt]))
@@ -2763,7 +2829,7 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 		if (r >= 0)
 		{
 			cg_emit(cg, ra_reg_is_xmm(r) ? "    movsd %s, [rbp - %lld]" : "    mov %s, [rbp - %lld]",
-				ra_reg_name(r), a->local_disp[k]);
+					ra_reg_name(r), a->local_disp[k]);
 		}
 	}
 
@@ -2789,7 +2855,7 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 			}
 
 			cg_emit(cg, ra_reg_is_xmm(r) ? "    movsd [rbp - %lld], %s" : "    mov [rbp - %lld], %s",
-				a->local_disp[k], ra_reg_name(r));
+					a->local_disp[k], ra_reg_name(r));
 		}
 	}
 

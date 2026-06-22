@@ -515,17 +515,32 @@ static void in_drain(void)
 	}
 }
 
-static int  in_count(void)    { return (g_in_tail - g_in_head + BZY_IN_CAP) % BZY_IN_CAP; }
-static int  in_peek(int i)     { return g_in_buf[(g_in_head + i) % BZY_IN_CAP]; }
-static void in_advance(int k)  { g_in_head = (g_in_head + k) % BZY_IN_CAP; }
+static int  in_count(void)
+{
+	return (g_in_tail - g_in_head + BZY_IN_CAP) % BZY_IN_CAP;
+}
+static int  in_peek(int i)
+{
+	return g_in_buf[(g_in_head + i) % BZY_IN_CAP];
+}
+static void in_advance(int k)
+{
+	g_in_head = (g_in_head + k) % BZY_IN_CAP;
+}
 #endif
 
 /* Pack a mouse event. Flags: 0 left,1 right,2 middle,3 press,4 release,
    5 motion,6 wheel-up,7 wheel-down. Always non-negative (low 48 bits). */
 static int64_t mouse_pack(int x, int y, int flags)
 {
-	if (x < 0) { x = 0; }
-	if (y < 0) { y = 0; }
+	if (x < 0)
+	{
+		x = 0;
+	}
+	if (y < 0)
+	{
+		y = 0;
+	}
 	return ((int64_t)(x & 0xFFFF) << 32) | ((int64_t)(y & 0xFFFF) << 16) | (int64_t)(flags & 0xFFFF);
 }
 
@@ -620,10 +635,22 @@ int64_t bzy_sys_poll_mouse(void)
 	}
 	else
 	{
-		if (ef & MOUSE_MOVED)                     { flags |= 32; }
-		if (bs & FROM_LEFT_1ST_BUTTON_PRESSED)    { flags |= 1; }
-		if (bs & RIGHTMOST_BUTTON_PRESSED)        { flags |= 2; }
-		if (bs & FROM_LEFT_2ND_BUTTON_PRESSED)    { flags |= 4; }
+		if (ef & MOUSE_MOVED)
+		{
+			flags |= 32;
+		}
+		if (bs & FROM_LEFT_1ST_BUTTON_PRESSED)
+		{
+			flags |= 1;
+		}
+		if (bs & RIGHTMOST_BUTTON_PRESSED)
+		{
+			flags |= 2;
+		}
+		if (bs & FROM_LEFT_2ND_BUTTON_PRESSED)
+		{
+			flags |= 4;
+		}
 		flags |= bs ? 8 : 16;   /* Any button down = press; none = release. */
 	}
 	return mouse_pack(x, y, flags);
@@ -647,12 +674,18 @@ int64_t bzy_sys_poll_mouse(void)
 		}
 		else if (c == ';')
 		{
-			if (vi < 3) { vals[vi++] = num; }
+			if (vi < 3)
+			{
+				vals[vi++] = num;
+			}
 			num = 0;
 		}
 		else if (c == 'M' || c == 'm')
 		{
-			if (vi < 3) { vals[vi++] = num; }
+			if (vi < 3)
+			{
+				vals[vi++] = num;
+			}
 			fin = c;
 			i++;            /* Consume the final byte too. */
 			complete = 1;
@@ -682,10 +715,22 @@ int64_t bzy_sys_poll_mouse(void)
 	}
 	else
 	{
-		if (b & 32)        { flags |= 32; }          /* Motion. */
-		if (btn == 0)      { flags |= 1; }           /* Left. */
-		else if (btn == 2) { flags |= 2; }           /* Right. */
-		else if (btn == 1) { flags |= 4; }           /* Middle. */
+		if (b & 32)
+		{
+			flags |= 32;    /* Motion. */
+		}
+		if (btn == 0)
+		{
+			flags |= 1;    /* Left. */
+		}
+		else if (btn == 2)
+		{
+			flags |= 2;    /* Right. */
+		}
+		else if (btn == 1)
+		{
+			flags |= 4;    /* Middle. */
+		}
 		flags |= (fin == 'M') ? 8 : 16;              /* Press / release. */
 	}
 	return mouse_pack(x, y, flags);

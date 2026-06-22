@@ -1,12 +1,12 @@
 #include "breezy.h"
 #ifdef _WIN32
-  #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #else
-  #include <fcntl.h>
-  #include <unistd.h>
-  #include <sys/stat.h>
-  #include <sys/file.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/file.h>
 #endif
 
 /* FileChannel managed leaf (object_size = 40):

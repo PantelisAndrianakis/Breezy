@@ -38,7 +38,7 @@ typedef struct
    OVL_AMBIG. "Best" = viable, and no worse on every argument plus strictly
    better on at least one than every other viable candidate. */
 int overload_select(const OverloadCand *cands, int ncand,
-                    const TypeRef *args, int argc);
+					const TypeRef *args, int argc);
 
 /* Min admissible arg count for a Func (params before the first defaulted one). */
 int overload_min_args(const Func *f);

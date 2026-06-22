@@ -87,8 +87,8 @@ void cg_emit(Codegen *cg, const char *fmt, ...)
 		int s_off, l_off;
 		char s_reg[24], l_reg[24];
 		if (sscanf(line, "    mov %23[^,], [rbp - %d]", l_reg, &l_off) == 2
-			&& sscanf(cg->last_line, "    mov [rbp - %d], %23s", &s_off, s_reg) == 2
-			&& s_off == l_off && strcmp(s_reg, l_reg) == 0)
+				&& sscanf(cg->last_line, "    mov [rbp - %d], %23s", &s_off, s_reg) == 2
+				&& s_off == l_off && strcmp(s_reg, l_reg) == 0)
 		{
 			return;   /* Skip the redundant reload; last_line stays the store. */
 		}
@@ -343,7 +343,7 @@ static int cg_is_inplace_leaf(Expr *e, Expr *target)
 static const char *cg_inplace_operand(Codegen *cg, Expr *leaf, char *buf, int *is_imm)
 {
 	if ((leaf->kind==EX_INT || leaf->kind==EX_BOOL)
-		&& leaf->int_val >= -2147483648LL && leaf->int_val <= 2147483647LL)
+			&& leaf->int_val >= -2147483648LL && leaf->int_val <= 2147483647LL)
 	{
 		snprintf(buf, 24, "%lld", leaf->int_val);
 		*is_imm = 1;
@@ -437,12 +437,24 @@ static void cg_inplace_reg_rax(Codegen *cg, const char *R, int op, TypeKind k, i
 		snprintf(r32, sizeof r32, "%sd", R);   /* r12 -> r12d. */
 		switch (op)
 		{
-		case TOKEN_PLUS:  cg_emit(cg, "    add %s, eax", r32);  break;
-		case TOKEN_MINUS: cg_emit(cg, "    sub %s, eax", r32);  break;
-		case TOKEN_STAR:  cg_emit(cg, "    imul %s, eax", r32); break;
-		case TOKEN_AMP:   cg_emit(cg, "    and %s, eax", r32);  break;
-		case TOKEN_PIPE:  cg_emit(cg, "    or %s, eax", r32);   break;
-		case TOKEN_CARET: cg_emit(cg, "    xor %s, eax", r32);  break;
+		case TOKEN_PLUS:
+			cg_emit(cg, "    add %s, eax", r32);
+			break;
+		case TOKEN_MINUS:
+			cg_emit(cg, "    sub %s, eax", r32);
+			break;
+		case TOKEN_STAR:
+			cg_emit(cg, "    imul %s, eax", r32);
+			break;
+		case TOKEN_AMP:
+			cg_emit(cg, "    and %s, eax", r32);
+			break;
+		case TOKEN_PIPE:
+			cg_emit(cg, "    or %s, eax", r32);
+			break;
+		case TOKEN_CARET:
+			cg_emit(cg, "    xor %s, eax", r32);
+			break;
 		}
 
 		if (!defer_extend)
@@ -454,12 +466,24 @@ static void cg_inplace_reg_rax(Codegen *cg, const char *R, int op, TypeKind k, i
 	{
 		switch (op)
 		{
-		case TOKEN_PLUS:  cg_emit(cg, "    add %s, rax", R);  break;
-		case TOKEN_MINUS: cg_emit(cg, "    sub %s, rax", R);  break;
-		case TOKEN_STAR:  cg_emit(cg, "    imul %s, rax", R); break;
-		case TOKEN_AMP:   cg_emit(cg, "    and %s, rax", R);  break;
-		case TOKEN_PIPE:  cg_emit(cg, "    or %s, rax", R);   break;
-		case TOKEN_CARET: cg_emit(cg, "    xor %s, rax", R);  break;
+		case TOKEN_PLUS:
+			cg_emit(cg, "    add %s, rax", R);
+			break;
+		case TOKEN_MINUS:
+			cg_emit(cg, "    sub %s, rax", R);
+			break;
+		case TOKEN_STAR:
+			cg_emit(cg, "    imul %s, rax", R);
+			break;
+		case TOKEN_AMP:
+			cg_emit(cg, "    and %s, rax", R);
+			break;
+		case TOKEN_PIPE:
+			cg_emit(cg, "    or %s, rax", R);
+			break;
+		case TOKEN_CARET:
+			cg_emit(cg, "    xor %s, rax", R);
+			break;
 		}
 	}
 }
@@ -486,7 +510,7 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 	   which the generic path otherwise round-trips through rax with a reload and
 	   two sign-extensions. */
 	if (value->kind==EX_BINARY && (value->op==TOKEN_PLUS || value->op==TOKEN_MINUS)
-		&& (target->type.kind==TY_INT || target->type.kind==TY_LONG || target->type.kind==TY_ULONG))
+			&& (target->type.kind==TY_INT || target->type.kind==TY_LONG || target->type.kind==TY_ULONG))
 	{
 		Expr *k = NULL;
 		if (value->lhs->kind==EX_IDENT && value->lhs->anno_int==target->anno_int && value->rhs->kind==EX_INT)
@@ -535,8 +559,8 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 	   rax that the generic path carries. An int target re-extends to stay a valid
 	   64-bit value (unless it is a deferred accumulator); a long target is exact. */
 	if (value->kind==EX_BINARY
-		&& (value->op==TOKEN_STAR || value->op==TOKEN_AMP || value->op==TOKEN_PIPE || value->op==TOKEN_CARET)
-		&& (target->type.kind==TY_INT || target->type.kind==TY_LONG || target->type.kind==TY_ULONG))
+			&& (value->op==TOKEN_STAR || value->op==TOKEN_AMP || value->op==TOKEN_PIPE || value->op==TOKEN_CARET)
+			&& (target->type.kind==TY_INT || target->type.kind==TY_LONG || target->type.kind==TY_ULONG))
 	{
 		Expr *k = NULL;
 		if (value->lhs->kind==EX_IDENT && value->lhs->anno_int==target->anno_int && value->rhs->kind==EX_INT)
@@ -556,10 +580,18 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 				snprintf(r32, sizeof r32, "%sd", R);
 				switch (value->op)
 				{
-				case TOKEN_STAR:  cg_emit(cg,"    imul %s, %s, %lld", r32, r32, k->int_val); break;
-				case TOKEN_AMP:   cg_emit(cg,"    and %s, %lld", r32, k->int_val);  break;
-				case TOKEN_PIPE:  cg_emit(cg,"    or %s, %lld", r32, k->int_val);   break;
-				case TOKEN_CARET: cg_emit(cg,"    xor %s, %lld", r32, k->int_val);  break;
+				case TOKEN_STAR:
+					cg_emit(cg,"    imul %s, %s, %lld", r32, r32, k->int_val);
+					break;
+				case TOKEN_AMP:
+					cg_emit(cg,"    and %s, %lld", r32, k->int_val);
+					break;
+				case TOKEN_PIPE:
+					cg_emit(cg,"    or %s, %lld", r32, k->int_val);
+					break;
+				case TOKEN_CARET:
+					cg_emit(cg,"    xor %s, %lld", r32, k->int_val);
+					break;
 				}
 
 				if (!cg_off_deferred(cg, target->anno_int))
@@ -571,10 +603,18 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 			{
 				switch (value->op)
 				{
-				case TOKEN_STAR:  cg_emit(cg,"    imul %s, %s, %lld", R, R, k->int_val); break;
-				case TOKEN_AMP:   cg_emit(cg,"    and %s, %lld", R, k->int_val);  break;
-				case TOKEN_PIPE:  cg_emit(cg,"    or %s, %lld", R, k->int_val);   break;
-				case TOKEN_CARET: cg_emit(cg,"    xor %s, %lld", R, k->int_val);  break;
+				case TOKEN_STAR:
+					cg_emit(cg,"    imul %s, %s, %lld", R, R, k->int_val);
+					break;
+				case TOKEN_AMP:
+					cg_emit(cg,"    and %s, %lld", R, k->int_val);
+					break;
+				case TOKEN_PIPE:
+					cg_emit(cg,"    or %s, %lld", R, k->int_val);
+					break;
+				case TOKEN_CARET:
+					cg_emit(cg,"    xor %s, %lld", R, k->int_val);
+					break;
 				}
 			}
 
@@ -590,7 +630,7 @@ static int cg_try_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *value)
 	   rhs evaluation). The op then runs in-place on the register, width-correct for
 	   int or long. This handles the cases the leaf-only chain below cannot. */
 	if (value->kind==EX_BINARY && cg_op_inplace_ok(value->op)
-		&& (target->type.kind==TY_LONG || target->type.kind==TY_ULONG || target->type.kind==TY_INT))
+			&& (target->type.kind==TY_LONG || target->type.kind==TY_ULONG || target->type.kind==TY_INT))
 	{
 		Expr *other = NULL;
 		if (value->lhs->kind==EX_IDENT && value->lhs->anno_int==target->anno_int)
@@ -842,21 +882,66 @@ static int cg_map_key_kind(TypeTable *tt, TypeRef *t)
    cg_binop_rhs operand. Used to emit 32-bit int comparisons. */
 static const char *cg_reg32(const char *r)
 {
-	if (!strcmp(r, "rax")) return "eax";
-	if (!strcmp(r, "rbx")) return "ebx";
-	if (!strcmp(r, "rcx")) return "ecx";
-	if (!strcmp(r, "rdx")) return "edx";
-	if (!strcmp(r, "rsi")) return "esi";
-	if (!strcmp(r, "rdi")) return "edi";
-	if (!strcmp(r, "rbp")) return "ebp";
-	if (!strcmp(r, "r8"))  return "r8d";
-	if (!strcmp(r, "r9"))  return "r9d";
-	if (!strcmp(r, "r10")) return "r10d";
-	if (!strcmp(r, "r11")) return "r11d";
-	if (!strcmp(r, "r12")) return "r12d";
-	if (!strcmp(r, "r13")) return "r13d";
-	if (!strcmp(r, "r14")) return "r14d";
-	if (!strcmp(r, "r15")) return "r15d";
+	if (!strcmp(r, "rax"))
+	{
+		return "eax";
+	}
+	if (!strcmp(r, "rbx"))
+	{
+		return "ebx";
+	}
+	if (!strcmp(r, "rcx"))
+	{
+		return "ecx";
+	}
+	if (!strcmp(r, "rdx"))
+	{
+		return "edx";
+	}
+	if (!strcmp(r, "rsi"))
+	{
+		return "esi";
+	}
+	if (!strcmp(r, "rdi"))
+	{
+		return "edi";
+	}
+	if (!strcmp(r, "rbp"))
+	{
+		return "ebp";
+	}
+	if (!strcmp(r, "r8"))
+	{
+		return "r8d";
+	}
+	if (!strcmp(r, "r9"))
+	{
+		return "r9d";
+	}
+	if (!strcmp(r, "r10"))
+	{
+		return "r10d";
+	}
+	if (!strcmp(r, "r11"))
+	{
+		return "r11d";
+	}
+	if (!strcmp(r, "r12"))
+	{
+		return "r12d";
+	}
+	if (!strcmp(r, "r13"))
+	{
+		return "r13d";
+	}
+	if (!strcmp(r, "r14"))
+	{
+		return "r14d";
+	}
+	if (!strcmp(r, "r15"))
+	{
+		return "r15d";
+	}
 	return r;
 }
 
@@ -1032,7 +1117,7 @@ static int cg_fold_const(Codegen *cg, Expr *e, long long *out)
 			   && cg_unroll_const(cg, e->anno_int, out);
 	case EX_CAST:
 		if (!ty_is_int(e->type.kind) || !ty_is_int(e->lhs->type.kind)
-			|| !cg_fold_const(cg, e->lhs, &va))
+				|| !cg_fold_const(cg, e->lhs, &va))
 		{
 			return 0;
 		}
@@ -1041,7 +1126,7 @@ static int cg_fold_const(Codegen *cg, Expr *e, long long *out)
 		return 1;
 	case EX_BINARY:
 		if (!ty_is_int(e->type.kind)
-			|| !cg_fold_const(cg, e->lhs, &va) || !cg_fold_const(cg, e->rhs, &vb))
+				|| !cg_fold_const(cg, e->lhs, &va) || !cg_fold_const(cg, e->rhs, &vb))
 		{
 			return 0;
 		}
@@ -1106,7 +1191,7 @@ static int cg_fold_const(Codegen *cg, Expr *e, long long *out)
 static int cg_index_mem(Codegen *cg, Expr *e, char *buf, const char *scratch)
 {
 	if (!cg->unrolling || !e->anno_index_safe
-		|| e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
+			|| e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
 	{
 		return 0;
 	}
@@ -1136,7 +1221,7 @@ static int cg_index_mem(Codegen *cg, Expr *e, char *buf, const char *scratch)
 		Expr *id = NULL;
 		long long k = 0;
 		if (e->rhs->lhs->kind == EX_IDENT && e->rhs->lhs->anno_int > 0
-			&& cg_fold_const(cg, e->rhs->rhs, &k))
+				&& cg_fold_const(cg, e->rhs->rhs, &k))
 		{
 			id = e->rhs->lhs;
 		}
@@ -1176,7 +1261,7 @@ static int cg_index_mem(Codegen *cg, Expr *e, char *buf, const char *scratch)
 static int cg_index_mem_match(Codegen *cg, Expr *e)
 {
 	if (!cg->unrolling || e->kind != EX_INDEX || !e->anno_index_safe
-		|| e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
+			|| e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0)
 	{
 		return 0;
 	}
@@ -1196,15 +1281,15 @@ static int cg_index_mem_match(Codegen *cg, Expr *e)
 	{
 		long long k;
 		if (e->rhs->lhs->kind == EX_IDENT && e->rhs->lhs->anno_int > 0
-			&& cg_fold_const(cg, e->rhs->rhs, &k) && k >= 0
-			&& !cg_is_unroll_const(cg, e->rhs->lhs->anno_int))
+				&& cg_fold_const(cg, e->rhs->rhs, &k) && k >= 0
+				&& !cg_is_unroll_const(cg, e->rhs->lhs->anno_int))
 		{
 			return 1;
 		}
 
 		if (e->rhs->rhs->kind == EX_IDENT && e->rhs->rhs->anno_int > 0
-			&& cg_fold_const(cg, e->rhs->lhs, &k) && k >= 0
-			&& !cg_is_unroll_const(cg, e->rhs->rhs->anno_int))
+				&& cg_fold_const(cg, e->rhs->lhs, &k) && k >= 0
+				&& !cg_is_unroll_const(cg, e->rhs->rhs->anno_int))
 		{
 			return 1;
 		}
@@ -1288,7 +1373,7 @@ static int cg_index_opnd(Codegen *cg, Expr *e, char *buf)
 	}
 
 	if (!idx || idx->anno_int <= 0
-		|| (cg->unrolling && cg_is_unroll_const(cg, idx->anno_int)))
+			|| (cg->unrolling && cg_is_unroll_const(cg, idx->anno_int)))
 	{
 		return 0;
 	}
@@ -1404,11 +1489,11 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	   the dominant per-access cost in the matrix / codec block sweeps - with one
 	   instruction. (A non-safe index keeps its bounds check via the paths below.) */
 	if (safe && e->rhs->kind==EX_BINARY
-		&& (e->rhs->op==TOKEN_PLUS || e->rhs->op==TOKEN_MINUS)
-		&& e->rhs->lhs->kind==EX_IDENT && e->rhs->lhs->anno_int > 0
-		&& e->rhs->rhs->kind==EX_INT
-		&& e->rhs->rhs->int_val >= 0 && e->rhs->rhs->int_val <= 0x10000000LL
-		&& !(cg->unrolling && cg_is_unroll_const(cg, e->rhs->lhs->anno_int)))
+			&& (e->rhs->op==TOKEN_PLUS || e->rhs->op==TOKEN_MINUS)
+			&& e->rhs->lhs->kind==EX_IDENT && e->rhs->lhs->anno_int > 0
+			&& e->rhs->rhs->kind==EX_INT
+			&& e->rhs->rhs->int_val >= 0 && e->rhs->rhs->int_val <= 0x10000000LL
+			&& !(cg->unrolling && cg_is_unroll_const(cg, e->rhs->lhs->anno_int)))
 	{
 		const char *ir = cg_local_reg(cg, e->rhs->lhs->anno_int);
 		if (ir)
@@ -1569,7 +1654,7 @@ static int cg_index_checked_opnd(Codegen *cg, TypeTable *tt, Expr *e, char *buf,
 {
 	(void)tt;
 	if (e->kind != EX_INDEX || e->lhs->kind != EX_IDENT || e->lhs->anno_int <= 0
-		|| ty_is_float(e->type.kind) || ty_is_managed(e->type.kind))
+			|| ty_is_float(e->type.kind) || ty_is_managed(e->type.kind))
 	{
 		return 0;
 	}
@@ -1588,7 +1673,7 @@ static int cg_index_checked_opnd(Codegen *cg, TypeTable *tt, Expr *e, char *buf,
 	/* Bare register-resident index only (REG +/- const keeps the generic path: its
 	   bounds check is on the computed index, not the bare register). */
 	if (e->rhs->kind != EX_IDENT || e->rhs->anno_int <= 0
-		|| (cg->unrolling && cg_is_unroll_const(cg, e->rhs->anno_int)))
+			|| (cg->unrolling && cg_is_unroll_const(cg, e->rhs->anno_int)))
 	{
 		return 0;
 	}
@@ -2178,9 +2263,9 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 	   bit-identical to the generic path. It collapses the dot-product chains a 3D
 	   transform or physics step is built from. */
 	if ((e->op==TOKEN_PLUS || e->op==TOKEN_MINUS) && e->rhs->kind==EX_BINARY
-		&& e->rhs->op==TOKEN_STAR
-		&& cg_fp_simple_local(cg, e->rhs->lhs, ct)
-		&& cg_fp_simple_local(cg, e->rhs->rhs, ct))
+			&& e->rhs->op==TOKEN_STAR
+			&& cg_fp_simple_local(cg, e->rhs->lhs, ct)
+			&& cg_fp_simple_local(cg, e->rhs->rhs, ct))
 	{
 		const char *mov = (ct==TY_DOUBLE) ? "movsd" : "movss";
 		char abuf[48], bbuf[48];
@@ -2296,7 +2381,10 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 	else if (e->rhs->kind==EX_IDENT)
 	{
 		const char *r = cg_local_reg(cg, e->rhs->anno_int);
-		if (!r) r = cg_hoist_reg(cg, e->rhs->anno_int);
+		if (!r)
+		{
+			r = cg_hoist_reg(cg, e->rhs->anno_int);
+		}
 		if (r && cg_op_uses_rhsop(e->op))
 		{
 			*rhsop = r;   /* compare/+/- read the operand straight from its register. */
@@ -2330,7 +2418,7 @@ static void cg_binop_rhs(Codegen *cg, TypeTable *tt, Expr *e, const char **rhsop
 static Expr *cg_peel_widening_cast(Expr *e)
 {
 	if (e->kind==EX_CAST && !ty_is_float(e->type.kind) && !ty_is_float(e->lhs->type.kind)
-		&& ty_bits(e->type.kind) >= ty_bits(e->lhs->type.kind))
+			&& ty_bits(e->type.kind) >= ty_bits(e->lhs->type.kind))
 	{
 		return e->lhs;
 	}
@@ -2428,14 +2516,14 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 	   reduced byte/short array element (the cast over the index is pure widening and
 	   is peeled), the load and mask fuse to one `movzx eax, byte/word [base + iv]`. */
 	if (e->op==TOKEN_AMP && e->rhs->kind==EX_INT && e->type.kind==TY_INT
-		&& (e->rhs->int_val==0xFF || e->rhs->int_val==0xFFFF))
+			&& (e->rhs->int_val==0xFF || e->rhs->int_val==0xFFFF))
 	{
 		int w = (e->rhs->int_val==0xFF) ? 8 : 16;
 		const char *sz = (w==8) ? "byte" : "word";
 		Expr *inner = cg_peel_widening_cast(e->lhs);
 		char srm[40];
 		if (inner->kind==EX_INDEX && cg_elem_stride(inner->type.kind)==w/8
-			&& cg_sr_mode(cg, inner, srm))
+				&& cg_sr_mode(cg, inner, srm))
 		{
 			cg_emit(cg, "    movzx eax, %s %s", sz, srm);
 			return;
@@ -2458,18 +2546,31 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		const char *opc = NULL;
 		switch (e->op)
 		{
-		case TOKEN_PLUS:  opc = "add";  break;
-		case TOKEN_MINUS: opc = "sub";  break;
-		case TOKEN_STAR:  opc = "imul"; break;
-		case TOKEN_AMP:   opc = "and";  break;
-		case TOKEN_PIPE:  opc = "or";   break;
-		case TOKEN_CARET: opc = "xor";  break;
-		default: break;
+		case TOKEN_PLUS:
+			opc = "add";
+			break;
+		case TOKEN_MINUS:
+			opc = "sub";
+			break;
+		case TOKEN_STAR:
+			opc = "imul";
+			break;
+		case TOKEN_AMP:
+			opc = "and";
+			break;
+		case TOKEN_PIPE:
+			opc = "or";
+			break;
+		case TOKEN_CARET:
+			opc = "xor";
+			break;
+		default:
+			break;
 		}
 
 		char srm[40];
 		if (fuse_op && e->type.kind==TY_INT && e->rhs->type.kind==TY_INT
-			&& cg_sr_mode(cg, e->rhs, srm))
+				&& cg_sr_mode(cg, e->rhs, srm))
 		{
 			cg_eval_low32_operand(cg,tt,e->lhs,e->op);   /* Other operand -> eax. */
 			cg_emit(cg,"    %s eax, dword %s", opc, srm);
@@ -2478,7 +2579,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		}
 
 		if (fuse_op && commutative && e->type.kind==TY_INT && e->lhs->type.kind==TY_INT
-			&& cg_sr_mode(cg, e->lhs, srm))
+				&& cg_sr_mode(cg, e->lhs, srm))
 		{
 			cg_eval_low32_operand(cg,tt,e->rhs,e->op);   /* Other operand -> eax. */
 			cg_emit(cg,"    %s eax, dword %s", opc, srm);
@@ -2492,7 +2593,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		   load (rcx, if its index ident is stack-resident) follows safely. */
 		char umem[64];
 		if (fuse_op && e->type.kind==TY_INT && e->rhs->type.kind==TY_INT
-			&& cg_elem_stride(e->rhs->type.kind)==4 && cg_index_mem_match(cg, e->rhs))
+				&& cg_elem_stride(e->rhs->type.kind)==4 && cg_index_mem_match(cg, e->rhs))
 		{
 			cg_eval_low32_operand(cg,tt,e->lhs,e->op);   /* Other operand -> eax. */
 			cg_index_mem(cg, e->rhs, umem, "rcx");
@@ -2502,7 +2603,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		}
 
 		if (fuse_op && commutative && e->type.kind==TY_INT && e->lhs->type.kind==TY_INT
-			&& cg_elem_stride(e->lhs->type.kind)==4 && cg_index_mem_match(cg, e->lhs))
+				&& cg_elem_stride(e->lhs->type.kind)==4 && cg_index_mem_match(cg, e->lhs))
 		{
 			cg_eval_low32_operand(cg,tt,e->rhs,e->op);   /* Other operand -> eax. */
 			cg_index_mem(cg, e->lhs, umem, "rcx");
@@ -2520,9 +2621,9 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 	   as the idiv path below; a signed numerator is biased toward zero before the
 	   arithmetic shift. General (non-power-of-two) constants still use idiv. */
 	if ((e->op==TOKEN_SLASH || e->op==TOKEN_PERCENT)
-		&& e->rhs->kind==EX_INT
-		&& e->rhs->int_val >= 2 && e->rhs->int_val <= 0x80000000LL
-		&& (e->rhs->int_val & (e->rhs->int_val - 1)) == 0)
+			&& e->rhs->kind==EX_INT
+			&& e->rhs->int_val >= 2 && e->rhs->int_val <= 0x80000000LL
+			&& (e->rhs->int_val & (e->rhs->int_val - 1)) == 0)
 	{
 		long long d = e->rhs->int_val;
 		int k = 0;
@@ -2576,7 +2677,7 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 	   imul path would. This collapses the ubiquitous index arithmetic (i*4, r*8,
 	   (v+u)*2, ...) from `mov rbx,C; imul` to a single `shl`. */
 	if (e->op==TOKEN_STAR && !ty_is_float(e->type.kind) && e->rhs->kind==EX_INT
-		&& e->rhs->int_val > 1 && (e->rhs->int_val & (e->rhs->int_val - 1)) == 0)
+			&& e->rhs->int_val > 1 && (e->rhs->int_val & (e->rhs->int_val - 1)) == 0)
 	{
 		int k = 0;
 		long long v = e->rhs->int_val;
@@ -2596,15 +2697,23 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 	   rbx. `imul` uses its three-operand immediate form. Re-extension narrows to the
 	   declared width exactly as the rbx path would, so the result is identical. */
 	if (!ty_is_float(e->type.kind) && e->rhs->kind==EX_INT
-		&& e->rhs->int_val >= -2147483648LL && e->rhs->int_val <= 2147483647LL
-		&& (e->op==TOKEN_STAR || e->op==TOKEN_AMP || e->op==TOKEN_PIPE || e->op==TOKEN_CARET))
+			&& e->rhs->int_val >= -2147483648LL && e->rhs->int_val <= 2147483647LL
+			&& (e->op==TOKEN_STAR || e->op==TOKEN_AMP || e->op==TOKEN_PIPE || e->op==TOKEN_CARET))
 	{
 		switch (e->op)
 		{
-		case TOKEN_STAR:  cg_emit(cg,"    imul rax, rax, %lld", e->rhs->int_val); break;
-		case TOKEN_AMP:   cg_emit(cg,"    and rax, %lld", e->rhs->int_val);  break;
-		case TOKEN_PIPE:  cg_emit(cg,"    or rax, %lld", e->rhs->int_val);   break;
-		case TOKEN_CARET: cg_emit(cg,"    xor rax, %lld", e->rhs->int_val);  break;
+		case TOKEN_STAR:
+			cg_emit(cg,"    imul rax, rax, %lld", e->rhs->int_val);
+			break;
+		case TOKEN_AMP:
+			cg_emit(cg,"    and rax, %lld", e->rhs->int_val);
+			break;
+		case TOKEN_PIPE:
+			cg_emit(cg,"    or rax, %lld", e->rhs->int_val);
+			break;
+		case TOKEN_CARET:
+			cg_emit(cg,"    xor rax, %lld", e->rhs->int_val);
+			break;
 		}
 
 		cg_extend_int_result(cg, e, want_low32);
@@ -2618,8 +2727,8 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 	   The shift kind follows the LEFT operand (sar for signed >>, shr for unsigned),
 	   matching the cl-form case below. */
 	if (!ty_is_float(e->type.kind) && e->rhs->kind==EX_INT
-		&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63
-		&& (e->op==TOKEN_SHL || e->op==TOKEN_SHR))
+			&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63
+			&& (e->op==TOKEN_SHL || e->op==TOKEN_SHR))
 	{
 		if (e->op==TOKEN_SHL)
 		{
@@ -2864,7 +2973,7 @@ static void cg_branch_cond(Codegen *cg, TypeTable *tt, Expr *cond, int label, in
 	}
 
 	if (cond->kind==EX_BINARY && cg_op_is_compare(cond->op)
-		&& !ty_is_float(cond->lhs->type.kind) && !ty_is_float(cond->rhs->type.kind))
+			&& !ty_is_float(cond->lhs->type.kind) && !ty_is_float(cond->rhs->type.kind))
 	{
 		const char *lhsop = "rax";
 		if (cond->lhs->kind==EX_IDENT && cg_local_reg(cg, cond->lhs->anno_int))
@@ -2957,12 +3066,18 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 		else if (is_float||is_double)
 		{
 			on_stack=(fp_idx>=8);
-			if (!on_stack) { fp_idx++; }
+			if (!on_stack)
+			{
+				fp_idx++;
+			}
 		}
 		else
 		{
 			on_stack=(int_idx>=6);
-			if (!on_stack) { int_idx++; }
+			if (!on_stack)
+			{
+				int_idx++;
+			}
 		}
 
 		if (!on_stack)
@@ -2986,44 +3101,75 @@ static void cg_place_args(Codegen *cg, const TypeKind *slot_kind, int total, int
 		else
 		{
 			cg_emit(cg,"    mov rax, [rbp - %d]",src);
-			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add rax, 32"); }
+			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY))
+			{
+				cg_emit(cg,"    add rax, 32");
+			}
 			cg_emit(cg,"    mov [rsp + %d], rax",dst);
 		}
 	}
 
-	int_idx=0; fp_idx=0;
+	int_idx=0;
+	fp_idx=0;
 	for (int s=0; s<total; s++)
 	{
 		int is_float=(slot_kind[s]==TY_FLOAT), is_double=(slot_kind[s]==TY_DOUBLE);
 		int src=b-s*8;
 		if (win)
 		{
-			if (s>=4) { continue; }
-			if (is_float) { cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",s,src); }
+			if (s>=4)
+			{
+				continue;
+			}
+			if (is_float)
+			{
+				cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",s,src);
+			}
 			else if (is_double)
 			{
 				cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",s,src);
-				if (variadic) { cg_emit(cg,"    movq %s, xmm%d",cg_iarg(cg,s),s); }   /* Win64 varargs: FP also in the GP register. */
+				if (variadic)
+				{
+					cg_emit(cg,"    movq %s, xmm%d",cg_iarg(cg,s),s);    /* Win64 varargs: FP also in the GP register. */
+				}
 			}
 			else
 			{
 				cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,s),src);
-				if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,s)); }
+				if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY))
+				{
+					cg_emit(cg,"    add %s, 32",cg_iarg(cg,s));
+				}
 			}
 		}
 		else if (is_float||is_double)
 		{
-			if (fp_idx>=8) { continue; }
+			if (fp_idx>=8)
+			{
+				continue;
+			}
 			int xi=fp_idx++;
-			if (is_float) { cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",xi,src); }
-			else { cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",xi,src); }
+			if (is_float)
+			{
+				cg_emit(cg,"    movss xmm%d, dword [rbp - %d]",xi,src);
+			}
+			else
+			{
+				cg_emit(cg,"    movsd xmm%d, qword [rbp - %d]",xi,src);
+			}
 		}
 		else
 		{
-			if (int_idx>=6) { continue; }
+			if (int_idx>=6)
+			{
+				continue;
+			}
 			int ii=int_idx++;
 			cg_emit(cg,"    mov %s, [rbp - %d]",cg_iarg(cg,ii),src);
-			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY)) { cg_emit(cg,"    add %s, 32",cg_iarg(cg,ii)); }
+			if (marshal_cstr && (slot_kind[s]==TY_STRING || slot_kind[s]==TY_ARRAY))
+			{
+				cg_emit(cg,"    add %s, 32",cg_iarg(cg,ii));
+			}
 		}
 	}
 
@@ -3956,9 +4102,9 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 	   for a value source AND value result (rax-carried), un-nested in an outer
 	   hoist (r8-r11 free). */
 	if (do_inline && map_direct && cg->hoist_n == 0 && ibody
-		&& !ty_is_float(et)
-		&& e->type.elem && !ty_is_float(e->type.elem->kind) && !ty_is_managed(e->type.elem->kind)
-		&& cg_hoist_expr_ok(ibody))
+			&& !ty_is_float(et)
+			&& e->type.elem && !ty_is_float(e->type.elem->kind) && !ty_is_managed(e->type.elem->kind)
+			&& cg_hoist_expr_ok(ibody))
 	{
 		int floop = cg_label(cg), rloop = cg_label(cg), fend = cg_label(cg);
 		cg_emit(cg,"    mov rdx, [rbp - %d]", s_coll);
@@ -5459,7 +5605,10 @@ static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
 		/* Open a window -> owned Surface handle; fallible (no SDL / no display),
 		   so a post-call bzy_io_check throws IOException with the handle preserved. */
 		TypeRef ps[3];
-		for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+		for (int i=0; i<e->arg_count; i++)
+		{
+			ps[i]=e->args[i]->type;
+		}
 		cg_call_with_args(cg,tt,"bzy_surface_open",NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int k = cg_label(cg);
@@ -5476,7 +5625,10 @@ static void cg_graphics(Codegen *cg, TypeTable *tt, Expr *e)
 		/* Open a GL window -> owned GlSurface handle; fallible (no SDL / no display),
 		   so a post-call bzy_io_check throws IOException with the handle preserved. */
 		TypeRef ps[3];
-		for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+		for (int i=0; i<e->arg_count; i++)
+		{
+			ps[i]=e->args[i]->type;
+		}
 		cg_call_with_args(cg,tt,"bzy_glsurface_open",NULL,e->args,e->arg_count,0, 1, 0, ps, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int k = cg_label(cg);
@@ -5531,7 +5683,10 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		/* 2-arg -> system-default CAs; 3-arg -> explicit CA bundle. Fallible. */
 		const char *tfn = (e->arg_count==3) ? "bzy_tls_connect_ca" : "bzy_tls_connect";
 		TypeRef pst[3];
-		for (int i=0; i<e->arg_count; i++) { pst[i]=e->args[i]->type; }
+		for (int i=0; i<e->arg_count; i++)
+		{
+			pst[i]=e->args[i]->type;
+		}
 		cg_call_with_args(cg,tt,tfn,NULL,e->args,e->arg_count,0, 1, 0, pst, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kc = cg_label(cg);
@@ -5546,7 +5701,10 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(m,"tlsListen")==0)
 	{
 		TypeRef psl[3];
-		for (int i=0; i<e->arg_count; i++) { psl[i]=e->args[i]->type; }
+		for (int i=0; i<e->arg_count; i++)
+		{
+			psl[i]=e->args[i]->type;
+		}
 		cg_call_with_args(cg,tt,"bzy_tls_listen",NULL,e->args,e->arg_count,0, 1, 0, psl, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kl = cg_label(cg);
@@ -5563,9 +5721,12 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 		/* dtlsConnect: 2-arg -> system CAs, 3-arg -> CA bundle. dtlsConnectInsecure:
 		   no peer-cert verification. All fallible. */
 		const char *dfn = (strcmp(m,"dtlsConnectInsecure")==0) ? "bzy_dtls_connect_insecure"
-		                : (e->arg_count==3) ? "bzy_dtls_connect_ca" : "bzy_dtls_connect";
+						  : (e->arg_count==3) ? "bzy_dtls_connect_ca" : "bzy_dtls_connect";
 		TypeRef pdc[3];
-		for (int i=0; i<e->arg_count; i++) { pdc[i]=e->args[i]->type; }
+		for (int i=0; i<e->arg_count; i++)
+		{
+			pdc[i]=e->args[i]->type;
+		}
 		cg_call_with_args(cg,tt,dfn,NULL,e->args,e->arg_count,0, 1, 0, pdc, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kdc = cg_label(cg);
@@ -5580,7 +5741,10 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 	if (strcmp(m,"dtlsListen")==0)
 	{
 		TypeRef pdl[3];
-		for (int i=0; i<e->arg_count; i++) { pdl[i]=e->args[i]->type; }
+		for (int i=0; i<e->arg_count; i++)
+		{
+			pdl[i]=e->args[i]->type;
+		}
 		cg_call_with_args(cg,tt,"bzy_dtls_listen",NULL,e->args,e->arg_count,0, 1, 0, pdl, e->arg_count, 0);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 		int kdl = cg_label(cg);
@@ -6127,12 +6291,31 @@ static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
 		int byname = (e->arg_count==1 && e->args[0]->type.kind==TY_STRING);
 		int is_fp = 0;
 		const char *fn = NULL;
-		if (strcmp(n,"getString")==0)      { fn = byname ? "bzy_db_get_string_named" : "bzy_db_get_string"; }
-		else if (strcmp(n,"getInt")==0)    { fn = byname ? "bzy_db_get_long_named"   : "bzy_db_get_long"; }
-		else if (strcmp(n,"getLong")==0)   { fn = byname ? "bzy_db_get_long_named"   : "bzy_db_get_long"; }
-		else if (strcmp(n,"getDouble")==0) { fn = byname ? "bzy_db_get_double_named" : "bzy_db_get_double"; is_fp = 1; }
-		else if (strcmp(n,"getBool")==0)   { fn = byname ? "bzy_db_get_bool_named"   : "bzy_db_get_bool"; }
-		else if (strcmp(n,"isNull")==0)    { fn = byname ? "bzy_db_is_null_named"    : "bzy_db_is_null"; }
+		if (strcmp(n,"getString")==0)
+		{
+			fn = byname ? "bzy_db_get_string_named" : "bzy_db_get_string";
+		}
+		else if (strcmp(n,"getInt")==0)
+		{
+			fn = byname ? "bzy_db_get_long_named"   : "bzy_db_get_long";
+		}
+		else if (strcmp(n,"getLong")==0)
+		{
+			fn = byname ? "bzy_db_get_long_named"   : "bzy_db_get_long";
+		}
+		else if (strcmp(n,"getDouble")==0)
+		{
+			fn = byname ? "bzy_db_get_double_named" : "bzy_db_get_double";
+			is_fp = 1;
+		}
+		else if (strcmp(n,"getBool")==0)
+		{
+			fn = byname ? "bzy_db_get_bool_named"   : "bzy_db_get_bool";
+		}
+		else if (strcmp(n,"isNull")==0)
+		{
+			fn = byname ? "bzy_db_is_null_named"    : "bzy_db_is_null";
+		}
 		if (!fn)
 		{
 			fprintf(stderr,"Codegen: unknown Row method '%s'\n", n);
@@ -6395,20 +6578,57 @@ static void cg_mappedfile_method(Codegen *cg, TypeTable *tt, Expr *e)
 	const char *n = e->name;
 	const char *fn;
 	int fallible = 0;
-	if (strcmp(n,"size")==0)            { fn = "bzy_mmap_size"; }
-	else if (strcmp(n,"getByte")==0)    { fn = "bzy_mmap_get_byte"; }
-	else if (strcmp(n,"getInt")==0)     { fn = "bzy_mmap_get_int"; }
-	else if (strcmp(n,"getLong")==0)    { fn = "bzy_mmap_get_long"; }
-	else if (strcmp(n,"putByte")==0)    { fn = "bzy_mmap_put_byte"; }
-	else if (strcmp(n,"putInt")==0)     { fn = "bzy_mmap_put_int"; }
-	else if (strcmp(n,"putLong")==0)    { fn = "bzy_mmap_put_long"; }
-	else if (strcmp(n,"copyInto")==0)   { fn = "bzy_mmap_copy_into"; }
-	else if (strcmp(n,"copyFrom")==0)   { fn = "bzy_mmap_copy_from"; }
-	else if (strcmp(n,"flush")==0)      { fn = "bzy_mmap_flush"; fallible = 1; }
-	else                                { fn = "bzy_mmap_close"; }
+	if (strcmp(n,"size")==0)
+	{
+		fn = "bzy_mmap_size";
+	}
+	else if (strcmp(n,"getByte")==0)
+	{
+		fn = "bzy_mmap_get_byte";
+	}
+	else if (strcmp(n,"getInt")==0)
+	{
+		fn = "bzy_mmap_get_int";
+	}
+	else if (strcmp(n,"getLong")==0)
+	{
+		fn = "bzy_mmap_get_long";
+	}
+	else if (strcmp(n,"putByte")==0)
+	{
+		fn = "bzy_mmap_put_byte";
+	}
+	else if (strcmp(n,"putInt")==0)
+	{
+		fn = "bzy_mmap_put_int";
+	}
+	else if (strcmp(n,"putLong")==0)
+	{
+		fn = "bzy_mmap_put_long";
+	}
+	else if (strcmp(n,"copyInto")==0)
+	{
+		fn = "bzy_mmap_copy_into";
+	}
+	else if (strcmp(n,"copyFrom")==0)
+	{
+		fn = "bzy_mmap_copy_from";
+	}
+	else if (strcmp(n,"flush")==0)
+	{
+		fn = "bzy_mmap_flush";
+		fallible = 1;
+	}
+	else
+	{
+		fn = "bzy_mmap_close";
+	}
 
 	TypeRef ps[3];
-	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
 
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
 
@@ -6478,7 +6698,10 @@ static void cg_tls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	TypeRef ps[1];
-	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
 
 	int obj = ty_is_managed(e->type.kind);   /* read -> byte[] (owned); others scalar/void. */
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count, 0);
@@ -6557,7 +6780,10 @@ static void cg_dtls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	TypeRef ps[1];
-	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
 
 	int obj = ty_is_managed(e->type.kind);   /* read -> byte[] (owned); others scalar/void. */
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, obj, 0, ps, e->arg_count, 0);
@@ -6608,7 +6834,10 @@ static void cg_surface_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	TypeRef ps[1];
-	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
 
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
 
@@ -6644,7 +6873,10 @@ static void cg_glsurface_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 
 	TypeRef ps[1];
-	for (int i=0; i<e->arg_count; i++) { ps[i]=e->args[i]->type; }
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
 
 	/* GlSurface methods are non-fallible: swapBuffers aborts on misuse, never throws. */
 	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0, 0, 0, ps, e->arg_count, 0);
@@ -6897,8 +7129,8 @@ static int cg_try_simd_inplace(Codegen *cg, TypeTable *tt, Expr *target, Expr *v
 
 	const char *m = value->name + 5;
 	if (value->arg_count != 2
-		|| !(strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0
-			 || strcmp(m,"div")==0 || strcmp(m,"min")==0 || strcmp(m,"max")==0))
+			|| !(strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0
+				 || strcmp(m,"div")==0 || strcmp(m,"min")==0 || strcmp(m,"max")==0))
 	{
 		return 0;
 	}
@@ -8446,7 +8678,11 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 				int has_cb = 0;
 				for (int ci = 0; ci < e->arg_count; ci++)
 				{
-					if (e->args[ci]->is_func_addr) { has_cb = 1; break; }
+					if (e->args[ci]->is_func_addr)
+					{
+						has_cb = 1;
+						break;
+					}
 				}
 
 				if (has_cb)
@@ -8615,13 +8851,20 @@ static const char *cg_inplace_mnem(int op)
 {
 	switch (op)
 	{
-	case TOKEN_PLUS:  return "add";
-	case TOKEN_MINUS: return "sub";
-	case TOKEN_STAR:  return "imul";
-	case TOKEN_AMP:   return "and";
-	case TOKEN_PIPE:  return "or";
-	case TOKEN_CARET: return "xor";
-	default:          return NULL;
+	case TOKEN_PLUS:
+		return "add";
+	case TOKEN_MINUS:
+		return "sub";
+	case TOKEN_STAR:
+		return "imul";
+	case TOKEN_AMP:
+		return "and";
+	case TOKEN_PIPE:
+		return "or";
+	case TOKEN_CARET:
+		return "xor";
+	default:
+		return NULL;
 	}
 }
 
@@ -8843,7 +9086,7 @@ static int cg_hoist_expr_ok(Expr *e)
 		   bzy_oob is reachable on out-of-bounds but NEVER RETURNS, so the hoist registers
 		   are only clobbered on a path that terminates; the in-bounds path is safe. */
 		if (e->lhs->kind != EX_IDENT || e->lhs->type.kind != TY_ARRAY
-			|| ty_is_managed(e->type.kind))
+				|| ty_is_managed(e->type.kind))
 		{
 			return 0;
 		}
@@ -8965,7 +9208,7 @@ static int cg_lpromo_headers_ok_stmt(Stmt *s)
 	}
 
 	if (s->kind == ST_FOR
-		&& (!cg_hoist_expr_ok(s->cond) || !cg_hoist_stmt_ok(s->for_init) || !cg_hoist_stmt_ok(s->for_post)))
+			&& (!cg_hoist_expr_ok(s->cond) || !cg_hoist_stmt_ok(s->for_init) || !cg_hoist_stmt_ok(s->for_post)))
 	{
 		return 0;
 	}
@@ -9088,9 +9331,9 @@ static void cg_lpromo_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 	(void)tt;
 	Block *body = loop->then_blk;
 	if (!cg->cur_func || cg->hoist_depth > 0 || cg->lpromo_n > 0 || cg->unrolling
-		|| !body || !cg_hoist_block_ok(body) || !cg_lpromo_headers_ok_block(body)
-		|| !cg_hoist_expr_ok(loop->cond)
-		|| (loop->kind == ST_FOR && !cg_hoist_stmt_ok(loop->for_post)))
+			|| !body || !cg_hoist_block_ok(body) || !cg_lpromo_headers_ok_block(body)
+			|| !cg_hoist_expr_ok(loop->cond)
+			|| (loop->kind == ST_FOR && !cg_hoist_stmt_ok(loop->for_post)))
 	{
 		return;
 	}
@@ -9171,7 +9414,7 @@ static void cg_hoist_writes_stmt(Stmt *s, int *w, int *wn)
 	}
 
 	if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT
-		&& s->target->anno_int > 0 && *wn < 128)
+			&& s->target->anno_int > 0 && *wn < 128)
 	{
 		w[(*wn)++] = s->target->anno_int;
 	}
@@ -9235,8 +9478,8 @@ static void cg_hoist_reads_expr(Codegen *cg, Expr *e, int *w, int wn, HoistCand 
 	}
 
 	if (e->kind == EX_IDENT && e->anno_int > 0
-		&& (ty_is_int(e->type.kind) || e->type.kind == TY_ARRAY)
-		&& !cg_local_reg(cg, e->anno_int) && !cg_off_in(w, wn, e->anno_int))
+			&& (ty_is_int(e->type.kind) || e->type.kind == TY_ARRAY)
+			&& !cg_local_reg(cg, e->anno_int) && !cg_off_in(w, wn, e->anno_int))
 	{
 		int found = 0;
 		for (int i = 0; i < *nc; i++)
@@ -9341,7 +9584,7 @@ static const char *cg_loop_induction(Codegen *cg, Stmt *loop, int *iv_off)
 
 	Expr *c = loop->cond;
 	if (!(c->kind == EX_BINARY && (c->op == TOKEN_LT || c->op == TOKEN_LTE)
-		  && c->lhs->kind == EX_IDENT && c->lhs->anno_int == io && io != 0))
+			&& c->lhs->kind == EX_IDENT && c->lhs->anno_int == io && io != 0))
 	{
 		return NULL;
 	}
@@ -9349,10 +9592,10 @@ static const char *cg_loop_induction(Codegen *cg, Stmt *loop, int *iv_off)
 	Stmt *p = loop->for_post;
 	int step_ok = 0;
 	if (p->kind == ST_ASSIGN && p->target && p->target->kind == EX_IDENT
-		&& p->target->anno_int == io && p->value && p->value->kind == EX_BINARY
-		&& p->value->op == TOKEN_PLUS && p->value->lhs->kind == EX_IDENT
-		&& p->value->lhs->anno_int == io && p->value->rhs->kind == EX_INT
-		&& p->value->rhs->int_val == 1)
+			&& p->target->anno_int == io && p->value && p->value->kind == EX_BINARY
+			&& p->value->op == TOKEN_PLUS && p->value->lhs->kind == EX_IDENT
+			&& p->value->lhs->anno_int == io && p->value->rhs->kind == EX_INT
+			&& p->value->rhs->int_val == 1)
 	{
 		step_ok = 1;
 	}
@@ -9418,7 +9661,7 @@ static Expr *cg_sr_eligible(Expr *e, int iv_off, int *w, int wn)
 	}
 
 	if (e->lhs->kind != EX_IDENT || e->lhs->type.kind != TY_ARRAY
-		|| cg_off_in(w, wn, e->lhs->anno_int))
+			|| cg_off_in(w, wn, e->lhs->anno_int))
 	{
 		return NULL;   /* Base must be an invariant array local. */
 	}
@@ -9580,7 +9823,7 @@ static int cg_acc_deferrable_stmt(Stmt *s, int off)
 	}
 
 	if (s->kind == ST_ASSIGN && s->target && s->target->kind == EX_IDENT
-		&& s->target->anno_int == off)
+			&& s->target->anno_int == off)
 	{
 		Expr *v = s->value;
 		if (v && v->kind == EX_BINARY && s->target->type.kind == TY_INT)
@@ -9590,13 +9833,13 @@ static int cg_acc_deferrable_stmt(Stmt *s, int off)
 						   || op==TOKEN_AMP || op==TOKEN_PIPE || op==TOKEN_CARET);
 			int commutative = (op != TOKEN_MINUS);   /* all but subtraction. */
 			if (safe_op && v->lhs->kind==EX_IDENT && v->lhs->anno_int==off
-				&& !cg_expr_refs_off(v->rhs, off))
+					&& !cg_expr_refs_off(v->rhs, off))
 			{
 				return 1;   /* off = off <op> EXPR. */
 			}
 
 			if (safe_op && commutative && v->rhs->kind==EX_IDENT && v->rhs->anno_int==off
-				&& !cg_expr_refs_off(v->lhs, off))
+					&& !cg_expr_refs_off(v->lhs, off))
 			{
 				return 1;   /* off = EXPR <op> off (commutative). */
 			}
@@ -9606,8 +9849,8 @@ static int cg_acc_deferrable_stmt(Stmt *s, int off)
 	}
 
 	if (cg_expr_refs_off(s->cond, off) || cg_expr_refs_off(s->decl_init, off)
-		|| cg_expr_refs_off(s->value, off) || cg_expr_refs_off(s->target, off)
-		|| cg_expr_refs_off(s->expr, off) || cg_expr_refs_off(s->ret_val, off))
+			|| cg_expr_refs_off(s->value, off) || cg_expr_refs_off(s->target, off)
+			|| cg_expr_refs_off(s->expr, off) || cg_expr_refs_off(s->ret_val, off))
 	{
 		return 0;
 	}
@@ -9674,7 +9917,7 @@ static void cg_loop_hoist_begin(Codegen *cg, TypeTable *tt, Stmt *loop)
 	{
 		int off = w[i];
 		if (off != 0 && off != cg->cur_counter_off && cg_local_reg(cg, off)
-			&& cg_acc_deferrable_block(body, off))
+				&& cg_acc_deferrable_block(body, off))
 		{
 			cg->defer_off[cg->defer_n++] = off;
 		}
@@ -9845,7 +10088,7 @@ static int cg_try_unroll(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_ma
 
 	Expr *c = s->cond;
 	if (!(c && c->kind == EX_BINARY && (c->op == TOKEN_LT || c->op == TOKEN_LTE)
-		  && c->lhs->kind == EX_IDENT && c->lhs->anno_int == io && c->rhs->kind == EX_INT))
+			&& c->lhs->kind == EX_IDENT && c->lhs->anno_int == io && c->rhs->kind == EX_INT))
 	{
 		return 0;
 	}
@@ -9855,9 +10098,9 @@ static int cg_try_unroll(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_ma
 	long long step = 0;
 	Stmt *p = s->for_post;
 	if (p && p->kind == ST_ASSIGN && p->target && p->target->kind == EX_IDENT
-		&& p->target->anno_int == io && p->value && p->value->kind == EX_BINARY
-		&& p->value->op == TOKEN_PLUS && p->value->lhs->kind == EX_IDENT
-		&& p->value->lhs->anno_int == io && p->value->rhs->kind == EX_INT)
+			&& p->target->anno_int == io && p->value && p->value->kind == EX_BINARY
+			&& p->value->op == TOKEN_PLUS && p->value->lhs->kind == EX_IDENT
+			&& p->value->lhs->anno_int == io && p->value->rhs->kind == EX_INT)
 	{
 		step = p->value->rhs->int_val;
 	}
@@ -9996,8 +10239,8 @@ static void cg_for(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
    loop. Used for the flat (head==0) and ring (head!=0) loops, which duplicate
    this tail so the hot flat loop carries no per-element ring test. */
 static void cg_foreach_vec_tail(Codegen *cg, TypeTable *tt, Func *f, Stmt *s,
-                                int in_main, TypeKind et, const char *curreg,
-                                int top, int cont, int end)
+								int in_main, TypeKind et, const char *curreg,
+								int top, int cont, int end)
 {
 	if (ty_is_float(et))
 	{
@@ -10780,12 +11023,18 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 		else if (is_fp)
 		{
 			on_stack = (fp_idx >= 8);
-			if (!on_stack) { fp_idx++; }
+			if (!on_stack)
+			{
+				fp_idx++;
+			}
 		}
 		else
 		{
 			on_stack = (int_idx >= 6);
-			if (!on_stack) { int_idx++; }
+			if (!on_stack)
+			{
+				int_idx++;
+			}
 		}
 
 		if (on_stack)
@@ -10820,7 +11069,9 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 
 	/* Second pass: spill overflow arguments to [rsp + dst], via r10 (never an
 	   argument register on either ABI). */
-	int_idx = 0; fp_idx = 0; stk = 0;
+	int_idx = 0;
+	fp_idx = 0;
+	stk = 0;
 	for (int i=0; i<fi->param_count; i++)
 	{
 		TypeKind k = fi->param_types[i].kind;
@@ -10833,12 +11084,18 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 		else if (is_fp)
 		{
 			on_stack = (fp_idx >= 8);
-			if (!on_stack) { fp_idx++; }
+			if (!on_stack)
+			{
+				fp_idx++;
+			}
 		}
 		else
 		{
 			on_stack = (int_idx >= 6);
-			if (!on_stack) { int_idx++; }
+			if (!on_stack)
+			{
+				int_idx++;
+			}
 		}
 
 		if (!on_stack)
@@ -10907,8 +11164,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		{
 			long long dcv;
 			if (cg->unrolling && s->decl_offset > 0
-				&& (s->decl_type.kind == TY_INT || s->decl_type.kind == TY_LONG)
-				&& cg_fold_const(cg, s->decl_init, &dcv))
+					&& (s->decl_type.kind == TY_INT || s->decl_type.kind == TY_LONG)
+					&& cg_fold_const(cg, s->decl_init, &dcv))
 			{
 				/* Inside an unrolled copy, a local assigned a foldable
 				   expression of the induction constants is itself a constant
@@ -10952,11 +11209,11 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	case ST_ASSIGN:
 		if (cg->unrolling && s->target->kind == EX_IDENT && s->target->anno_int > 0
-			&& s != cg->cur_accum_stmt && !ty_is_managed(s->target->type.kind))
+				&& s != cg->cur_accum_stmt && !ty_is_managed(s->target->type.kind))
 		{
 			long long acv;
 			if ((s->target->type.kind == TY_INT || s->target->type.kind == TY_LONG)
-				&& cg_fold_const(cg, s->value, &acv))
+					&& cg_fold_const(cg, s->value, &acv))
 			{
 				/* Copy-constant reassignment: record and store the immediate. */
 				cg_unroll_const_set(cg, s->target->anno_int, acv);
@@ -11007,8 +11264,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	case ST_EXPR:
 		if (cg->unrolling && s->expr && s->expr->kind == EX_INCDEC
-			&& s->expr->lhs && s->expr->lhs->kind == EX_IDENT
-			&& s->expr->lhs->anno_int > 0)
+				&& s->expr->lhs && s->expr->lhs->kind == EX_IDENT
+				&& s->expr->lhs->anno_int > 0)
 		{
 			cg_unroll_const_kill(cg, s->expr->lhs->anno_int);   /* i++ rewrites it. */
 		}
@@ -11614,7 +11871,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		{
 			const char *verdict = "ineligible";
 			if (ir_region_eligible(s)
-				&& cg_region_line_allowed(s->line))
+					&& cg_region_line_allowed(s->line))
 			{
 				IRFunc *irf = ir_lower_region(f, s);
 				if (irf)
@@ -11915,9 +12172,18 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		int is_float=(pk==TY_FLOAT), is_double=(pk==TY_DOUBLE);
 
 		int on_stack;
-		if (win) { on_stack = (pos >= 4); }
-		else if (is_float||is_double) { on_stack = (fp_idx >= 8); }
-		else { on_stack = (int_idx >= 6); }
+		if (win)
+		{
+			on_stack = (pos >= 4);
+		}
+		else if (is_float||is_double)
+		{
+			on_stack = (fp_idx >= 8);
+		}
+		else
+		{
+			on_stack = (int_idx >= 6);
+		}
 
 		if (on_stack)
 		{
@@ -11937,7 +12203,10 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 			else if (pr)
 			{
 				cg_emit(cg,"    mov %s, [rbp + %d]", pr, off);
-				if (pk == TY_INT) { cg_emit(cg,"    movsxd %s, %sd", pr, pr); }
+				if (pk == TY_INT)
+				{
+					cg_emit(cg,"    movsxd %s, %sd", pr, pr);
+				}
 			}
 			else
 			{
@@ -13163,7 +13432,10 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 		for (int fi2=0; fi2<u->func_count; fi2++)
 		{
 			Func *f=u->funcs[fi2];
-			if (!f->is_extern || !f->is_dynamic) { continue; }
+			if (!f->is_extern || !f->is_dynamic)
+			{
+				continue;
+			}
 			int dup=0;
 			for (int uj=0; uj<=ui && !dup; uj++)
 			{
@@ -13172,10 +13444,17 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 				for (int fj=0; fj<lim; fj++)
 				{
 					Func *g=u2->funcs[fj];
-					if (g->is_extern && g->is_dynamic && strcmp(g->name,f->name)==0) { dup=1; break; }
+					if (g->is_extern && g->is_dynamic && strcmp(g->name,f->name)==0)
+					{
+						dup=1;
+						break;
+					}
 				}
 			}
-			if (dup) { continue; }
+			if (dup)
+			{
+				continue;
+			}
 			cg_emit(cg,"__dynslot_%s: dq 0", f->name);
 			cg_emit(cg,"__dynname_%s: db \"%s\", 0", f->name, f->name);
 		}

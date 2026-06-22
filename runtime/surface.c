@@ -15,11 +15,11 @@
 #include <stdint.h>
 
 #ifndef _WIN32
-  #include <dlfcn.h>
+#include <dlfcn.h>
 #endif
 
 #ifdef _WIN32
-  #undef CreateWindow   /* windows.h macro-expands CreateWindow -> CreateWindowA; we use it as a struct field + SDL symbol (resolved by string name). */
+#undef CreateWindow   /* windows.h macro-expands CreateWindow -> CreateWindowA; we use it as a struct field + SDL symbol (resolved by string name). */
 #endif
 
 /* ---- dl helpers (mirror runtime/tls.c). ---- */
@@ -29,22 +29,34 @@ static void *dl_open_first(const char **names)
 	for (int i = 0; names[i]; i++)
 	{
 		HMODULE h = LoadLibraryA(names[i]);
-		if (h) { return (void*)h; }
+		if (h)
+		{
+			return (void*)h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return (void*)GetProcAddress((HMODULE)h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return (void*)GetProcAddress((HMODULE)h, n);
+}
 #else
 static void *dl_open_first(const char **names)
 {
 	for (int i = 0; names[i]; i++)
 	{
 		void *h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
-		if (h) { return h; }
+		if (h)
+		{
+			return h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return dlsym(h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return dlsym(h, n);
+}
 #endif
 
 /* ---- SDL2 constants (ABI-stable in SDL2). ---- */
@@ -84,8 +96,15 @@ static struct
 
 static int surface_load(void)
 {
-	if (sdl.loaded == 1) { return 1; }
-	if (sdl.loaded == -1) { bzy_io_fail("Surface unavailable: SDL2 not found."); return 0; }
+	if (sdl.loaded == 1)
+	{
+		return 1;
+	}
+	if (sdl.loaded == -1)
+	{
+		bzy_io_fail("Surface unavailable: SDL2 not found.");
+		return 0;
+	}
 
 #ifdef _WIN32
 	const char *names[] = { "SDL2.dll", NULL };
@@ -93,9 +112,14 @@ static int surface_load(void)
 	const char *names[] = { "libSDL2-2.0.so.0", "libSDL2.so", NULL };
 #endif
 	void *h = dl_open_first(names);
-	if (!h) { sdl.loaded = -1; bzy_io_fail("Surface unavailable: SDL2 not found."); return 0; }
+	if (!h)
+	{
+		sdl.loaded = -1;
+		bzy_io_fail("Surface unavailable: SDL2 not found.");
+		return 0;
+	}
 
-	#define SYM(field, name) do { \
+#define SYM(field, name) do { \
 		*(void**)(&sdl.field) = dl_sym(h, name); \
 		if (!sdl.field) { sdl.loaded = -1; bzy_io_fail("Surface unavailable: SDL2 symbol missing."); return 0; } \
 	} while (0)
@@ -112,7 +136,7 @@ static int surface_load(void)
 	SYM(RenderCopy, "SDL_RenderCopy");
 	SYM(RenderPresent, "SDL_RenderPresent");
 	SYM(PollEvent, "SDL_PollEvent");
-	#undef SYM
+#undef SYM
 
 	sdl.loaded = 1;
 	return 1;
@@ -147,7 +171,10 @@ static int64_t g_surf_vtable[2];
 /* Push one packed event (render thread = sole producer; drop when full). */
 static void ring_push(SurfaceCtrl *c, int64_t v)
 {
-	if (c->ring_head - c->ring_tail >= 256) { return; }
+	if (c->ring_head - c->ring_tail >= 256)
+	{
+		return;
+	}
 	c->ring[c->ring_head & 255] = v;
 	c->ring_head++;
 }
@@ -164,15 +191,32 @@ static void *surface_thread(void *p)
 		return NULL;
 	}
 	c->win = sdl.CreateWindow(c->title, BZ_SDL_WINDOWPOS_UNDEFINED, BZ_SDL_WINDOWPOS_UNDEFINED,
-	                          c->w, c->h, BZ_SDL_WINDOW_SHOWN);
-	if (!c->win) { c->init_failed = 1; sdl.Quit(); bzy_sem_post(&c->open_sem, 1); return NULL; }
+							  c->w, c->h, BZ_SDL_WINDOW_SHOWN);
+	if (!c->win)
+	{
+		c->init_failed = 1;
+		sdl.Quit();
+		bzy_sem_post(&c->open_sem, 1);
+		return NULL;
+	}
 	c->ren = sdl.CreateRenderer(c->win, -1, BZ_SDL_RENDERER_ACCELERATED);
-	if (!c->ren) { sdl.DestroyWindow(c->win); c->init_failed = 1; sdl.Quit(); bzy_sem_post(&c->open_sem, 1); return NULL; }
+	if (!c->ren)
+	{
+		sdl.DestroyWindow(c->win);
+		c->init_failed = 1;
+		sdl.Quit();
+		bzy_sem_post(&c->open_sem, 1);
+		return NULL;
+	}
 	c->tex = sdl.CreateTexture(c->ren, BZ_SDL_PIXELFORMAT_ARGB8888, BZ_SDL_TEXTUREACCESS_STREAMING, c->w, c->h);
 	if (!c->tex)
 	{
-		sdl.DestroyRenderer(c->ren); sdl.DestroyWindow(c->win);
-		c->init_failed = 1; sdl.Quit(); bzy_sem_post(&c->open_sem, 1); return NULL;
+		sdl.DestroyRenderer(c->ren);
+		sdl.DestroyWindow(c->win);
+		c->init_failed = 1;
+		sdl.Quit();
+		bzy_sem_post(&c->open_sem, 1);
+		return NULL;
 	}
 
 	c->open = 1;
@@ -185,7 +229,7 @@ static void *surface_thread(void *p)
 		{
 			uint32_t t = *(uint32_t*)(ev + 0);
 			if (t == BZ_SDL_QUIT
-				|| (t == BZ_SDL_WINDOWEVENT && *(uint8_t*)(ev + 12) == BZ_SDL_WINDOWEVENT_CLOSE))
+					|| (t == BZ_SDL_WINDOWEVENT && *(uint8_t*)(ev + 12) == BZ_SDL_WINDOWEVENT_CLOSE))
 			{
 				c->open = 0;
 				ring_push(c, (6LL << 48));
@@ -216,7 +260,9 @@ static void *surface_thread(void *p)
 		if (c->frame_ready)
 		{
 			bzy_mutex_lock(&c->lock);
-			uint32_t *tmp = c->front; c->front = c->back; c->back = tmp;
+			uint32_t *tmp = c->front;
+			c->front = c->back;
+			c->back = tmp;
 			c->frame_ready = 0;
 			bzy_mutex_unlock(&c->lock);
 
@@ -237,13 +283,19 @@ static void *surface_thread(void *p)
 }
 
 /* Offloaded so the breeze parks (frees its scheduler core) while the window inits. */
-static void surface_wait_open(void *p) { bzy_sem_wait(&((SurfaceCtrl*)p)->open_sem); }
+static void surface_wait_open(void *p)
+{
+	bzy_sem_wait(&((SurfaceCtrl*)p)->open_sem);
+}
 
 static void surface_teardown(SurfaceCtrl *c)
 {
 	c->stop = 1;
 	bzy_sem_post(&c->frame_sem, 1);
-	if (c->started) { bzy_thread_join(c->thread); }
+	if (c->started)
+	{
+		bzy_thread_join(c->thread);
+	}
 	bzy_sem_destroy(&c->open_sem);
 	bzy_sem_destroy(&c->frame_sem);
 	free(c->front);
@@ -253,8 +305,15 @@ static void surface_teardown(SurfaceCtrl *c)
 
 static void surface_finalize(void *o)
 {
-	if (SURF_CLOSED(o)) { return; }
-	if (SURF_CTRL(o)) { surface_teardown(SURF_CTRL(o)); SURF_CTRL(o) = NULL; }
+	if (SURF_CLOSED(o))
+	{
+		return;
+	}
+	if (SURF_CTRL(o))
+	{
+		surface_teardown(SURF_CTRL(o));
+		SURF_CTRL(o) = NULL;
+	}
 	SURF_CLOSED(o) = 1;
 }
 
@@ -267,11 +326,22 @@ static void *surface_vtable(void)
 
 void *bzy_surface_open(int64_t w, int64_t h, void *title)
 {
-	if (!surface_load()) { return NULL; }
-	if (w <= 0 || h <= 0) { bzy_io_fail("Surface.open: width and height must be positive."); return NULL; }
+	if (!surface_load())
+	{
+		return NULL;
+	}
+	if (w <= 0 || h <= 0)
+	{
+		bzy_io_fail("Surface.open: width and height must be positive.");
+		return NULL;
+	}
 
 	SurfaceCtrl *c = (SurfaceCtrl*)calloc(1, sizeof(SurfaceCtrl));
-	if (!c) { bzy_io_fail("Surface.open: out of memory."); return NULL; }
+	if (!c)
+	{
+		bzy_io_fail("Surface.open: out of memory.");
+		return NULL;
+	}
 	c->w = (int)w;
 	c->h = (int)h;
 	const char *tt = title ? bzy_str_data(title) : "";
@@ -280,8 +350,11 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 	c->back  = (uint32_t*)malloc((size_t)w * (size_t)h * 4);
 	if (!c->front || !c->back)
 	{
-		free(c->front); free(c->back); free(c);
-		bzy_io_fail("Surface.open: out of memory."); return NULL;
+		free(c->front);
+		free(c->back);
+		free(c);
+		bzy_io_fail("Surface.open: out of memory.");
+		return NULL;
 	}
 	bzy_mutex_init(&c->lock);
 	bzy_sem_init(&c->open_sem);
@@ -308,12 +381,17 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 
 void bzy_surface_present(void *s, void *pixels)
 {
-	if (SURF_CLOSED(s)) { bzy_io_fail("Surface.present: surface is closed."); return; }
+	if (SURF_CLOSED(s))
+	{
+		bzy_io_fail("Surface.present: surface is closed.");
+		return;
+	}
 	SurfaceCtrl *c = SURF_CTRL(s);
 	int64_t n = bzy_array_len(pixels);
 	if (n != (int64_t)c->w * (int64_t)c->h)
 	{
-		bzy_io_fail("Surface.present: framebuffer length must be width*height."); return;
+		bzy_io_fail("Surface.present: framebuffer length must be width*height.");
+		return;
 	}
 	bzy_mutex_lock(&c->lock);
 	memcpy(c->back, (char*)pixels + 32, (size_t)c->w * (size_t)c->h * 4);   /* Packed int[] payload at +32. */
@@ -324,9 +402,15 @@ void bzy_surface_present(void *s, void *pixels)
 
 int64_t bzy_surface_poll_event(void *s)
 {
-	if (SURF_CLOSED(s)) { return 0; }
+	if (SURF_CLOSED(s))
+	{
+		return 0;
+	}
 	SurfaceCtrl *c = SURF_CTRL(s);
-	if (c->ring_tail == c->ring_head) { return 0; }
+	if (c->ring_tail == c->ring_head)
+	{
+		return 0;
+	}
 	int64_t v = c->ring[c->ring_tail & 255];
 	c->ring_tail++;
 	return v;
@@ -334,13 +418,19 @@ int64_t bzy_surface_poll_event(void *s)
 
 int64_t bzy_surface_is_open(void *s)
 {
-	if (SURF_CLOSED(s)) { return 0; }
+	if (SURF_CLOSED(s))
+	{
+		return 0;
+	}
 	return SURF_CTRL(s)->open ? 1 : 0;
 }
 
 void bzy_surface_close(void *s)
 {
-	if (SURF_CLOSED(s)) { return; }
+	if (SURF_CLOSED(s))
+	{
+		return;
+	}
 	surface_teardown(SURF_CTRL(s));
 	SURF_CTRL(s) = NULL;
 	SURF_CLOSED(s) = 1;

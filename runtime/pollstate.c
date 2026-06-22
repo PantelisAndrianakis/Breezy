@@ -16,14 +16,14 @@ void bzy_poll_reset(PollDesc *pd, int dir)
 	/* Clear only a sticky-ready word; never disturb a Waiter* (none can be present:
 	   the owner is running, not parked). */
 	__atomic_compare_exchange_n(&pd->g[dir], &expected, (void*)0,
-	                            0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
+								0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
 }
 
 int bzy_poll_arm(PollDesc *pd, int dir, Waiter *w)
 {
 	void *expected = (void*)0;
 	if (__atomic_compare_exchange_n(&pd->g[dir], &expected, (void*)w,
-	                                0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+									0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
 	{
 		return 1;   /* Armed: must park. */
 	}
@@ -50,5 +50,5 @@ int bzy_poll_unblock_timer(PollDesc *pd, int dir, Waiter *w)
 	void *expected = (void*)w;
 	/* Grab the waiter only if it is still parked (not already taken by an edge). */
 	return __atomic_compare_exchange_n(&pd->g[dir], &expected, (void*)0,
-	                                   0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED) ? 1 : 0;
+									   0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED) ? 1 : 0;
 }

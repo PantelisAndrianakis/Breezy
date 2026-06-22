@@ -35,21 +35,27 @@ static void rdtsc_init(void)
 	QueryPerformanceCounter(&c0);
 	uint64_t t0 = read_tsc();
 	int64_t  end = c0.QuadPart + f.QuadPart / 10000;   /* ~100 us. */
-	do { QueryPerformanceCounter(&c1); } while (c1.QuadPart < end);
+	do
+	{
+		QueryPerformanceCounter(&c1);
+	}
+	while (c1.QuadPart < end);
 	uint64_t t1 = read_tsc();
 
 	uint64_t ns    = (uint64_t)((c1.QuadPart - c0.QuadPart) * 1000000000LL / f.QuadPart);
 	uint64_t scale = (uint64_t)(((unsigned __int128)ns << 32) / (t1 - t0));
 	g_tsc0      = t0;     /* Write base before scale. On x86 TSO, stores are not */
 	g_scale_q32 = scale;  /* reordered, so any reader that sees scale != 0 also   */
-	                      /* sees the matching tsc0.                               */
+	/* sees the matching tsc0.                               */
 }
 
 int64_t bzy_clock_nanos(void)
 {
 	/* Hot path: rdtsc + 128-bit multiply + shift -- ~3-4 ns, nanosecond resolution. */
 	if (!g_scale_q32)
+	{
 		rdtsc_init();
+	}
 	return (int64_t)(((unsigned __int128)(read_tsc() - g_tsc0) * g_scale_q32) >> 32);
 }
 

@@ -7,7 +7,7 @@
 /* Indices 0..RA_NREGS-1 are the base pool; 11=rcx and 12=rdx are claimable per
    function when no variable shift / div-mod needs them as fixed scratch. */
 static const char *RA_REGS[RA_MAXREGS] =
-	{ "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rcx", "rdx" };
+{ "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rcx", "rdx" };
 
 /* Allocatable xmm registers, indexed by (combined index - RA_XMM0). xmm0/xmm1 stay
    scratch (immediate computation / spill staging); xmm2..xmm5 are caller-saved on
@@ -38,7 +38,7 @@ int ra_is_callee_saved(int i, int linux_target)
 
 	const char *r = RA_REGS[i];
 	if (!strcmp(r, "rbx") || !strcmp(r, "r12") || !strcmp(r, "r13")
-		|| !strcmp(r, "r14") || !strcmp(r, "r15"))
+			|| !strcmp(r, "r14") || !strcmp(r, "r15"))
 	{
 		return 1;   /* Callee-saved on both ABIs. */
 	}
@@ -664,7 +664,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		for (int v = 0; v < a->vreg_count; v++)
 		{
 			if (a->val_reg[v] != RA_SPILLED || a->iend[v] < 0
-				|| defs[v] != 1 || def_disp[v] < 0)
+					|| defs[v] != 1 || def_disp[v] < 0)
 			{
 				continue;
 			}
@@ -712,7 +712,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		for (int k = 0; k < a->nlocal; k++)
 		{
 			if (!lstored[k] && a->val_reg[a->vreg_count + k] == RA_SPILLED
-				&& a->iend[a->vreg_count + k] >= 0)
+					&& a->iend[a->vreg_count + k] >= 0)
 			{
 				a->val_remat[a->vreg_count + k] = a->local_disp[k];
 			}
@@ -773,7 +773,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		for (int v = 0; v < a->vreg_count; v++)
 		{
 			if (a->val_reg[v] == RA_SPILLED && a->iend[v] >= 0 && used_deep[v]
-				&& a->val_remat[v] < 0)
+					&& a->val_remat[v] < 0)
 			{
 				a->hot_spill_count++;
 				if (a->val_class[v] == RC_XMM)
@@ -984,8 +984,14 @@ IRAlloc *ra_run(IRFunc *f)
 		{
 			if (live_in[(size_t)b * bw + v] || live_out[(size_t)b * bw + v])
 			{
-				if (bstart < a->istart[v]) a->istart[v] = bstart;
-				if (bend > a->iend[v]) a->iend[v] = bend;
+				if (bstart < a->istart[v])
+				{
+					a->istart[v] = bstart;
+				}
+				if (bend > a->iend[v])
+				{
+					a->iend[v] = bend;
+				}
 			}
 		}
 
@@ -998,8 +1004,14 @@ IRAlloc *ra_run(IRFunc *f)
 			instr_def_use(a, &blk->instrs[i], &def, uses, &nuse);
 			if (def >= 0)
 			{
-				if (p < a->istart[def]) a->istart[def] = p;
-				if (p > a->iend[def]) a->iend[def] = p;
+				if (p < a->istart[def])
+				{
+					a->istart[def] = p;
+				}
+				if (p > a->iend[def])
+				{
+					a->iend[def] = p;
+				}
 			}
 
 			for (int u = 0; u < nuse; u++)
@@ -1007,8 +1019,14 @@ IRAlloc *ra_run(IRFunc *f)
 				int uv = uses[u];
 				if (uv >= 0)
 				{
-					if (p < a->istart[uv]) a->istart[uv] = p;
-					if (p > a->iend[uv]) a->iend[uv] = p;
+					if (p < a->istart[uv])
+					{
+						a->istart[uv] = p;
+					}
+					if (p > a->iend[uv])
+					{
+						a->iend[uv] = p;
+					}
 				}
 			}
 		}

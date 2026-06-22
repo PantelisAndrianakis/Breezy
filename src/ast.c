@@ -45,7 +45,7 @@ void lambda_add_param(LambdaInfo *l, const char *name, int has_type, TypeRef typ
 	if (l->param_count >= (int)(sizeof(l->params)/sizeof(l->params[0])))
 	{
 		fprintf(stderr,"Parser: too many lambda parameters (max %d).\n",
-		        (int)(sizeof(l->params)/sizeof(l->params[0])));
+				(int)(sizeof(l->params)/sizeof(l->params[0])));
 		exit(1);
 	}
 	LambdaParam *pm = &l->params[l->param_count++];

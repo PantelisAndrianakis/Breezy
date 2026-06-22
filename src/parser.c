@@ -50,7 +50,7 @@ static Token expect(Parser *p, TokenType tt)
 	{
 		char msg[128];
 		snprintf(msg, sizeof(msg), "Expected '%s', got '%s'.",
-		         token_type_name(tt), token_type_name(p->cur.type));
+				 token_type_name(tt), token_type_name(p->cur.type));
 		lexer_diag(p->lex.src, p->lex.file, p->cur.line, p->cur.col, msg, NULL);
 	}
 	Token t = p->cur;
@@ -775,15 +775,15 @@ static int scalar_type_kind(TokenType t, TypeKind *out)
 static int is_generic_template(const char *name)
 {
 	return strcmp(name,"Box")==0
-	       || strcmp(name,"List")==0
-	       || strcmp(name,"Stack")==0
-	       || strcmp(name,"Queue")==0
-	       || strcmp(name,"Deque")==0
-	       || strcmp(name,"ArrayDeque")==0
-	       || strcmp(name,"Set")==0
-	       || strcmp(name,"PriorityQueue")==0
-	       || strcmp(name,"TreeSet")==0
-	       || strcmp(name,"TreeMap")==0;
+		   || strcmp(name,"List")==0
+		   || strcmp(name,"Stack")==0
+		   || strcmp(name,"Queue")==0
+		   || strcmp(name,"Deque")==0
+		   || strcmp(name,"ArrayDeque")==0
+		   || strcmp(name,"Set")==0
+		   || strcmp(name,"PriorityQueue")==0
+		   || strcmp(name,"TreeSet")==0
+		   || strcmp(name,"TreeMap")==0;
 }
 
 /* Consume the single '>' that closes a generic type. Nested generics such as

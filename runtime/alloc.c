@@ -126,7 +126,11 @@ static void (*finalizer_of(void *o))(void *)
    collection is a short bounded slice (pause ~ this many candidate closures), not
    the old 10k-candidate stop-the-world pass. Also drained at scheduler safepoints. */
 #define CYCLE_SLICE_THRESHOLD 256
-typedef struct { void **roots; int64_t n, cap; } CycBuf;
+typedef struct
+{
+	void **roots;
+	int64_t n, cap;
+} CycBuf;
 static CycBuf g_cyc[BZY_CYC_MAX_WORKERS];   /* Zero-initialized (BSS). */
 
 static void collect_worker(int wid, int budget);
@@ -137,7 +141,10 @@ static void collect_worker(int wid, int budget);
 static int cycle_timing_on(void)
 {
 	static int t = -1;
-	if (t < 0) { t = getenv("BZY_CYCLE_TIMING") ? 1 : 0; }
+	if (t < 0)
+	{
+		t = getenv("BZY_CYCLE_TIMING") ? 1 : 0;
+	}
 	return t;
 }
 
@@ -147,7 +154,10 @@ static int cycle_timing_on(void)
 static void assert_on_worker(void)
 {
 	static int dbg = -1;
-	if (dbg < 0) { dbg = getenv("BZY_CYCLE_DEBUG") ? 1 : 0; }
+	if (dbg < 0)
+	{
+		dbg = getenv("BZY_CYCLE_DEBUG") ? 1 : 0;
+	}
 	if (dbg && !bzy_on_worker())
 	{
 		fprintf(stderr, "[cycle] BUG: confined candidate buffered off-worker (wid=%d)\n", bzy_current_wid());
@@ -659,7 +669,10 @@ int64_t bzy_live_count(void)
 int64_t bzy_roots_buffered(void)
 {
 	int64_t n = 0;
-	for (int i = 0; i < BZY_CYC_MAX_WORKERS; i++) { n += g_cyc[i].n; }   /* Diagnostic; racy read is fine. */
+	for (int i = 0; i < BZY_CYC_MAX_WORKERS; i++)
+	{
+		n += g_cyc[i].n;    /* Diagnostic; racy read is fine. */
+	}
 	return n;
 }
 

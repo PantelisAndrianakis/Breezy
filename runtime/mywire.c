@@ -40,20 +40,41 @@ extern void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char
 
 /* ---- little-endian readers --------------------------------------------------- */
 
-static uint32_t le16(const unsigned char *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
-static uint32_t le24(const unsigned char *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16); }
+static uint32_t le16(const unsigned char *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8);
+}
+static uint32_t le24(const unsigned char *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
+}
 
 /* Decode a length-encoded integer; *adv receives the bytes consumed. A leading
    0xfb (NULL) or 0xfe-as-EOF is the caller's job to detect before calling. */
 static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
 {
 	unsigned char c = p[0];
-	if (c < 0xfb) { *adv = 1; return c; }
-	if (c == 0xfc) { *adv = 3; return le16(p + 1); }
-	if (c == 0xfd) { *adv = 4; return le24(p + 1); }
+	if (c < 0xfb)
+	{
+		*adv = 1;
+		return c;
+	}
+	if (c == 0xfc)
+	{
+		*adv = 3;
+		return le16(p + 1);
+	}
+	if (c == 0xfd)
+	{
+		*adv = 4;
+		return le24(p + 1);
+	}
 	*adv = 9;   /* 0xfe: 8-byte. */
 	uint64_t v = 0;
-	for (int i = 0; i < 8; i++) { v |= (uint64_t)p[1 + i] << (8 * i); }
+	for (int i = 0; i < 8; i++)
+	{
+		v |= (uint64_t)p[1 + i] << (8 * i);
+	}
 	return v;
 }
 
@@ -63,13 +84,24 @@ static const char *lenenc_str(const unsigned char **p, const unsigned char *end,
 {
 	*isnull = 0;
 	*slen = 0;
-	if (*p >= end) { return NULL; }
-	if (**p == 0xfb) { *isnull = 1; (*p)++; return NULL; }
+	if (*p >= end)
+	{
+		return NULL;
+	}
+	if (**p == 0xfb)
+	{
+		*isnull = 1;
+		(*p)++;
+		return NULL;
+	}
 	int64_t adv;
 	uint64_t n = lenenc_int(*p, &adv);
 	*p += adv;
 	const char *s = (const char*)*p;
-	if (*p + n > end) { n = (uint64_t)(end - *p); }   /* Defensive clamp. */
+	if (*p + n > end)
+	{
+		n = (uint64_t)(end - *p);    /* Defensive clamp. */
+	}
 	*p += n;
 	*slen = (int64_t)n;
 	return s;
@@ -92,16 +124,26 @@ typedef struct
 
 static int rd_fill(Reader *r)
 {
-	if (r->eof) { return 0; }
+	if (r->eof)
+	{
+		return 0;
+	}
 	if (r->len + 65536 > r->cap)
 	{
 		r->cap = r->cap ? r->cap * 2 : 65536;
-		if (r->cap < r->len + 65536) { r->cap = r->len + 65536; }
+		if (r->cap < r->len + 65536)
+		{
+			r->cap = r->len + 65536;
+		}
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
 	int n = bzy_sock_recv(r->sock, r->buf + r->len, 65536, -1);
-	if (n <= 0) { r->eof = 1; return 0; }
+	if (n <= 0)
+	{
+		r->eof = 1;
+		return 0;
+	}
 	r->len += n;
 	return 1;
 }
@@ -110,7 +152,10 @@ static int rd_need(Reader *r, int64_t need)
 {
 	while (r->len - r->pos < need)
 	{
-		if (!rd_fill(r)) { return 0; }
+		if (!rd_fill(r))
+		{
+			return 0;
+		}
 	}
 
 	return 1;
@@ -121,11 +166,17 @@ static int rd_need(Reader *r, int64_t need)
    *plen is the payload length, *seq the sequence number. 0 at EOF. */
 static int rd_packet(Reader *r, unsigned char **payload, int64_t *plen, int *seq)
 {
-	if (!rd_need(r, 4)) { return 0; }
+	if (!rd_need(r, 4))
+	{
+		return 0;
+	}
 	const unsigned char *h = (const unsigned char*)(r->buf + r->pos);
 	int64_t L = le24(h);
 	*seq = h[3];
-	if (!rd_need(r, 4 + L)) { return 0; }
+	if (!rd_need(r, 4 + L))
+	{
+		return 0;
+	}
 	*payload = (unsigned char*)(r->buf + r->pos + 4);
 	*plen = L;
 	r->pos += 4 + L;
@@ -153,7 +204,10 @@ static void w_bytes(Wbuf *w, const void *b, int64_t n)
 	w->len += n;
 }
 
-static void w_u8(Wbuf *w, unsigned char v) { w_bytes(w, &v, 1); }
+static void w_u8(Wbuf *w, unsigned char v)
+{
+	w_bytes(w, &v, 1);
+}
 
 static void w_le32(Wbuf *w, uint32_t v)
 {
@@ -161,11 +215,17 @@ static void w_le32(Wbuf *w, uint32_t v)
 	w_bytes(w, b, 4);
 }
 
-static void w_cstr(Wbuf *w, const char *s) { w_bytes(w, s, (int64_t)strlen(s) + 1); }
+static void w_cstr(Wbuf *w, const char *s)
+{
+	w_bytes(w, s, (int64_t)strlen(s) + 1);
+}
 
 static void w_zero(Wbuf *w, int n)
 {
-	for (int i = 0; i < n; i++) { w_u8(w, 0); }
+	for (int i = 0; i < n; i++)
+	{
+		w_u8(w, 0);
+	}
 }
 
 /* Send a payload as one packet: a 3-byte LE length + the sequence byte + payload. */
@@ -199,8 +259,14 @@ static void set_error_from_err(const unsigned char *payload, int64_t plen)
 
 	char buf[512];
 	int n = snprintf(buf, sizeof(buf), "%s: ", sqlstate);
-	if (msglen > (int64_t)sizeof(buf) - n - 1) { msglen = (int64_t)sizeof(buf) - n - 1; }
-	if (msglen < 0) { msglen = 0; }
+	if (msglen > (int64_t)sizeof(buf) - n - 1)
+	{
+		msglen = (int64_t)sizeof(buf) - n - 1;
+	}
+	if (msglen < 0)
+	{
+		msglen = 0;
+	}
 	memcpy(buf + n, msg, (size_t)msglen);
 	buf[n + msglen] = '\0';
 	bzy_db_set_error(buf);
@@ -222,24 +288,48 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 	memset(hs, 0, sizeof(*hs));
 	strcpy(hs->plugin, "mysql_native_password");   /* Default if none advertised. */
 
-	if (plen < 1 || *p != 10) { return 0; }        /* Protocol version 10. */
+	if (plen < 1 || *p != 10)
+	{
+		return 0;    /* Protocol version 10. */
+	}
 	p++;
-	while (p < end && *p) { p++; }                 /* server version cstr. */
+	while (p < end && *p)
+	{
+		p++;    /* server version cstr. */
+	}
 	p++;
-	if (p + 4 > end) { return 0; }
+	if (p + 4 > end)
+	{
+		return 0;
+	}
 	p += 4;                                        /* connection id. */
-	if (p + 8 > end) { return 0; }
+	if (p + 8 > end)
+	{
+		return 0;
+	}
 	memcpy(hs->scramble, p, 8);                    /* auth-plugin-data part 1. */
 	p += 8;
 	p += 1;                                        /* filler. */
-	if (p + 2 > end) { return 1; }                 /* No extended part; scramble is short. */
+	if (p + 2 > end)
+	{
+		return 1;    /* No extended part; scramble is short. */
+	}
 	p += 2;                                        /* capability flags lower. */
 
-	if (p + 1 > end) { return 1; }
+	if (p + 1 > end)
+	{
+		return 1;
+	}
 	p += 1;                                        /* character set. */
-	if (p + 2 > end) { return 1; }
+	if (p + 2 > end)
+	{
+		return 1;
+	}
 	p += 2;                                        /* status flags. */
-	if (p + 2 > end) { return 1; }
+	if (p + 2 > end)
+	{
+		return 1;
+	}
 	p += 2;                                        /* capability flags upper. */
 	int auth_data_len = (p < end) ? *p : 0;
 	p += 1;
@@ -247,15 +337,27 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 
 	int part2 = auth_data_len ? auth_data_len - 8 : 13;
 	int take = part2 - 1;                          /* Drop the trailing NUL. */
-	if (take > 12) { take = 12; }
-	if (take < 0) { take = 0; }
-	if (p + take <= end) { memcpy(hs->scramble + 8, p, take); }
+	if (take > 12)
+	{
+		take = 12;
+	}
+	if (take < 0)
+	{
+		take = 0;
+	}
+	if (p + take <= end)
+	{
+		memcpy(hs->scramble + 8, p, take);
+	}
 	p += part2;
 
 	if (p < end)                                   /* auth plugin name cstr. */
 	{
 		size_t i = 0;
-		while (p < end && *p && i < sizeof(hs->plugin) - 1) { hs->plugin[i++] = (char)*p++; }
+		while (p < end && *p && i < sizeof(hs->plugin) - 1)
+		{
+			hs->plugin[i++] = (char)*p++;
+		}
 		hs->plugin[i] = '\0';
 	}
 
@@ -267,14 +369,20 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 /* mysql_native_password: SHA1(pw) XOR SHA1(scramble + SHA1(SHA1(pw))), 20 bytes. */
 static int auth_native(const char *password, const unsigned char *scramble, unsigned char *out)
 {
-	if (!password[0]) { return 0; }
+	if (!password[0])
+	{
+		return 0;
+	}
 	unsigned char h1[20], h2[20], h3[20], cat[40];
 	bzy_crypto_sha1((const unsigned char*)password, strlen(password), h1);
 	bzy_crypto_sha1(h1, 20, h2);
 	memcpy(cat, scramble, 20);
 	memcpy(cat + 20, h2, 20);
 	bzy_crypto_sha1(cat, 40, h3);
-	for (int i = 0; i < 20; i++) { out[i] = (unsigned char)(h1[i] ^ h3[i]); }
+	for (int i = 0; i < 20; i++)
+	{
+		out[i] = (unsigned char)(h1[i] ^ h3[i]);
+	}
 	return 20;
 }
 
@@ -282,32 +390,47 @@ static int auth_native(const char *password, const unsigned char *scramble, unsi
    SHA256(pw) XOR SHA256(SHA256(SHA256(pw)) + scramble), 32 bytes. */
 static int auth_caching_sha2(const char *password, const unsigned char *scramble, unsigned char *out)
 {
-	if (!password[0]) { return 0; }
+	if (!password[0])
+	{
+		return 0;
+	}
 	unsigned char d1[32], d2[32], d3[32], cat[52];
 	bzy_crypto_sha256((const unsigned char*)password, strlen(password), d1);
 	bzy_crypto_sha256(d1, 32, d2);
 	memcpy(cat, d2, 32);
 	memcpy(cat + 32, scramble, 20);
 	bzy_crypto_sha256(cat, 52, d3);
-	for (int i = 0; i < 32; i++) { out[i] = (unsigned char)(d1[i] ^ d3[i]); }
+	for (int i = 0; i < 32; i++)
+	{
+		out[i] = (unsigned char)(d1[i] ^ d3[i]);
+	}
 	return 32;
 }
 
 static int compute_auth(const char *plugin, const char *password, const unsigned char *scramble, unsigned char *out)
 {
-	if (strcmp(plugin, "mysql_native_password") == 0) { return auth_native(password, scramble, out); }
-	if (strcmp(plugin, "caching_sha2_password") == 0) { return auth_caching_sha2(password, scramble, out); }
+	if (strcmp(plugin, "mysql_native_password") == 0)
+	{
+		return auth_native(password, scramble, out);
+	}
+	if (strcmp(plugin, "caching_sha2_password") == 0)
+	{
+		return auth_caching_sha2(password, scramble, out);
+	}
 	return 0;   /* Unknown plugin -> empty; the server will AuthSwitch or reject. */
 }
 
 /* Build + send the Handshake Response. `auth` is the computed auth-response;
    `seq` is the handshake packet's seq + 1. */
 static int send_handshake_response(void *sock, int seq, const char *user, const char *db,
-                                   const char *plugin, const unsigned char *auth, int authlen)
+								   const char *plugin, const unsigned char *auth, int authlen)
 {
 	uint32_t caps = CLIENT_LONG_PASSWORD | CLIENT_LONG_FLAG | CLIENT_PROTOCOL_41
-	              | CLIENT_TRANSACTIONS | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH;
-	if (db && db[0]) { caps |= CLIENT_CONNECT_WITH_DB; }
+					| CLIENT_TRANSACTIONS | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH;
+	if (db && db[0])
+	{
+		caps |= CLIENT_CONNECT_WITH_DB;
+	}
 
 	Wbuf w = { 0 };
 	w_le32(&w, caps);
@@ -316,8 +439,14 @@ static int send_handshake_response(void *sock, int seq, const char *user, const 
 	w_zero(&w, 23);                  /* Reserved. */
 	w_cstr(&w, user);
 	w_u8(&w, (unsigned char)authlen);   /* CLIENT_SECURE_CONNECTION: 1-byte length + data. */
-	if (authlen) { w_bytes(&w, auth, authlen); }
-	if (db && db[0]) { w_cstr(&w, db); }
+	if (authlen)
+	{
+		w_bytes(&w, auth, authlen);
+	}
+	if (db && db[0])
+	{
+		w_cstr(&w, db);
+	}
 	w_cstr(&w, plugin);
 
 	int ok = send_packet(sock, seq, w.p, w.len);
@@ -386,8 +515,16 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 		}
 
 		unsigned char marker = (plen >= 1) ? payload[0] : 0xff;
-		if (marker == 0x00) { ok = 1; break; }                  /* OK. */
-		if (marker == 0xff) { set_error_from_err(payload, plen); break; }
+		if (marker == 0x00)
+		{
+			ok = 1;    /* OK. */
+			break;
+		}
+		if (marker == 0xff)
+		{
+			set_error_from_err(payload, plen);
+			break;
+		}
 
 		if (marker == 0xfe)   /* AuthSwitchRequest: 0xfe + plugin cstr + scramble. */
 		{
@@ -395,14 +532,26 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 			size_t i = 0;
 			const unsigned char *q = payload + 1;
 			const unsigned char *end = payload + plen;
-			while (q < end && *q && i < sizeof(newplugin) - 1) { newplugin[i++] = (char)*q++; }
+			while (q < end && *q && i < sizeof(newplugin) - 1)
+			{
+				newplugin[i++] = (char)*q++;
+			}
 			newplugin[i] = '\0';
-			if (q < end) { q++; }   /* Step past the NUL. */
+			if (q < end)
+			{
+				q++;    /* Step past the NUL. */
+			}
 			unsigned char newscr[20];
 			memset(newscr, 0, 20);
 			int64_t avail = end - q;
-			if (avail > 20) { avail = 20; }
-			if (avail > 0) { memcpy(newscr, q, (size_t)avail); }
+			if (avail > 20)
+			{
+				avail = 20;
+			}
+			if (avail > 0)
+			{
+				memcpy(newscr, q, (size_t)avail);
+			}
 
 			unsigned char a2[64];
 			int a2len = compute_auth(newplugin, password, newscr, a2);
@@ -417,7 +566,10 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 		if (marker == 0x01)   /* AuthMoreData (caching_sha2_password). */
 		{
 			unsigned char sub = (plen >= 2) ? payload[1] : 0;
-			if (sub == 0x03) { continue; }   /* fast_auth_success -> next packet is OK. */
+			if (sub == 0x03)
+			{
+				continue;    /* fast_auth_success -> next packet is OK. */
+			}
 			if (sub == 0x04)                 /* full_auth needed (no cached entry). */
 			{
 				bzy_db_set_error("MySQL caching_sha2_password full authentication needs a TLS connection (connectTls is a deferred follow-up); use a mysql_native_password account meanwhile.");
@@ -448,7 +600,11 @@ static int     g_myc_vt_built;
 
 static void *myc_vtable(void)
 {
-	if (!g_myc_vt_built) { g_myc_vt[0] = (int64_t)&g_myc_ti[0]; g_myc_vt_built = 1; }
+	if (!g_myc_vt_built)
+	{
+		g_myc_vt[0] = (int64_t)&g_myc_ti[0];
+		g_myc_vt_built = 1;
+	}
 	return &g_myc_vt[1];
 }
 
@@ -480,7 +636,10 @@ void *bzy_my_connect(void *host, int64_t port, void *user, void *pass, void *db)
    reference, released when the MyConnection is released). */
 void bzy_my_close(void *conn)
 {
-	if (!conn) { return; }
+	if (!conn)
+	{
+		return;
+	}
 	void *sock = *(void**)((char*)conn + MYC_SOCK);
 	if (sock)
 	{
@@ -513,7 +672,12 @@ static void *my_collect(Reader *r)
 	}
 
 	unsigned char m0 = (plen >= 1) ? payload[0] : 0xff;
-	if (m0 == 0xff) { set_error_from_err(payload, plen); free(r->buf); return NULL; }
+	if (m0 == 0xff)
+	{
+		set_error_from_err(payload, plen);
+		free(r->buf);
+		return NULL;
+	}
 	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
 	{
 		int64_t adv;
@@ -576,8 +740,16 @@ static void *my_collect(Reader *r)
 		}
 
 		unsigned char m = (plen >= 1) ? payload[0] : 0;
-		if (m == 0xfe && plen < 9) { break; }         /* EOF: end of rows. */
-		if (m == 0xff) { set_error_from_err(payload, plen); failed = 1; break; }
+		if (m == 0xfe && plen < 9)
+		{
+			break;    /* EOF: end of rows. */
+		}
+		if (m == 0xff)
+		{
+			set_error_from_err(payload, plen);
+			failed = 1;
+			break;
+		}
 
 		void *values = bzy_array_new((int64_t)ncols, 1);
 		const unsigned char *p = payload;
@@ -587,7 +759,10 @@ static void *my_collect(Reader *r)
 			int isnull;
 			int64_t sl;
 			const char *v = lenenc_str(&p, end, &sl, &isnull);
-			if (!isnull) { arr_set(values, (int64_t)c, bzy_str_new(v ? v : "", sl)); }
+			if (!isnull)
+			{
+				arr_set(values, (int64_t)c, bzy_str_new(v ? v : "", sl));
+			}
 		}
 
 		void *row = bzy_db_row_new(values, colnames);
@@ -602,14 +777,20 @@ static void *my_collect(Reader *r)
 	free(r->buf);
 	if (failed)
 	{
-		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
+		for (int64_t i = 0; i < nrows; i++)
+		{
+			bzy_release(rowbuf[i]);
+		}
 		free(rowbuf);
 		bzy_release(colnames);
 		return NULL;
 	}
 
 	void *rows = bzy_array_new(nrows, 1);
-	for (int64_t i = 0; i < nrows; i++) { arr_set(rows, i, rowbuf[i]); }
+	for (int64_t i = 0; i < nrows; i++)
+	{
+		arr_set(rows, i, rowbuf[i]);
+	}
 	free(rowbuf);
 	return bzy_db_result_new(colnames, rows, nrows);
 }
@@ -618,7 +799,11 @@ static void *my_collect(Reader *r)
    (the codegen-emitted bzy_db_check raises it) and NULL returns. */
 void *bzy_my_query(void *conn, void *sql)
 {
-	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	if (!conn)
+	{
+		bzy_db_set_error("Query on a null connection.");
+		return NULL;
+	}
 	void *sock = *(void**)((char*)conn + MYC_SOCK);
 
 	const char *s = bzy_str_data(sql);
@@ -628,7 +813,11 @@ void *bzy_my_query(void *conn, void *sql)
 	w_bytes(&w, s, sl);
 	int oks = send_packet(sock, 0, w.p, w.len);
 	free(w.p);
-	if (!oks) { bzy_db_set_error("Failed to send the query."); return NULL; }
+	if (!oks)
+	{
+		bzy_db_set_error("Failed to send the query.");
+		return NULL;
+	}
 
 	Reader r = { 0 };
 	r.sock = sock;

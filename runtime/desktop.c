@@ -161,7 +161,7 @@ static int desktop_load(void)
 	G.async_queue_pop        = (fn_async_queue_pop)dl_sym(G.glib, "g_async_queue_pop");
 
 	if (!G.init_check || !G.main || !G.window_new || !G.button_new || !G.box_new
-		|| !G.signal_connect_data || !G.idle_add || !G.async_queue_new)
+			|| !G.signal_connect_data || !G.idle_add || !G.async_queue_new)
 	{
 		G.loaded = -1;
 		return 0;
@@ -219,10 +219,11 @@ typedef pthread_cond_t  cnd_t_compat;
    action; a/b/c are integer/pointer args; s is an optional string; `result`
    receives a returned handle. Completion is signalled via done. */
 enum { OP_FRAME_NEW = 1, OP_FRAME_TITLE, OP_PANEL_NEW,
-       OP_BUTTON_NEW, OP_BUTTON_TEXT, OP_LABEL_NEW, OP_LABEL_TEXT,
-       OP_CONTAINER_ADD, OP_BORDER_ADD, OP_SET_VISIBLE, OP_SET_ENABLED,
-       OP_WIN_SIZE, OP_WIN_SHOW, OP_WIN_DISPOSE, OP_LISTEN_ACTION,
-       OP_LISTEN_CLOSE };
+	   OP_BUTTON_NEW, OP_BUTTON_TEXT, OP_LABEL_NEW, OP_LABEL_TEXT,
+	   OP_CONTAINER_ADD, OP_BORDER_ADD, OP_SET_VISIBLE, OP_SET_ENABLED,
+	   OP_WIN_SIZE, OP_WIN_SHOW, OP_WIN_DISPOSE, OP_LISTEN_ACTION,
+	   OP_LISTEN_CLOSE
+	 };
 
 struct cmd
 {
@@ -259,7 +260,10 @@ static struct border *border_find(void *window)
 {
 	for (int i = 0; i < border_count; i++)
 	{
-		if (borders[i].window == window) { return &borders[i]; }
+		if (borders[i].window == window)
+		{
+			return &borders[i];
+		}
 	}
 	return NULL;
 }
@@ -270,7 +274,11 @@ static void *event_queue = NULL;   /* GAsyncQueue*, created lazily. */
 /* One queued UI event. kind: 0=action, 1=window-close. reg_index identifies the
    Breezy widget object (its slot in Desktop._reg). The sentinel record with
    reg_index -1 tells the run-loop to stop. */
-struct ui_event { int64_t reg_index; int64_t kind; };
+struct ui_event
+{
+	int64_t reg_index;
+	int64_t kind;
+};
 
 /* The current event reported by the last next_event(), so event_kind() can read
    its kind. Single-consumer (the one Desktop.run loop), so a static is safe. */
@@ -287,7 +295,10 @@ static void ensure_event_queue(void)
 /* Push a heap-allocated event record (GAsyncQueue stores pointers). */
 static void push_event(int64_t reg_index, int64_t kind)
 {
-	if (!event_queue) { return; }
+	if (!event_queue)
+	{
+		return;
+	}
 	struct ui_event *ev = (struct ui_event *)malloc(sizeof(*ev));
 	ev->reg_index = reg_index;
 	ev->kind = kind;
@@ -307,7 +318,10 @@ static void on_window_close(void *widget, void *user_data)
 {
 	(void)widget;
 	push_event((int64_t)(intptr_t)user_data, 1);
-	if (open_windows > 0) { open_windows--; }
+	if (open_windows > 0)
+	{
+		open_windows--;
+	}
 	if (open_windows == 0)
 	{
 		push_event(-1, 0);    /* Sentinel: stop the run-loop. */
@@ -349,7 +363,11 @@ static void *gtk_thread_main(void *arg)
 
 static void ensure_gtk_thread(void)
 {
-	if (!start_mtx_init) { MTX_INIT(&start_mtx); start_mtx_init = 1; }
+	if (!start_mtx_init)
+	{
+		MTX_INIT(&start_mtx);
+		start_mtx_init = 1;
+	}
 	MTX_LOCK(&start_mtx);
 	ensure_event_queue();   /* Create once under the lock: no creation race. */
 	if (!gtk_thread_started)
@@ -370,19 +388,30 @@ static void ensure_gtk_thread(void)
    command's result handle. */
 static int64_t gtk_call(int op, int64_t a, int64_t b, int64_t c, const char *s)
 {
-	if (!desktop_load()) { return 0; }
+	if (!desktop_load())
+	{
+		return 0;
+	}
 	ensure_gtk_thread();
 
 	struct cmd cmd;
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.op = op; cmd.a = a; cmd.b = b; cmd.c = c; cmd.s = s; cmd.done = 0;
+	cmd.op = op;
+	cmd.a = a;
+	cmd.b = b;
+	cmd.c = c;
+	cmd.s = s;
+	cmd.done = 0;
 	MTX_INIT(&cmd.m);
 	CND_INIT(&cmd.cv);
 
 	G.idle_add(gtk_dispatch_idle, &cmd);
 
 	MTX_LOCK(&cmd.m);
-	while (!cmd.done) { CND_WAIT(&cmd.cv, &cmd.m); }
+	while (!cmd.done)
+	{
+		CND_WAIT(&cmd.cv, &cmd.m);
+	}
 	MTX_UNLOCK(&cmd.m);
 	return cmd.result;
 }
@@ -396,121 +425,191 @@ static void cmd_execute(struct cmd *c)
 {
 	switch (c->op)
 	{
-		case OP_FRAME_NEW:
+	case OP_FRAME_NEW:
+	{
+		void *win = G.window_new(GTK_WINDOW_TOPLEVEL);
+		void *vbox = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
+		void *crow = G.box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+		void *center = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
+		/* center-row: west | center(expand) | east, packed as widgets add. */
+		G.box_pack_start(crow, center, 1, 1, 0);
+		G.box_pack_start(vbox, crow, 1, 1, 0);
+		G.container_add(win, vbox);
+		if (border_count < MAX_BORDERS)
 		{
-			void *win = G.window_new(GTK_WINDOW_TOPLEVEL);
-			void *vbox = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
-			void *crow = G.box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-			void *center = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
-			/* center-row: west | center(expand) | east, packed as widgets add. */
-			G.box_pack_start(crow, center, 1, 1, 0);
-			G.box_pack_start(vbox, crow, 1, 1, 0);
-			G.container_add(win, vbox);
-			if (border_count < MAX_BORDERS)
-			{
-				borders[border_count].window = win;
-				borders[border_count].vbox = vbox;
-				borders[border_count].center_row = crow;
-				borders[border_count].center = center;
-				border_count++;
-			}
-			/* Frame handle == content handle == the window; border adds resolve
-			   the slot boxes via the borders table keyed by this window. */
-			c->result = (int64_t)(intptr_t)win;
+			borders[border_count].window = win;
+			borders[border_count].vbox = vbox;
+			borders[border_count].center_row = crow;
+			borders[border_count].center = center;
+			border_count++;
+		}
+		/* Frame handle == content handle == the window; border adds resolve
+		   the slot boxes via the borders table keyed by this window. */
+		c->result = (int64_t)(intptr_t)win;
+		break;
+	}
+	case OP_FRAME_TITLE:
+		G.window_set_title((void *)(intptr_t)c->a, c->s);
+		break;
+	case OP_PANEL_NEW:
+		c->result = (int64_t)(intptr_t)G.box_new(GTK_ORIENTATION_VERTICAL, 0);
+		break;
+	case OP_BUTTON_NEW:
+		c->result = (int64_t)(intptr_t)G.button_new();
+		break;
+	case OP_BUTTON_TEXT:
+		G.button_set_label((void *)(intptr_t)c->a, c->s);
+		break;
+	case OP_LABEL_NEW:
+		c->result = (int64_t)(intptr_t)G.label_new(c->s ? c->s : "");
+		break;
+	case OP_LABEL_TEXT:
+		G.label_set_text((void *)(intptr_t)c->a, c->s);
+		break;
+	case OP_CONTAINER_ADD:
+		G.box_pack_start((void *)(intptr_t)c->a, (void *)(intptr_t)c->b, 0, 0, 0);
+		break;
+	case OP_BORDER_ADD:
+	{
+		struct border *bd = border_find((void *)(intptr_t)c->a);
+		void *child = (void *)(intptr_t)c->b;
+		if (!bd)
+		{
 			break;
 		}
-		case OP_FRAME_TITLE:
-			G.window_set_title((void *)(intptr_t)c->a, c->s);
-			break;
-		case OP_PANEL_NEW:
-			c->result = (int64_t)(intptr_t)G.box_new(GTK_ORIENTATION_VERTICAL, 0);
-			break;
-		case OP_BUTTON_NEW:
-			c->result = (int64_t)(intptr_t)G.button_new();
-			break;
-		case OP_BUTTON_TEXT:
-			G.button_set_label((void *)(intptr_t)c->a, c->s);
-			break;
-		case OP_LABEL_NEW:
-			c->result = (int64_t)(intptr_t)G.label_new(c->s ? c->s : "");
-			break;
-		case OP_LABEL_TEXT:
-			G.label_set_text((void *)(intptr_t)c->a, c->s);
-			break;
-		case OP_CONTAINER_ADD:
-			G.box_pack_start((void *)(intptr_t)c->a, (void *)(intptr_t)c->b, 0, 0, 0);
-			break;
-		case OP_BORDER_ADD:
+		switch ((int)c->c)
 		{
-			struct border *bd = border_find((void *)(intptr_t)c->a);
-			void *child = (void *)(intptr_t)c->b;
-			if (!bd) { break; }
-			switch ((int)c->c)
-			{
-				case 0: G.box_pack_start(bd->vbox, child, 0, 0, 0); break;         /* North. */
-				case 1: G.box_pack_start(bd->vbox, child, 0, 0, 0); break;         /* South (Phase 1: appended). */
-				case 2: G.box_pack_start(bd->center_row, child, 0, 0, 0); break;   /* West. */
-				case 3: G.box_pack_start(bd->center_row, child, 0, 0, 0); break;   /* East. */
-				default: G.box_pack_start(bd->center, child, 1, 1, 0); break;      /* Center. */
-			}
-			break;
+		case 0:
+			G.box_pack_start(bd->vbox, child, 0, 0, 0);
+			break;         /* North. */
+		case 1:
+			G.box_pack_start(bd->vbox, child, 0, 0, 0);
+			break;         /* South (Phase 1: appended). */
+		case 2:
+			G.box_pack_start(bd->center_row, child, 0, 0, 0);
+			break;   /* West. */
+		case 3:
+			G.box_pack_start(bd->center_row, child, 0, 0, 0);
+			break;   /* East. */
+		default:
+			G.box_pack_start(bd->center, child, 1, 1, 0);
+			break;      /* Center. */
 		}
-		case OP_SET_VISIBLE:
-			G.widget_set_visible((void *)(intptr_t)c->a, (int)c->b);
-			break;
-		case OP_SET_ENABLED:
-			G.widget_set_sensitive((void *)(intptr_t)c->a, (int)c->b);
-			break;
-		case OP_WIN_SIZE:
-			G.window_set_default_size((void *)(intptr_t)c->a, (int)c->b, (int)c->c);
-			break;
-		case OP_WIN_SHOW:
-			G.widget_show_all((void *)(intptr_t)c->a);
-			open_windows++;
-			break;
-		case OP_WIN_DISPOSE:
-			G.widget_destroy((void *)(intptr_t)c->a);
-			break;
-		case OP_LISTEN_ACTION:
-			ensure_event_queue();
-			G.signal_connect_data((void *)(intptr_t)c->a, "clicked",
-				(void (*)(void))on_action, (void *)(intptr_t)c->b, NULL, 0);
-			break;
-		case OP_LISTEN_CLOSE:
-			ensure_event_queue();
-			G.signal_connect_data((void *)(intptr_t)c->a, "destroy",
-				(void (*)(void))on_window_close, (void *)(intptr_t)c->b, NULL, 0);
-			break;
+		break;
+	}
+	case OP_SET_VISIBLE:
+		G.widget_set_visible((void *)(intptr_t)c->a, (int)c->b);
+		break;
+	case OP_SET_ENABLED:
+		G.widget_set_sensitive((void *)(intptr_t)c->a, (int)c->b);
+		break;
+	case OP_WIN_SIZE:
+		G.window_set_default_size((void *)(intptr_t)c->a, (int)c->b, (int)c->c);
+		break;
+	case OP_WIN_SHOW:
+		G.widget_show_all((void *)(intptr_t)c->a);
+		open_windows++;
+		break;
+	case OP_WIN_DISPOSE:
+		G.widget_destroy((void *)(intptr_t)c->a);
+		break;
+	case OP_LISTEN_ACTION:
+		ensure_event_queue();
+		G.signal_connect_data((void *)(intptr_t)c->a, "clicked",
+							  (void (*)(void))on_action, (void *)(intptr_t)c->b, NULL, 0);
+		break;
+	case OP_LISTEN_CLOSE:
+		ensure_event_queue();
+		G.signal_connect_data((void *)(intptr_t)c->a, "destroy",
+							  (void (*)(void))on_window_close, (void *)(intptr_t)c->b, NULL, 0);
+		break;
 	}
 }
 
 /* ---- Widget entry points (marshalled onto the GTK thread). ---- */
-int64_t bzy_desktop_frame_new(void)            { return gtk_call(OP_FRAME_NEW, 0, 0, 0, NULL); }
-int64_t bzy_desktop_frame_content(int64_t f)   { return f; }
-void bzy_desktop_frame_set_title(int64_t f, const char *t) { gtk_call(OP_FRAME_TITLE, f, 0, 0, t); }
-int64_t bzy_desktop_panel_new(void)            { return gtk_call(OP_PANEL_NEW, 0, 0, 0, NULL); }
-int64_t bzy_desktop_button_new(void)           { return gtk_call(OP_BUTTON_NEW, 0, 0, 0, NULL); }
-void bzy_desktop_button_set_text(int64_t b, const char *t) { gtk_call(OP_BUTTON_TEXT, b, 0, 0, t); }
-int64_t bzy_desktop_label_new(void)            { return gtk_call(OP_LABEL_NEW, 0, 0, 0, NULL); }
-void bzy_desktop_label_set_text(int64_t l, const char *t) { gtk_call(OP_LABEL_TEXT, l, 0, 0, t); }
-void bzy_desktop_container_add(int64_t p, int64_t ch) { gtk_call(OP_CONTAINER_ADD, p, ch, 0, NULL); }
-void bzy_desktop_border_add(int64_t bd, int64_t ch, int r) { gtk_call(OP_BORDER_ADD, bd, ch, r, NULL); }
-void bzy_desktop_set_visible(int64_t w, int v) { gtk_call(OP_SET_VISIBLE, w, v, 0, NULL); }
-void bzy_desktop_set_enabled(int64_t w, int e) { gtk_call(OP_SET_ENABLED, w, e, 0, NULL); }
-void bzy_desktop_window_set_size(int64_t w, int a, int b) { gtk_call(OP_WIN_SIZE, w, a, b, NULL); }
-void bzy_desktop_window_show(int64_t w) { gtk_call(OP_WIN_SHOW, w, 0, 0, NULL); }
-void bzy_desktop_window_dispose(int64_t w) { gtk_call(OP_WIN_DISPOSE, w, 0, 0, NULL); }
+int64_t bzy_desktop_frame_new(void)
+{
+	return gtk_call(OP_FRAME_NEW, 0, 0, 0, NULL);
+}
+int64_t bzy_desktop_frame_content(int64_t f)
+{
+	return f;
+}
+void bzy_desktop_frame_set_title(int64_t f, const char *t)
+{
+	gtk_call(OP_FRAME_TITLE, f, 0, 0, t);
+}
+int64_t bzy_desktop_panel_new(void)
+{
+	return gtk_call(OP_PANEL_NEW, 0, 0, 0, NULL);
+}
+int64_t bzy_desktop_button_new(void)
+{
+	return gtk_call(OP_BUTTON_NEW, 0, 0, 0, NULL);
+}
+void bzy_desktop_button_set_text(int64_t b, const char *t)
+{
+	gtk_call(OP_BUTTON_TEXT, b, 0, 0, t);
+}
+int64_t bzy_desktop_label_new(void)
+{
+	return gtk_call(OP_LABEL_NEW, 0, 0, 0, NULL);
+}
+void bzy_desktop_label_set_text(int64_t l, const char *t)
+{
+	gtk_call(OP_LABEL_TEXT, l, 0, 0, t);
+}
+void bzy_desktop_container_add(int64_t p, int64_t ch)
+{
+	gtk_call(OP_CONTAINER_ADD, p, ch, 0, NULL);
+}
+void bzy_desktop_border_add(int64_t bd, int64_t ch, int r)
+{
+	gtk_call(OP_BORDER_ADD, bd, ch, r, NULL);
+}
+void bzy_desktop_set_visible(int64_t w, int v)
+{
+	gtk_call(OP_SET_VISIBLE, w, v, 0, NULL);
+}
+void bzy_desktop_set_enabled(int64_t w, int e)
+{
+	gtk_call(OP_SET_ENABLED, w, e, 0, NULL);
+}
+void bzy_desktop_window_set_size(int64_t w, int a, int b)
+{
+	gtk_call(OP_WIN_SIZE, w, a, b, NULL);
+}
+void bzy_desktop_window_show(int64_t w)
+{
+	gtk_call(OP_WIN_SHOW, w, 0, 0, NULL);
+}
+void bzy_desktop_window_dispose(int64_t w)
+{
+	gtk_call(OP_WIN_DISPOSE, w, 0, 0, NULL);
+}
 
 /* ---- Event entry points. ---- */
-void bzy_desktop_listen_action(int64_t w, int i) { gtk_call(OP_LISTEN_ACTION, w, i, 0, NULL); }
-void bzy_desktop_listen_window_close(int64_t w, int i) { gtk_call(OP_LISTEN_CLOSE, w, i, 0, NULL); }
+void bzy_desktop_listen_action(int64_t w, int i)
+{
+	gtk_call(OP_LISTEN_ACTION, w, i, 0, NULL);
+}
+void bzy_desktop_listen_window_close(int64_t w, int i)
+{
+	gtk_call(OP_LISTEN_CLOSE, w, i, 0, NULL);
+}
 
 int bzy_desktop_next_event(void)
 {
-	if (!desktop_load()) { return -1; }
+	if (!desktop_load())
+	{
+		return -1;
+	}
 	ensure_gtk_thread();
 	ensure_event_queue();
-	if (!event_queue) { return -1; }
+	if (!event_queue)
+	{
+		return -1;
+	}
 	struct ui_event *ev = (struct ui_event *)G.async_queue_pop(event_queue);   /* Blocks. */
 	int idx = (int)ev->reg_index;
 	cur_event_kind = ev->kind;

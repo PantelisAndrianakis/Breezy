@@ -17,12 +17,12 @@
 #include <stdio.h>
 
 #ifndef _WIN32
-  #include <dlfcn.h>
-  #include <pthread.h>
+#include <dlfcn.h>
+#include <pthread.h>
 #endif
 
 #ifdef _WIN32
-  #undef CreateWindow   /* windows.h macro-expands CreateWindow -> CreateWindowA. */
+#undef CreateWindow   /* windows.h macro-expands CreateWindow -> CreateWindowA. */
 #endif
 
 /* ---- dl helpers (mirror runtime/surface.c). ---- */
@@ -32,22 +32,34 @@ static void *dl_open_first(const char **names)
 	for (int i = 0; names[i]; i++)
 	{
 		HMODULE h = LoadLibraryA(names[i]);
-		if (h) { return (void*)h; }
+		if (h)
+		{
+			return (void*)h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return (void*)GetProcAddress((HMODULE)h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return (void*)GetProcAddress((HMODULE)h, n);
+}
 #else
 static void *dl_open_first(const char **names)
 {
 	for (int i = 0; names[i]; i++)
 	{
 		void *h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
-		if (h) { return h; }
+		if (h)
+		{
+			return h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return dlsym(h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return dlsym(h, n);
+}
 #endif
 
 /* ---- SDL2 + GL constants (ABI-stable in SDL2). ---- */
@@ -82,8 +94,15 @@ static struct
 
 static int gl_load(void)
 {
-	if (sdl.loaded == 1) { return 1; }
-	if (sdl.loaded == -1) { bzy_io_fail("OpenGL surface unavailable: SDL2 not found."); return 0; }
+	if (sdl.loaded == 1)
+	{
+		return 1;
+	}
+	if (sdl.loaded == -1)
+	{
+		bzy_io_fail("OpenGL surface unavailable: SDL2 not found.");
+		return 0;
+	}
 
 #ifdef _WIN32
 	const char *names[] = { "SDL2.dll", NULL };
@@ -91,9 +110,14 @@ static int gl_load(void)
 	const char *names[] = { "libSDL2-2.0.so.0", "libSDL2.so", NULL };
 #endif
 	void *h = dl_open_first(names);
-	if (!h) { sdl.loaded = -1; bzy_io_fail("OpenGL surface unavailable: SDL2 not found."); return 0; }
+	if (!h)
+	{
+		sdl.loaded = -1;
+		bzy_io_fail("OpenGL surface unavailable: SDL2 not found.");
+		return 0;
+	}
 
-	#define SYM(field, name) do { \
+#define SYM(field, name) do { \
 		*(void**)(&sdl.field) = dl_sym(h, name); \
 		if (!sdl.field) { sdl.loaded = -1; bzy_io_fail("OpenGL surface unavailable: SDL2 symbol missing."); return 0; } \
 	} while (0)
@@ -107,7 +131,7 @@ static int gl_load(void)
 	SYM(GL_SwapWindow, "SDL_GL_SwapWindow");
 	SYM(GL_GetProcAddress, "SDL_GL_GetProcAddress");
 	SYM(PollEvent, "SDL_PollEvent");
-	#undef SYM
+#undef SYM
 
 	sdl.loaded = 1;
 	return 1;
@@ -145,15 +169,28 @@ static uintptr_t cur_tid(void)
 
 static void gl_teardown(GlCtrl *c)
 {
-	if (c->ctx) { sdl.GL_DeleteContext(c->ctx); }
-	if (c->win) { sdl.DestroyWindow(c->win); }
+	if (c->ctx)
+	{
+		sdl.GL_DeleteContext(c->ctx);
+	}
+	if (c->win)
+	{
+		sdl.DestroyWindow(c->win);
+	}
 	free(c);
 }
 
 static void gl_finalize(void *o)
 {
-	if (GL_CLOSED(o)) { return; }
-	if (GL_CTRL(o)) { gl_teardown(GL_CTRL(o)); GL_CTRL(o) = NULL; }
+	if (GL_CLOSED(o))
+	{
+		return;
+	}
+	if (GL_CTRL(o))
+	{
+		gl_teardown(GL_CTRL(o));
+		GL_CTRL(o) = NULL;
+	}
 	GL_CLOSED(o) = 1;
 }
 
@@ -166,21 +203,38 @@ static void *gl_vtable(void)
 
 void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 {
-	if (!gl_load()) { return NULL; }   /* gl_load already called bzy_io_fail. */
-	if (w <= 0 || h <= 0) { bzy_io_fail("Graphics.openGL: width and height must be positive."); return NULL; }
+	if (!gl_load())
+	{
+		return NULL;    /* gl_load already called bzy_io_fail. */
+	}
+	if (w <= 0 || h <= 0)
+	{
+		bzy_io_fail("Graphics.openGL: width and height must be positive.");
+		return NULL;
+	}
 
 	if (sdl.Init(BZ_SDL_INIT_VIDEO) != 0)
 	{
-		bzy_io_fail("Graphics.openGL: SDL video init failed (no display?)."); return NULL;
+		bzy_io_fail("Graphics.openGL: SDL video init failed (no display?).");
+		return NULL;
 	}
 	sdl.GL_SetAttribute(BZ_SDL_GL_DOUBLEBUFFER, 1);   /* Default/compat context: immediate mode stays available. */
 
 	const char *tt = title ? bzy_str_data(title) : "";
 	void *win = sdl.CreateWindow(tt, BZ_SDL_WINDOWPOS_UNDEFINED, BZ_SDL_WINDOWPOS_UNDEFINED,
-	                             (int)w, (int)h, BZ_SDL_WINDOW_OPENGL | BZ_SDL_WINDOW_SHOWN);
-	if (!win) { bzy_io_fail("Graphics.openGL: window creation failed."); return NULL; }
+								 (int)w, (int)h, BZ_SDL_WINDOW_OPENGL | BZ_SDL_WINDOW_SHOWN);
+	if (!win)
+	{
+		bzy_io_fail("Graphics.openGL: window creation failed.");
+		return NULL;
+	}
 	void *ctx = sdl.GL_CreateContext(win);
-	if (!ctx) { sdl.DestroyWindow(win); bzy_io_fail("Graphics.openGL: GL context creation failed."); return NULL; }
+	if (!ctx)
+	{
+		sdl.DestroyWindow(win);
+		bzy_io_fail("Graphics.openGL: GL context creation failed.");
+		return NULL;
+	}
 	sdl.GL_MakeCurrent(win, ctx);   /* Current on THIS worker thread (synchronous, no offload). */
 
 	bzy_dyn_set_resolver(gl_getproc);   /* extern dynamic gl* now resolve through the live context. */
@@ -188,8 +242,10 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 	GlCtrl *c = (GlCtrl*)calloc(1, sizeof(GlCtrl));
 	if (!c)
 	{
-		sdl.GL_DeleteContext(ctx); sdl.DestroyWindow(win);
-		bzy_io_fail("Graphics.openGL: out of memory."); return NULL;
+		sdl.GL_DeleteContext(ctx);
+		sdl.DestroyWindow(win);
+		bzy_io_fail("Graphics.openGL: out of memory.");
+		return NULL;
 	}
 	c->win = win;
 	c->ctx = ctx;
@@ -205,13 +261,16 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 
 int64_t bzy_glsurface_poll(void *s)
 {
-	if (GL_CLOSED(s)) { return 0; }
+	if (GL_CLOSED(s))
+	{
+		return 0;
+	}
 	char ev[64];   /* >= sizeof(SDL_Event) (56). */
 	while (sdl.PollEvent(ev))
 	{
 		uint32_t t = *(uint32_t*)(ev + 0);
 		if (t == BZ_SDL_QUIT
-			|| (t == BZ_SDL_WINDOWEVENT && *(uint8_t*)(ev + 12) == BZ_SDL_WINDOWEVENT_CLOSE))
+				|| (t == BZ_SDL_WINDOWEVENT && *(uint8_t*)(ev + 12) == BZ_SDL_WINDOWEVENT_CLOSE))
 		{
 			return (6LL << 48);
 		}
@@ -243,12 +302,16 @@ int64_t bzy_glsurface_poll(void *s)
 
 void bzy_glsurface_swap(void *s)
 {
-	if (GL_CLOSED(s)) { bzy_io_fail("GlSurface.swapBuffers: surface is closed."); return; }
+	if (GL_CLOSED(s))
+	{
+		bzy_io_fail("GlSurface.swapBuffers: surface is closed.");
+		return;
+	}
 	GlCtrl *c = GL_CTRL(s);
 	if (cur_tid() != c->owner_tid)
 	{
 		fprintf(stderr, "GlSurface.swapBuffers: GL context used off its owning thread; "
-		                "do not await inside a GL render loop.\n");
+						"do not await inside a GL render loop.\n");
 		abort();
 	}
 	sdl.GL_SwapWindow(c->win);
@@ -256,13 +319,19 @@ void bzy_glsurface_swap(void *s)
 
 int64_t bzy_glsurface_isopen(void *s)
 {
-	if (GL_CLOSED(s)) { return 0; }
+	if (GL_CLOSED(s))
+	{
+		return 0;
+	}
 	return 1;   /* Open until close(); SDL_QUIT is delivered via pollEvent (kind 6). */
 }
 
 void bzy_glsurface_close(void *s)
 {
-	if (GL_CLOSED(s)) { return; }
+	if (GL_CLOSED(s))
+	{
+		return;
+	}
 	gl_teardown(GL_CTRL(s));
 	GL_CTRL(s) = NULL;
 	GL_CLOSED(s) = 1;

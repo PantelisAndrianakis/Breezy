@@ -42,13 +42,21 @@ static int     g_row_vt_built;
 
 static void *res_vtable(void)
 {
-	if (!g_res_vt_built) { g_res_vt[0] = (int64_t)&g_res_ti[0]; g_res_vt_built = 1; }
+	if (!g_res_vt_built)
+	{
+		g_res_vt[0] = (int64_t)&g_res_ti[0];
+		g_res_vt_built = 1;
+	}
 	return &g_res_vt[1];
 }
 
 static void *row_vtable(void)
 {
-	if (!g_row_vt_built) { g_row_vt[0] = (int64_t)&g_row_ti[0]; g_row_vt_built = 1; }
+	if (!g_row_vt_built)
+	{
+		g_row_vt[0] = (int64_t)&g_row_ti[0];
+		g_row_vt_built = 1;
+	}
 	return &g_row_vt[1];
 }
 
@@ -96,7 +104,10 @@ void bzy_db_set_error(const char *msg)
 
 void bzy_db_check(int64_t pc, int64_t frame)
 {
-	if (!g_db_has_error) { return; }
+	if (!g_db_has_error)
+	{
+		return;
+	}
 	void *msg = bzy_str_new(g_db_errbuf, (int64_t)strlen(g_db_errbuf));
 	g_db_has_error = 0;
 	void *exc = bzy_alloc(32);
@@ -158,7 +169,10 @@ static void *row_value(void *row, int64_t i)
 {
 	void *v = HGET(row, ROW_VALUES);
 	int64_t n = v ? ARR_LEN(v) : 0;
-	if (!v || i < 0 || i >= n) { return NULL; }
+	if (!v || i < 0 || i >= n)
+	{
+		return NULL;
+	}
 	return ARR_SLOTS(v)[i];
 }
 
@@ -178,7 +192,10 @@ int64_t bzy_db_is_null(void *row, int64_t i)
 void *bzy_db_get_string(void *row, int64_t i)
 {
 	void *s = row_value(row, i);
-	if (!s) { return bzy_str_new("", 0); }
+	if (!s)
+	{
+		return bzy_str_new("", 0);
+	}
 	bzy_retain(s);
 	return s;
 }
@@ -200,7 +217,10 @@ double bzy_db_get_double(void *row, int64_t i)
 int64_t bzy_db_get_bool(void *row, int64_t i)
 {
 	void *s = row_value(row, i);
-	if (!s) { return 0; }
+	if (!s)
+	{
+		return 0;
+	}
 	const char *d = bzy_str_data(s);
 	return (d[0] == 't' || d[0] == 'T' || d[0] == '1');
 }
@@ -212,14 +232,20 @@ int64_t bzy_db_get_bool(void *row, int64_t i)
 static int64_t row_col_index(void *row, void *name)
 {
 	void *c = HGET(row, ROW_COLNAMES);
-	if (!c) { return -1; }
+	if (!c)
+	{
+		return -1;
+	}
 	int64_t n = ARR_LEN(c);
 	void **slots = ARR_SLOTS(c);
 	const char *k = bzy_str_data(name);
 	int64_t kl = bzy_str_len(name);
 	for (int64_t i = 0; i < n; i++)
 	{
-		if (bzy_str_len(slots[i]) == kl && memcmp(bzy_str_data(slots[i]), k, (size_t)kl) == 0) { return i; }
+		if (bzy_str_len(slots[i]) == kl && memcmp(bzy_str_data(slots[i]), k, (size_t)kl) == 0)
+		{
+			return i;
+		}
 	}
 
 	return -1;

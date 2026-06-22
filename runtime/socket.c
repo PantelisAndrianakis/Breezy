@@ -30,7 +30,10 @@ static int recv_spin_probes(void)
 	{
 		const char *e = getenv("BZY_RECV_SPIN");
 		cached = e ? atoi(e) : BZY_RECV_SPIN_DEFAULT;
-		if (cached < 0) { cached = 0; }
+		if (cached < 0)
+		{
+			cached = 0;
+		}
 	}
 
 	return cached;
@@ -98,7 +101,7 @@ void *bzy_sock_wrap(SOCKET fd)
 /* Resolve host:port to a sockaddr_storage (AF_UNSPEC: IPv6 literal, IPv4 literal,
    or hostname). Returns 0 on success, filling out, outlen, and fam. Shared with udp.c. */
 int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
-                    socklen_t *outlen, int *fam)
+					socklen_t *outlen, int *fam)
 {
 	memset(out, 0, sizeof(*out));
 	struct addrinfo hints, *res = NULL;
@@ -359,10 +362,22 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 		for (int i = 0; i < spin && !bzy_sched_local_runnable(); i++)
 		{
 			int pn = recv(SK_FD(s), buf, max, 0);
-			if (pn > 0) { return pn; }
-			if (pn == 0) { return 0; }
-			if (WSAGetLastError() != WSAEWOULDBLOCK) { return -1; }
-			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++) { bzy_sock_pause(); }
+			if (pn > 0)
+			{
+				return pn;
+			}
+			if (pn == 0)
+			{
+				return 0;
+			}
+			if (WSAGetLastError() != WSAEWOULDBLOCK)
+			{
+				return -1;
+			}
+			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++)
+			{
+				bzy_sock_pause();
+			}
 		}
 	}
 
@@ -656,7 +671,7 @@ void *bzy_sock_wrap(int fd)
 /* Resolve host:port to a sockaddr_storage (AF_UNSPEC: IPv6 literal, IPv4 literal,
    or hostname). Returns 0 on success, filling out, outlen, and fam. Shared with udp.c. */
 int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
-                    socklen_t *outlen, int *fam)
+					socklen_t *outlen, int *fam)
 {
 	memset(out, 0, sizeof(*out));
 	struct addrinfo hints, *res = NULL;
@@ -855,7 +870,10 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 			   (e.g. the peer handler whose CPU work produces our reply), spinning
 			   would starve them, so park immediately and let them run. */
 			spin--;
-			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++) { bzy_sock_pause(); }
+			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++)
+			{
+				bzy_sock_pause();
+			}
 			continue;
 		}
 

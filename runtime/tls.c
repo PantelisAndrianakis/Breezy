@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 #ifndef _WIN32
-  #include <dlfcn.h>
+#include <dlfcn.h>
 #endif
 
 /* OpenSSL handles are opaque to us. */
@@ -68,30 +68,49 @@ static void *dl_open_first(const char **names)
 	for (int i = 0; names[i]; i++)
 	{
 		HMODULE h = LoadLibraryA(names[i]);
-		if (h) { return (void*)h; }
+		if (h)
+		{
+			return (void*)h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return (void*)GetProcAddress((HMODULE)h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return (void*)GetProcAddress((HMODULE)h, n);
+}
 #else
 static void *dl_open_first(const char **names)
 {
 	for (int i = 0; names[i]; i++)
 	{
 		void *h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
-		if (h) { return h; }
+		if (h)
+		{
+			return h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return dlsym(h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return dlsym(h, n);
+}
 #endif
 
 /* Resolve libssl (+ libcrypto transitively) once. Returns 1 on success, 0 on
    failure (sets the io-error). */
 static int tls_load(void)
 {
-	if (ossl.loaded == 1) { return 1; }
-	if (ossl.loaded == -1) { bzy_io_fail("TLS unavailable: OpenSSL not found."); return 0; }
+	if (ossl.loaded == 1)
+	{
+		return 1;
+	}
+	if (ossl.loaded == -1)
+	{
+		bzy_io_fail("TLS unavailable: OpenSSL not found.");
+		return 0;
+	}
 
 #ifdef _WIN32
 	const char *sslnames[]    = { "libssl-3-x64.dll", "libssl-3.dll", "libssl.dll", NULL };
@@ -102,14 +121,19 @@ static int tls_load(void)
 #endif
 	void *h = dl_open_first(sslnames);
 	void *hc = dl_open_first(cryptonames);
-	if (!h || !hc) { ossl.loaded = -1; bzy_io_fail("TLS unavailable: OpenSSL not found."); return 0; }
+	if (!h || !hc)
+	{
+		ossl.loaded = -1;
+		bzy_io_fail("TLS unavailable: OpenSSL not found.");
+		return 0;
+	}
 
 	/* SSL_* / SSL_CTX_* / TLS_*_method live in libssl; BIO_* live in libcrypto. */
-	#define SYM(field, name) do { \
+#define SYM(field, name) do { \
 		*(void**)(&ossl.field) = dl_sym(h, name); \
 		if (!ossl.field) { ossl.loaded = -1; bzy_io_fail("TLS unavailable: OpenSSL symbol missing."); return 0; } \
 	} while (0)
-	#define SYMC(field, name) do { \
+#define SYMC(field, name) do { \
 		*(void**)(&ossl.field) = dl_sym(hc, name); \
 		if (!ossl.field) { ossl.loaded = -1; bzy_io_fail("TLS unavailable: OpenSSL symbol missing."); return 0; } \
 	} while (0)
@@ -141,8 +165,8 @@ static int tls_load(void)
 	SYM(SSL_shutdown, "SSL_shutdown");
 	SYM(SSL_get_rbio, "SSL_get_rbio");
 	SYM(SSL_get_wbio, "SSL_get_wbio");
-	#undef SYM
-	#undef SYMC
+#undef SYM
+#undef SYMC
 
 	ossl.loaded = 1;
 	return 1;
@@ -171,18 +195,44 @@ static int64_t g_tls_list_vtable[2];
 
 static void tls_sock_finalize(void *o)
 {
-	if (TLS_CLOSED(o)) { return; }
-	if (TLS_SSL(o)) { ossl.SSL_free(TLS_SSL(o)); TLS_SSL(o) = NULL; }
-	if (TLS_CTXOWN(o)) { ossl.CTX_free(TLS_CTXOWN(o)); TLS_CTXOWN(o) = NULL; }
-	if (TLS_TRANSPORT(o)) { bzy_release(TLS_TRANSPORT(o)); TLS_TRANSPORT(o) = NULL; }
+	if (TLS_CLOSED(o))
+	{
+		return;
+	}
+	if (TLS_SSL(o))
+	{
+		ossl.SSL_free(TLS_SSL(o));
+		TLS_SSL(o) = NULL;
+	}
+	if (TLS_CTXOWN(o))
+	{
+		ossl.CTX_free(TLS_CTXOWN(o));
+		TLS_CTXOWN(o) = NULL;
+	}
+	if (TLS_TRANSPORT(o))
+	{
+		bzy_release(TLS_TRANSPORT(o));
+		TLS_TRANSPORT(o) = NULL;
+	}
 	TLS_CLOSED(o) = 1;
 }
 
 static void tls_list_finalize(void *o)
 {
-	if (TLL_CLOSED(o)) { return; }
-	if (TLL_CTX(o)) { ossl.CTX_free(TLL_CTX(o)); TLL_CTX(o) = NULL; }
-	if (TLL_LISTENER(o)) { bzy_release(TLL_LISTENER(o)); TLL_LISTENER(o) = NULL; }
+	if (TLL_CLOSED(o))
+	{
+		return;
+	}
+	if (TLL_CTX(o))
+	{
+		ossl.CTX_free(TLL_CTX(o));
+		TLL_CTX(o) = NULL;
+	}
+	if (TLL_LISTENER(o))
+	{
+		bzy_release(TLL_LISTENER(o));
+		TLL_LISTENER(o) = NULL;
+	}
 	TLL_CLOSED(o) = 1;
 }
 
@@ -221,8 +271,14 @@ static int tls_flush(void *s)
 	for (;;)
 	{
 		int n = ossl.BIO_read(wbio, buf, (int)sizeof(buf));
-		if (n <= 0) { return 0; }                         /* Nothing pending (mem BIO). */
-		if (bzy_sock_send_all(TLS_TRANSPORT(s), buf, n) < 0) { return -1; }
+		if (n <= 0)
+		{
+			return 0;    /* Nothing pending (mem BIO). */
+		}
+		if (bzy_sock_send_all(TLS_TRANSPORT(s), buf, n) < 0)
+		{
+			return -1;
+		}
 	}
 }
 
@@ -233,9 +289,18 @@ static int tls_feed(void *s)
 	void *rbio = ossl.SSL_get_rbio(TLS_SSL(s));
 	char buf[4096];
 	int n = bzy_sock_recv(TLS_TRANSPORT(s), buf, (int)sizeof(buf), -1);
-	if (n < 0) { return -1; }
-	if (n == 0) { return 0; }
-	if (ossl.BIO_write(rbio, buf, n) != n) { return -1; }
+	if (n < 0)
+	{
+		return -1;
+	}
+	if (n == 0)
+	{
+		return 0;
+	}
+	if (ossl.BIO_write(rbio, buf, n) != n)
+	{
+		return -1;
+	}
 	return 1;
 }
 
@@ -248,25 +313,60 @@ static int tls_run(void *s, int op_kind, void *buf, int len)
 	for (;;)
 	{
 		int ret;
-		if (op_kind == 0) { ret = ossl.SSL_do_handshake(TLS_SSL(s)); }
-		else if (op_kind == 1) { ret = ossl.SSL_read(TLS_SSL(s), buf, len); }
-		else { ret = ossl.SSL_write(TLS_SSL(s), buf, len); }
+		if (op_kind == 0)
+		{
+			ret = ossl.SSL_do_handshake(TLS_SSL(s));
+		}
+		else if (op_kind == 1)
+		{
+			ret = ossl.SSL_read(TLS_SSL(s), buf, len);
+		}
+		else
+		{
+			ret = ossl.SSL_write(TLS_SSL(s), buf, len);
+		}
 
-		if (op_kind == 0 && ret == 1) { if (tls_flush(s) < 0) { return -1; } return 1; }
-		if (op_kind == 1 && ret > 0) { return ret; }
-		if (op_kind == 2 && ret > 0) { if (tls_flush(s) < 0) { return -1; } return ret; }
+		if (op_kind == 0 && ret == 1)
+		{
+			if (tls_flush(s) < 0)
+			{
+				return -1;
+			}
+			return 1;
+		}
+		if (op_kind == 1 && ret > 0)
+		{
+			return ret;
+		}
+		if (op_kind == 2 && ret > 0)
+		{
+			if (tls_flush(s) < 0)
+			{
+				return -1;
+			}
+			return ret;
+		}
 
 		int err = ossl.SSL_get_error(TLS_SSL(s), ret);
 		if (err != BZ_SSL_ERROR_WANT_READ && err != BZ_SSL_ERROR_WANT_WRITE)
 		{
-			if (op_kind == 1 && ret == 0) { return 0; }   /* Clean EOF on read. */
+			if (op_kind == 1 && ret == 0)
+			{
+				return 0;    /* Clean EOF on read. */
+			}
 			return -1;                                    /* Fatal. */
 		}
-		if (tls_flush(s) < 0) { return -1; }              /* Always push handshake bytes first. */
+		if (tls_flush(s) < 0)
+		{
+			return -1;    /* Always push handshake bytes first. */
+		}
 		if (err == BZ_SSL_ERROR_WANT_READ)
 		{
 			int f = tls_feed(s);
-			if (f <= 0) { return -1; }                    /* Peer closed mid-op. */
+			if (f <= 0)
+			{
+				return -1;    /* Peer closed mid-op. */
+			}
 		}
 		/* Loop: retry the SSL op. */
 	}
@@ -291,30 +391,56 @@ static int tls_attach_bios(void *ssl)
 {
 	void *rbio = ossl.BIO_new(ossl.BIO_s_mem());
 	void *wbio = ossl.BIO_new(ossl.BIO_s_mem());
-	if (!rbio || !wbio) { return -1; }
+	if (!rbio || !wbio)
+	{
+		return -1;
+	}
 	ossl.SSL_set_bio(ssl, rbio, wbio);
 	return 0;
 }
 
 void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
 {
-	if (!tls_load()) { return NULL; }
+	if (!tls_load())
+	{
+		return NULL;
+	}
 
 	void *ctx = ossl.CTX_new(ossl.TLS_client_method());
-	if (!ctx) { bzy_io_fail("Network.tlsConnect: SSL_CTX_new failed."); return NULL; }
-	if (caBundle) { ossl.CTX_load_verify_locations(ctx, bzy_str_data(caBundle), NULL); }
-	else { ossl.CTX_set_default_verify_paths(ctx); }
+	if (!ctx)
+	{
+		bzy_io_fail("Network.tlsConnect: SSL_CTX_new failed.");
+		return NULL;
+	}
+	if (caBundle)
+	{
+		ossl.CTX_load_verify_locations(ctx, bzy_str_data(caBundle), NULL);
+	}
+	else
+	{
+		ossl.CTX_set_default_verify_paths(ctx);
+	}
 	ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
 
 	void *transport = bzy_socket_connect(host, port);   /* Owned, reactor-registered Socket. */
-	if (!transport) { ossl.CTX_free(ctx); bzy_io_fail("Network.tlsConnect: TCP connect failed."); return NULL; }
+	if (!transport)
+	{
+		ossl.CTX_free(ctx);
+		bzy_io_fail("Network.tlsConnect: TCP connect failed.");
+		return NULL;
+	}
 
 	void *ssl = ossl.SSL_new(ctx);
 	if (!ssl || tls_attach_bios(ssl) != 0)
 	{
-		if (ssl) { ossl.SSL_free(ssl); }
-		bzy_release(transport); ossl.CTX_free(ctx);
-		bzy_io_fail("Network.tlsConnect: SSL setup failed."); return NULL;
+		if (ssl)
+		{
+			ossl.SSL_free(ssl);
+		}
+		bzy_release(transport);
+		ossl.CTX_free(ctx);
+		bzy_io_fail("Network.tlsConnect: SSL setup failed.");
+		return NULL;
 	}
 	ossl.SSL_set1_host(ssl, bzy_str_data(host));                                                 /* Verify hostname. */
 	ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)bzy_str_data(host)); /* SNI. */
@@ -340,21 +466,37 @@ void *bzy_tls_connect(void *host, int64_t port)
 
 void *bzy_tls_listen(int64_t port, void *certPath, void *keyPath)
 {
-	if (!tls_load()) { return NULL; }
+	if (!tls_load())
+	{
+		return NULL;
+	}
 
 	void *ctx = ossl.CTX_new(ossl.TLS_server_method());
-	if (!ctx) { bzy_io_fail("Network.tlsListen: SSL_CTX_new failed."); return NULL; }
+	if (!ctx)
+	{
+		bzy_io_fail("Network.tlsListen: SSL_CTX_new failed.");
+		return NULL;
+	}
 	if (ossl.CTX_use_certificate_chain_file(ctx, bzy_str_data(certPath)) != 1)
 	{
-		ossl.CTX_free(ctx); bzy_io_fail("Network.tlsListen: cannot load certificate chain."); return NULL;
+		ossl.CTX_free(ctx);
+		bzy_io_fail("Network.tlsListen: cannot load certificate chain.");
+		return NULL;
 	}
 	if (ossl.CTX_use_PrivateKey_file(ctx, bzy_str_data(keyPath), BZ_SSL_FILETYPE_PEM) != 1)
 	{
-		ossl.CTX_free(ctx); bzy_io_fail("Network.tlsListen: cannot load private key."); return NULL;
+		ossl.CTX_free(ctx);
+		bzy_io_fail("Network.tlsListen: cannot load private key.");
+		return NULL;
 	}
 
 	void *listener = bzy_listener_new(port);   /* Owned Listener. */
-	if (!listener) { ossl.CTX_free(ctx); bzy_io_fail("Network.tlsListen: bind/listen failed."); return NULL; }
+	if (!listener)
+	{
+		ossl.CTX_free(ctx);
+		bzy_io_fail("Network.tlsListen: bind/listen failed.");
+		return NULL;
+	}
 
 	void *o = bzy_alloc(48);
 	*(void**)o = tls_list_vtable();
@@ -368,14 +510,22 @@ void *bzy_tls_listen(int64_t port, void *certPath, void *keyPath)
 void *bzy_tls_accept(void *l)
 {
 	void *transport = bzy_listener_accept(TLL_LISTENER(l));   /* Owned Socket; parks. */
-	if (!transport) { bzy_io_fail("TlsListener.accept: accept failed."); return NULL; }
+	if (!transport)
+	{
+		bzy_io_fail("TlsListener.accept: accept failed.");
+		return NULL;
+	}
 
 	void *ssl = ossl.SSL_new(TLL_CTX(l));
 	if (!ssl || tls_attach_bios(ssl) != 0)
 	{
-		if (ssl) { ossl.SSL_free(ssl); }
+		if (ssl)
+		{
+			ossl.SSL_free(ssl);
+		}
 		bzy_release(transport);
-		bzy_io_fail("TlsListener.accept: SSL setup failed."); return NULL;
+		bzy_io_fail("TlsListener.accept: SSL setup failed.");
+		return NULL;
 	}
 	ossl.SSL_set_accept_state(ssl);
 
@@ -389,7 +539,11 @@ void *bzy_tls_accept(void *l)
 
 void *bzy_tls_read(void *s, int64_t maxbytes)
 {
-	if (TLS_CLOSED(s)) { bzy_io_fail("TlsSocket.read: socket is closed."); return NULL; }
+	if (TLS_CLOSED(s))
+	{
+		bzy_io_fail("TlsSocket.read: socket is closed.");
+		return NULL;
+	}
 	int max = (int)(maxbytes > 0 ? maxbytes : 1);
 	/* Stage the plaintext on the stack for the common small read; only the rare
 	   large read touches the heap. The result byte[] must be sized to the actual
@@ -397,33 +551,62 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 	   is not. */
 	char stackbuf[16384];
 	char *buf = (max <= (int)sizeof(stackbuf)) ? stackbuf : (char*)malloc((size_t)max);
-	if (!buf) { bzy_io_fail("TlsSocket.read: out of memory."); return NULL; }
+	if (!buf)
+	{
+		bzy_io_fail("TlsSocket.read: out of memory.");
+		return NULL;
+	}
 	int n = tls_run(s, 1, buf, max);
 	if (n < 0)
 	{
-		if (buf != stackbuf) { free(buf); }
-		bzy_io_fail("TlsSocket.read: TLS read error."); return NULL;
+		if (buf != stackbuf)
+		{
+			free(buf);
+		}
+		bzy_io_fail("TlsSocket.read: TLS read error.");
+		return NULL;
 	}
 	void *arr = tls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean EOF). */
-	if (buf != stackbuf) { free(buf); }
+	if (buf != stackbuf)
+	{
+		free(buf);
+	}
 	return arr;
 }
 
 int64_t bzy_tls_write(void *s, void *data)
 {
-	if (TLS_CLOSED(s)) { bzy_io_fail("TlsSocket.write: socket is closed."); return 0; }
+	if (TLS_CLOSED(s))
+	{
+		bzy_io_fail("TlsSocket.write: socket is closed.");
+		return 0;
+	}
 	int len = (int)bzy_array_len(data);
 	const char *bytes = (const char*)data + 32;   /* Packed byte[] payload. */
-	if (len == 0) { return 0; }
+	if (len == 0)
+	{
+		return 0;
+	}
 	int n = tls_run(s, 2, (void*)bytes, len);
-	if (n < 0) { bzy_io_fail("TlsSocket.write: TLS write error."); return 0; }
+	if (n < 0)
+	{
+		bzy_io_fail("TlsSocket.write: TLS write error.");
+		return 0;
+	}
 	return n;
 }
 
 void bzy_tls_close(void *s)
 {
-	if (TLS_CLOSED(s)) { return; }
-	if (TLS_SSL(s)) { ossl.SSL_shutdown(TLS_SSL(s)); tls_flush(s); }
+	if (TLS_CLOSED(s))
+	{
+		return;
+	}
+	if (TLS_SSL(s))
+	{
+		ossl.SSL_shutdown(TLS_SSL(s));
+		tls_flush(s);
+	}
 	tls_sock_finalize(s);
 }
 

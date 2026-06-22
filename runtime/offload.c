@@ -2,10 +2,10 @@
 #include "platform.h"
 #include <stdlib.h>
 #ifdef _WIN32
-  #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #else
-  #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
+#include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
 #endif
 
 /* A task is a stack node on the submitting breeze's coroutine stack (stable while

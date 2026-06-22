@@ -46,17 +46,48 @@ typedef struct BTNode
 #define KID_OFF ((int64_t)offsetof(BTNode, kid))
 
 /* Handle accessors. */
-static int64_t  *HROOT(void *o)  { return (int64_t*)((char*)o + 24); }
-static int64_t  *HCOUNT(void *o) { return (int64_t*)((char*)o + 32); }
-static int64_t  *HKIND(void *o)  { return (int64_t*)((char*)o + 40); }
-static int64_t  *HHV(void *o)    { return (int64_t*)((char*)o + 48); }
-static int64_t  *HVMAN(void *o)  { return (int64_t*)((char*)o + 56); }
-static int64_t  *HSLOT(void *o)  { return (int64_t*)((char*)o + 64); }
-static bzy_cmp_fn *HCMP(void *o) { return (bzy_cmp_fn*)((char*)o + 72); }
+static int64_t  *HROOT(void *o)
+{
+	return (int64_t*)((char*)o + 24);
+}
+static int64_t  *HCOUNT(void *o)
+{
+	return (int64_t*)((char*)o + 32);
+}
+static int64_t  *HKIND(void *o)
+{
+	return (int64_t*)((char*)o + 40);
+}
+static int64_t  *HHV(void *o)
+{
+	return (int64_t*)((char*)o + 48);
+}
+static int64_t  *HVMAN(void *o)
+{
+	return (int64_t*)((char*)o + 56);
+}
+static int64_t  *HSLOT(void *o)
+{
+	return (int64_t*)((char*)o + 64);
+}
+static bzy_cmp_fn *HCMP(void *o)
+{
+	return (bzy_cmp_fn*)((char*)o + 72);
+}
 
-static BTNode *bt_root(void *o)  { return (BTNode*)*HROOT(o); }
-static int bt_kman(void *o)      { int64_t k = *HKIND(o); return k == 3 || k == 4; }
-static int bt_managed(void *o)   { return bt_kman(o) || (int)*HVMAN(o); }
+static BTNode *bt_root(void *o)
+{
+	return (BTNode*)*HROOT(o);
+}
+static int bt_kman(void *o)
+{
+	int64_t k = *HKIND(o);
+	return k == 3 || k == 4;
+}
+static int bt_managed(void *o)
+{
+	return bt_kman(o) || (int)*HVMAN(o);
+}
 
 static int bt_shared(void *o)
 {
@@ -968,7 +999,13 @@ static void bt_pack(char *base, int64_t n, int64_t esize, int64_t v)
 }
 
 /* In-order traversal collecting keys, values, or entries into a fresh array. */
-typedef struct { char *out; int64_t n; int64_t esize; int want; } BtCollect;   /* want: 0 keys, 1 values, 2 entries. */
+typedef struct
+{
+	char *out;
+	int64_t n;
+	int64_t esize;
+	int want;
+} BtCollect;   /* want: 0 keys, 1 values, 2 entries. */
 
 static void bt_collect(void *o, BTNode *x, BtCollect *c)
 {

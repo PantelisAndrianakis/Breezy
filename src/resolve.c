@@ -716,8 +716,8 @@ static void resolve_network(Expr *e)
 	if (strcmp(m,"tlsConnect")==0)
 	{
 		if ((e->arg_count!=2 && e->arg_count!=3)
-			|| e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
-			|| (e->arg_count==3 && e->args[2]->type.kind!=TY_STRING))
+				|| e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
+				|| (e->arg_count==3 && e->args[2]->type.kind!=TY_STRING))
 		{
 			die(e->line,"Network.tlsConnect(host, port[, caBundlePath]) takes a string, an integer, and an optional string.",NULL);
 		}
@@ -729,7 +729,7 @@ static void resolve_network(Expr *e)
 	if (strcmp(m,"tlsListen")==0)
 	{
 		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
-			|| e->args[1]->type.kind!=TY_STRING || e->args[2]->type.kind!=TY_STRING)
+				|| e->args[1]->type.kind!=TY_STRING || e->args[2]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Network.tlsListen(port, certPath, keyPath) takes an integer and two strings.",NULL);
 		}
@@ -741,8 +741,8 @@ static void resolve_network(Expr *e)
 	if (strcmp(m,"dtlsConnect")==0)
 	{
 		if ((e->arg_count!=2 && e->arg_count!=3)
-			|| e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
-			|| (e->arg_count==3 && e->args[2]->type.kind!=TY_STRING))
+				|| e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
+				|| (e->arg_count==3 && e->args[2]->type.kind!=TY_STRING))
 		{
 			die(e->line,"Network.dtlsConnect(host, port[, caBundlePath]) takes a string, an integer, and an optional string.",NULL);
 		}
@@ -765,7 +765,7 @@ static void resolve_network(Expr *e)
 	if (strcmp(m,"dtlsListen")==0)
 	{
 		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
-			|| e->args[1]->type.kind!=TY_STRING || e->args[2]->type.kind!=TY_STRING)
+				|| e->args[1]->type.kind!=TY_STRING || e->args[2]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Network.dtlsListen(port, certPath, keyPath) takes an integer and two strings.",NULL);
 		}
@@ -797,8 +797,14 @@ static void resolve_memory(Expr *e)
 /* The scalar lane kind of a SIMD vector type. */
 static TypeKind simd_lane_kind(TypeKind v)
 {
-	if (v==TY_F64X2 || v==TY_F64X4) { return TY_DOUBLE; }
-	if (v==TY_I32X4 || v==TY_I32X8) { return TY_INT; }
+	if (v==TY_F64X2 || v==TY_F64X4)
+	{
+		return TY_DOUBLE;
+	}
+	if (v==TY_I32X4 || v==TY_I32X8)
+	{
+		return TY_INT;
+	}
 	return TY_FLOAT;   /* f32x4 / f32x8. */
 }
 
@@ -817,7 +823,10 @@ static void resolve_simd(Expr *e)
 		if (ty_is_simd(ak) && ty_simd_bytes(ak) == 32)
 		{
 			g_program_uses_avx = 1;
-			if (ak == TY_I32X8) { g_program_uses_avx2 = 1; }
+			if (ak == TY_I32X8)
+			{
+				g_program_uses_avx2 = 1;
+			}
 		}
 	}
 	if (strcmp(m,"pack")==0)
@@ -826,8 +835,14 @@ static void resolve_simd(Expr *e)
 		int all_float = 1, all_int = 1;
 		for (int i=0; i<e->arg_count; i++)
 		{
-			if (!ty_is_float(e->args[i]->type.kind)) { all_float=0; }
-			if (!ty_is_int(e->args[i]->type.kind)) { all_int=0; }
+			if (!ty_is_float(e->args[i]->type.kind))
+			{
+				all_float=0;
+			}
+			if (!ty_is_int(e->args[i]->type.kind))
+			{
+				all_int=0;
+			}
 		}
 
 		if (e->arg_count==2 && all_float)
@@ -859,13 +874,27 @@ static void resolve_simd(Expr *e)
 		int all_float = 1, all_int = 1;
 		for (int i=0; i<e->arg_count; i++)
 		{
-			if (!ty_is_float(e->args[i]->type.kind)) { all_float=0; }
-			if (!ty_is_int(e->args[i]->type.kind)) { all_int=0; }
+			if (!ty_is_float(e->args[i]->type.kind))
+			{
+				all_float=0;
+			}
+			if (!ty_is_int(e->args[i]->type.kind))
+			{
+				all_int=0;
+			}
 		}
 
 		g_program_uses_avx = 1;
-		if (e->arg_count==4 && all_float) { e->type.kind=TY_F64X4; return; }
-		if (e->arg_count==8 && all_float) { e->type.kind=TY_F32X8; return; }
+		if (e->arg_count==4 && all_float)
+		{
+			e->type.kind=TY_F64X4;
+			return;
+		}
+		if (e->arg_count==8 && all_float)
+		{
+			e->type.kind=TY_F32X8;
+			return;
+		}
 		if (e->arg_count==8 && all_int)
 		{
 			g_program_uses_avx2 = 1;
@@ -891,10 +920,10 @@ static void resolve_simd(Expr *e)
 	}
 
 	if (strcmp(m,"add")==0 || strcmp(m,"sub")==0 || strcmp(m,"mul")==0 || strcmp(m,"div")==0
-		|| strcmp(m,"min")==0 || strcmp(m,"max")==0)
+			|| strcmp(m,"min")==0 || strcmp(m,"max")==0)
 	{
 		if (e->arg_count!=2 || !ty_is_simd(e->args[0]->type.kind)
-			|| e->args[0]->type.kind!=e->args[1]->type.kind)
+				|| e->args[0]->type.kind!=e->args[1]->type.kind)
 		{
 			die(e->line,"Simd.add/sub/mul/div/min/max(a, b) takes two vectors of the same type.",NULL);
 		}
@@ -924,7 +953,7 @@ static void resolve_simd(Expr *e)
 	if (strcmp(m,"dot")==0)
 	{
 		if (e->arg_count!=2 || !ty_is_simd(e->args[0]->type.kind)
-			|| e->args[0]->type.kind!=e->args[1]->type.kind)
+				|| e->args[0]->type.kind!=e->args[1]->type.kind)
 		{
 			die(e->line,"Simd.dot(a, b) takes two vectors of the same type.",NULL);
 		}
@@ -936,7 +965,7 @@ static void resolve_simd(Expr *e)
 	if (strcmp(m,"load")==0)
 	{
 		if (e->arg_count!=2 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
-			|| !ty_is_int(e->args[1]->type.kind))
+				|| !ty_is_int(e->args[1]->type.kind))
 		{
 			die(e->line,"Simd.load(a, i) loads a packed lane group from double[] or float[].",NULL);
 		}
@@ -965,7 +994,7 @@ static void resolve_simd(Expr *e)
 	if (strcmp(m,"store")==0)
 	{
 		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY || !e->args[0]->type.elem
-			|| !ty_is_int(e->args[1]->type.kind) || !ty_is_simd(e->args[2]->type.kind))
+				|| !ty_is_int(e->args[1]->type.kind) || !ty_is_simd(e->args[2]->type.kind))
 		{
 			die(e->line,"Simd.store(a, i, v) stores a packed lane group into double[] or float[].",NULL);
 		}
@@ -995,7 +1024,10 @@ static void resolve_simd(Expr *e)
 
 		g_program_uses_avx = 1;
 		e->type.kind = (ek==TY_FLOAT) ? TY_F32X8 : (ek==TY_INT) ? TY_I32X8 : TY_F64X4;
-		if (ek==TY_INT) { g_program_uses_avx2 = 1; }
+		if (ek==TY_INT)
+		{
+			g_program_uses_avx2 = 1;
+		}
 		return;
 	}
 
@@ -1023,7 +1055,7 @@ static void resolve_graphics(Expr *e)
 	if (strcmp(m,"open")==0)
 	{
 		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
-			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+				|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Graphics.open(width, height, title) takes two integers and a string.",NULL);
 		}
@@ -1035,7 +1067,7 @@ static void resolve_graphics(Expr *e)
 	if (strcmp(m,"openGL")==0)
 	{
 		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
-			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+				|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Graphics.openGL(width, height, title) takes two integers and a string.",NULL);
 		}
@@ -1175,7 +1207,7 @@ static void resolve_http(Expr *e)
 	if (strcmp(m,"respond")==0)
 	{
 		if (e->arg_count!=3 || e->args[0]->type.kind!=TY_SOCKET
-			|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
+				|| !ty_is_int(e->args[1]->type.kind) || e->args[2]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Http.respond(socket, status, body) takes a Socket, an int, and a string.",NULL);
 		}
@@ -1226,7 +1258,7 @@ static void resolve_postgres(Expr *e)
 	if (strcmp(m,"connect")==0)
 	{
 		if (e->arg_count!=5 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
-			|| e->args[2]->type.kind!=TY_STRING || e->args[3]->type.kind!=TY_STRING || e->args[4]->type.kind!=TY_STRING)
+				|| e->args[2]->type.kind!=TY_STRING || e->args[3]->type.kind!=TY_STRING || e->args[4]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Postgres.connect(host, port, user, password, database) takes a string, an int, and three strings.",NULL);
 		}
@@ -1239,7 +1271,7 @@ static void resolve_postgres(Expr *e)
 	{
 		int ok2 = (e->arg_count==2 && e->args[0]->type.kind==TY_PGCONNECTION && e->args[1]->type.kind==TY_STRING);
 		int ok3 = (e->arg_count==3 && e->args[0]->type.kind==TY_PGCONNECTION && e->args[1]->type.kind==TY_STRING
-			&& e->args[2]->type.kind==TY_ARRAY && e->args[2]->type.elem && e->args[2]->type.elem->kind==TY_STRING);
+				   && e->args[2]->type.kind==TY_ARRAY && e->args[2]->type.elem && e->args[2]->type.elem->kind==TY_STRING);
 		if (!ok2 && !ok3)
 		{
 			die(e->line,"Postgres.query(connection, sql [, string[] params]) takes a PgConnection, a string, and an optional string array.",NULL);
@@ -1258,7 +1290,7 @@ static void resolve_mysql(Expr *e)
 	if (strcmp(m,"connect")==0)
 	{
 		if (e->arg_count!=5 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
-			|| e->args[2]->type.kind!=TY_STRING || e->args[3]->type.kind!=TY_STRING || e->args[4]->type.kind!=TY_STRING)
+				|| e->args[2]->type.kind!=TY_STRING || e->args[3]->type.kind!=TY_STRING || e->args[4]->type.kind!=TY_STRING)
 		{
 			die(e->line,"Mysql.connect(host, port, user, password, database) takes a string, an int, and three strings.",NULL);
 		}
@@ -2420,20 +2452,54 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (e->lhs->type.kind==TY_HTTPREQUEST)
 		{
-			if (strcmp(e->name,"method")==0)       { e->type.kind=TY_STRING; e->anno_int=24; }
-			else if (strcmp(e->name,"path")==0)    { e->type.kind=TY_STRING; e->anno_int=32; }
-			else if (strcmp(e->name,"body")==0)    { e->type.kind=TY_STRING; e->anno_int=56; }
-			else if (strcmp(e->name,"version")==0) { e->type.kind=TY_STRING; e->anno_int=64; }
-			else { die(e->line,"Unknown HttpRequest field: ",e->name); }
+			if (strcmp(e->name,"method")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=24;
+			}
+			else if (strcmp(e->name,"path")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=32;
+			}
+			else if (strcmp(e->name,"body")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=56;
+			}
+			else if (strcmp(e->name,"version")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=64;
+			}
+			else
+			{
+				die(e->line,"Unknown HttpRequest field: ",e->name);
+			}
 			break;
 		}
 
 		if (e->lhs->type.kind==TY_HTTPRESPONSE)
 		{
-			if (strcmp(e->name,"status")==0)      { e->type.kind=TY_INT;    e->anno_int=24; }
-			else if (strcmp(e->name,"reason")==0) { e->type.kind=TY_STRING; e->anno_int=32; }
-			else if (strcmp(e->name,"body")==0)   { e->type.kind=TY_STRING; e->anno_int=56; }
-			else { die(e->line,"Unknown HttpResponse field: ",e->name); }
+			if (strcmp(e->name,"status")==0)
+			{
+				e->type.kind=TY_INT;
+				e->anno_int=24;
+			}
+			else if (strcmp(e->name,"reason")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=32;
+			}
+			else if (strcmp(e->name,"body")==0)
+			{
+				e->type.kind=TY_STRING;
+				e->anno_int=56;
+			}
+			else
+			{
+				die(e->line,"Unknown HttpResponse field: ",e->name);
+			}
 			break;
 		}
 
@@ -3219,9 +3285,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		{
 			resolve_args(st,e,tc);
 			if (strcmp(e->name,"isNull")==0 || strcmp(e->name,"isBool")==0
-				|| strcmp(e->name,"isNumber")==0 || strcmp(e->name,"isString")==0
-				|| strcmp(e->name,"isArray")==0 || strcmp(e->name,"isObject")==0
-				|| strcmp(e->name,"asBool")==0)
+					|| strcmp(e->name,"isNumber")==0 || strcmp(e->name,"isString")==0
+					|| strcmp(e->name,"isArray")==0 || strcmp(e->name,"isObject")==0
+					|| strcmp(e->name,"asBool")==0)
 			{
 				if (e->arg_count!=0)
 				{
@@ -3413,8 +3479,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			int is_getter = strcmp(e->name,"getString")==0 || strcmp(e->name,"getInt")==0
-				|| strcmp(e->name,"getLong")==0 || strcmp(e->name,"getDouble")==0
-				|| strcmp(e->name,"getBool")==0 || strcmp(e->name,"isNull")==0;
+							|| strcmp(e->name,"getLong")==0 || strcmp(e->name,"getDouble")==0
+							|| strcmp(e->name,"getBool")==0 || strcmp(e->name,"isNull")==0;
 			if (!is_getter)
 			{
 				die(e->line,"Unknown Row method: ",e->name);
@@ -3426,11 +3492,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Row getters take one column index (int) or name (string).",NULL);
 			}
 
-			if (strcmp(e->name,"getString")==0)      { e->type.kind=TY_STRING; }
-			else if (strcmp(e->name,"getInt")==0)    { e->type.kind=TY_INT; }
-			else if (strcmp(e->name,"getLong")==0)   { e->type.kind=TY_LONG; }
-			else if (strcmp(e->name,"getDouble")==0) { e->type.kind=TY_DOUBLE; }
-			else                                     { e->type.kind=TY_BOOL; }   /* getBool / isNull. */
+			if (strcmp(e->name,"getString")==0)
+			{
+				e->type.kind=TY_STRING;
+			}
+			else if (strcmp(e->name,"getInt")==0)
+			{
+				e->type.kind=TY_INT;
+			}
+			else if (strcmp(e->name,"getLong")==0)
+			{
+				e->type.kind=TY_LONG;
+			}
+			else if (strcmp(e->name,"getDouble")==0)
+			{
+				e->type.kind=TY_DOUBLE;
+			}
+			else
+			{
+				e->type.kind=TY_BOOL;    /* getBool / isNull. */
+			}
 			break;
 		}
 
@@ -3701,7 +3782,10 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			resolve_args(st,e,tc);
 			if (strcmp(e->name,"size")==0)
 			{
-				if (e->arg_count!=0) { die(e->line,"MappedFile.size() takes no arguments.",NULL); }
+				if (e->arg_count!=0)
+				{
+					die(e->line,"MappedFile.size() takes no arguments.",NULL);
+				}
 				e->type.kind=TY_LONG;
 			}
 			else if (strcmp(e->name,"getByte")==0 || strcmp(e->name,"getInt")==0)
@@ -3731,7 +3815,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else if (strcmp(e->name,"copyInto")==0)
 			{
 				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY
-					|| !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
+						|| !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
 				{
 					die(e->line,"MappedFile.copyInto(byte[] dst, srcOffset, len) takes a byte[] and two integers.",NULL);
 				}
@@ -3740,7 +3824,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else if (strcmp(e->name,"copyFrom")==0)
 			{
 				if (e->arg_count!=3 || e->args[0]->type.kind!=TY_ARRAY
-					|| !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
+						|| !ty_is_int(e->args[1]->type.kind) || !ty_is_int(e->args[2]->type.kind))
 				{
 					die(e->line,"MappedFile.copyFrom(byte[] src, dstOffset, len) takes a byte[] and two integers.",NULL);
 				}
@@ -3748,12 +3832,18 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 			else if (strcmp(e->name,"flush")==0)
 			{
-				if (e->arg_count!=0) { die(e->line,"MappedFile.flush() takes no arguments.",NULL); }
+				if (e->arg_count!=0)
+				{
+					die(e->line,"MappedFile.flush() takes no arguments.",NULL);
+				}
 				e->type.kind=TY_VOID;
 			}
 			else if (strcmp(e->name,"close")==0)
 			{
-				if (e->arg_count!=0) { die(e->line,"MappedFile.close() takes no arguments.",NULL); }
+				if (e->arg_count!=0)
+				{
+					die(e->line,"MappedFile.close() takes no arguments.",NULL);
+				}
 				e->type.kind=TY_VOID;
 			}
 			else
@@ -4489,313 +4579,313 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 	}
 
-		if (strcmp(e->name,"scheduleAfter")==0 || strcmp(e->name,"scheduleEvery")==0)
-		{
-			resolve_schedule(st,e,tc);
-			break;
-		}
+	if (strcmp(e->name,"scheduleAfter")==0 || strcmp(e->name,"scheduleEvery")==0)
+	{
+		resolve_schedule(st,e,tc);
+		break;
+	}
 
 		/* FFI: a bare function name passed where the callee expects a `long` (a C
 		   function pointer) marshals to the function's address. Mark such args before
 		   resolve_args so it skips them; codegen emits `lea [rel label]`. */
+	{
+		FuncInfo *callee = types_find_func(g_types, e->name);
+		if (callee)
 		{
-			FuncInfo *callee = types_find_func(g_types, e->name);
-			if (callee)
+			for (int ai = 0; ai < e->arg_count && ai < callee->param_count; ai++)
 			{
-				for (int ai = 0; ai < e->arg_count && ai < callee->param_count; ai++)
-				{
-					TypeRef *pt = &callee->param_types[ai];
-					if (e->args[ai]->kind == EX_IDENT
+				TypeRef *pt = &callee->param_types[ai];
+				if (e->args[ai]->kind == EX_IDENT
 						&& (pt->kind == TY_LONG || pt->kind == TY_FUNC)
 						&& types_find_func(g_types, e->args[ai]->name))
+				{
+					/* A TY_FUNC param checks the named function's signature exactly:
+					   return type and every parameter type must match (scalar kinds).
+					   A loose `long` param accepts any function address unchecked. */
+					if (pt->kind == TY_FUNC)
 					{
-						/* A TY_FUNC param checks the named function's signature exactly:
-						   return type and every parameter type must match (scalar kinds).
-						   A loose `long` param accepts any function address unchecked. */
-						if (pt->kind == TY_FUNC)
+						FuncInfo *cb = types_find_func(g_types, e->args[ai]->name);
+						int ok = (cb->ret_type.kind == (pt->elem ? pt->elem->kind : TY_VOID))
+								 && cb->param_count == pt->targ_count;
+						for (int k = 0; ok && k < pt->targ_count; k++)
 						{
-							FuncInfo *cb = types_find_func(g_types, e->args[ai]->name);
-							int ok = (cb->ret_type.kind == (pt->elem ? pt->elem->kind : TY_VOID))
-									 && cb->param_count == pt->targ_count;
-							for (int k = 0; ok && k < pt->targ_count; k++)
+							if (cb->param_types[k].kind != pt->targs[k]->kind)
 							{
-								if (cb->param_types[k].kind != pt->targs[k]->kind)
-								{
-									ok = 0;
-								}
-							}
-
-							if (!ok)
-							{
-								die(e->line,"callback argument does not match the declared function signature: ",e->args[ai]->name);
+								ok = 0;
 							}
 						}
 
-						e->args[ai]->is_func_addr = 1;
-						e->args[ai]->type = *pt;   /* Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr. */
+						if (!ok)
+						{
+							die(e->line,"callback argument does not match the declared function signature: ",e->args[ai]->name);
+						}
 					}
+
+					e->args[ai]->is_func_addr = 1;
+					e->args[ai]->type = *pt;   /* Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr. */
 				}
 			}
 		}
+	}
 
-		resolve_args(st,e,tc);
-		if (strncmp(e->name,"Math.",5)==0)
-		{
-			resolve_math(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Clock.",6)==0)
-		{
-			resolve_clock(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Random.",7)==0)
-		{
-			resolve_random(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Regex.",6)==0)
-		{
-			resolve_regex(e);
-			break;
-		}
-
-		if (strncmp(e->name,"File.",5)==0)
-		{
-			resolve_file(e);
-			break;
-		}
-
-		if (strncmp(e->name,"System.",7)==0)
-		{
-			resolve_system(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Network.",8)==0)
-		{
-			resolve_network(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Memory.",7)==0)
-		{
-			resolve_memory(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Simd.",5)==0)
-		{
-			resolve_simd(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Graphics.",9)==0)
-		{
-			resolve_graphics(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Ffi.",4)==0)
-		{
-			resolve_ffi(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Log.",4)==0)
-		{
-			resolve_log(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Xml.",4)==0)
-		{
-			resolve_xml(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Json.",5)==0)
-		{
-			resolve_json(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Http.",5)==0)
-		{
-			resolve_http(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Postgres.",9)==0)
-		{
-			resolve_postgres(e);
-			break;
-		}
-
-		if (strncmp(e->name,"Mysql.",6)==0)
-		{
-			resolve_mysql(e);
-			break;
-		}
-
-		if (strcmp(e->name,"print")==0)
-		{
-			if (e->arg_count<1)
-			{
-				die(e->line,"Print expects a scalar argument.",NULL);
-			}
-
-			TypeKind ak=e->args[0]->type.kind;
-			if (!ty_is_int(ak) && ak!=TY_BOOL && !ty_is_float(ak) && ak!=TY_STRING)
-			{
-				die(e->line,"Print expects a scalar or string argument.",NULL);
-			}
-
-			e->type.kind=TY_VOID;
-			break;
-		}
-
-		if (strcmp(e->name,"input")==0)
-		{
-			if (e->arg_count!=0)
-			{
-				die(e->line,"Input takes no arguments.",NULL);
-			}
-
-			e->type.kind=TY_STRING;
-			break;
-		}
-
-		if (strcmp(e->name,"fromCString")==0)
-		{
-			if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
-			{
-				die(e->line,"fromCString expects one integer (char*) pointer argument.",NULL);
-			}
-
-			e->type.kind=TY_STRING;
-			break;
-		}
-
-		if (strcmp(e->name,"fromCBytes")==0)
-		{
-			if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || !ty_is_int(e->args[1]->type.kind))
-			{
-				die(e->line,"fromCBytes expects a pointer and a length, both integers.",NULL);
-			}
-
-			e->type.kind=TY_STRING;
-			break;
-		}
-
-		if (strcmp(e->name,"fromBytes")==0)
-		{
-			if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY
-				|| (e->args[0]->type.elem->kind!=TY_BYTE && e->args[0]->type.elem->kind!=TY_UBYTE))
-			{
-				die(e->line,"fromBytes expects one byte[] or ubyte[] argument.",NULL);
-			}
-
-			e->type.kind=TY_STRING;
-			break;
-		}
-
-		if (strcmp(e->name,"length")==0)
-		{
-			if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
-			{
-				die(e->line,"Length expects one string argument.",NULL);
-			}
-
-			e->type.kind=TY_INT;
-			break;
-		}
-
-		if (strcmp(e->name,"liveCount")==0)
-		{
-			e->type.kind=TY_INT;
-			break;
-		}
-
-		if (strcmp(e->name,"collectCycles")==0)
-		{
-			e->type.kind=TY_VOID;
-			break;
-		}
-
-		if (strcmp(e->name,"yield")==0)
-		{
-			if (e->arg_count!=0)
-			{
-				die(e->line,"Yield() takes no arguments.",NULL);
-			}
-
-			e->type.kind=TY_VOID;
-			break;
-		}
-
-		{
-			int ocount=types_func_overload_count(g_types,e->name);
-			if (ocount==0)
-			{
-				die(e->line,"Unknown function: ",e->name);
-			}
-
-			OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
-			for (int oi=0; oi<ocount && oi<16; oi++)
-			{
-				FuncInfo *fo=types_find_func_idx(g_types,e->name,oi);
-				cands[oi].param_types=fo->param_types;
-				cands[oi].param_count=fo->param_count;
-				cands[oi].min_args=fo->ast ? overload_min_args(fo->ast) : fo->param_count;
-				cands[oi].is_variadic=fo->is_variadic;
-			}
-
-			TypeRef *argtypes=arg_types_of(e);
-
-			int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
-			if (sel==OVL_NONE)
-			{
-				die(e->line,"No function overload matches these arguments: ",e->name);
-			}
-
-			if (sel==OVL_AMBIG)
-			{
-				die(e->line,"Ambiguous function call: ",e->name);
-			}
-
-			FuncInfo *fi=types_find_func_idx(g_types,e->name,sel);
-			e->anno_overload=sel;
-			fill_default_args(st, e, fi->ast, tc);
-			for (int i=0; i<e->arg_count && i<fi->param_count; i++)
-			{
-				if (!assignable(&fi->param_types[i], &e->args[i]->type))
-				{
-					die(e->line,"Argument type mismatch; add a cast.",NULL);
-				}
-			}
-
-			/* Variadic (`...`) arguments are C-ABI-native: a scalar/long/double (placed
-			   in GP/xmm) or a string (marshalled to char*). Arrays, objects, and maps
-			   cannot be passed through `...`. */
-			if (fi->is_variadic)
-			{
-				for (int i=fi->param_count; i<e->arg_count; i++)
-				{
-					TypeKind ak = e->args[i]->type.kind;
-					if (!(ty_is_int(ak) || ty_is_float(ak) || ak==TY_BOOL || ak==TY_STRING))
-					{
-						die(e->line,"a variadic argument must be a scalar or string.",NULL);
-					}
-				}
-			}
-
-			e->type=fi->ret_type;
-		}
+	resolve_args(st,e,tc);
+	if (strncmp(e->name,"Math.",5)==0)
+	{
+		resolve_math(e);
 		break;
+	}
+
+	if (strncmp(e->name,"Clock.",6)==0)
+	{
+		resolve_clock(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Random.",7)==0)
+	{
+		resolve_random(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Regex.",6)==0)
+	{
+		resolve_regex(e);
+		break;
+	}
+
+	if (strncmp(e->name,"File.",5)==0)
+	{
+		resolve_file(e);
+		break;
+	}
+
+	if (strncmp(e->name,"System.",7)==0)
+	{
+		resolve_system(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Network.",8)==0)
+	{
+		resolve_network(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Memory.",7)==0)
+	{
+		resolve_memory(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Simd.",5)==0)
+	{
+		resolve_simd(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Graphics.",9)==0)
+	{
+		resolve_graphics(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Ffi.",4)==0)
+	{
+		resolve_ffi(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Log.",4)==0)
+	{
+		resolve_log(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Xml.",4)==0)
+	{
+		resolve_xml(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Json.",5)==0)
+	{
+		resolve_json(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Http.",5)==0)
+	{
+		resolve_http(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Postgres.",9)==0)
+	{
+		resolve_postgres(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Mysql.",6)==0)
+	{
+		resolve_mysql(e);
+		break;
+	}
+
+	if (strcmp(e->name,"print")==0)
+	{
+		if (e->arg_count<1)
+		{
+			die(e->line,"Print expects a scalar argument.",NULL);
+		}
+
+		TypeKind ak=e->args[0]->type.kind;
+		if (!ty_is_int(ak) && ak!=TY_BOOL && !ty_is_float(ak) && ak!=TY_STRING)
+		{
+			die(e->line,"Print expects a scalar or string argument.",NULL);
+		}
+
+		e->type.kind=TY_VOID;
+		break;
+	}
+
+	if (strcmp(e->name,"input")==0)
+	{
+		if (e->arg_count!=0)
+		{
+			die(e->line,"Input takes no arguments.",NULL);
+		}
+
+		e->type.kind=TY_STRING;
+		break;
+	}
+
+	if (strcmp(e->name,"fromCString")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"fromCString expects one integer (char*) pointer argument.",NULL);
+		}
+
+		e->type.kind=TY_STRING;
+		break;
+	}
+
+	if (strcmp(e->name,"fromCBytes")==0)
+	{
+		if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || !ty_is_int(e->args[1]->type.kind))
+		{
+			die(e->line,"fromCBytes expects a pointer and a length, both integers.",NULL);
+		}
+
+		e->type.kind=TY_STRING;
+		break;
+	}
+
+	if (strcmp(e->name,"fromBytes")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_ARRAY
+				|| (e->args[0]->type.elem->kind!=TY_BYTE && e->args[0]->type.elem->kind!=TY_UBYTE))
+		{
+			die(e->line,"fromBytes expects one byte[] or ubyte[] argument.",NULL);
+		}
+
+		e->type.kind=TY_STRING;
+		break;
+	}
+
+	if (strcmp(e->name,"length")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Length expects one string argument.",NULL);
+		}
+
+		e->type.kind=TY_INT;
+		break;
+	}
+
+	if (strcmp(e->name,"liveCount")==0)
+	{
+		e->type.kind=TY_INT;
+		break;
+	}
+
+	if (strcmp(e->name,"collectCycles")==0)
+	{
+		e->type.kind=TY_VOID;
+		break;
+	}
+
+	if (strcmp(e->name,"yield")==0)
+	{
+		if (e->arg_count!=0)
+		{
+			die(e->line,"Yield() takes no arguments.",NULL);
+		}
+
+		e->type.kind=TY_VOID;
+		break;
+	}
+
+	{
+		int ocount=types_func_overload_count(g_types,e->name);
+		if (ocount==0)
+		{
+			die(e->line,"Unknown function: ",e->name);
+		}
+
+		OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
+		for (int oi=0; oi<ocount && oi<16; oi++)
+		{
+			FuncInfo *fo=types_find_func_idx(g_types,e->name,oi);
+			cands[oi].param_types=fo->param_types;
+			cands[oi].param_count=fo->param_count;
+			cands[oi].min_args=fo->ast ? overload_min_args(fo->ast) : fo->param_count;
+			cands[oi].is_variadic=fo->is_variadic;
+		}
+
+		TypeRef *argtypes=arg_types_of(e);
+
+		int sel=overload_select(cands,ocount<16?ocount:16,argtypes,e->arg_count);
+		if (sel==OVL_NONE)
+		{
+			die(e->line,"No function overload matches these arguments: ",e->name);
+		}
+
+		if (sel==OVL_AMBIG)
+		{
+			die(e->line,"Ambiguous function call: ",e->name);
+		}
+
+		FuncInfo *fi=types_find_func_idx(g_types,e->name,sel);
+		e->anno_overload=sel;
+		fill_default_args(st, e, fi->ast, tc);
+		for (int i=0; i<e->arg_count && i<fi->param_count; i++)
+		{
+			if (!assignable(&fi->param_types[i], &e->args[i]->type))
+			{
+				die(e->line,"Argument type mismatch; add a cast.",NULL);
+			}
+		}
+
+		/* Variadic (`...`) arguments are C-ABI-native: a scalar/long/double (placed
+		   in GP/xmm) or a string (marshalled to char*). Arrays, objects, and maps
+		   cannot be passed through `...`. */
+		if (fi->is_variadic)
+		{
+			for (int i=fi->param_count; i<e->arg_count; i++)
+			{
+				TypeKind ak = e->args[i]->type.kind;
+				if (!(ty_is_int(ak) || ty_is_float(ak) || ak==TY_BOOL || ak==TY_STRING))
+				{
+					die(e->line,"a variadic argument must be a scalar or string.",NULL);
+				}
+			}
+		}
+
+		e->type=fi->ret_type;
+	}
+	break;
 	}
 }
 
@@ -5469,7 +5559,11 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 				int covered=0;
 				for (int j=0; j<nseen; j++)
 				{
-					if (seen[j]==ord) { covered=1; break; }
+					if (seen[j]==ord)
+					{
+						covered=1;
+						break;
+					}
 				}
 
 				if (!covered)
@@ -5764,7 +5858,10 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	int have_elem = rc->type.elem != NULL;
 	TypeRef T;
 	memset(&T, 0, sizeof(T));
-	if (have_elem) { T = typeref_deepcopy(rc->type.elem); }
+	if (have_elem)
+	{
+		T = typeref_deepcopy(rc->type.elem);
+	}
 	g_lam_count = lam_save;
 	g_lambda_seq = seq_save;
 
@@ -6088,15 +6185,24 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 
 	int ch = 0;
 	int c = frame_expr_depth(e->lhs, depth_out, args_out);
-	if (c > ch) { ch = c; }
+	if (c > ch)
+	{
+		ch = c;
+	}
 	c = frame_expr_depth(e->rhs, depth_out, args_out);
-	if (c > ch) { ch = c; }
+	if (c > ch)
+	{
+		ch = c;
+	}
 	if (is_call)
 	{
 		for (int i = 0; i < e->arg_count; i++)
 		{
 			c = frame_expr_depth(e->args[i], depth_out, args_out);
-			if (c > ch) { ch = c; }
+			if (c > ch)
+			{
+				ch = c;
+			}
 		}
 	}
 
@@ -6105,7 +6211,10 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 	if (e->kind == EX_LAMBDA && e->lam && !e->lam->is_block)
 	{
 		c = frame_expr_depth(e->lam->body_expr, depth_out, args_out);
-		if (c > ch) { ch = c; }
+		if (c > ch)
+		{
+			ch = c;
+		}
 	}
 
 	int d = leaf ? 0 : (1 + ch);
@@ -6172,15 +6281,24 @@ static int frame_scratch_bytes(Expr *e, int *max_out)
 
 	int child = 0;
 	int c = frame_scratch_bytes(e->lhs, max_out);
-	if (c > child) { child = c; }
+	if (c > child)
+	{
+		child = c;
+	}
 	c = frame_scratch_bytes(e->rhs, max_out);
-	if (c > child) { child = c; }
+	if (c > child)
+	{
+		child = c;
+	}
 	if (e->kind==EX_CALL || e->kind==EX_METHOD_CALL || e->kind==EX_NEW)
 	{
 		for (int i = 0; i < e->arg_count; i++)
 		{
 			c = frame_scratch_bytes(e->args[i], max_out);
-			if (c > child) { child = c; }
+			if (c > child)
+			{
+				child = c;
+			}
 		}
 	}
 
@@ -6189,7 +6307,10 @@ static int frame_scratch_bytes(Expr *e, int *max_out)
 	if (e->kind == EX_LAMBDA && e->lam && !e->lam->is_block)
 	{
 		c = frame_scratch_bytes(e->lam->body_expr, max_out);
-		if (c > child) { child = c; }
+		if (c > child)
+		{
+			child = c;
+		}
 	}
 
 	int total = frame_node_block(e) + child;
@@ -6383,13 +6504,13 @@ static int p5_stmt_has_exit(Stmt *s)
 
 	switch (s->kind)
 	{
-		case ST_RETURN:
-		case ST_THROW:
-		case ST_BREAK:
-		case ST_TRY:
-			return 1;
-		default:
-			break;
+	case ST_RETURN:
+	case ST_THROW:
+	case ST_BREAK:
+	case ST_TRY:
+		return 1;
+	default:
+		break;
 	}
 
 	return p5_stmt_has_exit(s->for_init)

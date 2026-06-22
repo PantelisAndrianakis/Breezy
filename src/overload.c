@@ -10,25 +10,53 @@
    discriminators in practice. */
 static void encode_one(char *out, size_t cap, int *n, const TypeRef *t)
 {
-	#define PUT(ch) do { if (*n + 1 < (int)cap) { out[(*n)++] = (char)(ch); } } while (0)
-	#define PUTS(s) do { const char *_p = (s); while (*_p) { PUT(*_p++); } } while (0)
+#define PUT(ch) do { if (*n + 1 < (int)cap) { out[(*n)++] = (char)(ch); } } while (0)
+#define PUTS(s) do { const char *_p = (s); while (*_p) { PUT(*_p++); } } while (0)
 	char buf[80];
 	switch (t->kind)
 	{
-	case TY_BOOL:   PUT('b'); break;
-	case TY_BYTE:   PUT('c'); break;
-	case TY_UBYTE:  PUT('C'); break;
-	case TY_SHORT:  PUT('h'); break;
-	case TY_USHORT: PUT('H'); break;
-	case TY_INT:    PUT('i'); break;
-	case TY_UINT:   PUT('I'); break;
-	case TY_LONG:   PUT('l'); break;
-	case TY_ULONG:  PUT('L'); break;
-	case TY_FLOAT:  PUT('f'); break;
-	case TY_DOUBLE: PUT('d'); break;
-	case TY_STRING: PUT('S'); break;
-	case TY_VOID:   PUT('v'); break;
-	case TY_NULL:   PUT('n'); break;
+	case TY_BOOL:
+		PUT('b');
+		break;
+	case TY_BYTE:
+		PUT('c');
+		break;
+	case TY_UBYTE:
+		PUT('C');
+		break;
+	case TY_SHORT:
+		PUT('h');
+		break;
+	case TY_USHORT:
+		PUT('H');
+		break;
+	case TY_INT:
+		PUT('i');
+		break;
+	case TY_UINT:
+		PUT('I');
+		break;
+	case TY_LONG:
+		PUT('l');
+		break;
+	case TY_ULONG:
+		PUT('L');
+		break;
+	case TY_FLOAT:
+		PUT('f');
+		break;
+	case TY_DOUBLE:
+		PUT('d');
+		break;
+	case TY_STRING:
+		PUT('S');
+		break;
+	case TY_VOID:
+		PUT('v');
+		break;
+	case TY_NULL:
+		PUT('n');
+		break;
 	case TY_OBJECT:
 		snprintf(buf, sizeof(buf), "O%d%s", (int)strlen(t->class_name), t->class_name);
 		PUTS(buf);
@@ -44,8 +72,14 @@ static void encode_one(char *out, size_t cap, int *n, const TypeRef *t)
 		break;
 	case TY_ENTRY:
 		PUT('E');
-		if (t->elem)  { encode_one(out, cap, n, t->elem); }
-		if (t->elem2) { encode_one(out, cap, n, t->elem2); }
+		if (t->elem)
+		{
+			encode_one(out, cap, n, t->elem);
+		}
+		if (t->elem2)
+		{
+			encode_one(out, cap, n, t->elem2);
+		}
 		break;
 	case TY_GENERIC:
 		snprintf(buf, sizeof(buf), "G%d%s", (int)strlen(t->class_name), t->class_name);
@@ -64,7 +98,10 @@ static void encode_one(char *out, size_t cap, int *n, const TypeRef *t)
 		break;
 	case TY_CHANNEL:
 		PUT('N');
-		if (t->elem) { encode_one(out, cap, n, t->elem); }
+		if (t->elem)
+		{
+			encode_one(out, cap, n, t->elem);
+		}
 		break;
 	default:
 		/* Handle kinds (Timer/Socket/...): injective "Z<enum>". */
@@ -72,8 +109,8 @@ static void encode_one(char *out, size_t cap, int *n, const TypeRef *t)
 		PUTS(buf);
 		break;
 	}
-	#undef PUTS
-	#undef PUT
+#undef PUTS
+#undef PUT
 }
 
 void overload_encode_types(char *out, size_t cap, const TypeRef *types, int count)

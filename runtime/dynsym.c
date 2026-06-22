@@ -7,10 +7,10 @@
 #include <stdio.h>
 
 #ifdef _WIN32
-  #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #else
-  #include <dlfcn.h>
+#include <dlfcn.h>
 #endif
 
 static void *(*g_resolver)(const char *name) = NULL;
@@ -35,22 +35,34 @@ void *bzy_dynsym(const char *name)
 /* The dlsym resolver bound by Ffi.bind (one active library handle). */
 #ifdef _WIN32
 static HMODULE g_lib = NULL;
-static void *dlsym_resolver(const char *name) { return g_lib ? (void*)GetProcAddress(g_lib, name) : NULL; }
+static void *dlsym_resolver(const char *name)
+{
+	return g_lib ? (void*)GetProcAddress(g_lib, name) : NULL;
+}
 int64_t bzy_ffi_bind(void *path)
 {
 	HMODULE h = LoadLibraryA(bzy_str_data(path));
-	if (!h) { return 0; }
+	if (!h)
+	{
+		return 0;
+	}
 	g_lib = h;
 	bzy_dyn_set_resolver(dlsym_resolver);
 	return 1;
 }
 #else
 static void *g_lib = NULL;
-static void *dlsym_resolver(const char *name) { return g_lib ? dlsym(g_lib, name) : NULL; }
+static void *dlsym_resolver(const char *name)
+{
+	return g_lib ? dlsym(g_lib, name) : NULL;
+}
 int64_t bzy_ffi_bind(void *path)
 {
 	void *h = dlopen(bzy_str_data(path), RTLD_NOW | RTLD_GLOBAL);
-	if (!h) { return 0; }
+	if (!h)
+	{
+		return 0;
+	}
 	g_lib = h;
 	bzy_dyn_set_resolver(dlsym_resolver);
 	return 1;

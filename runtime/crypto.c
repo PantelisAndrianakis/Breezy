@@ -16,11 +16,17 @@ static void *dl_open_first(const char **names)
 	for (int i = 0; names[i]; i++)
 	{
 		HMODULE h = LoadLibraryA(names[i]);
-		if (h) { return (void*)h; }
+		if (h)
+		{
+			return (void*)h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return (void*)GetProcAddress((HMODULE)h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return (void*)GetProcAddress((HMODULE)h, n);
+}
 #else
 #include <dlfcn.h>
 static void *dl_open_first(const char **names)
@@ -28,11 +34,17 @@ static void *dl_open_first(const char **names)
 	for (int i = 0; names[i]; i++)
 	{
 		void *h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
-		if (h) { return h; }
+		if (h)
+		{
+			return h;
+		}
 	}
 	return NULL;
 }
-static void *dl_sym(void *h, const char *n) { return dlsym(h, n); }
+static void *dl_sym(void *h, const char *n)
+{
+	return dlsym(h, n);
+}
 #endif
 
 static struct
@@ -50,8 +62,14 @@ static struct
 /* Resolve libcrypto once. 1 on success, 0 if OpenSSL is unavailable. */
 int bzy_crypto_load(void)
 {
-	if (cc.loaded == 1) { return 1; }
-	if (cc.loaded == -1) { return 0; }
+	if (cc.loaded == 1)
+	{
+		return 1;
+	}
+	if (cc.loaded == -1)
+	{
+		return 0;
+	}
 
 #ifdef _WIN32
 	const char *names[] = { "libcrypto-3-x64.dll", "libcrypto-3.dll", "libcrypto.dll", NULL };
@@ -59,9 +77,13 @@ int bzy_crypto_load(void)
 	const char *names[] = { "libcrypto.so.3", "libcrypto.so", "libcrypto.so.1.1", NULL };
 #endif
 	void *h = dl_open_first(names);
-	if (!h) { cc.loaded = -1; return 0; }
+	if (!h)
+	{
+		cc.loaded = -1;
+		return 0;
+	}
 
-	#define CSYM(field, name) do { \
+#define CSYM(field, name) do { \
 		*(void**)(&cc.field) = dl_sym(h, name); \
 		if (!cc.field) { cc.loaded = -1; return 0; } \
 	} while (0)
@@ -72,7 +94,7 @@ int bzy_crypto_load(void)
 	CSYM(HMAC, "HMAC");
 	CSYM(PKCS5_PBKDF2_HMAC, "PKCS5_PBKDF2_HMAC");
 	CSYM(RAND_bytes, "RAND_bytes");
-	#undef CSYM
+#undef CSYM
 
 	cc.loaded = 1;
 	return 1;

@@ -628,7 +628,8 @@ static const char DESKTOP_CORE[] =
 	"	}\n"
 	"}\n";
 
-const char *BZY_DESKTOP_PRELUDE[] = {
+const char *BZY_DESKTOP_PRELUDE[] =
+{
 	DESKTOP_EXTERNS_A,
 	DESKTOP_EXTERNS_B,
 	DESKTOP_EXTERNS_C,

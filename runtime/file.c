@@ -674,9 +674,18 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 		}
 	}
 
-	if (attr & 2)   /* HIDDEN.  */ { file_set_xattr(p, "user.bzy.hidden",  on); }
-	if (attr & 4)   /* SYSTEM.  */ { file_set_xattr(p, "user.bzy.system",  on); }
-	if (attr & 32)  /* ARCHIVE. */ { file_set_xattr(p, "user.bzy.archive", on); }
+	if (attr & 2)   /* HIDDEN.  */
+	{
+		file_set_xattr(p, "user.bzy.hidden",  on);
+	}
+	if (attr & 4)   /* SYSTEM.  */
+	{
+		file_set_xattr(p, "user.bzy.system",  on);
+	}
+	if (attr & 32)  /* ARCHIVE. */
+	{
+		file_set_xattr(p, "user.bzy.archive", on);
+	}
 #endif
 }
 
@@ -703,9 +712,18 @@ int64_t bzy_file_has_attribute(void *path, int64_t attr)
 		return (st.st_mode & 0222) ? 0 : 1;   /* READONLY = no write bits. */
 	}
 
-	if (attr & 2)  { return file_has_xattr(p, "user.bzy.hidden");  }   /* HIDDEN.  */
-	if (attr & 4)  { return file_has_xattr(p, "user.bzy.system");  }   /* SYSTEM.  */
-	if (attr & 32) { return file_has_xattr(p, "user.bzy.archive"); }   /* ARCHIVE. */
+	if (attr & 2)
+	{
+		return file_has_xattr(p, "user.bzy.hidden");     /* HIDDEN.  */
+	}
+	if (attr & 4)
+	{
+		return file_has_xattr(p, "user.bzy.system");     /* SYSTEM.  */
+	}
+	if (attr & 32)
+	{
+		return file_has_xattr(p, "user.bzy.archive");    /* ARCHIVE. */
+	}
 
 	return 0;
 #endif

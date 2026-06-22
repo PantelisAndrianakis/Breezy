@@ -251,7 +251,7 @@ int main(int argc, char *argv[])
 	/* Append a .bzy_app metadata section if any [app] fields are set.
 	   Strings are emitted as byte sequences to avoid NASM quoting issues. */
 	int has_app_info = app_cfg.name[0] || app_cfg.version[0]
-	                   || app_cfg.description[0] || app_cfg.author[0];
+					   || app_cfg.description[0] || app_cfg.author[0];
 	if (has_app_info)
 	{
 		FILE *af = fopen("out.asm", "a");
@@ -304,8 +304,8 @@ int main(int argc, char *argv[])
 	/* On Windows: if [app] icon or metadata is set, generate a resource file and
 	   compile it with windres so the icon and VERSIONINFO are embedded in the exe. */
 	int has_rc = (target == TARGET_WINDOWS)
-	             && (app_cfg.icon[0] || app_cfg.name[0] || app_cfg.version[0]
-	                 || app_cfg.description[0] || app_cfg.author[0]);
+				 && (app_cfg.icon[0] || app_cfg.name[0] || app_cfg.version[0]
+					 || app_cfg.description[0] || app_cfg.author[0]);
 	if (has_rc)
 	{
 		FILE *rc = fopen("out.rc", "w");
@@ -316,8 +316,8 @@ int main(int argc, char *argv[])
 			{
 				char icon_path[700];
 				snprintf(icon_path, sizeof(icon_path), "%s/%s",
-				         app_cfg.project_dir[0] ? app_cfg.project_dir : ".",
-				         app_cfg.icon);
+						 app_cfg.project_dir[0] ? app_cfg.project_dir : ".",
+						 app_cfg.icon);
 				/* Forward slashes; windres accepts them on Windows. */
 				for (char *cp = icon_path; *cp; cp++)
 				{
@@ -337,20 +337,20 @@ int main(int argc, char *argv[])
 			}
 
 			fprintf(rc,
-			        "VS_VERSION_INFO VERSIONINFO\n"
-			        " FILEVERSION %d,%d,%d,%d\n"
-			        " PRODUCTVERSION %d,%d,%d,%d\n"
-			        " FILEFLAGSMASK 0x3fL\n"
-			        " FILEFLAGS 0x0L\n"
-			        " FILEOS 0x40004L\n"
-			        " FILETYPE 0x1L\n"
-			        " FILESUBTYPE 0x0L\n"
-			        "BEGIN\n"
-			        "    BLOCK \"StringFileInfo\"\n"
-			        "    BEGIN\n"
-			        "        BLOCK \"040904b0\"\n"
-			        "        BEGIN\n",
-			        v0, v1, v2, v3, v0, v1, v2, v3);
+					"VS_VERSION_INFO VERSIONINFO\n"
+					" FILEVERSION %d,%d,%d,%d\n"
+					" PRODUCTVERSION %d,%d,%d,%d\n"
+					" FILEFLAGSMASK 0x3fL\n"
+					" FILEFLAGS 0x0L\n"
+					" FILEOS 0x40004L\n"
+					" FILETYPE 0x1L\n"
+					" FILESUBTYPE 0x0L\n"
+					"BEGIN\n"
+					"    BLOCK \"StringFileInfo\"\n"
+					"    BEGIN\n"
+					"        BLOCK \"040904b0\"\n"
+					"        BEGIN\n",
+					v0, v1, v2, v3, v0, v1, v2, v3);
 
 			if (app_cfg.name[0])
 			{
@@ -371,13 +371,13 @@ int main(int argc, char *argv[])
 			}
 
 			fprintf(rc,
-			        "        END\n"
-			        "    END\n"
-			        "    BLOCK \"VarFileInfo\"\n"
-			        "    BEGIN\n"
-			        "        VALUE \"Translation\", 0x0409, 1200\n"
-			        "    END\n"
-			        "END\n");
+					"        END\n"
+					"    END\n"
+					"    BLOCK \"VarFileInfo\"\n"
+					"    BEGIN\n"
+					"        VALUE \"Translation\", 0x0409, 1200\n"
+					"    END\n"
+					"END\n");
 			fclose(rc);
 
 			if (system("windres out.rc -o out_res.obj") != 0)
@@ -403,7 +403,7 @@ int main(int argc, char *argv[])
 	else
 	{
 		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
-		               has_rc ? " out_res.obj" : "");
+					   has_rc ? " out_res.obj" : "");
 	}
 	for (int i = 0; i < cfg.nlib_paths; i++)
 	{

@@ -66,10 +66,22 @@ static int nn_guard_var(Expr *cond)
 		var = cond->rhs;
 		lit = cond->lhs;
 		/* Flip the operator so it reads var REL lit. */
-		if (op==TOKEN_LT) op = TOKEN_GT;
-		else if (op==TOKEN_GT) op = TOKEN_LT;
-		else if (op==TOKEN_LTE) op = TOKEN_GTE;
-		else if (op==TOKEN_GTE) op = TOKEN_LTE;
+		if (op==TOKEN_LT)
+		{
+			op = TOKEN_GT;
+		}
+		else if (op==TOKEN_GT)
+		{
+			op = TOKEN_LT;
+		}
+		else if (op==TOKEN_LTE)
+		{
+			op = TOKEN_GTE;
+		}
+		else if (op==TOKEN_GTE)
+		{
+			op = TOKEN_LTE;
+		}
 	}
 	else
 	{
@@ -98,7 +110,7 @@ static void nn_mark_expr(Expr *e, NonNeg *s)
 	}
 
 	if (e->kind==EX_BINARY && (e->op==TOKEN_SLASH || e->op==TOKEN_PERCENT)
-		&& e->lhs->kind==EX_IDENT && nn_has(s, e->lhs->anno_int))
+			&& e->lhs->kind==EX_IDENT && nn_has(s, e->lhs->anno_int))
 	{
 		e->anno_nonneg = 1;
 	}

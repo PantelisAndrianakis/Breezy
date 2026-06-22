@@ -52,16 +52,26 @@ typedef struct
 /* Append more bytes from the socket; sets eof at a clean close. 1 = bytes added. */
 static int rd_fill(Reader *r)
 {
-	if (r->eof) { return 0; }
+	if (r->eof)
+	{
+		return 0;
+	}
 	if (r->len + 65536 > r->cap)
 	{
 		r->cap = r->cap ? r->cap * 2 : 65536;
-		if (r->cap < r->len + 65536) { r->cap = r->len + 65536; }
+		if (r->cap < r->len + 65536)
+		{
+			r->cap = r->len + 65536;
+		}
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
 	int n = bzy_sock_recv(r->sock, r->buf + r->len, 65536, -1);
-	if (n <= 0) { r->eof = 1; return 0; }
+	if (n <= 0)
+	{
+		r->eof = 1;
+		return 0;
+	}
 	r->len += n;
 	return 1;
 }
@@ -71,7 +81,10 @@ static int rd_need(Reader *r, int64_t need)
 {
 	while (r->len - r->pos < need)
 	{
-		if (!rd_fill(r)) { return 0; }
+		if (!rd_fill(r))
+		{
+			return 0;
+		}
 	}
 
 	return 1;
@@ -81,7 +94,7 @@ static int rd_need(Reader *r, int64_t need)
 static int32_t be32(const char *p)
 {
 	return (int32_t)( ((uint32_t)(unsigned char)p[0] << 24) | ((uint32_t)(unsigned char)p[1] << 16)
-	                | ((uint32_t)(unsigned char)p[2] << 8)  |  (uint32_t)(unsigned char)p[3] );
+					  | ((uint32_t)(unsigned char)p[2] << 8)  |  (uint32_t)(unsigned char)p[3] );
 }
 
 /* Read one backend message: a 1-byte tag + an int32 length (length covers itself,
@@ -91,12 +104,21 @@ static int32_t be32(const char *p)
    rd_msg call (which may realloc) -- consume it before reading again. */
 static int rd_msg(Reader *r, char *tag, char **body, int64_t *blen)
 {
-	if (!rd_need(r, 5)) { return 0; }
+	if (!rd_need(r, 5))
+	{
+		return 0;
+	}
 	*tag = r->buf[r->pos];
 	int32_t L = be32(r->buf + r->pos + 1);
-	if (L < 4) { return 0; }
+	if (L < 4)
+	{
+		return 0;
+	}
 	int64_t total = 1 + (int64_t)L;          /* tag + length-field + body. */
-	if (!rd_need(r, total)) { return 0; }
+	if (!rd_need(r, total))
+	{
+		return 0;
+	}
 	*body = r->buf + r->pos + 5;
 	*blen = (int64_t)L - 4;
 	r->pos += total;
@@ -195,11 +217,26 @@ static int b64_encode(const unsigned char *in, int len, char *out)
 
 static int b64_val(char c)
 {
-	if (c >= 'A' && c <= 'Z') { return c - 'A'; }
-	if (c >= 'a' && c <= 'z') { return c - 'a' + 26; }
-	if (c >= '0' && c <= '9') { return c - '0' + 52; }
-	if (c == '+') { return 62; }
-	if (c == '/') { return 63; }
+	if (c >= 'A' && c <= 'Z')
+	{
+		return c - 'A';
+	}
+	if (c >= 'a' && c <= 'z')
+	{
+		return c - 'a' + 26;
+	}
+	if (c >= '0' && c <= '9')
+	{
+		return c - '0' + 52;
+	}
+	if (c == '+')
+	{
+		return 62;
+	}
+	if (c == '/')
+	{
+		return 63;
+	}
 	return -1;   /* '=' or padding/whitespace. */
 }
 
@@ -211,9 +248,15 @@ static int b64_decode(const char *in, int inlen, unsigned char *out)
 	int acc = 0;
 	for (int i = 0; i < inlen; i++)
 	{
-		if (in[i] == '=') { break; }
+		if (in[i] == '=')
+		{
+			break;
+		}
 		int v = b64_val(in[i]);
-		if (v < 0) { return -1; }
+		if (v < 0)
+		{
+			return -1;
+		}
 		acc = (acc << 6) | v;
 		bits += 6;
 		if (bits >= 8)
@@ -304,14 +347,20 @@ static int scram_field(const char *msg, char key, char *out, int outcap)
 			const char *v = p + 2;
 			const char *e = strchr(v, ',');
 			int n = e ? (int)(e - v) : (int)strlen(v);
-			if (n >= outcap) { n = outcap - 1; }
+			if (n >= outcap)
+			{
+				n = outcap - 1;
+			}
 			memcpy(out, v, n);
 			out[n] = '\0';
 			return n;
 		}
 
 		const char *nx = strchr(p, ',');
-		if (!nx) { break; }
+		if (!nx)
+		{
+			break;
+		}
 		p = nx + 1;
 	}
 
@@ -355,7 +404,11 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 		w_bytes(&w, client_first, (int64_t)strlen(client_first));
 		int ok = send_tagged(sock, 'p', w.p, w.len);
 		free(w.p);
-		if (!ok) { bzy_db_set_error("Failed to send the SCRAM client-first message."); return 0; }
+		if (!ok)
+		{
+			bzy_db_set_error("Failed to send the SCRAM client-first message.");
+			return 0;
+		}
 	}
 
 	/* Read 'R' AuthenticationSASLContinue (sub 11): the server-first-message. */
@@ -370,14 +423,17 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 
 	char server_first[512];
 	int sflen = (int)(blen - 4);
-	if (sflen >= (int)sizeof(server_first)) { sflen = (int)sizeof(server_first) - 1; }
+	if (sflen >= (int)sizeof(server_first))
+	{
+		sflen = (int)sizeof(server_first) - 1;
+	}
 	memcpy(server_first, body + 4, sflen);
 	server_first[sflen] = '\0';
 
 	char combined[128], salt_b64[256], iters_s[16];
 	if (scram_field(server_first, 'r', combined, sizeof(combined)) < 0
-		|| scram_field(server_first, 's', salt_b64, sizeof(salt_b64)) < 0
-		|| scram_field(server_first, 'i', iters_s, sizeof(iters_s)) < 0)
+			|| scram_field(server_first, 's', salt_b64, sizeof(salt_b64)) < 0
+			|| scram_field(server_first, 'i', iters_s, sizeof(iters_s)) < 0)
 	{
 		bzy_db_set_error("Malformed SCRAM server-first message.");
 		return 0;
@@ -422,7 +478,10 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 	bzy_crypto_hmac_sha256(server_key, 32, (const unsigned char*)auth_msg, strlen(auth_msg), server_sig);
 
 	unsigned char proof[32];
-	for (int i = 0; i < 32; i++) { proof[i] = client_key[i] ^ client_sig[i]; }
+	for (int i = 0; i < 32; i++)
+	{
+		proof[i] = client_key[i] ^ client_sig[i];
+	}
 	char proof_b64[64];
 	b64_encode(proof, 32, proof_b64);
 
@@ -443,7 +502,10 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 
 	char server_final[128];
 	int ffl = (int)(blen - 4);
-	if (ffl >= (int)sizeof(server_final)) { ffl = (int)sizeof(server_final) - 1; }
+	if (ffl >= (int)sizeof(server_final))
+	{
+		ffl = (int)sizeof(server_final) - 1;
+	}
 	memcpy(server_final, body + 4, ffl);
 	server_final[ffl] = '\0';
 
@@ -498,10 +560,22 @@ static void set_error_from_response(const char *body, int64_t blen)
 	{
 		char code = body[i++];
 		const char *val = body + i;
-		while (i < blen && body[i] != 0) { i++; }   /* Scan to the value's NUL. */
-		if (i < blen) { i++; }                        /* Step past the NUL. */
-		if (code == 'C') { sqlstate = val; }
-		else if (code == 'M') { message = val; }
+		while (i < blen && body[i] != 0)
+		{
+			i++;    /* Scan to the value's NUL. */
+		}
+		if (i < blen)
+		{
+			i++;    /* Step past the NUL. */
+		}
+		if (code == 'C')
+		{
+			sqlstate = val;
+		}
+		else if (code == 'M')
+		{
+			message = val;
+		}
 	}
 
 	char buf[512];
@@ -532,23 +606,40 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *password, const
 		if (tag == 'R')                              /* Authentication. */
 		{
 			int32_t sub = (blen >= 4) ? be32(body) : -1;
-			if (sub == 0) { continue; }              /* AuthenticationOk. */
+			if (sub == 0)
+			{
+				continue;    /* AuthenticationOk. */
+			}
 			else if (sub == 3)                       /* Cleartext password. */
 			{
-				if (!auth_cleartext(sock, password)) { bzy_db_set_error("Failed to send the cleartext password."); break; }
+				if (!auth_cleartext(sock, password))
+				{
+					bzy_db_set_error("Failed to send the cleartext password.");
+					break;
+				}
 				continue;
 			}
 			else if (sub == 5)                       /* MD5: a 4-byte salt follows. */
 			{
-				if (blen < 8) { bzy_db_set_error("Malformed MD5 authentication request."); break; }
+				if (blen < 8)
+				{
+					bzy_db_set_error("Malformed MD5 authentication request.");
+					break;
+				}
 				unsigned char salt[4];
 				memcpy(salt, body + 4, 4);
-				if (!auth_md5(sock, user, password, salt)) { break; }
+				if (!auth_md5(sock, user, password, salt))
+				{
+					break;
+				}
 				continue;
 			}
 			else if (sub == 10)                      /* SASL (SCRAM-SHA-256). */
 			{
-				if (!auth_scram(&r, sock, user, password)) { break; }
+				if (!auth_scram(&r, sock, user, password))
+				{
+					break;
+				}
 				continue;
 			}
 
@@ -569,7 +660,10 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *password, const
 	}
 
 	/* A clean EOF with no prior error (E / unsupported-auth set theirs above). */
-	if (!ok && r.eof) { bzy_db_set_error("Connection closed during PostgreSQL startup."); }
+	if (!ok && r.eof)
+	{
+		bzy_db_set_error("Connection closed during PostgreSQL startup.");
+	}
 	free(r.buf);
 	return ok;
 }
@@ -587,7 +681,11 @@ static int     g_pgc_vt_built;
 
 static void *pgc_vtable(void)
 {
-	if (!g_pgc_vt_built) { g_pgc_vt[0] = (int64_t)&g_pgc_ti[0]; g_pgc_vt_built = 1; }
+	if (!g_pgc_vt_built)
+	{
+		g_pgc_vt[0] = (int64_t)&g_pgc_ti[0];
+		g_pgc_vt_built = 1;
+	}
 	return &g_pgc_vt[1];
 }
 
@@ -621,7 +719,10 @@ void *bzy_pg_connect(void *host, int64_t port, void *user, void *pass, void *db)
    released when the PgConnection itself is released; the close is idempotent. */
 void bzy_pg_close(void *conn)
 {
-	if (!conn) { return; }
+	if (!conn)
+	{
+		return;
+	}
 	void *sock = *(void**)((char*)conn + PGC_SOCK);
 	if (sock)
 	{
@@ -648,10 +749,19 @@ static int64_t cc_rowcount(const char *tag)
 {
 	int64_t len = (int64_t)strlen(tag);
 	int64_t end = len;
-	while (end > 0 && (tag[end - 1] < '0' || tag[end - 1] > '9')) { end--; }
+	while (end > 0 && (tag[end - 1] < '0' || tag[end - 1] > '9'))
+	{
+		end--;
+	}
 	int64_t start = end;
-	while (start > 0 && tag[start - 1] >= '0' && tag[start - 1] <= '9') { start--; }
-	if (start == end) { return 0; }
+	while (start > 0 && tag[start - 1] >= '0' && tag[start - 1] <= '9')
+	{
+		start--;
+	}
+	if (start == end)
+	{
+		return 0;
+	}
 	return strtoll(tag + start, NULL, 10);
 }
 
@@ -731,8 +841,14 @@ static void *collect_results(Reader *r)
 
 	if (failed || eof)
 	{
-		if (!failed) { bzy_db_set_error("Connection closed during the query."); }
-		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
+		if (!failed)
+		{
+			bzy_db_set_error("Connection closed during the query.");
+		}
+		for (int64_t i = 0; i < nrows; i++)
+		{
+			bzy_release(rowbuf[i]);
+		}
 		free(rowbuf);
 		bzy_release(colnames);
 		return NULL;
@@ -742,7 +858,10 @@ static void *collect_results(Reader *r)
 	if (colnames != NULL)                            /* A row-returning query (even 0 rows). */
 	{
 		rows = bzy_array_new(nrows, 1);
-		for (int64_t i = 0; i < nrows; i++) { arr_set(rows, i, rowbuf[i]); }
+		for (int64_t i = 0; i < nrows; i++)
+		{
+			arr_set(rows, i, rowbuf[i]);
+		}
 	}
 
 	free(rowbuf);
@@ -754,7 +873,11 @@ static void *collect_results(Reader *r)
    the stream is still drained to ReadyForQuery so the connection stays usable. */
 void *bzy_pg_query(void *conn, void *sql)
 {
-	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	if (!conn)
+	{
+		bzy_db_set_error("Query on a null connection.");
+		return NULL;
+	}
 	void *sock = *(void**)((char*)conn + PGC_SOCK);
 
 	const char *s = bzy_str_data(sql);
@@ -775,7 +898,11 @@ void *bzy_pg_query(void *conn, void *sql)
    string[]; a NULL slot binds SQL NULL. */
 void *bzy_pg_query_params(void *conn, void *sql, void *params)
 {
-	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	if (!conn)
+	{
+		bzy_db_set_error("Query on a null connection.");
+		return NULL;
+	}
 	void *sock = *(void**)((char*)conn + PGC_SOCK);
 
 	const char *s = bzy_str_data(sql);
@@ -790,7 +917,11 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		w_i16(&p, 0);
 		int ok = send_tagged(sock, 'P', p.p, p.len);
 		free(p.p);
-		if (!ok) { bzy_db_set_error("Failed to send the Parse message."); return NULL; }
+		if (!ok)
+		{
+			bzy_db_set_error("Failed to send the Parse message.");
+			return NULL;
+		}
 	}
 
 	/* Bind: unnamed portal+statement, all-text params, the values, all-text results. */
@@ -803,7 +934,10 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		for (int64_t i = 0; i < nparams; i++)
 		{
 			void *v = pslots[i];
-			if (!v) { w_i32(&b, -1); }   /* SQL NULL. */
+			if (!v)
+			{
+				w_i32(&b, -1);    /* SQL NULL. */
+			}
 			else
 			{
 				int64_t vl = bzy_str_len(v);
@@ -814,7 +948,11 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		w_i16(&b, 0);                    /* 0 result format codes -> all text. */
 		int ok = send_tagged(sock, 'B', b.p, b.len);
 		free(b.p);
-		if (!ok) { bzy_db_set_error("Failed to send the Bind message."); return NULL; }
+		if (!ok)
+		{
+			bzy_db_set_error("Failed to send the Bind message.");
+			return NULL;
+		}
 	}
 
 	/* Describe the portal (yields RowDescription), Execute all rows, Sync. */
@@ -824,7 +962,11 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		w_cstr(&d, "");
 		int ok = send_tagged(sock, 'D', d.p, d.len);
 		free(d.p);
-		if (!ok) { bzy_db_set_error("Failed to send the Describe message."); return NULL; }
+		if (!ok)
+		{
+			bzy_db_set_error("Failed to send the Describe message.");
+			return NULL;
+		}
 	}
 	{
 		Wbuf x = { 0 };
@@ -832,7 +974,11 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		w_i32(&x, 0);                    /* Max rows: 0 = all. */
 		int ok = send_tagged(sock, 'E', x.p, x.len);
 		free(x.p);
-		if (!ok) { bzy_db_set_error("Failed to send the Execute message."); return NULL; }
+		if (!ok)
+		{
+			bzy_db_set_error("Failed to send the Execute message.");
+			return NULL;
+		}
 	}
 	if (!send_tagged(sock, 'S', "", 0))
 	{

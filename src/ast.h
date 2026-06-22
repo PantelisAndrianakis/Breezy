@@ -135,7 +135,7 @@ static inline int ty_bits(TypeKind k)
 static inline int ty_is_int(TypeKind k)
 {
 	return k == TY_BYTE || k == TY_SHORT || k == TY_INT || k == TY_LONG
-	       || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
+		   || k == TY_UBYTE || k == TY_USHORT || k == TY_UINT || k == TY_ULONG;
 }
 
 /* True for the signed integer kinds. */
@@ -162,7 +162,7 @@ static inline int ty_is_float(TypeKind k)
 static inline int ty_is_simd(TypeKind k)
 {
 	return k == TY_F64X2 || k == TY_F32X4 || k == TY_I32X4
-	       || k == TY_F64X4 || k == TY_F32X8 || k == TY_I32X8;
+		   || k == TY_F64X4 || k == TY_F32X8 || k == TY_I32X8;
 }
 
 /* The stack-slot / move width of a SIMD value in bytes: 16 for the SSE xmm
@@ -177,12 +177,12 @@ static inline int ty_simd_bytes(TypeKind k)
 static inline int ty_is_managed(TypeKind k)
 {
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
-	       || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
-	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_DTLSSOCKET || k == TY_DTLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
-	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
-	       || k == TY_XMLNODE || k == TY_JSONVALUE || k == TY_HTTPREQUEST || k == TY_HTTPRESPONSE
-	       || k == TY_PGCONNECTION || k == TY_MYCONNECTION || k == TY_DBRESULT || k == TY_DBROW
-	       || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */
+		   || k == TY_LISTENER || k == TY_SOCKET || k == TY_UDPSOCKET || k == TY_DATAGRAM
+		   || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_DTLSSOCKET || k == TY_DTLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
+		   || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
+		   || k == TY_XMLNODE || k == TY_JSONVALUE || k == TY_HTTPREQUEST || k == TY_HTTPRESPONSE
+		   || k == TY_PGCONNECTION || k == TY_MYCONNECTION || k == TY_DBRESULT || k == TY_DBROW
+		   || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */

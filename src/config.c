@@ -115,7 +115,7 @@ static void parse_string_value(const char *val, char *out, int out_size)
    "[app]"), each `key = value` line is trimmed and handed to `fn(key, val, ctx)`.
    Comments (#), blanks, and lines outside the section are skipped. */
 static void config_scan(const char *text, const char *section,
-                        void (*fn)(const char *, const char *, void *), void *ctx)
+						void (*fn)(const char *, const char *, void *), void *ctx)
 {
 	size_t seclen = strlen(section);
 	int in_section = 0;

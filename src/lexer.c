@@ -69,7 +69,7 @@ static void json_str(const char *s)
 }
 
 void lexer_diag(const char *src, const char *file, int line, int col,
-                const char *msg, const char *arg)
+				const char *msg, const char *arg)
 {
 	if (!file)
 	{

@@ -74,7 +74,7 @@ static int ring_enqueue(Channel *c, int64_t v)
 		{
 			/* Cell is free and ours to claim. */
 			if (__atomic_compare_exchange_n(&c->enq_pos, &pos, pos + 1, 1,
-			                                __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+											__ATOMIC_RELAXED, __ATOMIC_RELAXED))
 			{
 				cell->val = v;
 				__atomic_store_n(&cell->seq, pos + 1, __ATOMIC_RELEASE);   /* Publish to receivers. */
@@ -105,7 +105,7 @@ static int ring_dequeue(Channel *c, int64_t *out)
 		if (dif == 0)
 		{
 			if (__atomic_compare_exchange_n(&c->deq_pos, &pos, pos + 1, 1,
-			                                __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+											__ATOMIC_RELAXED, __ATOMIC_RELAXED))
 			{
 				*out = cell->val;
 				__atomic_store_n(&cell->seq, pos + c->cap, __ATOMIC_RELEASE);   /* Free the cell one lap on. */

@@ -17,7 +17,7 @@ static void *grow_to(void *arr, int old_cap, int ncap, int *cap, size_t elem_siz
 	}
 
 	memset((char *)n + (size_t)old_cap * elem_size, 0,
-	       (size_t)(ncap - old_cap) * elem_size);
+		   (size_t)(ncap - old_cap) * elem_size);
 	*cap = ncap;
 	return n;
 }

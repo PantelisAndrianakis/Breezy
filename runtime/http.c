@@ -3,12 +3,12 @@
 #include <string.h>
 #include <stdio.h>
 #ifdef _WIN32
-  #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
-  #include <winhttp.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winhttp.h>
 #else
-  #include <pthread.h>
-  #include <curl/curl.h>
+#include <pthread.h>
+#include <curl/curl.h>
 #endif
 
 /* readUrl context: the worker thread fills body/err; the breeze wraps body in a
@@ -92,7 +92,7 @@ static void url_fetch(void *vp)
 
 	if (!WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
 							WINHTTP_NO_REQUEST_DATA, 0, 0, 0)
-		|| !WinHttpReceiveResponse(req, NULL))
+			|| !WinHttpReceiveResponse(req, NULL))
 	{
 		WinHttpCloseHandle(req);
 		WinHttpCloseHandle(conn);

@@ -75,16 +75,16 @@ static int expr_has_call(Expr *e)
 
 	switch (e->kind)
 	{
-		case EX_CALL:
-		case EX_METHOD_CALL:
-		case EX_NEW:
-		case EX_NEWARRAY:
-		case EX_NEWMAP:
-		case EX_NEWGEN:
-		case EX_NEWCHANNEL:
-			return 1;
-		default:
-			break;
+	case EX_CALL:
+	case EX_METHOD_CALL:
+	case EX_NEW:
+	case EX_NEWARRAY:
+	case EX_NEWMAP:
+	case EX_NEWGEN:
+	case EX_NEWCHANNEL:
+		return 1;
+	default:
+		break;
 	}
 
 	if (e->type.kind == TY_STRING)
@@ -305,7 +305,7 @@ static void scan_stmt(Stmt *s, int depth, Ctx *c)
 	/* Record this tick if any of its direct expressions emits a call: a double held
 	   in a caller-saved XMM register must not be live across it. */
 	if (expr_has_call(s->cond) || expr_has_call(s->decl_init) || expr_has_call(s->value)
-		|| expr_has_call(s->target) || expr_has_call(s->ret_val) || expr_has_call(s->expr))
+			|| expr_has_call(s->target) || expr_has_call(s->ret_val) || expr_has_call(s->expr))
 	{
 		c->ctick = grow_ensure(c->ctick, c->nctick, &c->ctick_cap, sizeof(*c->ctick));
 		c->ctick[c->nctick++] = my;

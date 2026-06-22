@@ -98,7 +98,11 @@ static void arr_set(void *arr, int64_t i, void *p)
 /* Store a double's bit pattern into the scalar slot (and read it back). */
 static void jv_set_double(void *v, double d)
 {
-	union { double d; int64_t i; } u;
+	union
+	{
+		double d;
+		int64_t i;
+	} u;
 	u.d = d;
 	JSCA(v) = u.i;
 }
@@ -120,16 +124,29 @@ static void fail(Scan *s, const char *msg)
 	}
 }
 
-static int at_end(Scan *s) { return s->p >= s->end || s->err != NULL; }
+static int at_end(Scan *s)
+{
+	return s->p >= s->end || s->err != NULL;
+}
 
-static int peek(Scan *s) { return s->p < s->end ? (unsigned char)*s->p : -1; }
+static int peek(Scan *s)
+{
+	return s->p < s->end ? (unsigned char)*s->p : -1;
+}
 
 static void advance(Scan *s)
 {
 	if (s->p < s->end)
 	{
-		if (*s->p == '\n') { s->line++; s->col = 1; }
-		else { s->col++; }
+		if (*s->p == '\n')
+		{
+			s->line++;
+			s->col = 1;
+		}
+		else
+		{
+			s->col++;
+		}
 		s->p++;
 	}
 }
@@ -139,21 +156,34 @@ static void skip_ws(Scan *s)
 	while (!at_end(s))
 	{
 		int c = peek(s);
-		if (c == ' ' || c == '\t' || c == '\r' || c == '\n') { advance(s); }
-		else { break; }
+		if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+		{
+			advance(s);
+		}
+		else
+		{
+			break;
+		}
 	}
 }
 
 /* ---- a growable text buffer (for decoded strings) --------------------------- */
 
-typedef struct { char *data; size_t len, cap; } TextBuf;
+typedef struct
+{
+	char *data;
+	size_t len, cap;
+} TextBuf;
 
 static void tb_push(TextBuf *t, const char *bytes, size_t n)
 {
 	if (t->len + n > t->cap)
 	{
 		size_t nc = t->cap ? t->cap : 32;
-		while (nc < t->len + n) { nc *= 2; }
+		while (nc < t->len + n)
+		{
+			nc *= 2;
+		}
 		t->data = (char*)realloc(t->data, nc);
 		t->cap = nc;
 	}
@@ -167,10 +197,32 @@ static void append_utf8(TextBuf *t, long cp)
 {
 	unsigned char b[4];
 	int n;
-	if (cp < 0x80) { b[0] = (unsigned char)cp; n = 1; }
-	else if (cp < 0x800) { b[0] = 0xC0 | (cp >> 6); b[1] = 0x80 | (cp & 0x3F); n = 2; }
-	else if (cp < 0x10000) { b[0] = 0xE0 | (cp >> 12); b[1] = 0x80 | ((cp >> 6) & 0x3F); b[2] = 0x80 | (cp & 0x3F); n = 3; }
-	else { b[0] = 0xF0 | (cp >> 18); b[1] = 0x80 | ((cp >> 12) & 0x3F); b[2] = 0x80 | ((cp >> 6) & 0x3F); b[3] = 0x80 | (cp & 0x3F); n = 4; }
+	if (cp < 0x80)
+	{
+		b[0] = (unsigned char)cp;
+		n = 1;
+	}
+	else if (cp < 0x800)
+	{
+		b[0] = 0xC0 | (cp >> 6);
+		b[1] = 0x80 | (cp & 0x3F);
+		n = 2;
+	}
+	else if (cp < 0x10000)
+	{
+		b[0] = 0xE0 | (cp >> 12);
+		b[1] = 0x80 | ((cp >> 6) & 0x3F);
+		b[2] = 0x80 | (cp & 0x3F);
+		n = 3;
+	}
+	else
+	{
+		b[0] = 0xF0 | (cp >> 18);
+		b[1] = 0x80 | ((cp >> 12) & 0x3F);
+		b[2] = 0x80 | ((cp >> 6) & 0x3F);
+		b[3] = 0x80 | (cp & 0x3F);
+		n = 4;
+	}
 	tb_push(t, (char*)b, (size_t)n);
 }
 
@@ -181,10 +233,22 @@ static int parse_hex4(Scan *s)
 	for (int i = 0; i < 4; i++)
 	{
 		int c = peek(s), d;
-		if (c >= '0' && c <= '9') { d = c - '0'; }
-		else if (c >= 'a' && c <= 'f') { d = c - 'a' + 10; }
-		else if (c >= 'A' && c <= 'F') { d = c - 'A' + 10; }
-		else { return -1; }
+		if (c >= '0' && c <= '9')
+		{
+			d = c - '0';
+		}
+		else if (c >= 'a' && c <= 'f')
+		{
+			d = c - 'a' + 10;
+		}
+		else if (c >= 'A' && c <= 'F')
+		{
+			d = c - 'A' + 10;
+		}
+		else
+		{
+			return -1;
+		}
 		v = v * 16 + d;
 		advance(s);
 	}
@@ -199,15 +263,28 @@ static void *parse_value(Scan *s);   /* Forward. */
    pairs into UTF-8. */
 static void *parse_string(Scan *s)
 {
-	if (peek(s) != '"') { fail(s, "Expected a string."); return NULL; }
+	if (peek(s) != '"')
+	{
+		fail(s, "Expected a string.");
+		return NULL;
+	}
 	advance(s);   /* '"'. */
 
 	TextBuf tb = { 0 };
 	for (;;)
 	{
-		if (at_end(s)) { free(tb.data); fail(s, "Unterminated string."); return NULL; }
+		if (at_end(s))
+		{
+			free(tb.data);
+			fail(s, "Unterminated string.");
+			return NULL;
+		}
 		int c = peek(s);
-		if (c == '"') { advance(s); break; }
+		if (c == '"')
+		{
+			advance(s);
+			break;
+		}
 		if (c == '\\')
 		{
 			advance(s);
@@ -215,35 +292,74 @@ static void *parse_string(Scan *s)
 			char rep;
 			switch (e)
 			{
-				case '"':  rep = '"';  break;
-				case '\\': rep = '\\'; break;
-				case '/':  rep = '/';  break;
-				case 'b':  rep = '\b'; break;
-				case 'f':  rep = '\f'; break;
-				case 'n':  rep = '\n'; break;
-				case 'r':  rep = '\r'; break;
-				case 't':  rep = '\t'; break;
-				case 'u':
+			case '"':
+				rep = '"';
+				break;
+			case '\\':
+				rep = '\\';
+				break;
+			case '/':
+				rep = '/';
+				break;
+			case 'b':
+				rep = '\b';
+				break;
+			case 'f':
+				rep = '\f';
+				break;
+			case 'n':
+				rep = '\n';
+				break;
+			case 'r':
+				rep = '\r';
+				break;
+			case 't':
+				rep = '\t';
+				break;
+			case 'u':
+			{
+				advance(s);   /* 'u'. */
+				int u = parse_hex4(s);
+				if (u < 0)
 				{
-					advance(s);   /* 'u'. */
-					int u = parse_hex4(s);
-					if (u < 0) { free(tb.data); fail(s, "Bad \\u escape."); return NULL; }
-					long cp = u;
-					if (u >= 0xD800 && u <= 0xDBFF)   /* High surrogate: expect a low one. */
-					{
-						if (peek(s) != '\\') { free(tb.data); fail(s, "Unpaired surrogate."); return NULL; }
-						advance(s);
-						if (peek(s) != 'u') { free(tb.data); fail(s, "Unpaired surrogate."); return NULL; }
-						advance(s);
-						int lo = parse_hex4(s);
-						if (lo < 0xDC00 || lo > 0xDFFF) { free(tb.data); fail(s, "Unpaired surrogate."); return NULL; }
-						cp = 0x10000 + (((long)u - 0xD800) << 10) + (lo - 0xDC00);
-					}
-
-					append_utf8(&tb, cp);
-					continue;   /* The escape consumed its own bytes. */
+					free(tb.data);
+					fail(s, "Bad \\u escape.");
+					return NULL;
 				}
-				default: free(tb.data); fail(s, "Bad escape."); return NULL;
+				long cp = u;
+				if (u >= 0xD800 && u <= 0xDBFF)   /* High surrogate: expect a low one. */
+				{
+					if (peek(s) != '\\')
+					{
+						free(tb.data);
+						fail(s, "Unpaired surrogate.");
+						return NULL;
+					}
+					advance(s);
+					if (peek(s) != 'u')
+					{
+						free(tb.data);
+						fail(s, "Unpaired surrogate.");
+						return NULL;
+					}
+					advance(s);
+					int lo = parse_hex4(s);
+					if (lo < 0xDC00 || lo > 0xDFFF)
+					{
+						free(tb.data);
+						fail(s, "Unpaired surrogate.");
+						return NULL;
+					}
+					cp = 0x10000 + (((long)u - 0xD800) << 10) + (lo - 0xDC00);
+				}
+
+				append_utf8(&tb, cp);
+				continue;   /* The escape consumed its own bytes. */
+			}
+			default:
+				free(tb.data);
+				fail(s, "Bad escape.");
+				return NULL;
 			}
 
 			tb_push(&tb, &rep, 1);
@@ -258,7 +374,10 @@ static void *parse_string(Scan *s)
 		else
 		{
 			const char *seg = s->p;
-			while (!at_end(s) && peek(s) != '"' && peek(s) != '\\' && (unsigned char)peek(s) >= 0x20) { advance(s); }
+			while (!at_end(s) && peek(s) != '"' && peek(s) != '\\' && (unsigned char)peek(s) >= 0x20)
+			{
+				advance(s);
+			}
 			tb_push(&tb, seg, (size_t)(s->p - seg));
 		}
 	}
@@ -274,24 +393,44 @@ static void *parse_number(Scan *s)
 {
 	const char *start = s->p;
 	int is_dbl = 0;
-	if (peek(s) == '-') { advance(s); }
+	if (peek(s) == '-')
+	{
+		advance(s);
+	}
 	while (!at_end(s))
 	{
 		int c = peek(s);
-		if (c >= '0' && c <= '9') { advance(s); }
-		else if (c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-')
+		if (c >= '0' && c <= '9')
 		{
-			if (c == '.' || c == 'e' || c == 'E') { is_dbl = 1; }
 			advance(s);
 		}
-		else { break; }
+		else if (c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-')
+		{
+			if (c == '.' || c == 'e' || c == 'E')
+			{
+				is_dbl = 1;
+			}
+			advance(s);
+		}
+		else
+		{
+			break;
+		}
 	}
 
 	size_t n = (size_t)(s->p - start);
-	if (n == 0) { fail(s, "Expected a number."); return NULL; }
+	if (n == 0)
+	{
+		fail(s, "Expected a number.");
+		return NULL;
+	}
 
 	char buf[64];
-	if (n >= sizeof buf) { fail(s, "Number too long."); return NULL; }
+	if (n >= sizeof buf)
+	{
+		fail(s, "Number too long.");
+		return NULL;
+	}
 	memcpy(buf, start, n);
 	buf[n] = '\0';
 
@@ -299,14 +438,22 @@ static void *parse_number(Scan *s)
 	if (is_dbl)
 	{
 		double d = strtod(buf, &endp);
-		if (endp != buf + n) { fail(s, "Malformed number."); return NULL; }
+		if (endp != buf + n)
+		{
+			fail(s, "Malformed number.");
+			return NULL;
+		}
 		void *v = jv_new(JK_DBL);
 		jv_set_double(v, d);
 		return v;
 	}
 
 	long long ll = strtoll(buf, &endp, 10);
-	if (endp != buf + n) { fail(s, "Malformed number."); return NULL; }
+	if (endp != buf + n)
+	{
+		fail(s, "Malformed number.");
+		return NULL;
+	}
 	void *v = jv_new(JK_INT);
 	JSCA(v) = (int64_t)ll;
 	return v;
@@ -319,18 +466,37 @@ static void *parse_array(Scan *s)
 	advance(s);   /* '['. */
 	void *items = bzy_vec_new(4);   /* Object elements. */
 	skip_ws(s);
-	if (peek(s) == ']') { advance(s); void *v = jv_new(JK_ARR); JSET_MAN(v, items); return v; }
+	if (peek(s) == ']')
+	{
+		advance(s);
+		void *v = jv_new(JK_ARR);
+		JSET_MAN(v, items);
+		return v;
+	}
 
 	for (;;)
 	{
 		void *el = parse_value(s);
-		if (s->err) { bzy_release(items); return NULL; }
+		if (s->err)
+		{
+			bzy_release(items);
+			return NULL;
+		}
 		bzy_vec_push_back(items, (int64_t)el);   /* Retains. */
 		bzy_release(el);                          /* Drop our +1; the vector owns it. */
 		skip_ws(s);
 		int c = peek(s);
-		if (c == ',') { advance(s); skip_ws(s); continue; }
-		if (c == ']') { advance(s); break; }
+		if (c == ',')
+		{
+			advance(s);
+			skip_ws(s);
+			continue;
+		}
+		if (c == ']')
+		{
+			advance(s);
+			break;
+		}
 		bzy_release(items);
 		fail(s, "Expected ',' or ']' in array.");
 		return NULL;
@@ -343,7 +509,12 @@ static void *parse_array(Scan *s)
 
 /* A growable temp list of owned key/value pointers for one object, with
    last-wins dedup on insert (objects are tiny, so the linear scan is cheap). */
-typedef struct { void **keys; void **vals; int count, cap; } ObjTmp;
+typedef struct
+{
+	void **keys;
+	void **vals;
+	int count, cap;
+} ObjTmp;
 
 static void obj_push(ObjTmp *o, void *key, void *val)
 {
@@ -373,7 +544,11 @@ static void obj_push(ObjTmp *o, void *key, void *val)
 
 static void obj_free(ObjTmp *o)
 {
-	for (int i = 0; i < o->count; i++) { bzy_release(o->keys[i]); bzy_release(o->vals[i]); }
+	for (int i = 0; i < o->count; i++)
+	{
+		bzy_release(o->keys[i]);
+		bzy_release(o->vals[i]);
+	}
 	free(o->keys);
 	free(o->vals);
 }
@@ -385,24 +560,56 @@ static void *parse_object(Scan *s)
 	advance(s);   /* '{'. */
 	ObjTmp o = { 0 };
 	skip_ws(s);
-	if (peek(s) == '}') { advance(s); return jv_new_obj(); }
+	if (peek(s) == '}')
+	{
+		advance(s);
+		return jv_new_obj();
+	}
 
 	for (;;)
 	{
 		skip_ws(s);
-		if (peek(s) != '"') { obj_free(&o); fail(s, "Expected a string key."); return NULL; }
+		if (peek(s) != '"')
+		{
+			obj_free(&o);
+			fail(s, "Expected a string key.");
+			return NULL;
+		}
 		void *key = parse_string(s);
-		if (s->err) { obj_free(&o); return NULL; }
+		if (s->err)
+		{
+			obj_free(&o);
+			return NULL;
+		}
 		skip_ws(s);
-		if (peek(s) != ':') { bzy_release(key); obj_free(&o); fail(s, "Expected ':' after key."); return NULL; }
+		if (peek(s) != ':')
+		{
+			bzy_release(key);
+			obj_free(&o);
+			fail(s, "Expected ':' after key.");
+			return NULL;
+		}
 		advance(s);
 		void *val = parse_value(s);
-		if (s->err) { bzy_release(key); obj_free(&o); return NULL; }
+		if (s->err)
+		{
+			bzy_release(key);
+			obj_free(&o);
+			return NULL;
+		}
 		obj_push(&o, key, val);   /* Transfers the owned key + value. */
 		skip_ws(s);
 		int c = peek(s);
-		if (c == ',') { advance(s); continue; }
-		if (c == '}') { advance(s); break; }
+		if (c == ',')
+		{
+			advance(s);
+			continue;
+		}
+		if (c == '}')
+		{
+			advance(s);
+			break;
+		}
 		obj_free(&o);
 		fail(s, "Expected ',' or '}' in object.");
 		return NULL;
@@ -433,52 +640,73 @@ static void *parse_object(Scan *s)
 static void *parse_value(Scan *s)
 {
 	skip_ws(s);
-	if (at_end(s)) { fail(s, "Unexpected end of input."); return NULL; }
+	if (at_end(s))
+	{
+		fail(s, "Unexpected end of input.");
+		return NULL;
+	}
 	int c = peek(s);
 	switch (c)
 	{
-		case '{': return parse_object(s);
-		case '[': return parse_array(s);
-		case '"':
+	case '{':
+		return parse_object(s);
+	case '[':
+		return parse_array(s);
+	case '"':
+	{
+		void *str = parse_string(s);
+		if (s->err)
 		{
-			void *str = parse_string(s);
-			if (s->err) { return NULL; }
-			void *v = jv_new(JK_STR);
-			JSET_MAN(v, str);
+			return NULL;
+		}
+		void *v = jv_new(JK_STR);
+		JSET_MAN(v, str);
+		return v;
+	}
+	case 't':
+		if (s->end - s->p >= 4 && memcmp(s->p, "true", 4) == 0)
+		{
+			for (int i = 0; i < 4; i++)
+			{
+				advance(s);
+			}
+			void *v = jv_new(JK_BOOL);
+			JSCA(v) = 1;
 			return v;
 		}
-		case 't':
-			if (s->end - s->p >= 4 && memcmp(s->p, "true", 4) == 0)
+		fail(s, "Unexpected character.");
+		return NULL;
+	case 'f':
+		if (s->end - s->p >= 5 && memcmp(s->p, "false", 5) == 0)
+		{
+			for (int i = 0; i < 5; i++)
 			{
-				for (int i = 0; i < 4; i++) { advance(s); }
-				void *v = jv_new(JK_BOOL);
-				JSCA(v) = 1;
-				return v;
+				advance(s);
 			}
-			fail(s, "Unexpected character.");
-			return NULL;
-		case 'f':
-			if (s->end - s->p >= 5 && memcmp(s->p, "false", 5) == 0)
+			void *v = jv_new(JK_BOOL);
+			JSCA(v) = 0;
+			return v;
+		}
+		fail(s, "Unexpected character.");
+		return NULL;
+	case 'n':
+		if (s->end - s->p >= 4 && memcmp(s->p, "null", 4) == 0)
+		{
+			for (int i = 0; i < 4; i++)
 			{
-				for (int i = 0; i < 5; i++) { advance(s); }
-				void *v = jv_new(JK_BOOL);
-				JSCA(v) = 0;
-				return v;
+				advance(s);
 			}
-			fail(s, "Unexpected character.");
-			return NULL;
-		case 'n':
-			if (s->end - s->p >= 4 && memcmp(s->p, "null", 4) == 0)
-			{
-				for (int i = 0; i < 4; i++) { advance(s); }
-				return jv_new(JK_NULL);
-			}
-			fail(s, "Unexpected character.");
-			return NULL;
-		default:
-			if (c == '-' || (c >= '0' && c <= '9')) { return parse_number(s); }
-			fail(s, "Unexpected character.");
-			return NULL;
+			return jv_new(JK_NULL);
+		}
+		fail(s, "Unexpected character.");
+		return NULL;
+	default:
+		if (c == '-' || (c >= '0' && c <= '9'))
+		{
+			return parse_number(s);
+		}
+		fail(s, "Unexpected character.");
+		return NULL;
 	}
 }
 
@@ -498,12 +726,18 @@ void *bzy_json_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t
 	if (!s.err)
 	{
 		skip_ws(&s);
-		if (s.p != s.end) { fail(&s, "Trailing content after the value."); }
+		if (s.p != s.end)
+		{
+			fail(&s, "Trailing content after the value.");
+		}
 	}
 
 	if (s.err)
 	{
-		if (root) { bzy_release(root); }
+		if (root)
+		{
+			bzy_release(root);
+		}
 		*errmsg = s.err;
 		*line = s.line;
 		*col = s.col;
@@ -563,12 +797,31 @@ static void json_type_fail(const char *msg)
 
 /* ---- kind tests (never throw) ----------------------------------------------- */
 
-int64_t bzy_json_is_null(void *v)   { return JKIND(v) == JK_NULL; }
-int64_t bzy_json_is_bool(void *v)   { return JKIND(v) == JK_BOOL; }
-int64_t bzy_json_is_number(void *v) { int64_t k = JKIND(v); return k == JK_INT || k == JK_DBL; }
-int64_t bzy_json_is_string(void *v) { return JKIND(v) == JK_STR; }
-int64_t bzy_json_is_array(void *v)  { return JKIND(v) == JK_ARR; }
-int64_t bzy_json_is_object(void *v) { return JKIND(v) == JK_OBJ; }
+int64_t bzy_json_is_null(void *v)
+{
+	return JKIND(v) == JK_NULL;
+}
+int64_t bzy_json_is_bool(void *v)
+{
+	return JKIND(v) == JK_BOOL;
+}
+int64_t bzy_json_is_number(void *v)
+{
+	int64_t k = JKIND(v);
+	return k == JK_INT || k == JK_DBL;
+}
+int64_t bzy_json_is_string(void *v)
+{
+	return JKIND(v) == JK_STR;
+}
+int64_t bzy_json_is_array(void *v)
+{
+	return JKIND(v) == JK_ARR;
+}
+int64_t bzy_json_is_object(void *v)
+{
+	return JKIND(v) == JK_OBJ;
+}
 
 /* An owned (+1) string naming the kind. */
 void *bzy_json_type_name(void *v)
@@ -576,13 +829,27 @@ void *bzy_json_type_name(void *v)
 	const char *t;
 	switch (JKIND(v))
 	{
-		case JK_NULL: t = "null"; break;
-		case JK_BOOL: t = "bool"; break;
-		case JK_INT:  t = "number"; break;
-		case JK_DBL:  t = "number"; break;
-		case JK_STR:  t = "string"; break;
-		case JK_ARR:  t = "array"; break;
-		default:      t = "object"; break;
+	case JK_NULL:
+		t = "null";
+		break;
+	case JK_BOOL:
+		t = "bool";
+		break;
+	case JK_INT:
+		t = "number";
+		break;
+	case JK_DBL:
+		t = "number";
+		break;
+	case JK_STR:
+		t = "string";
+		break;
+	case JK_ARR:
+		t = "array";
+		break;
+	default:
+		t = "object";
+		break;
 	}
 
 	return bzy_str_new(t, (int64_t)strlen(t));
@@ -593,8 +860,20 @@ void *bzy_json_type_name(void *v)
 int64_t bzy_json_as_long(void *v)
 {
 	int64_t k = JKIND(v);
-	if (k == JK_INT) { return JSCA(v); }
-	if (k == JK_DBL) { union { double d; int64_t i; } u; u.i = JSCA(v); return (int64_t)u.d; }
+	if (k == JK_INT)
+	{
+		return JSCA(v);
+	}
+	if (k == JK_DBL)
+	{
+		union
+		{
+			double d;
+			int64_t i;
+		} u;
+		u.i = JSCA(v);
+		return (int64_t)u.d;
+	}
 	json_type_fail("asLong() on a non-number JSON value.");
 	return 0;
 }
@@ -602,22 +881,42 @@ int64_t bzy_json_as_long(void *v)
 double bzy_json_as_double(void *v)
 {
 	int64_t k = JKIND(v);
-	if (k == JK_DBL) { union { double d; int64_t i; } u; u.i = JSCA(v); return u.d; }
-	if (k == JK_INT) { return (double)JSCA(v); }
+	if (k == JK_DBL)
+	{
+		union
+		{
+			double d;
+			int64_t i;
+		} u;
+		u.i = JSCA(v);
+		return u.d;
+	}
+	if (k == JK_INT)
+	{
+		return (double)JSCA(v);
+	}
 	json_type_fail("asDouble() on a non-number JSON value.");
 	return 0.0;
 }
 
 void *bzy_json_as_string(void *v)
 {
-	if (JKIND(v) == JK_STR) { void *s = JGET_MAN(v); bzy_retain(s); return s; }
+	if (JKIND(v) == JK_STR)
+	{
+		void *s = JGET_MAN(v);
+		bzy_retain(s);
+		return s;
+	}
 	json_type_fail("asString() on a non-string JSON value.");
 	return bzy_str_new("", 0);
 }
 
 int64_t bzy_json_as_bool(void *v)
 {
-	if (JKIND(v) == JK_BOOL) { return JSCA(v); }
+	if (JKIND(v) == JK_BOOL)
+	{
+		return JSCA(v);
+	}
 	json_type_fail("asBool() on a non-bool JSON value.");
 	return 0;
 }
@@ -632,7 +931,10 @@ static void *json_null_retained(void)
 {
 	/* ponytail: single-init race on first use is benign -- a duplicate singleton
 	   is just another valid JK_NULL node; both live forever by design. */
-	if (!g_json_null) { g_json_null = jv_new(JK_NULL); }
+	if (!g_json_null)
+	{
+		g_json_null = jv_new(JK_NULL);
+	}
 	bzy_retain(g_json_null);
 	return g_json_null;
 }
@@ -641,12 +943,18 @@ static void *json_null_retained(void)
 static int64_t obj_index(void *v, void *key)
 {
 	void *names = JGET_MAN(v);
-	if (!names) { return -1; }
+	if (!names)
+	{
+		return -1;
+	}
 	int64_t n = *(int64_t*)((char*)names + 24);   /* length@24. */
 	void **slots = (void**)((char*)names + 32);
 	for (int64_t i = 0; i < n; i++)
 	{
-		if (bzy_str_eq(slots[i], key)) { return i; }
+		if (bzy_str_eq(slots[i], key))
+		{
+			return i;
+		}
 	}
 
 	return -1;
@@ -674,7 +982,10 @@ void *bzy_json_get(void *v, void *key)
    from a present null), else 0. */
 int64_t bzy_json_has(void *v, void *key)
 {
-	if (JKIND(v) == JK_OBJ) { return obj_index(v, key) >= 0; }
+	if (JKIND(v) == JK_OBJ)
+	{
+		return obj_index(v, key) >= 0;
+	}
 	return 0;
 }
 
@@ -702,7 +1013,12 @@ void *bzy_json_keys(void *v)
    non-array (so .items().forEach is always safe). */
 void *bzy_json_items(void *v)
 {
-	if (JKIND(v) == JK_ARR) { void *l = JGET_MAN(v); bzy_retain(l); return l; }
+	if (JKIND(v) == JK_ARR)
+	{
+		void *l = JGET_MAN(v);
+		bzy_retain(l);
+		return l;
+	}
 	return bzy_vec_new(4);   /* Object elements. */
 }
 
@@ -734,8 +1050,16 @@ void *bzy_json_at(void *v, int64_t i)
 int64_t bzy_json_size(void *v)
 {
 	int64_t k = JKIND(v);
-	if (k == JK_ARR) { void *l = JGET_MAN(v); return l ? *(int64_t*)((char*)l + 24) : 0; }
-	if (k == JK_OBJ) { void *names = JGET_MAN(v); return names ? *(int64_t*)((char*)names + 24) : 0; }
+	if (k == JK_ARR)
+	{
+		void *l = JGET_MAN(v);
+		return l ? *(int64_t*)((char*)l + 24) : 0;
+	}
+	if (k == JK_OBJ)
+	{
+		void *names = JGET_MAN(v);
+		return names ? *(int64_t*)((char*)names + 24) : 0;
+	}
 	return 0;
 }
 
@@ -824,16 +1148,38 @@ static void json_escape_string(TextBuf *t, void *s)
 		unsigned char c = (unsigned char)p[i];
 		switch (c)
 		{
-			case '"':  tb_push(t, "\\\"", 2); break;
-			case '\\': tb_push(t, "\\\\", 2); break;
-			case '\n': tb_push(t, "\\n", 2); break;
-			case '\t': tb_push(t, "\\t", 2); break;
-			case '\r': tb_push(t, "\\r", 2); break;
-			case '\b': tb_push(t, "\\b", 2); break;
-			case '\f': tb_push(t, "\\f", 2); break;
-			default:
-				if (c < 0x20) { char u[8]; int k = snprintf(u, sizeof u, "\\u%04x", c); tb_push(t, u, (size_t)k); }
-				else { tb_push(t, (char*)&p[i], 1); }
+		case '"':
+			tb_push(t, "\\\"", 2);
+			break;
+		case '\\':
+			tb_push(t, "\\\\", 2);
+			break;
+		case '\n':
+			tb_push(t, "\\n", 2);
+			break;
+		case '\t':
+			tb_push(t, "\\t", 2);
+			break;
+		case '\r':
+			tb_push(t, "\\r", 2);
+			break;
+		case '\b':
+			tb_push(t, "\\b", 2);
+			break;
+		case '\f':
+			tb_push(t, "\\f", 2);
+			break;
+		default:
+			if (c < 0x20)
+			{
+				char u[8];
+				int k = snprintf(u, sizeof u, "\\u%04x", c);
+				tb_push(t, u, (size_t)k);
+			}
+			else
+			{
+				tb_push(t, (char*)&p[i], 1);
+			}
 		}
 	}
 
@@ -844,66 +1190,102 @@ static void json_escape_string(TextBuf *t, void *s)
    bzy_json_check then throws); once set, the walk unwinds without appending. */
 static void serialize_value(TextBuf *t, void *v)
 {
-	if (g_json_error) { return; }
+	if (g_json_error)
+	{
+		return;
+	}
 
 	switch (JKIND(v))
 	{
-		case JK_NULL: tb_push(t, "null", 4); break;
-		case JK_BOOL: if (JSCA(v)) { tb_push(t, "true", 4); } else { tb_push(t, "false", 5); } break;
-		case JK_INT:
+	case JK_NULL:
+		tb_push(t, "null", 4);
+		break;
+	case JK_BOOL:
+		if (JSCA(v))
 		{
-			char b[32];
-			int k = snprintf(b, sizeof b, "%lld", (long long)JSCA(v));
-			tb_push(t, b, (size_t)k);
-			break;
+			tb_push(t, "true", 4);
 		}
-		case JK_DBL:
+		else
 		{
-			union { double d; int64_t i; } u;
-			u.i = JSCA(v);
-			if (!isfinite(u.d)) { json_type_fail("Cannot stringify a non-finite number."); return; }
-			void *s = bzy_str_from_f64(u.d);   /* Breezy's canonical double text (matches print). */
-			tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s));
-			bzy_release(s);
-			break;
+			tb_push(t, "false", 5);
 		}
-		case JK_STR: json_escape_string(t, JGET_MAN(v)); break;
-		case JK_ARR:
+		break;
+	case JK_INT:
+	{
+		char b[32];
+		int k = snprintf(b, sizeof b, "%lld", (long long)JSCA(v));
+		tb_push(t, b, (size_t)k);
+		break;
+	}
+	case JK_DBL:
+	{
+		union
 		{
-			void *l = JGET_MAN(v);
-			int64_t n = l ? *(int64_t*)((char*)l + 24) : 0;
-			void *data = l ? *(void**)((char*)l + 48) : NULL;
-			tb_push(t, "[", 1);
-			for (int64_t i = 0; i < n; i++)
+			double d;
+			int64_t i;
+		} u;
+		u.i = JSCA(v);
+		if (!isfinite(u.d))
+		{
+			json_type_fail("Cannot stringify a non-finite number.");
+			return;
+		}
+		void *s = bzy_str_from_f64(u.d);   /* Breezy's canonical double text (matches print). */
+		tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s));
+		bzy_release(s);
+		break;
+	}
+	case JK_STR:
+		json_escape_string(t, JGET_MAN(v));
+		break;
+	case JK_ARR:
+	{
+		void *l = JGET_MAN(v);
+		int64_t n = l ? *(int64_t*)((char*)l + 24) : 0;
+		void *data = l ? *(void**)((char*)l + 48) : NULL;
+		tb_push(t, "[", 1);
+		for (int64_t i = 0; i < n; i++)
+		{
+			if (i)
 			{
-				if (i) { tb_push(t, ",", 1); }
-				serialize_value(t, ((void**)((char*)data + 32))[i]);
-				if (g_json_error) { return; }
+				tb_push(t, ",", 1);
 			}
-
-			tb_push(t, "]", 1);
-			break;
-		}
-		default:   /* JK_OBJ. */
-		{
-			void *names = JGET_MAN(v);
-			void *vals = JGET_VALS(v);
-			int64_t nm = names ? *(int64_t*)((char*)names + 24) : 0;
-			void **ks = names ? (void**)((char*)names + 32) : NULL;
-			void **vs = vals ? (void**)((char*)vals + 32) : NULL;
-			tb_push(t, "{", 1);
-			for (int64_t i = 0; i < nm; i++)
+			serialize_value(t, ((void**)((char*)data + 32))[i]);
+			if (g_json_error)
 			{
-				if (i) { tb_push(t, ",", 1); }
-				json_escape_string(t, ks[i]);
-				tb_push(t, ":", 1);
-				serialize_value(t, vs[i]);
-				if (g_json_error) { return; }
+				return;
 			}
-
-			tb_push(t, "}", 1);
-			break;
 		}
+
+		tb_push(t, "]", 1);
+		break;
+	}
+	default:   /* JK_OBJ. */
+	{
+		void *names = JGET_MAN(v);
+		void *vals = JGET_VALS(v);
+		int64_t nm = names ? *(int64_t*)((char*)names + 24) : 0;
+		void **ks = names ? (void**)((char*)names + 32) : NULL;
+		void **vs = vals ? (void**)((char*)vals + 32) : NULL;
+		tb_push(t, "{", 1);
+		for (int64_t i = 0; i < nm; i++)
+		{
+			if (i)
+			{
+				tb_push(t, ",", 1);
+			}
+			json_escape_string(t, ks[i]);
+			tb_push(t, ":", 1);
+			serialize_value(t, vs[i]);
+			if (g_json_error)
+			{
+				return;
+			}
+		}
+
+		tb_push(t, "}", 1);
+		break;
+	}
 	}
 }
 

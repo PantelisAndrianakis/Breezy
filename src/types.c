@@ -628,9 +628,15 @@ void types_reserve_hashable(TypeTable *tt)
 	InterfaceInfo *itf=tt_add_interface(tt);
 	memset(itf,0,sizeof(*itf));
 	strcpy(itf->name,"__Hashable");
-	int hc=iface_add_method(itf,"hashCode",(TypeRef){.kind=TY_INT},0);
+	int hc=iface_add_method(itf,"hashCode",(TypeRef)
+	{
+		.kind=TY_INT
+	},0);
 	itf->vslot[hc]=tt->iface_slots++;   /* Global slot 0. */
-	int eq=iface_add_method(itf,"equals",(TypeRef){.kind=TY_BOOL},1);   /* param type set per record. */
+	int eq=iface_add_method(itf,"equals",(TypeRef)
+	{
+		.kind=TY_BOOL
+	},1);   /* param type set per record. */
 	itf->vslot[eq]=tt->iface_slots++;   /* Global slot 1. */
 }
 
@@ -1190,7 +1196,10 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		strcpy(hc->owner_class,c->name);
 		snprintf(hc->asm_label,sizeof(hc->asm_label),"__rec_hashCode_%s",c->name);
 		hc->ast=NULL;
-		hc->ret_type=(TypeRef){.kind=TY_INT};
+		hc->ret_type=(TypeRef)
+		{
+			.kind=TY_INT
+		};
 		hc->param_count=0;
 		MethodInfo *eq=&c->methods[c->method_count++];
 		memset(eq,0,sizeof(*eq));
@@ -1199,9 +1208,15 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		strcpy(eq->owner_class,c->name);
 		snprintf(eq->asm_label,sizeof(eq->asm_label),"__rec_equals_%s",c->name);
 		eq->ast=NULL;
-		eq->ret_type=(TypeRef){.kind=TY_BOOL};
+		eq->ret_type=(TypeRef)
+		{
+			.kind=TY_BOOL
+		};
 		eq->param_count=1;
-		add_param_type(&eq->param_types,&eq->param_types_cap,0,(TypeRef){.kind=TY_OBJECT});
+		add_param_type(&eq->param_types,&eq->param_types_cap,0,(TypeRef)
+		{
+			.kind=TY_OBJECT
+		});
 		strcpy(eq->param_types[0].class_name,c->name);
 	}
 
@@ -1216,7 +1231,10 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		mi->vtable_slot=-1;              /* Constructors are never virtual. */
 		strcpy(mi->owner_class,c->name);
 		mi->ast=cf;
-		mi->ret_type=(TypeRef){.kind=TY_VOID};
+		mi->ret_type=(TypeRef)
+		{
+			.kind=TY_VOID
+		};
 		mi->param_count=cf->param_count;
 		for (int k=0; k<cf->param_count; k++)
 		{

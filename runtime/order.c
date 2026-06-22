@@ -63,15 +63,15 @@ bzy_cmp_fn bzy_order_cmp_for(int64_t elem_kind)
 {
 	switch (elem_kind)
 	{
-		case 1:
-			return cmp_f32;
-		case 2:
-			return cmp_f64;
-		case 3:
-			return cmp_str;
-		case 4:
-			return (bzy_cmp_fn)0;   /* Objects use an injected vtable thunk. */
-		default:
-			return cmp_i64;         /* 0 int / long / bool. */
+	case 1:
+		return cmp_f32;
+	case 2:
+		return cmp_f64;
+	case 3:
+		return cmp_str;
+	case 4:
+		return (bzy_cmp_fn)0;   /* Objects use an injected vtable thunk. */
+	default:
+		return cmp_i64;         /* 0 int / long / bool. */
 	}
 }
