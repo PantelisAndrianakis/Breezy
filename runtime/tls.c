@@ -399,35 +399,32 @@ static int tls_attach_bios(void *ssl)
 	return 0;
 }
 
-void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
+/* Establish a client TLS session over an already-connected, OWNED transport socket
+   (this consumes the transport's reference). Returns a handshaken TlsSocket, or NULL
+   on any failure -- with transport, ssl, and ctx all cleaned up and NO exception set,
+   so the caller chooses which exception to raise (IOException for tlsConnect,
+   DbException for the database drivers). `host` drives hostname verification + SNI,
+   and `caBundle` (a path, or NULL for the default trust store) the trust anchors,
+   both skipped when `insecure` (self-signed / development servers only). */
+static void *tls_client_session(void *transport, const char *host, const char *caBundle, int insecure)
 {
-	if (!tls_load())
-	{
-		return NULL;
-	}
-
 	void *ctx = ossl.CTX_new(ossl.TLS_client_method());
 	if (!ctx)
 	{
-		bzy_io_fail("Network.tlsConnect: SSL_CTX_new failed.");
+		bzy_release(transport);
 		return NULL;
 	}
 	if (caBundle)
 	{
-		ossl.CTX_load_verify_locations(ctx, bzy_str_data(caBundle), NULL);
+		ossl.CTX_load_verify_locations(ctx, caBundle, NULL);
 	}
 	else
 	{
 		ossl.CTX_set_default_verify_paths(ctx);
 	}
-	ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
-
-	void *transport = bzy_socket_connect(host, port);   /* Owned, reactor-registered Socket. */
-	if (!transport)
+	if (!insecure)
 	{
-		ossl.CTX_free(ctx);
-		bzy_io_fail("Network.tlsConnect: TCP connect failed.");
-		return NULL;
+		ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
 	}
 
 	void *ssl = ossl.SSL_new(ctx);
@@ -439,24 +436,66 @@ void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
 		}
 		bzy_release(transport);
 		ossl.CTX_free(ctx);
-		bzy_io_fail("Network.tlsConnect: SSL setup failed.");
 		return NULL;
 	}
-	ossl.SSL_set1_host(ssl, bzy_str_data(host));                                                 /* Verify hostname. */
-	ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)bzy_str_data(host)); /* SNI. */
+	if (!insecure)
+	{
+		ossl.SSL_set1_host(ssl, host);                                                 /* Verify hostname. */
+		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)host); /* SNI. */
+	}
 	ossl.SSL_set_connect_state(ssl);
 
-	void *s = tls_sock_wrap(transport, ssl, ctx);
+	void *s = tls_sock_wrap(transport, ssl, ctx);   /* The TlsSocket now owns transport + ssl + ctx. */
 	if (tls_run(s, 0, NULL, 0) != 1)
 	{
-		bzy_io_fail("Network.tlsConnect: handshake failed.");   /* Finalizer cleans up; io_check throws. */
-		return s;
+		bzy_release(s);   /* rc 1 -> 0: the finalizer frees ssl/ctx and releases transport. */
+		return NULL;
 	}
-	if (ossl.SSL_get_verify_result(ssl) != BZ_X509_V_OK)
+	if (!insecure && ossl.SSL_get_verify_result(ssl) != BZ_X509_V_OK)
 	{
-		bzy_io_fail("Network.tlsConnect: certificate verification failed.");
+		bzy_release(s);
+		return NULL;
 	}
 	return s;
+}
+
+void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
+{
+	if (!tls_load())
+	{
+		return NULL;
+	}
+
+	void *transport = bzy_socket_connect(host, port);   /* Owned, reactor-registered Socket. */
+	if (!transport)
+	{
+		bzy_io_fail("Network.tlsConnect: TCP connect failed.");
+		return NULL;
+	}
+
+	void *s = tls_client_session(transport, bzy_str_data(host),
+								 caBundle ? bzy_str_data(caBundle) : NULL, 0);
+	if (!s)
+	{
+		bzy_io_fail("Network.tlsConnect: TLS handshake or certificate verification failed.");
+		return NULL;
+	}
+	return s;
+}
+
+/* Upgrade an already-connected, OWNED transport socket to client TLS (consumes the
+   transport reference). Returns a handshaken TlsSocket, or NULL on failure (fully
+   cleaned up; the caller raises its own exception). Used by Postgres.connectTls /
+   Mysql.connectTls AFTER the protocol's plaintext TLS-upgrade negotiation has run on
+   the same socket. `insecure` skips certificate + hostname verification. */
+void *bzy_tls_upgrade_client(void *transport, const char *host, int insecure)
+{
+	if (!tls_load())
+	{
+		bzy_release(transport);
+		return NULL;
+	}
+	return tls_client_session(transport, host, NULL, insecure);
 }
 
 void *bzy_tls_connect(void *host, int64_t port)
@@ -594,6 +633,42 @@ int64_t bzy_tls_write(void *s, void *data)
 		return 0;
 	}
 	return n;
+}
+
+/* Raw-byte TLS transport, mirroring bzy_sock_recv / bzy_sock_send_all so the database
+   drivers branch plain-vs-TLS uniformly. (bzy_tls_read / bzy_tls_write are the managed
+   byte[] surface; these are the raw-buffer twins the wire codecs need.) The timeout is
+   accepted for signature symmetry but unused -- the memory-BIO pump blocks on the
+   underlying transport socket. */
+int bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms)
+{
+	(void)timeout_ms;
+	if (TLS_CLOSED(s))
+	{
+		return -1;
+	}
+	return tls_run(s, 1, buf, max);   /* >0 bytes, 0 clean EOF, -1 error. */
+}
+
+int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len)
+{
+	if (TLS_CLOSED(s))
+	{
+		return -1;
+	}
+	int64_t off = 0;
+	while (off < len)
+	{
+		int64_t rem = len - off;
+		int chunk = rem > (1 << 24) ? (1 << 24) : (int)rem;
+		int n = tls_run(s, 2, (void*)(buf + off), chunk);
+		if (n < 0)
+		{
+			return -1;
+		}
+		off += n;
+	}
+	return off;
 }
 
 void bzy_tls_close(void *s)
