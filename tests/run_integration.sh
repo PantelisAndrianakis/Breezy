@@ -468,7 +468,7 @@ fi
 BZY_LINK_MAP=1 ./breezy tests/samples/pass/basics/minimal.bzy >/dev/null 2>&1
 if [ -f out.map ]; then
     leaked=""
-    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls dtls surface glsurface dynsym order pqueue btree xml json httpproto; do
+    for obj in system socket udp http desktop file filechannel mmap regex logger affinity rawsock tls dtls surface glsurface dynsym order pqueue btree xml json httpproto dbresult crypto pgwire; do
         if grep -qE "lib_breezy\.a\($obj\.o\)" out.map; then leaked="$leaked $obj"; fi
     done
     if [ -z "$leaked" ]; then echo "  nobloat_minimal: OK"
