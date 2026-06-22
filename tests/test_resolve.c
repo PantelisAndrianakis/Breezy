@@ -432,6 +432,24 @@ static void test_httpresponse_type(void)
 	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_HTTPRESPONSE);
 }
 
+static void test_pgconnection_type(void)
+{
+	Func *f = build1("void main() { PgConnection c; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_PGCONNECTION);
+}
+
+static void test_dbresult_type(void)
+{
+	Func *f = build1("void main() { DbResult r; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_DBRESULT);
+}
+
+static void test_dbrow_type(void)
+{
+	Func *f = build1("void main() { Row r; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_DBROW);
+}
+
 static void test_concat_is_string(void)
 {
 	Func *f = build1("void main() { string s; s = \"a\" + \"b\"; }")->funcs[0];
@@ -926,6 +944,9 @@ int main(void)
 	RUN(test_jsonvalue_type);
 	RUN(test_httprequest_type);
 	RUN(test_httpresponse_type);
+	RUN(test_pgconnection_type);
+	RUN(test_dbresult_type);
+	RUN(test_dbrow_type);
 	RUN(test_concat_is_string);
 	RUN(test_length_is_int);
 	RUN(test_newarray_type);

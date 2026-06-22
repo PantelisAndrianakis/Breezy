@@ -146,6 +146,19 @@ void types_register_builtins(TypeTable *tt)
 	he->object_size = 32;
 	he->vtable_size = 0;
 	he->method_count = 0;
+
+	ClassInfo *de = tt_add_class(tt);
+	memset(de, 0, sizeof(*de));
+	de->fields = grow_reserve(de->fields, 1, &de->fields_cap, sizeof(FieldInfo));
+	strcpy(de->name, "DbException");
+	de->parent = c;                      /* Subclass of Exception. */
+	strcpy(de->fields[0].name, "message");
+	de->fields[0].type.kind = TY_STRING;
+	de->fields[0].offset = 24;
+	de->field_count = 1;
+	de->object_size = 32;
+	de->vtable_size = 0;
+	de->method_count = 0;
 }
 
 ClassInfo *types_find_class(TypeTable *tt, const char *name)
