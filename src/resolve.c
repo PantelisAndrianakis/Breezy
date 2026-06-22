@@ -1255,12 +1255,12 @@ static void resolve_http(Expr *e)
 static void resolve_postgres(Expr *e)
 {
 	const char *m = e->name + 9;   /* After "Postgres.". */
-	if (strcmp(m,"connect")==0)
+	if (strcmp(m,"connect")==0 || strcmp(m,"connectTls")==0 || strcmp(m,"connectTlsInsecure")==0)
 	{
 		if (e->arg_count!=5 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
 				|| e->args[2]->type.kind!=TY_STRING || e->args[3]->type.kind!=TY_STRING || e->args[4]->type.kind!=TY_STRING)
 		{
-			die(e->line,"Postgres.connect(host, port, user, password, database) takes a string, an int, and three strings.",NULL);
+			die(e->line,"Postgres.connect / connectTls / connectTlsInsecure (host, port, user, password, database) takes a string, an int, and three strings.",NULL);
 		}
 
 		e->type.kind = TY_PGCONNECTION;

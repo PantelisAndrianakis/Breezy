@@ -35,13 +35,41 @@ extern void bzy_crypto_hmac_sha256(const unsigned char *key, int klen, const uns
 extern int  bzy_crypto_pbkdf2_sha256(const char *pass, int plen, const unsigned char *salt, int slen, int iters, unsigned char *out, int outlen);
 extern int  bzy_crypto_rand(unsigned char *out, int len);
 
+/* TLS transport (tls.c): the raw-byte twins + the upgrade-an-existing-socket entry.
+   Used only by connectTls; a plaintext connection never references these. */
+extern int     bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms);
+extern int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len);
+extern void   *bzy_tls_upgrade_client(void *transport, const char *host, int insecure);
+extern void    bzy_tls_close(void *s);
+
+/* The transport a connection rides on: a plain Socket, or after connectTls a
+   TlsSocket. x_recv/x_send branch on is_tls so all the protocol code below stays
+   transport-agnostic -- it threads an Xport* where it used to thread a void *sock. */
+typedef struct
+{
+	void *t;
+	int   is_tls;
+} Xport;
+
+static int x_recv(Xport *x, char *buf, int max, int64_t timeout_ms)
+{
+	return x->is_tls ? bzy_tls_recv(x->t, buf, max, timeout_ms)
+		   : bzy_sock_recv(x->t, buf, max, timeout_ms);
+}
+
+static int64_t x_send(Xport *x, const char *buf, int64_t len)
+{
+	return x->is_tls ? bzy_tls_send_all(x->t, buf, len)
+		   : bzy_sock_send_all(x->t, buf, len);
+}
+
 #define PG_PROTOCOL_V3 196608   /* 3.0 in the int32 (major<<16 | minor). */
 
 /* ---- the buffered reader (one growable buffer + a scan cursor, as httpproto) -- */
 
 typedef struct
 {
-	void   *sock;
+	Xport  *x;
 	char   *buf;
 	int64_t len;
 	int64_t cap;
@@ -66,7 +94,7 @@ static int rd_fill(Reader *r)
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
-	int n = bzy_sock_recv(r->sock, r->buf + r->len, 65536, -1);
+	int n = x_recv(r->x, r->buf + r->len, 65536, -1);
 	if (n <= 0)
 	{
 		r->eof = 1;
@@ -282,7 +310,7 @@ static void hex_encode(const unsigned char *in, int len, char *out)
 }
 
 /* Send a tagged frontend message (tag + int32 length + body), one socket write. */
-static int send_tagged(void *sock, char tag, const char *body, int64_t blen)
+static int send_tagged(Xport *x, char tag, const char *body, int64_t blen)
 {
 	Wbuf w = { 0 };
 	w_u8(&w, (unsigned char)tag);
@@ -290,7 +318,7 @@ static int send_tagged(void *sock, char tag, const char *body, int64_t blen)
 	w_i32(&w, 0);
 	w_bytes(&w, body, blen);
 	w_patch_len(&w, at);
-	int64_t rc = bzy_sock_send_all(sock, w.p, w.len);
+	int64_t rc = x_send(x, w.p, w.len);
 	free(w.p);
 	return rc >= 0;
 }
@@ -299,13 +327,13 @@ static int send_tagged(void *sock, char tag, const char *body, int64_t blen)
 
 /* AuthenticationCleartextPassword: send the password as a NUL-terminated string.
    Safe only over TLS -- documented as such. */
-static int auth_cleartext(void *sock, const char *password)
+static int auth_cleartext(Xport *x, const char *password)
 {
-	return send_tagged(sock, 'p', password, (int64_t)strlen(password) + 1);
+	return send_tagged(x, 'p', password, (int64_t)strlen(password) + 1);
 }
 
 /* AuthenticationMD5Password: send "md5" + md5_hex(md5_hex(password+user) + salt). */
-static int auth_md5(void *sock, const char *user, const char *password, const unsigned char salt[4])
+static int auth_md5(Xport *x, const char *user, const char *password, const unsigned char salt[4])
 {
 	if (!bzy_crypto_load())
 	{
@@ -332,7 +360,7 @@ static int auth_md5(void *sock, const char *user, const char *password, const un
 	char body[40];
 	memcpy(body, "md5", 3);
 	hex_encode(d2, 16, body + 3);      /* "md5" + 32 hex + NUL. */
-	return send_tagged(sock, 'p', body, (int64_t)strlen(body) + 1);
+	return send_tagged(x, 'p', body, (int64_t)strlen(body) + 1);
 }
 
 /* Find "<key>=" in a comma-delimited SCRAM message; copy the value (to the next
@@ -371,7 +399,7 @@ static int scram_field(const char *msg, char key, char *out, int outcap)
    server-first ('R' SASLContinue), sends client-final with the client proof, reads
    and verifies server-final ('R' SASLFinal). Returns 1 on success; on failure the
    error sink is set. The caller's loop then reads AuthenticationOk + ReadyForQuery. */
-static int auth_scram(Reader *r, void *sock, const char *user, const char *password)
+static int auth_scram(Reader *r, Xport *x, const char *user, const char *password)
 {
 	(void)user;   /* The username travels in the startup message; SCRAM sends n=, . */
 	if (!bzy_crypto_load())
@@ -402,7 +430,7 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 		w_cstr(&w, "SCRAM-SHA-256");
 		w_i32(&w, (int32_t)strlen(client_first));
 		w_bytes(&w, client_first, (int64_t)strlen(client_first));
-		int ok = send_tagged(sock, 'p', w.p, w.len);
+		int ok = send_tagged(x, 'p', w.p, w.len);
 		free(w.p);
 		if (!ok)
 		{
@@ -487,7 +515,7 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 
 	char client_final[256];
 	snprintf(client_final, sizeof(client_final), "%s,p=%s", final_noproof, proof_b64);
-	if (!send_tagged(sock, 'p', client_final, (int64_t)strlen(client_final)))
+	if (!send_tagged(x, 'p', client_final, (int64_t)strlen(client_final)))
 	{
 		bzy_db_set_error("Failed to send the SCRAM client-final message.");
 		return 0;
@@ -531,7 +559,7 @@ static int auth_scram(Reader *r, void *sock, const char *user, const char *passw
 
 /* StartupMessage: int32 length, int32 protocol(196608), then "user\0<u>\0
    database\0<d>\0" and a final \0. No type tag (the one tagless frontend message). */
-static int send_startup(void *sock, const char *user, const char *db)
+static int send_startup(Xport *x, const char *user, const char *db)
 {
 	Wbuf w = { 0 };
 	int64_t at = w.len;
@@ -543,7 +571,7 @@ static int send_startup(void *sock, const char *user, const char *db)
 	w_cstr(&w, db);
 	w_u8(&w, 0);                  /* Terminating empty key. */
 	w_patch_len(&w, at);
-	int64_t rc = bzy_sock_send_all(sock, w.p, w.len);
+	int64_t rc = x_send(x, w.p, w.len);
 	free(w.p);
 	return rc >= 0;
 }
@@ -587,16 +615,16 @@ static void set_error_from_response(const char *body, int64_t blen)
    backend messages until ReadyForQuery (success, returns 1) or an error (returns
    0 with the error sink set). Authentication beyond AuthenticationOk lands in
    Task 5 -- here any auth request other than "Ok" is reported as unsupported. */
-int bzy_pg_run_startup(void *sock, const char *user, const char *password, const char *db)
+int bzy_pg_run_startup(Xport *x, const char *user, const char *password, const char *db)
 {
-	if (!send_startup(sock, user, db))
+	if (!send_startup(x, user, db))
 	{
 		bzy_db_set_error("Failed to send the PostgreSQL startup message.");
 		return 0;
 	}
 
 	Reader r = { 0 };
-	r.sock = sock;
+	r.x = x;
 	int ok = 0;
 	char tag;
 	char *body;
@@ -612,7 +640,7 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *password, const
 			}
 			else if (sub == 3)                       /* Cleartext password. */
 			{
-				if (!auth_cleartext(sock, password))
+				if (!auth_cleartext(x, password))
 				{
 					bzy_db_set_error("Failed to send the cleartext password.");
 					break;
@@ -628,7 +656,7 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *password, const
 				}
 				unsigned char salt[4];
 				memcpy(salt, body + 4, 4);
-				if (!auth_md5(sock, user, password, salt))
+				if (!auth_md5(x, user, password, salt))
 				{
 					break;
 				}
@@ -636,7 +664,7 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *password, const
 			}
 			else if (sub == 10)                      /* SASL (SCRAM-SHA-256). */
 			{
-				if (!auth_scram(&r, sock, user, password))
+				if (!auth_scram(&r, x, user, password))
 				{
 					break;
 				}
@@ -670,10 +698,12 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *password, const
 
 /* ---- the PgConnection node + the Breezy entry points -------------------------- */
 
-/* PgConnection: sock@24, size 32. typeinfo {0,1,24} -- one managed slot so ARC and
-   the cycle collector trace (and release) the held Socket. */
+/* PgConnection: transport@24 (a Socket, or a TlsSocket after connectTls), is_tls@32,
+   size 40. typeinfo {0,1,24} -- the single managed slot traces the transport whichever
+   kind it is (both are managed objects); is_tls is a plain int the GC ignores. */
 #define PGC_SOCK 24
-#define PGC_SIZE 32
+#define PGC_TLS  32
+#define PGC_SIZE 40
 
 static int64_t g_pgc_ti[3] = { 0, 1, PGC_SOCK };
 static int64_t g_pgc_vt[2];
@@ -702,7 +732,8 @@ void *bzy_pg_connect(void *host, int64_t port, void *user, void *pass, void *db)
 		return NULL;
 	}
 
-	if (!bzy_pg_run_startup(sock, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db)))
+	Xport x = { sock, 0 };
+	if (!bzy_pg_run_startup(&x, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db)))
 	{
 		bzy_socket_close(sock);   /* Startup set the error. */
 		bzy_release(sock);
@@ -712,7 +743,82 @@ void *bzy_pg_connect(void *host, int64_t port, void *user, void *pass, void *db)
 	void *n = bzy_alloc(PGC_SIZE);
 	*(void**)n = pgc_vtable();
 	*(void**)((char*)n + PGC_SOCK) = sock;   /* Transfer the +1 from bzy_socket_connect. */
+	*(int*)((char*)n + PGC_TLS) = 0;
 	return n;
+}
+
+/* Connect over TLS: the same handshake as bzy_pg_connect, but with a TLS upgrade
+   negotiated first. PostgreSQL negotiates in plaintext -- send the 8-byte SSLRequest,
+   read one byte ('S' = proceed, 'N' = the server refuses TLS), then run the TLS
+   handshake over the same socket; startup + auth + queries then ride the TlsSocket.
+   `insecure` skips certificate + hostname verification (self-signed / dev servers).
+   A server that refuses TLS is an error -- never a silent downgrade to plaintext. */
+static void *pg_connect_tls(void *host, int64_t port, void *user, void *pass, void *db, int insecure)
+{
+	void *sock = bzy_socket_connect(host, port);
+	if (!sock)
+	{
+		bzy_db_set_error("Could not connect to the PostgreSQL server.");
+		return NULL;
+	}
+
+	/* SSLRequest: int32 length = 8, int32 code = 80877103 (0x04D2162F), big-endian. */
+	static const char ssl_request[8] = { 0, 0, 0, 8, 0x04, (char)0xD2, 0x16, 0x2F };
+	if (bzy_sock_send_all(sock, ssl_request, 8) < 0)
+	{
+		bzy_db_set_error("Failed to send the PostgreSQL SSLRequest.");
+		bzy_socket_close(sock);
+		bzy_release(sock);
+		return NULL;
+	}
+
+	char reply = 0;
+	if (bzy_sock_recv(sock, &reply, 1, -1) != 1)
+	{
+		bzy_db_set_error("No response to the PostgreSQL SSLRequest.");
+		bzy_socket_close(sock);
+		bzy_release(sock);
+		return NULL;
+	}
+	if (reply != 'S')
+	{
+		bzy_db_set_error("The PostgreSQL server refused TLS (SSLRequest returned 'N').");
+		bzy_socket_close(sock);
+		bzy_release(sock);
+		return NULL;
+	}
+
+	/* Upgrade consumes the socket reference; on failure it is already cleaned up. */
+	void *tls = bzy_tls_upgrade_client(sock, bzy_str_data(host), insecure);
+	if (!tls)
+	{
+		bzy_db_set_error("PostgreSQL TLS handshake or certificate verification failed.");
+		return NULL;
+	}
+
+	Xport x = { tls, 1 };
+	if (!bzy_pg_run_startup(&x, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db)))
+	{
+		bzy_tls_close(tls);   /* Startup set the error. */
+		bzy_release(tls);
+		return NULL;
+	}
+
+	void *n = bzy_alloc(PGC_SIZE);
+	*(void**)n = pgc_vtable();
+	*(void**)((char*)n + PGC_SOCK) = tls;   /* Transfer the +1 from the upgrade. */
+	*(int*)((char*)n + PGC_TLS) = 1;
+	return n;
+}
+
+void *bzy_pg_connect_tls(void *host, int64_t port, void *user, void *pass, void *db)
+{
+	return pg_connect_tls(host, port, user, pass, db, 0);   /* Verify cert + hostname. */
+}
+
+void *bzy_pg_connect_tls_insecure(void *host, int64_t port, void *user, void *pass, void *db)
+{
+	return pg_connect_tls(host, port, user, pass, db, 1);   /* Skip verification. */
 }
 
 /* Send Terminate and close the socket. The node still owns its +1 Socket reference,
@@ -726,9 +832,18 @@ void bzy_pg_close(void *conn)
 	void *sock = *(void**)((char*)conn + PGC_SOCK);
 	if (sock)
 	{
+		int is_tls = *(int*)((char*)conn + PGC_TLS);
+		Xport x = { sock, is_tls };
 		char term[5] = { 'X', 0, 0, 0, 4 };   /* Terminate: tag 'X' + int32 length 4. */
-		bzy_sock_send_all(sock, term, 5);
-		bzy_socket_close(sock);
+		x_send(&x, term, 5);
+		if (is_tls)
+		{
+			bzy_tls_close(sock);
+		}
+		else
+		{
+			bzy_socket_close(sock);
+		}
 	}
 }
 
@@ -878,17 +993,17 @@ void *bzy_pg_query(void *conn, void *sql)
 		bzy_db_set_error("Query on a null connection.");
 		return NULL;
 	}
-	void *sock = *(void**)((char*)conn + PGC_SOCK);
+	Xport x = { *(void**)((char*)conn + PGC_SOCK), *(int*)((char*)conn + PGC_TLS) };
 
 	const char *s = bzy_str_data(sql);
-	if (!send_tagged(sock, 'Q', s, (int64_t)strlen(s) + 1))
+	if (!send_tagged(&x, 'Q', s, (int64_t)strlen(s) + 1))
 	{
 		bzy_db_set_error("Failed to send the query.");
 		return NULL;
 	}
 
 	Reader r = { 0 };
-	r.sock = sock;
+	r.x = &x;
 	return collect_results(&r);
 }
 
@@ -903,7 +1018,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		bzy_db_set_error("Query on a null connection.");
 		return NULL;
 	}
-	void *sock = *(void**)((char*)conn + PGC_SOCK);
+	Xport xp = { *(void**)((char*)conn + PGC_SOCK), *(int*)((char*)conn + PGC_TLS) };
 
 	const char *s = bzy_str_data(sql);
 	int64_t nparams = params ? *(int64_t*)((char*)params + 24) : 0;
@@ -915,7 +1030,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		w_cstr(&p, "");
 		w_cstr(&p, s);
 		w_i16(&p, 0);
-		int ok = send_tagged(sock, 'P', p.p, p.len);
+		int ok = send_tagged(&xp, 'P', p.p, p.len);
 		free(p.p);
 		if (!ok)
 		{
@@ -946,7 +1061,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 			}
 		}
 		w_i16(&b, 0);                    /* 0 result format codes -> all text. */
-		int ok = send_tagged(sock, 'B', b.p, b.len);
+		int ok = send_tagged(&xp, 'B', b.p, b.len);
 		free(b.p);
 		if (!ok)
 		{
@@ -960,7 +1075,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		Wbuf d = { 0 };
 		w_u8(&d, 'P');
 		w_cstr(&d, "");
-		int ok = send_tagged(sock, 'D', d.p, d.len);
+		int ok = send_tagged(&xp, 'D', d.p, d.len);
 		free(d.p);
 		if (!ok)
 		{
@@ -972,7 +1087,7 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 		Wbuf x = { 0 };
 		w_cstr(&x, "");                  /* Portal. */
 		w_i32(&x, 0);                    /* Max rows: 0 = all. */
-		int ok = send_tagged(sock, 'E', x.p, x.len);
+		int ok = send_tagged(&xp, 'E', x.p, x.len);
 		free(x.p);
 		if (!ok)
 		{
@@ -980,13 +1095,13 @@ void *bzy_pg_query_params(void *conn, void *sql, void *params)
 			return NULL;
 		}
 	}
-	if (!send_tagged(sock, 'S', "", 0))
+	if (!send_tagged(&xp, 'S', "", 0))
 	{
 		bzy_db_set_error("Failed to send the Sync message.");
 		return NULL;
 	}
 
 	Reader r = { 0 };
-	r.sock = sock;
+	r.x = &xp;
 	return collect_results(&r);
 }

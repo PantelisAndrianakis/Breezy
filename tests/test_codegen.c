@@ -1431,6 +1431,16 @@ static void test_pg_connect_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_pg_close") != NULL, 1);     /* close lowering. */
 }
 
+static void test_pg_connect_tls_lowers(void)
+{
+	emit("void main(){ PgConnection c = Postgres.connectTls(\"h\",5432,\"u\",\"p\",\"d\"); c.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_pg_connect_tls") != NULL, 1);   /* The verifying TLS connect. */
+	ASSERT_INT(strstr(g_asm, "bzy_db_check") != NULL, 1);         /* failure -> DbException. */
+
+	emit("void main(){ PgConnection c = Postgres.connectTlsInsecure(\"h\",5432,\"u\",\"p\",\"d\"); c.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_pg_connect_tls_insecure") != NULL, 1);   /* The no-verify variant. */
+}
+
 static void test_my_connect_lowers(void)
 {
 	emit("void main(){ MyConnection c = Mysql.connect(\"h\",3306,\"u\",\"p\",\"d\"); c.close(); }", TARGET_LINUX);
@@ -1699,6 +1709,7 @@ int main(void)
 	RUN(test_json_parse_lowers);
 	RUN(test_http_read_request_lowers);
 	RUN(test_pg_connect_lowers);
+	RUN(test_pg_connect_tls_lowers);
 	RUN(test_my_connect_lowers);
 	RUN(test_pg_query_lowers);
 	RUN(test_my_query_lowers);

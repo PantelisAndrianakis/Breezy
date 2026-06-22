@@ -6153,9 +6153,13 @@ static void cg_db_check_after(Codegen *cg)
 static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 9;   /* After "Postgres.". */
-	if (strcmp(m,"connect")==0)
+	if (strcmp(m,"connect")==0 || strcmp(m,"connectTls")==0 || strcmp(m,"connectTlsInsecure")==0)
 	{
-		/* (host, port, user, password, database) -> PgConnection. port widens to 64-bit. */
+		/* (host, port, user, password, database) -> PgConnection. port widens to 64-bit.
+		   connectTls verifies the server cert; connectTlsInsecure skips verification. */
+		const char *fn = strcmp(m,"connect")==0 ? "bzy_pg_connect"
+						 : strcmp(m,"connectTls")==0 ? "bzy_pg_connect_tls"
+						 : "bzy_pg_connect_tls_insecure";
 		TypeRef ps[5];
 		ps[0]=e->args[0]->type;
 		memset(&ps[1],0,sizeof(ps[1]));
@@ -6163,7 +6167,7 @@ static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
 		ps[2]=e->args[2]->type;
 		ps[3]=e->args[3]->type;
 		ps[4]=e->args[4]->type;
-		cg_call_with_args(cg,tt,"bzy_pg_connect",NULL,e->args,5,0,1,0,ps,5,0);
+		cg_call_with_args(cg,tt,fn,NULL,e->args,5,0,1,0,ps,5,0);
 		cg_db_check_after(cg);
 		return;
 	}
@@ -13171,6 +13175,8 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_http_send_response");
 	cg_emit(cg,"extern bzy_http_send_request");
 	cg_emit(cg,"extern bzy_pg_connect");
+	cg_emit(cg,"extern bzy_pg_connect_tls");
+	cg_emit(cg,"extern bzy_pg_connect_tls_insecure");
 	cg_emit(cg,"extern bzy_pg_close");
 	cg_emit(cg,"extern bzy_pg_query");
 	cg_emit(cg,"extern bzy_my_connect");
