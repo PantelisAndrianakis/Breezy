@@ -25,6 +25,14 @@ extern void  bzy_socket_close(void *s);
 /* Shared result model (dbresult.c) -- the error sink used for a failed handshake. */
 extern void bzy_db_set_error(const char *msg);
 
+/* Authentication crypto (crypto.c, libcrypto bound lazily). */
+extern int  bzy_crypto_load(void);
+extern void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char *out32);
+extern void bzy_crypto_md5(const unsigned char *in, size_t len, unsigned char *out16);
+extern void bzy_crypto_hmac_sha256(const unsigned char *key, int klen, const unsigned char *data, size_t dlen, unsigned char *out32);
+extern int  bzy_crypto_pbkdf2_sha256(const char *pass, int plen, const unsigned char *salt, int slen, int iters, unsigned char *out, int outlen);
+extern int  bzy_crypto_rand(unsigned char *out, int len);
+
 #define PG_PROTOCOL_V3 196608   /* 3.0 in the int32 (major<<16 | minor). */
 
 /* ---- the buffered reader (one growable buffer + a scan cursor, as httpproto) -- */
@@ -140,6 +148,315 @@ static void w_patch_len(Wbuf *w, int64_t at)
 	w->p[at + 3] = (char)v;
 }
 
+/* ---- small encodings + a tagged-message sender (for authentication) ---------- */
+
+static const char B64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/* Base64-encode `len` bytes into `out` (NUL-terminated). Returns the text length. */
+static int b64_encode(const unsigned char *in, int len, char *out)
+{
+	int o = 0;
+	int i = 0;
+	while (i + 2 < len)
+	{
+		out[o++] = B64[in[i] >> 2];
+		out[o++] = B64[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+		out[o++] = B64[((in[i + 1] & 15) << 2) | (in[i + 2] >> 6)];
+		out[o++] = B64[in[i + 2] & 63];
+		i += 3;
+	}
+
+	if (len - i == 1)
+	{
+		out[o++] = B64[in[i] >> 2];
+		out[o++] = B64[(in[i] & 3) << 4];
+		out[o++] = '=';
+		out[o++] = '=';
+	}
+	else if (len - i == 2)
+	{
+		out[o++] = B64[in[i] >> 2];
+		out[o++] = B64[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+		out[o++] = B64[(in[i + 1] & 15) << 2];
+		out[o++] = '=';
+	}
+
+	out[o] = '\0';
+	return o;
+}
+
+static int b64_val(char c)
+{
+	if (c >= 'A' && c <= 'Z') { return c - 'A'; }
+	if (c >= 'a' && c <= 'z') { return c - 'a' + 26; }
+	if (c >= '0' && c <= '9') { return c - '0' + 52; }
+	if (c == '+') { return 62; }
+	if (c == '/') { return 63; }
+	return -1;   /* '=' or padding/whitespace. */
+}
+
+/* Base64-decode `inlen` chars into `out`; returns the byte count, -1 on a bad char. */
+static int b64_decode(const char *in, int inlen, unsigned char *out)
+{
+	int o = 0;
+	int bits = 0;
+	int acc = 0;
+	for (int i = 0; i < inlen; i++)
+	{
+		if (in[i] == '=') { break; }
+		int v = b64_val(in[i]);
+		if (v < 0) { return -1; }
+		acc = (acc << 6) | v;
+		bits += 6;
+		if (bits >= 8)
+		{
+			bits -= 8;
+			out[o++] = (unsigned char)((acc >> bits) & 0xFF);
+		}
+	}
+
+	return o;
+}
+
+static void hex_encode(const unsigned char *in, int len, char *out)
+{
+	static const char H[] = "0123456789abcdef";
+	for (int i = 0; i < len; i++)
+	{
+		out[2 * i]     = H[in[i] >> 4];
+		out[2 * i + 1] = H[in[i] & 15];
+	}
+
+	out[2 * len] = '\0';
+}
+
+/* Send a tagged frontend message (tag + int32 length + body), one socket write. */
+static int send_tagged(void *sock, char tag, const char *body, int64_t blen)
+{
+	Wbuf w = { 0 };
+	w_u8(&w, (unsigned char)tag);
+	int64_t at = w.len;
+	w_i32(&w, 0);
+	w_bytes(&w, body, blen);
+	w_patch_len(&w, at);
+	int64_t rc = bzy_sock_send_all(sock, w.p, w.len);
+	free(w.p);
+	return rc >= 0;
+}
+
+/* ---- authentication methods -------------------------------------------------- */
+
+/* AuthenticationCleartextPassword: send the password as a NUL-terminated string.
+   Safe only over TLS -- documented as such. */
+static int auth_cleartext(void *sock, const char *password)
+{
+	return send_tagged(sock, 'p', password, (int64_t)strlen(password) + 1);
+}
+
+/* AuthenticationMD5Password: send "md5" + md5_hex(md5_hex(password+user) + salt). */
+static int auth_md5(void *sock, const char *user, const char *password, const unsigned char salt[4])
+{
+	if (!bzy_crypto_load())
+	{
+		bzy_db_set_error("PostgreSQL MD5 authentication requires OpenSSL (libcrypto), which was not found.");
+		return 0;
+	}
+
+	size_t pl = strlen(password), ul = strlen(user);
+	unsigned char *cat = (unsigned char*)malloc(pl + ul);
+	memcpy(cat, password, pl);
+	memcpy(cat + pl, user, ul);
+	unsigned char d1[16];
+	bzy_crypto_md5(cat, pl + ul, d1);
+	free(cat);
+
+	char h1[33];
+	hex_encode(d1, 16, h1);            /* 32 hex chars. */
+	unsigned char buf2[36];
+	memcpy(buf2, h1, 32);
+	memcpy(buf2 + 32, salt, 4);
+	unsigned char d2[16];
+	bzy_crypto_md5(buf2, 36, d2);
+
+	char body[40];
+	memcpy(body, "md5", 3);
+	hex_encode(d2, 16, body + 3);      /* "md5" + 32 hex + NUL. */
+	return send_tagged(sock, 'p', body, (int64_t)strlen(body) + 1);
+}
+
+/* Find "<key>=" in a comma-delimited SCRAM message; copy the value (to the next
+   comma or end) into out. Returns the value length, or -1 if the key is absent. */
+static int scram_field(const char *msg, char key, char *out, int outcap)
+{
+	const char *p = msg;
+	while (*p)
+	{
+		if (p[0] == key && p[1] == '=')
+		{
+			const char *v = p + 2;
+			const char *e = strchr(v, ',');
+			int n = e ? (int)(e - v) : (int)strlen(v);
+			if (n >= outcap) { n = outcap - 1; }
+			memcpy(out, v, n);
+			out[n] = '\0';
+			return n;
+		}
+
+		const char *nx = strchr(p, ',');
+		if (!nx) { break; }
+		p = nx + 1;
+	}
+
+	return -1;
+}
+
+/* The SCRAM-SHA-256 client exchange (RFC 5802). Sends client-first, reads
+   server-first ('R' SASLContinue), sends client-final with the client proof, reads
+   and verifies server-final ('R' SASLFinal). Returns 1 on success; on failure the
+   error sink is set. The caller's loop then reads AuthenticationOk + ReadyForQuery. */
+static int auth_scram(Reader *r, void *sock, const char *user, const char *password)
+{
+	(void)user;   /* The username travels in the startup message; SCRAM sends n=, . */
+	if (!bzy_crypto_load())
+	{
+		bzy_db_set_error("PostgreSQL SCRAM authentication requires OpenSSL (libcrypto), which was not found.");
+		return 0;
+	}
+
+	/* Client nonce: 18 random bytes -> 24 base64 chars (no '=' padding, no comma). */
+	unsigned char nraw[18];
+	if (!bzy_crypto_rand(nraw, 18))
+	{
+		bzy_db_set_error("Failed to generate a SCRAM client nonce.");
+		return 0;
+	}
+
+	char cnonce[40];
+	b64_encode(nraw, 18, cnonce);
+
+	char first_bare[80];
+	snprintf(first_bare, sizeof(first_bare), "n=,r=%s", cnonce);
+
+	/* SASLInitialResponse: mechanism cstr, int32 data length, then "n,," + bare. */
+	char client_first[96];
+	snprintf(client_first, sizeof(client_first), "n,,%s", first_bare);
+	{
+		Wbuf w = { 0 };
+		w_cstr(&w, "SCRAM-SHA-256");
+		w_i32(&w, (int32_t)strlen(client_first));
+		w_bytes(&w, client_first, (int64_t)strlen(client_first));
+		int ok = send_tagged(sock, 'p', w.p, w.len);
+		free(w.p);
+		if (!ok) { bzy_db_set_error("Failed to send the SCRAM client-first message."); return 0; }
+	}
+
+	/* Read 'R' AuthenticationSASLContinue (sub 11): the server-first-message. */
+	char tag;
+	char *body;
+	int64_t blen;
+	if (!rd_msg(r, &tag, &body, &blen) || tag != 'R' || blen < 4 || be32(body) != 11)
+	{
+		bzy_db_set_error("Unexpected message during SCRAM (expected SASLContinue).");
+		return 0;
+	}
+
+	char server_first[512];
+	int sflen = (int)(blen - 4);
+	if (sflen >= (int)sizeof(server_first)) { sflen = (int)sizeof(server_first) - 1; }
+	memcpy(server_first, body + 4, sflen);
+	server_first[sflen] = '\0';
+
+	char combined[128], salt_b64[256], iters_s[16];
+	if (scram_field(server_first, 'r', combined, sizeof(combined)) < 0
+		|| scram_field(server_first, 's', salt_b64, sizeof(salt_b64)) < 0
+		|| scram_field(server_first, 'i', iters_s, sizeof(iters_s)) < 0)
+	{
+		bzy_db_set_error("Malformed SCRAM server-first message.");
+		return 0;
+	}
+
+	if (strncmp(combined, cnonce, strlen(cnonce)) != 0)   /* Server must echo our nonce. */
+	{
+		bzy_db_set_error("SCRAM nonce mismatch (possible man-in-the-middle).");
+		return 0;
+	}
+
+	unsigned char salt[192];
+	int saltlen = b64_decode(salt_b64, (int)strlen(salt_b64), salt);
+	int iters = atoi(iters_s);
+	if (saltlen <= 0 || iters <= 0)
+	{
+		bzy_db_set_error("Invalid SCRAM salt or iteration count.");
+		return 0;
+	}
+
+	/* SaltedPassword -> ClientKey -> StoredKey -> ClientSignature -> proof. */
+	unsigned char salted[32];
+	if (!bzy_crypto_pbkdf2_sha256(password, (int)strlen(password), salt, saltlen, iters, salted, 32))
+	{
+		bzy_db_set_error("SCRAM PBKDF2 derivation failed.");
+		return 0;
+	}
+
+	unsigned char client_key[32], stored_key[32], server_key[32];
+	bzy_crypto_hmac_sha256(salted, 32, (const unsigned char*)"Client Key", 10, client_key);
+	bzy_crypto_sha256(client_key, 32, stored_key);
+	bzy_crypto_hmac_sha256(salted, 32, (const unsigned char*)"Server Key", 10, server_key);
+
+	char final_noproof[160];
+	snprintf(final_noproof, sizeof(final_noproof), "c=biws,r=%s", combined);
+
+	char auth_msg[1024];
+	snprintf(auth_msg, sizeof(auth_msg), "%s,%s,%s", first_bare, server_first, final_noproof);
+
+	unsigned char client_sig[32], server_sig[32];
+	bzy_crypto_hmac_sha256(stored_key, 32, (const unsigned char*)auth_msg, strlen(auth_msg), client_sig);
+	bzy_crypto_hmac_sha256(server_key, 32, (const unsigned char*)auth_msg, strlen(auth_msg), server_sig);
+
+	unsigned char proof[32];
+	for (int i = 0; i < 32; i++) { proof[i] = client_key[i] ^ client_sig[i]; }
+	char proof_b64[64];
+	b64_encode(proof, 32, proof_b64);
+
+	char client_final[256];
+	snprintf(client_final, sizeof(client_final), "%s,p=%s", final_noproof, proof_b64);
+	if (!send_tagged(sock, 'p', client_final, (int64_t)strlen(client_final)))
+	{
+		bzy_db_set_error("Failed to send the SCRAM client-final message.");
+		return 0;
+	}
+
+	/* Read 'R' AuthenticationSASLFinal (sub 12): v=<base64 ServerSignature>. */
+	if (!rd_msg(r, &tag, &body, &blen) || tag != 'R' || blen < 4 || be32(body) != 12)
+	{
+		bzy_db_set_error("Unexpected message during SCRAM (expected SASLFinal).");
+		return 0;
+	}
+
+	char server_final[128];
+	int ffl = (int)(blen - 4);
+	if (ffl >= (int)sizeof(server_final)) { ffl = (int)sizeof(server_final) - 1; }
+	memcpy(server_final, body + 4, ffl);
+	server_final[ffl] = '\0';
+
+	char vsig_b64[64];
+	if (scram_field(server_final, 'v', vsig_b64, sizeof(vsig_b64)) < 0)
+	{
+		bzy_db_set_error("Malformed SCRAM server-final message.");
+		return 0;
+	}
+
+	unsigned char vsig[64];
+	int vlen = b64_decode(vsig_b64, (int)strlen(vsig_b64), vsig);
+	if (vlen != 32 || memcmp(vsig, server_sig, 32) != 0)
+	{
+		bzy_db_set_error("SCRAM server signature verification failed (possible man-in-the-middle).");
+		return 0;
+	}
+
+	return 1;
+}
+
 /* ---- the startup handshake --------------------------------------------------- */
 
 /* StartupMessage: int32 length, int32 protocol(196608), then "user\0<u>\0
@@ -188,7 +505,7 @@ static void set_error_from_response(const char *body, int64_t blen)
    backend messages until ReadyForQuery (success, returns 1) or an error (returns
    0 with the error sink set). Authentication beyond AuthenticationOk lands in
    Task 5 -- here any auth request other than "Ok" is reported as unsupported. */
-int bzy_pg_run_startup(void *sock, const char *user, const char *db)
+int bzy_pg_run_startup(void *sock, const char *user, const char *password, const char *db)
 {
 	if (!send_startup(sock, user, db))
 	{
@@ -208,7 +525,26 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *db)
 		{
 			int32_t sub = (blen >= 4) ? be32(body) : -1;
 			if (sub == 0) { continue; }              /* AuthenticationOk. */
-			bzy_db_set_error("PostgreSQL authentication required but not yet supported (Task 5).");
+			else if (sub == 3)                       /* Cleartext password. */
+			{
+				if (!auth_cleartext(sock, password)) { bzy_db_set_error("Failed to send the cleartext password."); break; }
+				continue;
+			}
+			else if (sub == 5)                       /* MD5: a 4-byte salt follows. */
+			{
+				if (blen < 8) { bzy_db_set_error("Malformed MD5 authentication request."); break; }
+				unsigned char salt[4];
+				memcpy(salt, body + 4, 4);
+				if (!auth_md5(sock, user, password, salt)) { break; }
+				continue;
+			}
+			else if (sub == 10)                      /* SASL (SCRAM-SHA-256). */
+			{
+				if (!auth_scram(&r, sock, user, password)) { break; }
+				continue;
+			}
+
+			bzy_db_set_error("Unsupported PostgreSQL authentication method.");
 			break;
 		}
 		else if (tag == 'E')                         /* ErrorResponse. */
@@ -253,7 +589,6 @@ static void *pgc_vtable(void)
    ignores it. */
 void *bzy_pg_connect(void *host, int64_t port, void *user, void *pass, void *db)
 {
-	(void)pass;
 	void *sock = bzy_socket_connect(host, port);
 	if (!sock)
 	{
@@ -261,7 +596,7 @@ void *bzy_pg_connect(void *host, int64_t port, void *user, void *pass, void *db)
 		return NULL;
 	}
 
-	if (!bzy_pg_run_startup(sock, bzy_str_data(user), bzy_str_data(db)))
+	if (!bzy_pg_run_startup(sock, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db)))
 	{
 		bzy_socket_close(sock);   /* Startup set the error. */
 		bzy_release(sock);
