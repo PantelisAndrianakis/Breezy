@@ -22,6 +22,11 @@ extern void *bzy_socket_connect(void *host, int64_t port);
 extern void  bzy_socket_close(void *s);
 extern void bzy_db_set_error(const char *msg);
 
+/* Authentication crypto (crypto.c, libcrypto bound lazily). */
+extern int  bzy_crypto_load(void);
+extern void bzy_crypto_sha1(const unsigned char *in, size_t len, unsigned char *out20);
+extern void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char *out32);
+
 /* Client capability flags we advertise. */
 #define CLIENT_LONG_PASSWORD     0x00000001u
 #define CLIENT_LONG_FLAG         0x00000004u
@@ -222,8 +227,46 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 	return 1;
 }
 
-/* Build + send the Handshake Response. `auth` is the computed auth-response (empty
-   until Task 5 fills it per the plugin); `seq` is the handshake packet's seq + 1. */
+/* ---- auth-response computation ----------------------------------------------- */
+
+/* mysql_native_password: SHA1(pw) XOR SHA1(scramble + SHA1(SHA1(pw))), 20 bytes. */
+static int auth_native(const char *password, const unsigned char *scramble, unsigned char *out)
+{
+	if (!password[0]) { return 0; }
+	unsigned char h1[20], h2[20], h3[20], cat[40];
+	bzy_crypto_sha1((const unsigned char*)password, strlen(password), h1);
+	bzy_crypto_sha1(h1, 20, h2);
+	memcpy(cat, scramble, 20);
+	memcpy(cat + 20, h2, 20);
+	bzy_crypto_sha1(cat, 40, h3);
+	for (int i = 0; i < 20; i++) { out[i] = (unsigned char)(h1[i] ^ h3[i]); }
+	return 20;
+}
+
+/* caching_sha2_password fast path:
+   SHA256(pw) XOR SHA256(SHA256(SHA256(pw)) + scramble), 32 bytes. */
+static int auth_caching_sha2(const char *password, const unsigned char *scramble, unsigned char *out)
+{
+	if (!password[0]) { return 0; }
+	unsigned char d1[32], d2[32], d3[32], cat[52];
+	bzy_crypto_sha256((const unsigned char*)password, strlen(password), d1);
+	bzy_crypto_sha256(d1, 32, d2);
+	memcpy(cat, d2, 32);
+	memcpy(cat + 32, scramble, 20);
+	bzy_crypto_sha256(cat, 52, d3);
+	for (int i = 0; i < 32; i++) { out[i] = (unsigned char)(d1[i] ^ d3[i]); }
+	return 32;
+}
+
+static int compute_auth(const char *plugin, const char *password, const unsigned char *scramble, unsigned char *out)
+{
+	if (strcmp(plugin, "mysql_native_password") == 0) { return auth_native(password, scramble, out); }
+	if (strcmp(plugin, "caching_sha2_password") == 0) { return auth_caching_sha2(password, scramble, out); }
+	return 0;   /* Unknown plugin -> empty; the server will AuthSwitch or reject. */
+}
+
+/* Build + send the Handshake Response. `auth` is the computed auth-response;
+   `seq` is the handshake packet's seq + 1. */
 static int send_handshake_response(void *sock, int seq, const char *user, const char *db,
                                    const char *plugin, const unsigned char *auth, int authlen)
 {
@@ -247,13 +290,13 @@ static int send_handshake_response(void *sock, int seq, const char *user, const 
 	return ok;
 }
 
-/* Run the handshake on a connected socket: read the server greeting, send the
-   response, read OK/ERR. Returns 1 on success, 0 with the error sink set. Real
-   auth (a non-empty auth-response + AuthSwitch/AuthMoreData) lands in Task 5; here
-   the auth-response is empty, which a no-password account accepts. */
+/* Run the handshake on a connected socket: read the server greeting, compute the
+   auth-response for the server's plugin, send the response, and resolve the auth
+   exchange (OK / ERR / AuthSwitchRequest / AuthMoreData). Returns 1 on success,
+   0 with the error sink set. caching_sha2_password's full-auth path (0x01 0x04)
+   needs TLS, which is the deferred connectTls follow-up. */
 int bzy_my_run_handshake(void *sock, const char *user, const char *password, const char *db)
 {
-	(void)password;
 	Reader r = { 0 };
 	r.sock = sock;
 
@@ -282,8 +325,16 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 		return 0;
 	}
 
-	unsigned char empty[1] = { 0 };
-	if (!send_handshake_response(sock, seq + 1, user, db, hs.plugin, empty, 0))
+	if (password[0] && !bzy_crypto_load())
+	{
+		bzy_db_set_error("MySQL authentication requires OpenSSL (libcrypto), which was not found.");
+		free(r.buf);
+		return 0;
+	}
+
+	unsigned char auth[64];
+	int authlen = compute_auth(hs.plugin, password, hs.scramble, auth);
+	if (!send_handshake_response(sock, seq + 1, user, db, hs.plugin, auth, authlen))
 	{
 		bzy_db_set_error("Failed to send the MySQL handshake response.");
 		free(r.buf);
@@ -291,15 +342,59 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 	}
 
 	int ok = 0;
-	if (rd_packet(&r, &payload, &plen, &seq))
+	for (;;)
 	{
-		if (plen >= 1 && payload[0] == 0x00) { ok = 1; }                 /* OK. */
-		else if (plen >= 1 && payload[0] == 0xff) { set_error_from_err(payload, plen); }
-		else { bzy_db_set_error("MySQL authentication required (Task 5)."); }
-	}
-	else
-	{
-		bzy_db_set_error("Connection closed during the MySQL handshake.");
+		if (!rd_packet(&r, &payload, &plen, &seq))
+		{
+			bzy_db_set_error("Connection closed during MySQL authentication.");
+			break;
+		}
+
+		unsigned char marker = (plen >= 1) ? payload[0] : 0xff;
+		if (marker == 0x00) { ok = 1; break; }                  /* OK. */
+		if (marker == 0xff) { set_error_from_err(payload, plen); break; }
+
+		if (marker == 0xfe)   /* AuthSwitchRequest: 0xfe + plugin cstr + scramble. */
+		{
+			char newplugin[64];
+			size_t i = 0;
+			const unsigned char *q = payload + 1;
+			const unsigned char *end = payload + plen;
+			while (q < end && *q && i < sizeof(newplugin) - 1) { newplugin[i++] = (char)*q++; }
+			newplugin[i] = '\0';
+			if (q < end) { q++; }   /* Step past the NUL. */
+			unsigned char newscr[20];
+			memset(newscr, 0, 20);
+			int64_t avail = end - q;
+			if (avail > 20) { avail = 20; }
+			if (avail > 0) { memcpy(newscr, q, (size_t)avail); }
+
+			unsigned char a2[64];
+			int a2len = compute_auth(newplugin, password, newscr, a2);
+			if (!send_packet(sock, seq + 1, (const char*)a2, a2len))
+			{
+				bzy_db_set_error("Failed to send the MySQL auth-switch response.");
+				break;
+			}
+			continue;
+		}
+
+		if (marker == 0x01)   /* AuthMoreData (caching_sha2_password). */
+		{
+			unsigned char sub = (plen >= 2) ? payload[1] : 0;
+			if (sub == 0x03) { continue; }   /* fast_auth_success -> next packet is OK. */
+			if (sub == 0x04)                 /* full_auth needed (no cached entry). */
+			{
+				bzy_db_set_error("MySQL caching_sha2_password full authentication needs a TLS connection (connectTls is a deferred follow-up); use a mysql_native_password account meanwhile.");
+				break;
+			}
+
+			bzy_db_set_error("Unsupported MySQL authentication continuation.");
+			break;
+		}
+
+		bzy_db_set_error("Unexpected MySQL authentication response.");
+		break;
 	}
 
 	free(r.buf);
