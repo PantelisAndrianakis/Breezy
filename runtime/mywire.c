@@ -29,11 +29,40 @@ extern int  bzy_crypto_load(void);
 extern void bzy_crypto_sha1(const unsigned char *in, size_t len, unsigned char *out20);
 extern void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char *out32);
 
+/* TLS transport (tls.c): the raw-byte twins + the upgrade-an-existing-socket entry.
+   Used only by connectTls; a plaintext connection never references these. */
+extern int     bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms);
+extern int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len);
+extern void   *bzy_tls_upgrade_client(void *transport, const char *host, int insecure);
+extern void    bzy_tls_close(void *s);
+
+/* The transport a connection rides on: a plain Socket, or after connectTls a
+   TlsSocket. x_recv/x_send branch on is_tls so all the protocol code below stays
+   transport-agnostic -- it threads an Xport* where it used to thread a void *sock. */
+typedef struct
+{
+	void *t;
+	int   is_tls;
+} Xport;
+
+static int x_recv(Xport *x, char *buf, int max, int64_t timeout_ms)
+{
+	return x->is_tls ? bzy_tls_recv(x->t, buf, max, timeout_ms)
+		   : bzy_sock_recv(x->t, buf, max, timeout_ms);
+}
+
+static int64_t x_send(Xport *x, const char *buf, int64_t len)
+{
+	return x->is_tls ? bzy_tls_send_all(x->t, buf, len)
+		   : bzy_sock_send_all(x->t, buf, len);
+}
+
 /* Client capability flags we advertise. */
 #define CLIENT_LONG_PASSWORD     0x00000001u
 #define CLIENT_LONG_FLAG         0x00000004u
 #define CLIENT_CONNECT_WITH_DB   0x00000008u
 #define CLIENT_PROTOCOL_41       0x00000200u
+#define CLIENT_SSL               0x00000800u
 #define CLIENT_TRANSACTIONS      0x00002000u
 #define CLIENT_SECURE_CONNECTION 0x00008000u
 #define CLIENT_PLUGIN_AUTH       0x00080000u
@@ -124,7 +153,7 @@ static const char *lenenc_str(const unsigned char **p, const unsigned char *end,
 
 typedef struct
 {
-	void   *sock;
+	Xport  *x;
 	char   *buf;
 	int64_t len;
 	int64_t cap;
@@ -148,7 +177,7 @@ static int rd_fill(Reader *r)
 		r->buf = (char*)realloc(r->buf, (size_t)r->cap);
 	}
 
-	int n = bzy_sock_recv(r->sock, r->buf + r->len, 65536, -1);
+	int n = x_recv(r->x, r->buf + r->len, 65536, -1);
 	if (n <= 0)
 	{
 		r->eof = 1;
@@ -272,7 +301,7 @@ static void w_zero(Wbuf *w, int n)
 }
 
 /* Send a payload as one packet: a 3-byte LE length + the sequence byte + payload. */
-static int send_packet(void *sock, int seq, const char *payload, int64_t plen)
+static int send_packet(Xport *x, int seq, const char *payload, int64_t plen)
 {
 	Wbuf h = { 0 };
 	w_u8(&h, (unsigned char)plen);
@@ -280,7 +309,7 @@ static int send_packet(void *sock, int seq, const char *payload, int64_t plen)
 	w_u8(&h, (unsigned char)(plen >> 16));
 	w_u8(&h, (unsigned char)seq);
 	w_bytes(&h, payload, plen);
-	int64_t rc = bzy_sock_send_all(sock, h.p, h.len);
+	int64_t rc = x_send(x, h.p, h.len);
 	free(h.p);
 	return rc >= 0;
 }
@@ -463,10 +492,9 @@ static int compute_auth(const char *plugin, const char *password, const unsigned
 	return 0;   /* Unknown plugin -> empty; the server will AuthSwitch or reject. */
 }
 
-/* Build + send the Handshake Response. `auth` is the computed auth-response;
-   `seq` is the handshake packet's seq + 1. */
-static int send_handshake_response(void *sock, int seq, const char *user, const char *db,
-								   const char *plugin, const unsigned char *auth, int authlen)
+/* The capability flags the handshake response advertises. with_ssl adds CLIENT_SSL
+   (set on both the SSLRequest packet and the response that follows it over TLS). */
+static uint32_t client_caps(const char *db, int with_ssl)
 {
 	uint32_t caps = CLIENT_LONG_PASSWORD | CLIENT_LONG_FLAG | CLIENT_PROTOCOL_41
 					| CLIENT_TRANSACTIONS | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH;
@@ -474,9 +502,37 @@ static int send_handshake_response(void *sock, int seq, const char *user, const 
 	{
 		caps |= CLIENT_CONNECT_WITH_DB;
 	}
+	if (with_ssl)
+	{
+		caps |= CLIENT_SSL;
+	}
+	return caps;
+}
 
+/* Send the SSLRequest packet: the first 32 bytes of a handshake response (capability
+   flags with CLIENT_SSL, max-packet, charset, the 23-byte filler) and no username or
+   auth. The server switches to TLS after this; the full handshake response follows
+   over the encrypted channel. */
+static int send_ssl_request(Xport *x, int seq, const char *db)
+{
 	Wbuf w = { 0 };
-	w_le32(&w, caps);
+	w_le32(&w, client_caps(db, 1));
+	w_le32(&w, 0x01000000);          /* Max packet size 16 MiB. */
+	w_u8(&w, 45);                    /* utf8mb4_general_ci. */
+	w_zero(&w, 23);                  /* Reserved. */
+	int ok = send_packet(x, seq, w.p, w.len);
+	free(w.p);
+	return ok;
+}
+
+/* Build + send the Handshake Response. `auth` is the computed auth-response; `seq` is
+   the next sequence number (handshake+1 plaintext, handshake+2 after an SSLRequest).
+   with_ssl keeps CLIENT_SSL set so the response matches the SSLRequest's caps. */
+static int send_handshake_response(Xport *x, int seq, const char *user, const char *db,
+								   const char *plugin, const unsigned char *auth, int authlen, int with_ssl)
+{
+	Wbuf w = { 0 };
+	w_le32(&w, client_caps(db, with_ssl));
 	w_le32(&w, 0x01000000);          /* Max packet size 16 MiB. */
 	w_u8(&w, 45);                    /* utf8mb4_general_ci. */
 	w_zero(&w, 23);                  /* Reserved. */
@@ -492,7 +548,7 @@ static int send_handshake_response(void *sock, int seq, const char *user, const 
 	}
 	w_cstr(&w, plugin);
 
-	int ok = send_packet(sock, seq, w.p, w.len);
+	int ok = send_packet(x, seq, w.p, w.len);
 	free(w.p);
 	return ok;
 }
@@ -502,10 +558,10 @@ static int send_handshake_response(void *sock, int seq, const char *user, const 
    exchange (OK / ERR / AuthSwitchRequest / AuthMoreData). Returns 1 on success,
    0 with the error sink set. caching_sha2_password's full-auth path (0x01 0x04)
    needs TLS, which is the deferred connectTls follow-up. */
-int bzy_my_run_handshake(void *sock, const char *user, const char *password, const char *db)
+int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const char *password, const char *db, int tls_mode)
 {
 	Reader r = { 0 };
-	r.sock = sock;
+	r.x = x;
 
 	unsigned char *payload;
 	int64_t plen;
@@ -539,9 +595,34 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 		return 0;
 	}
 
+	int rseq = seq + 1;   /* The next packet's sequence after the greeting. */
+	if (tls_mode)
+	{
+		/* MySQL upgrades mid-handshake: send the SSLRequest, switch to TLS over the
+		   same socket, then run the rest of the handshake -- and the whole session --
+		   encrypted. The transport swap is written back through x for the caller. */
+		if (!send_ssl_request(x, rseq, db))
+		{
+			bzy_db_set_error("Failed to send the MySQL SSLRequest.");
+			free(r.buf);
+			return 0;
+		}
+		rseq++;
+		void *tls = bzy_tls_upgrade_client(x->t, host, tls_mode == 2);
+		if (!tls)
+		{
+			bzy_db_set_error("MySQL TLS handshake or certificate verification failed.");
+			x->t = NULL;   /* The upgrade already consumed + released the socket. */
+			free(r.buf);
+			return 0;
+		}
+		x->t = tls;
+		x->is_tls = 1;
+	}
+
 	unsigned char auth[64];
 	int authlen = compute_auth(hs.plugin, password, hs.scramble, auth);
-	if (!send_handshake_response(sock, seq + 1, user, db, hs.plugin, auth, authlen))
+	if (!send_handshake_response(x, rseq, user, db, hs.plugin, auth, authlen, tls_mode ? 1 : 0))
 	{
 		bzy_db_set_error("Failed to send the MySQL handshake response.");
 		free(r.buf);
@@ -598,7 +679,7 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 
 			unsigned char a2[64];
 			int a2len = compute_auth(newplugin, password, newscr, a2);
-			if (!send_packet(sock, seq + 1, (const char*)a2, a2len))
+			if (!send_packet(x, seq + 1, (const char*)a2, a2len))
 			{
 				bzy_db_set_error("Failed to send the MySQL auth-switch response.");
 				break;
@@ -613,10 +694,20 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 			{
 				continue;    /* fast_auth_success -> next packet is OK. */
 			}
-			if (sub == 0x04)                 /* full_auth needed (no cached entry). */
+			if (sub == 0x04)                 /* full_auth: no cached entry on the server. */
 			{
-				bzy_db_set_error("MySQL caching_sha2_password full authentication needs a TLS connection (connectTls is a deferred follow-up); use a mysql_native_password account meanwhile.");
-				break;
+				if (!x->is_tls)
+				{
+					bzy_db_set_error("MySQL caching_sha2_password full authentication requires a TLS connection; use Mysql.connectTls (or a mysql_native_password account).");
+					break;
+				}
+				/* Over TLS the cleartext password is safe; send it NUL-terminated. */
+				if (!send_packet(x, seq + 1, password, (int64_t)strlen(password) + 1))
+				{
+					bzy_db_set_error("Failed to send the MySQL full-auth password.");
+					break;
+				}
+				continue;   /* The next packet is OK (or ERR). */
 			}
 
 			bzy_db_set_error("Unsupported MySQL authentication continuation.");
@@ -633,9 +724,12 @@ int bzy_my_run_handshake(void *sock, const char *user, const char *password, con
 
 /* ---- the MyConnection node + the Breezy entry points -------------------------- */
 
-/* MyConnection: sock@24, size 32, typeinfo {0,1,24} (one managed slot). */
+/* MyConnection: transport@24 (a Socket, or a TlsSocket after connectTls), is_tls@32,
+   size 40, typeinfo {0,1,24} -- the single managed slot traces the transport whichever
+   kind it is; is_tls is a plain int the GC ignores. */
 #define MYC_SOCK 24
-#define MYC_SIZE 32
+#define MYC_TLS  32
+#define MYC_SIZE 40
 
 static int64_t g_myc_ti[3] = { 0, 1, MYC_SOCK };
 static int64_t g_myc_vt[2];
@@ -662,7 +756,8 @@ void *bzy_my_connect(void *host, int64_t port, void *user, void *pass, void *db)
 		return NULL;
 	}
 
-	if (!bzy_my_run_handshake(sock, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db)))
+	Xport x = { sock, 0 };
+	if (!bzy_my_run_handshake(&x, NULL, bzy_str_data(user), bzy_str_data(pass), bzy_str_data(db), 0))
 	{
 		bzy_socket_close(sock);
 		bzy_release(sock);
@@ -672,7 +767,60 @@ void *bzy_my_connect(void *host, int64_t port, void *user, void *pass, void *db)
 	void *n = bzy_alloc(MYC_SIZE);
 	*(void**)n = myc_vtable();
 	*(void**)((char*)n + MYC_SOCK) = sock;   /* Transfer the +1 from bzy_socket_connect. */
+	*(int*)((char*)n + MYC_TLS) = 0;
 	return n;
+}
+
+/* Connect over TLS. MySQL negotiates the upgrade mid-handshake (read the greeting,
+   send an SSLRequest with CLIENT_SSL, switch to TLS, then send the handshake response
+   over the encrypted channel). insecure skips certificate + hostname verification
+   (self-signed / dev). Over TLS, caching_sha2_password full authentication works too. */
+static void *my_connect_tls(void *host, int64_t port, void *user, void *pass, void *db, int insecure)
+{
+	void *sock = bzy_socket_connect(host, port);
+	if (!sock)
+	{
+		bzy_db_set_error("Could not connect to the MySQL server.");
+		return NULL;
+	}
+
+	Xport x = { sock, 0 };
+	if (!bzy_my_run_handshake(&x, bzy_str_data(host), bzy_str_data(user), bzy_str_data(pass),
+							  bzy_str_data(db), insecure ? 2 : 1))
+	{
+		/* x.t is the current transport: the original socket if the upgrade had not
+		   run, the TlsSocket if it had, or NULL if the upgrade itself failed (already
+		   cleaned up). Tear down whatever remains. */
+		if (x.t)
+		{
+			if (x.is_tls)
+			{
+				bzy_tls_close(x.t);
+			}
+			else
+			{
+				bzy_socket_close(x.t);
+			}
+			bzy_release(x.t);
+		}
+		return NULL;
+	}
+
+	void *n = bzy_alloc(MYC_SIZE);
+	*(void**)n = myc_vtable();
+	*(void**)((char*)n + MYC_SOCK) = x.t;   /* The TlsSocket; the +1 transferred. */
+	*(int*)((char*)n + MYC_TLS) = 1;
+	return n;
+}
+
+void *bzy_my_connect_tls(void *host, int64_t port, void *user, void *pass, void *db)
+{
+	return my_connect_tls(host, port, user, pass, db, 0);   /* Verify cert + hostname. */
+}
+
+void *bzy_my_connect_tls_insecure(void *host, int64_t port, void *user, void *pass, void *db)
+{
+	return my_connect_tls(host, port, user, pass, db, 1);   /* Skip verification. */
 }
 
 /* Send COM_QUIT and close the socket (idempotent; the node keeps its +1 Socket
@@ -686,9 +834,18 @@ void bzy_my_close(void *conn)
 	void *sock = *(void**)((char*)conn + MYC_SOCK);
 	if (sock)
 	{
+		int is_tls = *(int*)((char*)conn + MYC_TLS);
+		Xport x = { sock, is_tls };
 		char quit[1] = { 0x01 };   /* COM_QUIT, packet seq 0. */
-		send_packet(sock, 0, quit, 1);
-		bzy_socket_close(sock);
+		send_packet(&x, 0, quit, 1);
+		if (is_tls)
+		{
+			bzy_tls_close(sock);
+		}
+		else
+		{
+			bzy_socket_close(sock);
+		}
 	}
 }
 
@@ -847,14 +1004,14 @@ void *bzy_my_query(void *conn, void *sql)
 		bzy_db_set_error("Query on a null connection.");
 		return NULL;
 	}
-	void *sock = *(void**)((char*)conn + MYC_SOCK);
+	Xport xp = { *(void**)((char*)conn + MYC_SOCK), *(int*)((char*)conn + MYC_TLS) };
 
 	const char *s = bzy_str_data(sql);
 	int64_t sl = bzy_str_len(sql);
 	Wbuf w = { 0 };
 	w_u8(&w, 0x03);                                  /* COM_QUERY. */
 	w_bytes(&w, s, sl);
-	int oks = send_packet(sock, 0, w.p, w.len);
+	int oks = send_packet(&xp, 0, w.p, w.len);
 	free(w.p);
 	if (!oks)
 	{
@@ -863,7 +1020,7 @@ void *bzy_my_query(void *conn, void *sql)
 	}
 
 	Reader r = { 0 };
-	r.sock = sock;
+	r.x = &xp;
 	return my_collect(&r);
 }
 
@@ -1121,7 +1278,7 @@ static void *my_collect_binary(Reader *r)
 void *bzy_my_query_params(void *conn, void *sql, void *params)
 {
 	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
-	void *sock = *(void**)((char*)conn + MYC_SOCK);
+	Xport xp = { *(void**)((char*)conn + MYC_SOCK), *(int*)((char*)conn + MYC_TLS) };
 
 	int64_t nparams = params ? *(int64_t*)((char*)params + 24) : 0;
 	void  **pslots = params ? (void**)((char*)params + 32) : NULL;
@@ -1133,13 +1290,13 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 		Wbuf w = { 0 };
 		w_u8(&w, 0x16);
 		w_bytes(&w, s, sl);
-		int oks = send_packet(sock, 0, w.p, w.len);
+		int oks = send_packet(&xp, 0, w.p, w.len);
 		free(w.p);
 		if (!oks) { bzy_db_set_error("Failed to send the prepare."); return NULL; }
 	}
 
 	Reader r = { 0 };
-	r.sock = sock;
+	r.x = &xp;
 	unsigned char *payload;
 	int64_t plen;
 	int seq;
@@ -1203,7 +1360,7 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 				}
 			}
 		}
-		int oks = send_packet(sock, 0, w.p, w.len);
+		int oks = send_packet(&xp, 0, w.p, w.len);
 		free(w.p);
 		if (!oks) { bzy_db_set_error("Failed to send the execute."); free(r.buf); return NULL; }
 	}
@@ -1215,7 +1372,7 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 		Wbuf w = { 0 };
 		w_u8(&w, 0x19);
 		w_le32(&w, stmt_id);
-		send_packet(sock, 0, w.p, w.len);
+		send_packet(&xp, 0, w.p, w.len);
 		free(w.p);
 	}
 
