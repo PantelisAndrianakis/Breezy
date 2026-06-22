@@ -480,7 +480,7 @@ else
     echo "  nobloat_minimal: SKIP (no linker map produced)"
 fi
 
-# Language Server (Phase G.1): drive `breezy --lsp` over stdio with a framed
+# Language Server: drive `breezy --lsp` over stdio with a framed
 # JSON-RPC session and assert the lifecycle handshake. Pure stdin/stdout, no DB
 # and no network -- fully CI-portable (unlike the database-driver pillars).
 lsp_frame() { printf 'Content-Length: %d\r\n\r\n%s' "${#1}" "$1"; }
@@ -519,6 +519,18 @@ if echo "$lsp_dout" | grep -q 'publishDiagnostics' \
     echo "  lsp_diagnostics: OK"
 else
     echo "  lsp_diagnostics: FAIL (got '$lsp_dout')"; fail=1
+fi
+
+# Symbol index: `breezy --symbols` emits a JSON occurrence index with
+# resolved types -- the data hover answers from. Assert a method's return type and a
+# local's class type land in the index at the right spelling.
+lsp_sym="$(./breezy --symbols tests/lsp/sym 2>/dev/null)"
+if echo "$lsp_sym" | grep -q '"name":"get","kind":"method","type":"int"' \
+   && echo "$lsp_sym" | grep -q '"name":"c","kind":"variable","type":"Counter"' \
+   && echo "$lsp_sym" | grep -q '"name":"value","kind":"field","type":"int"'; then
+    echo "  lsp_symbols: OK"
+else
+    echo "  lsp_symbols: FAIL (got '$lsp_sym')"; fail=1
 fi
 
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

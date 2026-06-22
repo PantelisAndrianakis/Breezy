@@ -14,6 +14,7 @@
 #include "config.h"
 #include "grow.h"
 #include "lsp.h"
+#include "symbols.h"
 
 static char *read_file(const char *path)
 {
@@ -96,6 +97,7 @@ int main(int argc, char *argv[])
 	const char *out_arg = NULL;   /* Optional second positional: final executable path. */
 	int check_only = 0;           /* --check: parse + resolve, emit JSON diagnostics, no codegen. */
 	int lsp_mode = 0;             /* --lsp: run the stdio language server, no compile. */
+	int symbols_mode = 0;         /* --symbols: parse + resolve, emit the JSON symbol index, no codegen. */
 #ifdef _WIN32
 	Target target = TARGET_WINDOWS;   /* Default to the build host. */
 #else
@@ -135,6 +137,11 @@ int main(int argc, char *argv[])
 		else if (strcmp(argv[i],"--lsp")==0)
 		{
 			lsp_mode = 1;
+		}
+		else if (strcmp(argv[i],"--symbols")==0)
+		{
+			symbols_mode = 1;
+			lexer_diag_json(1);   /* Stay quiet on diagnostics: a parse/resolve error exits before the index. */
 		}
 		else if (!src_arg)
 		{
@@ -253,6 +260,14 @@ int main(int argc, char *argv[])
 
 	types_register_all_members(&tt,units,total);   /* Classes parent-first: file order is filesystem-dependent. */
 	resolve_program(&tt,units,total);
+
+	/* --symbols: front-end only. Reaching here means resolve succeeded; emit the
+	   LSP symbol index and stop before codegen. */
+	if (symbols_mode)
+	{
+		symbols_emit(units,total);
+		return 0;
+	}
 
 	/* --check: front-end only. Reaching here means no diagnostics fired. */
 	if (check_only)

@@ -1,0 +1,17 @@
+// Fixture for the `breezy --symbols` index: a field, a method with a return type,
+// and locals, so the symbol index has concrete types to assert.
+class Counter
+{
+	int value;
+	int get()
+	{
+		return this.value;
+	}
+}
+
+void main()
+{
+	Counter c = new Counter();
+	int n = c.get();
+	print(n);
+}
