@@ -38,6 +38,36 @@ authenticates, and returns a `MyConnection` — or throws a catchable
 
 ---
 
+## Encrypted connections (TLS)
+
+`Mysql.connectTls(host, port, user, password, database)` is the same as `connect`,
+but encrypted. It negotiates the upgrade the way MySQL expects — read the server
+greeting, send an `SSLRequest` (the `CLIENT_SSL` capability), switch to TLS, then
+complete the handshake and run all queries over the encrypted channel. The returned
+`MyConnection` is used exactly like a plaintext one.
+
+```breezy
+MyConnection db = Mysql.connectTls("db.internal", 3306, "app", "secret", "shop");
+DbResult r = Mysql.query(db, "select 1");   // encrypted
+db.close();
+```
+
+`connectTls` **verifies the server certificate and hostname** and throws a
+`DbException` if verification fails — a man-in-the-middle is rejected by default. A
+server that does not offer TLS is an error, never a silent downgrade.
+`Mysql.connectTlsInsecure(...)` takes the same arguments but **skips verification**,
+for a development server with a self-signed certificate; do not use it in production.
+
+TLS also enables **`caching_sha2_password` full authentication**: when the server has
+no cached entry for the account, that scheme must send the password over a secure
+channel — over `connectTls` this now works (over a plaintext `connect` it raises a
+`DbException` pointing here). `mysql_native_password` works over either.
+
+> TLS is provided by the system OpenSSL, loaded on demand. A plaintext `connect`
+> never starts a TLS handshake.
+
+---
+
 ## Queries
 
 `Mysql.query(connection, sql)` runs a statement and returns a `DbResult`. A

@@ -33,6 +33,36 @@ credentials are rejected. `db.close()` ends the session.
 
 ---
 
+## Encrypted connections (TLS)
+
+`Postgres.connectTls(host, port, user, password, database)` is the same as
+`connect`, but every byte after the handshake is encrypted. It negotiates the
+upgrade the way PostgreSQL expects — an `SSLRequest` over the plain socket, then a
+TLS handshake over that same socket — and then runs startup, authentication, and
+all queries over the encrypted channel. The returned `PgConnection` is used exactly
+like a plaintext one.
+
+```breezy
+PgConnection db = Postgres.connectTls("db.internal", 5432, "app", "secret", "shop");
+DbResult r = Postgres.query(db, "select 1");   // encrypted
+db.close();
+```
+
+`connectTls` **verifies the server certificate and hostname** against the system
+trust store, and throws a `DbException` if verification fails — so a man-in-the-middle
+is rejected by default. A server that does not offer TLS is an error, **never** a
+silent downgrade to plaintext.
+
+For a server with a self-signed or otherwise unverifiable certificate (a development
+box), `Postgres.connectTlsInsecure(...)` takes the same arguments but **skips
+verification**. Do not use it in production — it accepts any certificate.
+
+> TLS is provided by the system OpenSSL, loaded on demand (the same library the
+> driver already loads for SCRAM authentication). A plaintext `connect` never starts
+> a TLS handshake.
+
+---
+
 ## Queries
 
 `Postgres.query(connection, sql)` runs a statement and returns a `DbResult`:
