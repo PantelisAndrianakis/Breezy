@@ -159,22 +159,48 @@ static int dtls_load(void)
 	return 1;
 }
 
-/* ---- DtlsSocket layout (object_size = 56), identical to TlsSocket:
+/* ---- DtlsSocket layout (object_size = 64), mirrors TlsSocket + one extra slot:
    0 vtable | 8 rc | 16 gcinfo | 24 transport(Socket*) | 32 SSL* | 40 SSL_CTX*
-   ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64). ---- */
+   ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64) |
+   56 demuxout. demuxout is NULL except for a Windows design-B server peer, where it
+   points to a DtlsDemuxOut (ciphertext egress = sendto on the shared listen fd to
+   this peer's address, since the peer has no connected fd of its own). ---- */
 #define DTS_TRANSPORT(o) (*(void**)((char*)(o) + 24))
 #define DTS_SSL(o)       (*(void**)((char*)(o) + 32))
 #define DTS_CTXOWN(o)    (*(void**)((char*)(o) + 40))
 #define DTS_CLOSED(o)    (*(int64_t*)((char*)(o) + 48))
+#define DTS_DEMUXOUT(o)  (*(void**)((char*)(o) + 56))
+
+#ifdef _WIN32
+/* Windows design-B server peer egress (see the server block below): ciphertext is
+   sent on the listener's shared fd to this peer's real address; `dead` lets the demux
+   thread stop forwarding once the peer closes. */
+typedef struct DtlsDemux DtlsDemux;
+typedef struct
+{
+	SOCKET fd;                       /* The listener's shared bound fd (not owned here). */
+	struct sockaddr_storage peer;    /* This peer's real address. */
+	int peerlen;
+	DtlsDemux *dx;                   /* Backptr to mark the table entry dead on close. */
+	void *entry;                     /* The DemuxPeer entry (opaque here). */
+} DtlsDemuxOut;
+#endif
 
 static int64_t g_dtls_sock_typeinfo[2] = { 0, 0 };
 static int64_t g_dtls_sock_vtable[2];
+
+#ifdef _WIN32
+static void dtls_demux_peer_closed(void *demuxout);   /* Defined in the server block. */
+#endif
 
 static void dtls_sock_finalize(void *o)
 {
 	if (DTS_CLOSED(o)) { return; }
 	if (DTS_SSL(o)) { ossl.SSL_free(DTS_SSL(o)); DTS_SSL(o) = NULL; }
 	if (DTS_CTXOWN(o)) { ossl.CTX_free(DTS_CTXOWN(o)); DTS_CTXOWN(o) = NULL; }
+#ifdef _WIN32
+	if (DTS_DEMUXOUT(o)) { dtls_demux_peer_closed(DTS_DEMUXOUT(o)); free(DTS_DEMUXOUT(o)); DTS_DEMUXOUT(o) = NULL; }
+#endif
 	if (DTS_TRANSPORT(o)) { bzy_release(DTS_TRANSPORT(o)); DTS_TRANSPORT(o) = NULL; }
 	DTS_CLOSED(o) = 1;
 }
@@ -205,6 +231,20 @@ static int dtls_flush(void *s)
 {
 	void *wbio = ossl.SSL_get_wbio(DTS_SSL(s));
 	char buf[4096];
+#ifdef _WIN32
+	DtlsDemuxOut *dx = DTS_DEMUXOUT(s);
+	if (dx)
+	{
+		/* Design-B server peer: no connected fd; send on the shared listen fd to the
+		   peer's real address (source port stays the listen port the client expects). */
+		for (;;)
+		{
+			int n = ossl.BIO_read(wbio, buf, (int)sizeof(buf));
+			if (n <= 0) { return 0; }
+			if (sendto(dx->fd, buf, n, 0, (struct sockaddr*)&dx->peer, dx->peerlen) < 0) { return -1; }
+		}
+	}
+#endif
 	for (;;)
 	{
 		int n = ossl.BIO_read(wbio, buf, (int)sizeof(buf));
@@ -285,12 +325,13 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
    SSL_CTX to free on close (client) or NULL (server shares the listener's). */
 static void *dtls_sock_wrap(void *transport, void *ssl, void *ctx_own)
 {
-	void *o = bzy_alloc(56);
+	void *o = bzy_alloc(64);
 	*(void**)o = dtls_sock_vtable();
 	DTS_TRANSPORT(o) = transport;
 	DTS_SSL(o) = ssl;
 	DTS_CTXOWN(o) = ctx_own;
 	DTS_CLOSED(o) = 0;
+	DTS_DEMUXOUT(o) = NULL;   /* Set only for a Windows design-B server peer. */
 	bzy_share_crosscore(o);
 	return o;
 }
@@ -581,31 +622,344 @@ void bzy_dtls_close_listener(void *l)
 }
 
 #else
-/* ===== Windows: DTLS server is a Stage-2 item (SO_REUSEPORT 4-tuple routing is
-   unreliable). The client path above works on Windows; these loudly fail so the
-   absence is never a silent pass. ===== */
+/* ===== Windows server: design-B single-fd demultiplexing. =====
+   Connected-socket-per-peer does NOT route on Windows (a wildcard-bound socket steals
+   the peer's datagrams from a same-port connected socket — verified by spike), so the
+   POSIX model can't be reused. Instead ONE demux thread owns the shared listen fd,
+   blocking-recvfrom's every datagram, and forwards it (by address, via fwd_fd) to a
+   per-peer loopback "inbox" UDP socket; an unknown peer also pokes the accept-notify
+   socket. Each accepted peer's DtlsSocket then reads its inbox through the ordinary
+   IOCP-parked bzy_sock_recv (full reuse of the existing read path) and writes
+   ciphertext via DtlsDemuxOut (sendto on the shared fd to the peer's real address).
+   The demux thread never touches an SSL or a breeze — only sockets — so there is no
+   cross-thread SSL race and no scheduler surgery.
+
+   v1 lifetime note: closing the listener stops the thread + closes its sockets, but
+   the bookkeeping table (DtlsDemux + per-peer entries) is intentionally NOT freed,
+   because a live peer DtlsSocket may still reference it; it is process-lifetime, like
+   the listener typically is. A long-lived listener's table grows with total accepted
+   peers (each closed peer's entry is marked dead, not reclaimed) — a refinement, not a
+   correctness bug. */
+
+typedef struct
+{
+	struct sockaddr_storage peer;    /* The peer's real address (on the shared fd). */
+	int peerlen;
+	SOCKET inbox_fd;                 /* Loopback inbox; demux forwards datagrams here. */
+	struct sockaddr_in inbox_addr;
+	int taken;                       /* accept() has claimed this peer. */
+	int dead;                        /* The peer DtlsSocket has closed. */
+} DemuxPeer;
+
+struct DtlsDemux
+{
+	SOCKET shared_fd;                /* Bound listen port; the demux thread recvfrom's. */
+	SOCKET fwd_fd;                   /* Demux thread sends to inboxes + accept-notify. */
+	SOCKET accept_fd;                /* accept() reads this (wrapped) to be woken. */
+	struct sockaddr_in accept_addr;
+	void *accept_sock;               /* bzy_sock_wrap(accept_fd): reactor-parked. */
+	void *ctx;                       /* SSL_CTX. */
+	CRITICAL_SECTION lock;
+	DemuxPeer **peers;
+	int npeers;
+	int cap;
+	HANDLE thread;
+	volatile LONG running;
+};
+
+#define DTL2_DX(o)     (*(void**)((char*)(o) + 24))
+#define DTL2_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
+
+static int64_t g_dtls_list_typeinfo[2] = { 0, 0 };
+static int64_t g_dtls_list_vtable[2];
+
+/* Marked dead so the demux thread stops forwarding to a closed peer's (now closed)
+   inbox. Called from dtls_sock_finalize; dx + entry are process-lifetime (see note). */
+static void dtls_demux_peer_closed(void *demuxout)
+{
+	DtlsDemuxOut *o = (DtlsDemuxOut*)demuxout;
+	if (!o || !o->dx) { return; }
+	EnterCriticalSection(&o->dx->lock);
+	((DemuxPeer*)o->entry)->dead = 1;
+	LeaveCriticalSection(&o->dx->lock);
+}
+
+static int ss_eq(const struct sockaddr_storage *a, const struct sockaddr_storage *b)
+{
+	if (a->ss_family != b->ss_family) { return 0; }
+	if (a->ss_family == AF_INET6)
+	{
+		const struct sockaddr_in6 *x = (const struct sockaddr_in6*)a;
+		const struct sockaddr_in6 *y = (const struct sockaddr_in6*)b;
+		return x->sin6_port == y->sin6_port && memcmp(&x->sin6_addr, &y->sin6_addr, 16) == 0;
+	}
+
+	const struct sockaddr_in *x = (const struct sockaddr_in*)a;
+	const struct sockaddr_in *y = (const struct sockaddr_in*)b;
+	return x->sin_port == y->sin_port && x->sin_addr.s_addr == y->sin_addr.s_addr;
+}
+
+/* A fresh loopback UDP socket bound to an ephemeral port; *out gets its address. */
+static SOCKET make_loopback_udp(struct sockaddr_in *out)
+{
+	SOCKET fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (fd == INVALID_SOCKET) { return INVALID_SOCKET; }
+	struct sockaddr_in a;
+	memset(&a, 0, sizeof(a));
+	a.sin_family = AF_INET;
+	a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	a.sin_port = 0;
+	if (bind(fd, (struct sockaddr*)&a, sizeof(a)) != 0)
+	{
+		closesocket(fd);
+		return INVALID_SOCKET;
+	}
+
+	int len = sizeof(*out);
+	getsockname(fd, (struct sockaddr*)out, &len);
+	return fd;
+}
+
+static DWORD WINAPI dtls_demux_thread(LPVOID arg)
+{
+	DtlsDemux *dx = (DtlsDemux*)arg;
+	char buf[16384];
+	while (dx->running)
+	{
+		struct sockaddr_storage from;
+		int fromlen = sizeof(from);
+		memset(&from, 0, sizeof(from));
+		int n = recvfrom(dx->shared_fd, buf, (int)sizeof(buf), 0, (struct sockaddr*)&from, &fromlen);
+		if (n < 0)
+		{
+			if (!dx->running) { break; }   /* Listener close closed the fd. */
+			continue;
+		}
+
+		EnterCriticalSection(&dx->lock);
+		DemuxPeer *p = NULL;
+		for (int i = 0; i < dx->npeers; i++)
+		{
+			if (!dx->peers[i]->dead && ss_eq(&dx->peers[i]->peer, &from))
+			{
+				p = dx->peers[i];
+				break;
+			}
+		}
+
+		if (p)
+		{
+			sendto(dx->fwd_fd, buf, n, 0, (struct sockaddr*)&p->inbox_addr, sizeof(p->inbox_addr));
+		}
+		else
+		{
+			/* New peer: create its inbox, register, forward the ClientHello, wake accept. */
+			DemuxPeer *np = (DemuxPeer*)calloc(1, sizeof(*np));
+			if (np)
+			{
+				memcpy(&np->peer, &from, (size_t)fromlen);
+				np->peerlen = fromlen;
+				np->inbox_fd = make_loopback_udp(&np->inbox_addr);
+				if (np->inbox_fd != INVALID_SOCKET)
+				{
+					if (dx->npeers == dx->cap)
+					{
+						int nc = dx->cap ? dx->cap * 2 : 8;
+						dx->peers = (DemuxPeer**)realloc(dx->peers, (size_t)nc * sizeof(DemuxPeer*));
+						dx->cap = nc;
+					}
+					dx->peers[dx->npeers++] = np;
+					sendto(dx->fwd_fd, buf, n, 0, (struct sockaddr*)&np->inbox_addr, sizeof(np->inbox_addr));
+					sendto(dx->fwd_fd, "\0", 1, 0, (struct sockaddr*)&dx->accept_addr, sizeof(dx->accept_addr));
+				}
+				else
+				{
+					free(np);
+				}
+			}
+		}
+		LeaveCriticalSection(&dx->lock);
+	}
+	return 0;
+}
+
+static void dtls_list_finalize(void *o)
+{
+	if (DTL2_CLOSED(o)) { return; }
+	DtlsDemux *dx = (DtlsDemux*)DTL2_DX(o);
+	if (dx)
+	{
+		InterlockedExchange(&dx->running, 0);
+		if (dx->shared_fd != INVALID_SOCKET) { closesocket(dx->shared_fd); dx->shared_fd = INVALID_SOCKET; }
+		if (dx->thread) { WaitForSingleObject(dx->thread, 2000); CloseHandle(dx->thread); dx->thread = NULL; }
+		if (dx->fwd_fd != INVALID_SOCKET) { closesocket(dx->fwd_fd); dx->fwd_fd = INVALID_SOCKET; }
+		if (dx->accept_sock) { bzy_release(dx->accept_sock); dx->accept_sock = NULL; }
+		EnterCriticalSection(&dx->lock);
+		for (int i = 0; i < dx->npeers; i++)
+		{
+			if (!dx->peers[i]->taken && dx->peers[i]->inbox_fd != INVALID_SOCKET)
+			{
+				closesocket(dx->peers[i]->inbox_fd);
+				dx->peers[i]->inbox_fd = INVALID_SOCKET;
+			}
+		}
+		LeaveCriticalSection(&dx->lock);
+		if (dx->ctx) { ossl.CTX_free(dx->ctx); dx->ctx = NULL; }
+		/* dx + entries intentionally NOT freed (live peers may reference them). */
+	}
+	DTL2_CLOSED(o) = 1;
+}
+
+static void *dtls_list_vtable(void)
+{
+	g_dtls_list_typeinfo[0] = (int64_t)(void*)dtls_list_finalize;
+	g_dtls_list_vtable[0] = (int64_t)&g_dtls_list_typeinfo[0];
+	return &g_dtls_list_vtable[1];
+}
+
 void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 {
-	(void)port; (void)certPath; (void)keyPath;
-	bzy_io_fail("Network.dtlsListen: the DTLS server is POSIX-only in this release (Windows is Stage 2).");
-	return NULL;
+	if (!dtls_load()) { return NULL; }
+
+	void *ctx = ossl.CTX_new(ossl.DTLS_server_method());
+	if (!ctx) { bzy_io_fail("Network.dtlsListen: SSL_CTX_new failed."); return NULL; }
+	if (ossl.CTX_use_certificate_chain_file(ctx, bzy_str_data(certPath)) != 1)
+	{
+		ossl.CTX_free(ctx); bzy_io_fail("Network.dtlsListen: cannot load certificate chain."); return NULL;
+	}
+	if (ossl.CTX_use_PrivateKey_file(ctx, bzy_str_data(keyPath), BZ_SSL_FILETYPE_PEM) != 1)
+	{
+		ossl.CTX_free(ctx); bzy_io_fail("Network.dtlsListen: cannot load private key."); return NULL;
+	}
+
+	bzy_iocp_ensure();
+
+	/* Shared listen socket: dual-stack AF_INET6 so it discovers IPv6 + v4-mapped peers.
+	   Blocking (the demux thread owns it). */
+	SOCKET shared = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+	if (shared == INVALID_SOCKET) { ossl.CTX_free(ctx); bzy_io_fail("Network.dtlsListen: socket failed."); return NULL; }
+	int v6only = 0;
+	setsockopt(shared, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
+	int yes = 1;
+	setsockopt(shared, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+	struct sockaddr_in6 addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin6_family = AF_INET6;
+	addr.sin6_addr = in6addr_any;
+	addr.sin6_port = htons((unsigned short)port);
+	if (bind(shared, (struct sockaddr*)&addr, sizeof(addr)) != 0)
+	{
+		closesocket(shared); ossl.CTX_free(ctx); bzy_io_fail("Network.dtlsListen: bind failed."); return NULL;
+	}
+
+	DtlsDemux *dx = (DtlsDemux*)calloc(1, sizeof(*dx));
+	dx->shared_fd = shared;
+	dx->ctx = ctx;
+	dx->fwd_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	dx->accept_fd = make_loopback_udp(&dx->accept_addr);
+	if (dx->fwd_fd == INVALID_SOCKET || dx->accept_fd == INVALID_SOCKET)
+	{
+		closesocket(shared); if (dx->fwd_fd != INVALID_SOCKET) closesocket(dx->fwd_fd);
+		ossl.CTX_free(ctx); free(dx); bzy_io_fail("Network.dtlsListen: internal socket setup failed."); return NULL;
+	}
+	u_long nb = 1;
+	ioctlsocket(dx->accept_fd, FIONBIO, &nb);
+	bzy_iocp_associate((void*)dx->accept_fd);
+	dx->accept_sock = bzy_sock_wrap(dx->accept_fd);   /* accept() parks on this. */
+	InitializeCriticalSection(&dx->lock);
+	dx->running = 1;
+	dx->thread = CreateThread(NULL, 0, dtls_demux_thread, dx, 0, NULL);
+	if (!dx->thread)
+	{
+		dx->running = 0; closesocket(shared); closesocket(dx->fwd_fd);
+		bzy_release(dx->accept_sock); ossl.CTX_free(ctx);
+		DeleteCriticalSection(&dx->lock); free(dx);
+		bzy_io_fail("Network.dtlsListen: demux thread failed to start."); return NULL;
+	}
+
+	void *o = bzy_alloc(40);
+	*(void**)o = dtls_list_vtable();
+	DTL2_DX(o) = dx;
+	DTL2_CLOSED(o) = 0;
+	bzy_share_crosscore(o);
+	return o;
 }
 
 void *bzy_dtls_accept(void *l)
 {
-	(void)l;
-	bzy_io_fail("DtlsListener.accept: the DTLS server is POSIX-only in this release.");
-	return NULL;
+	DtlsDemux *dx = (DtlsDemux*)DTL2_DX(l);
+	for (;;)
+	{
+		/* Park until the demux thread pokes accept_fd for a new peer. */
+		char nb[8];
+		if (bzy_sock_recv(dx->accept_sock, nb, (int)sizeof(nb), -1) < 0)
+		{
+			bzy_io_fail("DtlsListener.accept: wait failed."); return NULL;
+		}
+
+		EnterCriticalSection(&dx->lock);
+		DemuxPeer *p = NULL;
+		for (int i = 0; i < dx->npeers; i++)
+		{
+			if (!dx->peers[i]->taken && !dx->peers[i]->dead)
+			{
+				p = dx->peers[i];
+				p->taken = 1;
+				break;
+			}
+		}
+		LeaveCriticalSection(&dx->lock);
+		if (!p) { continue; }   /* Spurious wake / already claimed: wait again. */
+
+		u_long nbio = 1;
+		ioctlsocket(p->inbox_fd, FIONBIO, &nbio);
+		bzy_iocp_associate((void*)p->inbox_fd);
+		void *transport = bzy_sock_wrap(p->inbox_fd);   /* Peer reads its inbox via bzy_sock_recv. */
+
+		void *ssl = ossl.SSL_new(dx->ctx);
+		if (!ssl || dtls_attach_bios(ssl) != 0)
+		{
+			if (ssl) { ossl.SSL_free(ssl); }
+			bzy_release(transport);
+			bzy_io_fail("DtlsListener.accept: SSL setup failed."); return NULL;
+		}
+		dtls_set_mtu(ssl);
+		ossl.SSL_set_accept_state(ssl);
+
+		DtlsDemuxOut *out = (DtlsDemuxOut*)calloc(1, sizeof(*out));
+		out->fd = dx->shared_fd;
+		memcpy(&out->peer, &p->peer, (size_t)p->peerlen);
+		out->peerlen = p->peerlen;
+		out->dx = dx;
+		out->entry = p;
+
+		void *s = dtls_sock_wrap(transport, ssl, NULL);   /* Server conn shares the listener ctx. */
+		DTS_DEMUXOUT(s) = out;
+		/* The ClientHello is already buffered in the inbox (forwarded by the demux
+		   thread), so dtls_run's first feed reads it; no manual BIO_write needed. */
+		if (dtls_run(s, 0, NULL, 0) != 1)
+		{
+			bzy_io_fail("DtlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
+		}
+		return s;
+	}
 }
 
 int64_t bzy_dtls_listener_port(void *l)
 {
-	(void)l;
-	return -1;
+	DtlsDemux *dx = (DtlsDemux*)DTL2_DX(l);
+	struct sockaddr_in6 addr;
+	int len = sizeof(addr);
+	if (getsockname(dx->shared_fd, (struct sockaddr*)&addr, &len) != 0)
+	{
+		return -1;
+	}
+
+	return (int64_t)ntohs(addr.sin6_port);
 }
 
 void bzy_dtls_close_listener(void *l)
 {
-	(void)l;
+	dtls_list_finalize(l);
 }
 #endif

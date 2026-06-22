@@ -152,7 +152,7 @@ s.write(packet);                      // One encrypted record -> one datagram.
 byte[] reply = s.read(1200);          // One decrypted application record.
 s.close();
 
-// Server (POSIX): present a certificate + key (PEM).
+// Server: present a certificate + key (PEM).
 DtlsListener l = Network.dtlsListen(4433, "server-cert.pem", "server-key.pem");
 DtlsSocket c = l.accept();            // Parks: discovers a peer, runs the handshake.
 ```
@@ -162,10 +162,11 @@ DtlsSocket c = l.accept();            // Parks: discovers a peer, runs the hands
 - `Network.dtlsConnectInsecure(host, port) -> DtlsSocket` - handshake **without**
   peer-cert verification. Loudly named so it is never reached by accident; for
   talking to a server with a self-signed or unknown cert.
-- `Network.dtlsListen(port, certPath, keyPath) -> DtlsListener` - one connected
-  socket per peer; `accept()` discovers the next peer and runs the server
-  handshake, `port()` reports the bound port. **POSIX only** in this release
-  (the Windows server is a follow-up); the DTLS *client* works on both platforms.
+- `Network.dtlsListen(port, certPath, keyPath) -> DtlsListener` - `accept()`
+  discovers the next peer and runs the server handshake, `port()` reports the bound
+  port. Works on **both platforms**: POSIX uses a connected socket per peer; Windows
+  uses a single-socket demultiplexer (connected-per-peer routing is unreliable there),
+  transparent to the API.
 - `DtlsSocket.read(max)` / `write(byte[])` / `close()` - one record each; keep a
   `write` payload at or below the link MTU (~1200 bytes).
 
@@ -185,7 +186,7 @@ is re-sent rather than treated as a dead connection.
 - **For more than a GET body**, use a raw `Socket`.
 - **`Network.rawSocket(protocol)` is privilege-gated** - needs `CAP_NET_RAW`/root or Administrator, throws `IOException` when denied, and on Windows cannot send TCP/UDP.
 - **`Network.tlsConnect` / `tlsListen` need OpenSSL at runtime** (loaded dynamically) and throw `IOException` when it is absent or when verification fails; on Windows, pass a CA-bundle path since OpenSSL does not read the Windows certificate store.
-- **`Network.dtls*` is DTLS over UDP** - same OpenSSL dependency as TLS; the server (`dtlsListen`/`accept`) is POSIX-only in this release, the client works everywhere, and `dtlsConnectInsecure` skips peer verification on purpose.
+- **`Network.dtls*` is DTLS over UDP** - same OpenSSL dependency as TLS; client + server both work on both platforms (POSIX = connected socket per peer, Windows = single-socket demultiplexer), and `dtlsConnectInsecure` skips peer verification on purpose.
 
 ---
 

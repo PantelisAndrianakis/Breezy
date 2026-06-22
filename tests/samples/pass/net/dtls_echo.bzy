@@ -4,8 +4,8 @@
 // prints the byte count. Output is 4 on a successful handshake + encrypted
 // datagram round-trip. If OpenSSL is absent the first DTLS call throws an
 // IOException -> the program aborts and the runner reports SKIP (never a silent
-// pass). The DTLS server is POSIX-only; on Windows dtlsListen throws "POSIX-only"
-// -> the runner also reports SKIP.
+// pass). Server + client both work on Windows (single-socket demux) and POSIX
+// (connected socket per peer).
 void server(DtlsListener l, channel<int> portCh)
 {
 	portCh.send(l.port());        // Hand the bound port to the client.
