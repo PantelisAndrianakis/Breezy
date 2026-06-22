@@ -256,6 +256,7 @@ struct Expr
 {
 	ExprKind kind;
 	int      line;
+	int      col;             /* 1-based column of the name token (named nodes only; 0 = unset). For the LSP symbol index. */
 	TypeRef  type;            /* Resolver: result type. */
 	int      anno_int;        /* Resolver: stack offset / field offset / vtable slot. */
 	char     anno_str[64];    /* Resolver: static class for dispatch. */

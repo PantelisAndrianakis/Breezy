@@ -389,6 +389,7 @@ static Expr *parse_postfix(Parser *p)
 		{
 			advance(p);
 			Expr *call = expr_new(EX_METHOD_CALL, line);
+			call->col = name.col;
 			strcpy(call->name, name.text);
 			call->lhs = e;
 			call->arg_count = parse_args(p, call);
@@ -398,6 +399,7 @@ static Expr *parse_postfix(Parser *p)
 		else
 		{
 			Expr *f = expr_new(EX_FIELD, line);
+			f->col = name.col;
 			strcpy(f->name, name.text);
 			f->lhs = e;
 			e = f;
@@ -562,6 +564,7 @@ static Expr *parse_lambda(Parser *p)
 static Expr *parse_primary(Parser *p)
 {
 	int line = p->cur.line;
+	int col  = p->cur.col;   /* Start column of the primary (for the LSP symbol index). */
 	if ((check(p,TOKEN_IDENT) && p->peek.type==TOKEN_FATARROW)
 			|| (check(p,TOKEN_LPAREN) && looks_like_lambda(p)))
 	{
@@ -670,6 +673,7 @@ static Expr *parse_primary(Parser *p)
 
 		expect(p,TOKEN_LPAREN);
 		Expr *e=expr_new(EX_NEW,line);
+		e->col=col;
 		strcpy(e->name,et.class_name);        /* Object: et is an IDENT class. */
 		if (!check(p,TOKEN_RPAREN))
 		{
@@ -691,6 +695,7 @@ static Expr *parse_primary(Parser *p)
 		{
 			expect(p,TOKEN_LPAREN);
 			Expr *e=expr_new(EX_CALL,line);
+			e->col=col;
 			snprintf(e->name,sizeof e->name,"%.31s.%.31s",ns,m.text);   /* Bounded to fit name[64] (ns/method are short). */
 			e->arg_count=parse_args(p,e);
 			expect(p,TOKEN_RPAREN);
@@ -700,8 +705,10 @@ static Expr *parse_primary(Parser *p)
 		/* No call parens: a namespace constant, e.g. File.READONLY. Build a field
 		   access (lhs = the namespace identifier); resolve folds it to a literal. */
 		Expr *id=expr_new(EX_IDENT,line);
+		id->col=col;
 		strcpy(id->name,ns);
 		Expr *e=expr_new(EX_FIELD,line);
+		e->col=m.col;
 		e->lhs=id;
 		strcpy(e->name,m.text);
 		return e;
@@ -715,6 +722,7 @@ static Expr *parse_primary(Parser *p)
 		{
 			advance(p);
 			Expr *e=expr_new(EX_CALL,line);
+			e->col=id.col;
 			strcpy(e->name,id.text);
 			e->arg_count=parse_args(p,e);
 			expect(p,TOKEN_RPAREN);
@@ -722,6 +730,7 @@ static Expr *parse_primary(Parser *p)
 		}
 
 		Expr *e=expr_new(EX_IDENT,line);
+		e->col=id.col;
 		strcpy(e->name,id.text);
 		return e;
 	}
