@@ -81,6 +81,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [JSON](stdlib/json.md) | `Json.parse` / `Json.stringify` / `Json.of` - read + write JSON via a `JsonValue` tree. |
 | [HTTP](stdlib/http.md) | `Http.readRequest` / `respond` / `request` / `readResponse` - an HTTP/1.1 codec over a `Socket`. |
 | [PostgreSQL](stdlib/postgres.md) | `Postgres.connect` / `query` - a native async PostgreSQL driver with parameterized, injection-safe queries. |
+| [MySQL / MariaDB](stdlib/mysql.md) | `Mysql.connect` / `query` - a native async MySQL/MariaDB driver (one driver, both servers); shares the `DbResult`/`Row` surface. |
 | [File](stdlib/file.md) | The `File` namespace - filesystem work with `IOException`. |
 | [System](stdlib/system.md) | The `System` namespace - launching OS commands, reading arguments. |
 | [Desktop](stdlib/desktop.md) | The `Desktop` GUI - GTK-backed windows, controls, listeners (Windows + Linux KDE). |
