@@ -135,6 +135,12 @@ static void w_i32(Wbuf *w, int32_t v)
 	w_bytes(w, b, 4);
 }
 
+static void w_i16(Wbuf *w, int16_t v)
+{
+	char b[2] = { (char)(v >> 8), (char)v };
+	w_bytes(w, b, 2);
+}
+
 static void w_cstr(Wbuf *w, const char *s)
 {
 	w_bytes(w, s, (int64_t)strlen(s) + 1);   /* Include the terminating NUL. */
@@ -649,24 +655,12 @@ static int64_t cc_rowcount(const char *tag)
 	return strtoll(tag + start, NULL, 10);
 }
 
-/* Run one simple Query and decode the result into a DbResult. On a server error the
-   error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns;
-   the stream is still drained to ReadyForQuery so the connection stays usable. */
-void *bzy_pg_query(void *conn, void *sql)
+/* Pump backend messages (after a Query or an extended Parse/Bind/Execute/Sync) and
+   build a DbResult. Handles RowDescription/DataRow/CommandComplete plus the
+   extended-protocol ParseComplete/BindComplete; a server ErrorResponse sets the
+   error sink (drained to ReadyForQuery, then NULL). Frees the reader buffer. */
+static void *collect_results(Reader *r)
 {
-	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
-	void *sock = *(void**)((char*)conn + PGC_SOCK);
-
-	const char *s = bzy_str_data(sql);
-	if (!send_tagged(sock, 'Q', s, (int64_t)strlen(s) + 1))
-	{
-		bzy_db_set_error("Failed to send the query.");
-		return NULL;
-	}
-
-	Reader r = { 0 };
-	r.sock = sock;
-
 	void   *colnames = NULL;
 	void  **rowbuf = NULL;
 	int64_t nrows = 0, rowcap = 0;
@@ -676,7 +670,7 @@ void *bzy_pg_query(void *conn, void *sql)
 	char tag;
 	char *body;
 	int64_t blen;
-	while (rd_msg(&r, &tag, &body, &blen))
+	while (rd_msg(r, &tag, &body, &blen))
 	{
 		if (tag == 'T')                              /* RowDescription. */
 		{
@@ -728,12 +722,14 @@ void *bzy_pg_query(void *conn, void *sql)
 		{
 			break;
 		}
-		/* 'I' EmptyQuery, 'N' Notice, 'S' ParameterStatus: skipped. */
+		/* '1' ParseComplete, '2' BindComplete, 'n' NoData, 'I' EmptyQuery,
+		   'N' Notice, 'S' ParameterStatus: skipped. */
 	}
 
-	free(r.buf);
+	int eof = r->eof;
+	free(r->buf);
 
-	if (failed || r.eof)
+	if (failed || eof)
 	{
 		if (!failed) { bzy_db_set_error("Connection closed during the query."); }
 		for (int64_t i = 0; i < nrows; i++) { bzy_release(rowbuf[i]); }
@@ -751,4 +747,100 @@ void *bzy_pg_query(void *conn, void *sql)
 
 	free(rowbuf);
 	return bzy_db_result_new(colnames, rows, nrows > 0 ? nrows : rowcount);
+}
+
+/* Run one simple Query and decode the result into a DbResult. On a server error the
+   error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns;
+   the stream is still drained to ReadyForQuery so the connection stays usable. */
+void *bzy_pg_query(void *conn, void *sql)
+{
+	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	void *sock = *(void**)((char*)conn + PGC_SOCK);
+
+	const char *s = bzy_str_data(sql);
+	if (!send_tagged(sock, 'Q', s, (int64_t)strlen(s) + 1))
+	{
+		bzy_db_set_error("Failed to send the query.");
+		return NULL;
+	}
+
+	Reader r = { 0 };
+	r.sock = sock;
+	return collect_results(&r);
+}
+
+/* Run a parameterized query via the extended protocol: Parse (server infers the
+   param types), Bind the values as text-format parameters (never interpolated into
+   SQL -- injection-safe), Describe the portal, Execute, Sync. `params` is a managed
+   string[]; a NULL slot binds SQL NULL. */
+void *bzy_pg_query_params(void *conn, void *sql, void *params)
+{
+	if (!conn) { bzy_db_set_error("Query on a null connection."); return NULL; }
+	void *sock = *(void**)((char*)conn + PGC_SOCK);
+
+	const char *s = bzy_str_data(sql);
+	int64_t nparams = params ? *(int64_t*)((char*)params + 24) : 0;
+	void  **pslots = params ? (void**)((char*)params + 32) : NULL;
+
+	/* Parse: unnamed statement, the SQL, 0 declared param types (server infers). */
+	{
+		Wbuf p = { 0 };
+		w_cstr(&p, "");
+		w_cstr(&p, s);
+		w_i16(&p, 0);
+		int ok = send_tagged(sock, 'P', p.p, p.len);
+		free(p.p);
+		if (!ok) { bzy_db_set_error("Failed to send the Parse message."); return NULL; }
+	}
+
+	/* Bind: unnamed portal+statement, all-text params, the values, all-text results. */
+	{
+		Wbuf b = { 0 };
+		w_cstr(&b, "");                  /* Portal. */
+		w_cstr(&b, "");                  /* Statement. */
+		w_i16(&b, 0);                    /* 0 parameter format codes -> all text. */
+		w_i16(&b, (int16_t)nparams);
+		for (int64_t i = 0; i < nparams; i++)
+		{
+			void *v = pslots[i];
+			if (!v) { w_i32(&b, -1); }   /* SQL NULL. */
+			else
+			{
+				int64_t vl = bzy_str_len(v);
+				w_i32(&b, (int32_t)vl);
+				w_bytes(&b, bzy_str_data(v), vl);
+			}
+		}
+		w_i16(&b, 0);                    /* 0 result format codes -> all text. */
+		int ok = send_tagged(sock, 'B', b.p, b.len);
+		free(b.p);
+		if (!ok) { bzy_db_set_error("Failed to send the Bind message."); return NULL; }
+	}
+
+	/* Describe the portal (yields RowDescription), Execute all rows, Sync. */
+	{
+		Wbuf d = { 0 };
+		w_u8(&d, 'P');
+		w_cstr(&d, "");
+		int ok = send_tagged(sock, 'D', d.p, d.len);
+		free(d.p);
+		if (!ok) { bzy_db_set_error("Failed to send the Describe message."); return NULL; }
+	}
+	{
+		Wbuf x = { 0 };
+		w_cstr(&x, "");                  /* Portal. */
+		w_i32(&x, 0);                    /* Max rows: 0 = all. */
+		int ok = send_tagged(sock, 'E', x.p, x.len);
+		free(x.p);
+		if (!ok) { bzy_db_set_error("Failed to send the Execute message."); return NULL; }
+	}
+	if (!send_tagged(sock, 'S', "", 0))
+	{
+		bzy_db_set_error("Failed to send the Sync message.");
+		return NULL;
+	}
+
+	Reader r = { 0 };
+	r.sock = sock;
+	return collect_results(&r);
 }

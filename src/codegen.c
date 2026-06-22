@@ -6006,11 +6006,22 @@ static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (strcmp(m,"query")==0)
 	{
-		/* (connection, sql) -> DbResult. */
-		TypeRef ps[2];
-		ps[0]=e->args[0]->type;
-		ps[1]=e->args[1]->type;
-		cg_call_with_args(cg,tt,"bzy_pg_query",NULL,e->args,2,0,1,0,ps,2,0);
+		if (e->arg_count==3)                         /* (connection, sql, string[] params). */
+		{
+			TypeRef ps[3];
+			ps[0]=e->args[0]->type;
+			ps[1]=e->args[1]->type;
+			ps[2]=e->args[2]->type;
+			cg_call_with_args(cg,tt,"bzy_pg_query_params",NULL,e->args,3,0,1,0,ps,3,0);
+		}
+		else                                         /* (connection, sql). */
+		{
+			TypeRef ps[2];
+			ps[0]=e->args[0]->type;
+			ps[1]=e->args[1]->type;
+			cg_call_with_args(cg,tt,"bzy_pg_query",NULL,e->args,2,0,1,0,ps,2,0);
+		}
+
 		cg_db_check_after(cg);
 		return;
 	}
@@ -12838,6 +12849,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_pg_connect");
 	cg_emit(cg,"extern bzy_pg_close");
 	cg_emit(cg,"extern bzy_pg_query");
+	cg_emit(cg,"extern bzy_pg_query_params");
 	cg_emit(cg,"extern bzy_db_check");
 	cg_emit(cg,"extern bzy_db_row_count");
 	cg_emit(cg,"extern bzy_db_col_count");
