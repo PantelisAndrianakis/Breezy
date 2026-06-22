@@ -438,6 +438,12 @@ static void test_pgconnection_type(void)
 	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_PGCONNECTION);
 }
 
+static void test_myconnection_type(void)
+{
+	Func *f = build1("void main() { MyConnection c; }")->funcs[0];
+	ASSERT_INT(f->body->stmts[0]->decl_type.kind, TY_MYCONNECTION);
+}
+
 static void test_dbresult_type(void)
 {
 	Func *f = build1("void main() { DbResult r; }")->funcs[0];
@@ -945,6 +951,7 @@ int main(void)
 	RUN(test_httprequest_type);
 	RUN(test_httpresponse_type);
 	RUN(test_pgconnection_type);
+	RUN(test_myconnection_type);
 	RUN(test_dbresult_type);
 	RUN(test_dbrow_type);
 	RUN(test_concat_is_string);

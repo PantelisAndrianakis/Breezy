@@ -39,6 +39,7 @@ typedef enum
 	TY_HTTPREQUEST,                           /* HttpRequest: a parsed/built HTTP request message (managed). */
 	TY_HTTPRESPONSE,                          /* HttpResponse: a parsed/built HTTP response message (managed). */
 	TY_PGCONNECTION,                          /* PgConnection: a PostgreSQL connection handle (managed). */
+	TY_MYCONNECTION,                          /* MyConnection: a MySQL/MariaDB connection handle (managed). */
 	TY_DBRESULT,                              /* DbResult: a query result set (managed; shared by DB drivers). */
 	TY_DBROW,                                 /* Row: one row of a DbResult (managed; shares the column names). */
 	TY_OBJECT,
@@ -115,6 +116,7 @@ static inline int ty_bits(TypeKind k)
 	case TY_HTTPREQUEST:
 	case TY_HTTPRESPONSE:
 	case TY_PGCONNECTION:
+	case TY_MYCONNECTION:
 	case TY_DBRESULT:
 	case TY_DBROW:
 	case TY_OBJECT:
@@ -179,7 +181,7 @@ static inline int ty_is_managed(TypeKind k)
 	       || k == TY_TLSSOCKET || k == TY_TLSLISTENER || k == TY_DTLSSOCKET || k == TY_DTLSLISTENER || k == TY_SURFACE || k == TY_GLSURFACE
 	       || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
 	       || k == TY_XMLNODE || k == TY_JSONVALUE || k == TY_HTTPREQUEST || k == TY_HTTPRESPONSE
-	       || k == TY_PGCONNECTION || k == TY_DBRESULT || k == TY_DBROW
+	       || k == TY_PGCONNECTION || k == TY_MYCONNECTION || k == TY_DBRESULT || k == TY_DBROW
 	       || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */
 }
 
