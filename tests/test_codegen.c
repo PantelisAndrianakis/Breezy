@@ -1413,6 +1413,14 @@ static void test_http_read_request_lowers(void)
 	ASSERT_INT(strstr(g_asm, "bzy_http_check") != NULL, 1);          /* malformed -> HttpException */
 }
 
+static void test_pg_connect_lowers(void)
+{
+	emit("void main(){ PgConnection c = Postgres.connect(\"h\",5432,\"u\",\"p\",\"d\"); c.close(); }", TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "bzy_pg_connect") != NULL, 1);   /* The connect call. */
+	ASSERT_INT(strstr(g_asm, "bzy_db_check") != NULL, 1);     /* connect failure -> DbException */
+	ASSERT_INT(strstr(g_asm, "bzy_pg_close") != NULL, 1);     /* close lowering. */
+}
+
 static void test_xml_fields_lower(void)
 {
 	emit("void main(){ XmlNode r = Xml.parse(\"<a x='1'>hi</a>\"); print(r.name); print(r.text); print(r.attrCount); }", TARGET_LINUX);
@@ -1637,6 +1645,7 @@ int main(void)
 	RUN(test_xml_parse_lowers);
 	RUN(test_json_parse_lowers);
 	RUN(test_http_read_request_lowers);
+	RUN(test_pg_connect_lowers);
 	RUN(test_xml_fields_lower);
 	RUN(test_treemap_lowers);
 	RUN(test_dynamic_extern_lowers);

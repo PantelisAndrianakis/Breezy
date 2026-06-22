@@ -1220,6 +1220,24 @@ static void resolve_http(Expr *e)
 	die(e->line,"Unknown Http method: ",m);
 }
 
+static void resolve_postgres(Expr *e)
+{
+	const char *m = e->name + 9;   /* After "Postgres.". */
+	if (strcmp(m,"connect")==0)
+	{
+		if (e->arg_count!=5 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
+			|| e->args[2]->type.kind!=TY_STRING || e->args[3]->type.kind!=TY_STRING || e->args[4]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Postgres.connect(host, port, user, password, database) takes a string, an int, and three strings.",NULL);
+		}
+
+		e->type.kind = TY_PGCONNECTION;
+		return;
+	}
+
+	die(e->line,"Unknown Postgres method: ",m);
+}
+
 static void resolve_file(Expr *e)
 {
 	const char *m = e->name + 5;   /* After "File.". */
@@ -3259,6 +3277,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (e->lhs->type.kind==TY_PGCONNECTION)
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"close")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"PgConnection.close() takes no arguments.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else
+			{
+				die(e->line,"Unknown PgConnection method: ",e->name);
+			}
+
+			break;
+		}
+
 		if (e->lhs->type.kind==TY_HTTPREQUEST)
 		{
 			resolve_args(st,e,tc);
@@ -4451,6 +4489,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		if (strncmp(e->name,"Http.",5)==0)
 		{
 			resolve_http(e);
+			break;
+		}
+
+		if (strncmp(e->name,"Postgres.",9)==0)
+		{
+			resolve_postgres(e);
 			break;
 		}
 

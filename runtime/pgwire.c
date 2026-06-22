@@ -18,6 +18,10 @@
 extern int     bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms);
 extern int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);
 
+/* Socket lifecycle (socket.c): connect returns a managed Socket (+1) or NULL. */
+extern void *bzy_socket_connect(void *host, int64_t port);
+extern void  bzy_socket_close(void *s);
+
 /* Shared result model (dbresult.c) -- the error sink used for a failed handshake. */
 extern void bzy_db_set_error(const char *msg);
 
@@ -224,4 +228,62 @@ int bzy_pg_run_startup(void *sock, const char *user, const char *db)
 	if (!ok && r.eof) { bzy_db_set_error("Connection closed during PostgreSQL startup."); }
 	free(r.buf);
 	return ok;
+}
+
+/* ---- the PgConnection node + the Breezy entry points -------------------------- */
+
+/* PgConnection: sock@24, size 32. typeinfo {0,1,24} -- one managed slot so ARC and
+   the cycle collector trace (and release) the held Socket. */
+#define PGC_SOCK 24
+#define PGC_SIZE 32
+
+static int64_t g_pgc_ti[3] = { 0, 1, PGC_SOCK };
+static int64_t g_pgc_vt[2];
+static int     g_pgc_vt_built;
+
+static void *pgc_vtable(void)
+{
+	if (!g_pgc_vt_built) { g_pgc_vt[0] = (int64_t)&g_pgc_ti[0]; g_pgc_vt_built = 1; }
+	return &g_pgc_vt[1];
+}
+
+/* Connect, handshake, and wrap the socket in a PgConnection. On any failure the
+   error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns.
+   `pass` is unused until SCRAM/MD5 auth (Task 5); the AuthenticationOk path here
+   ignores it. */
+void *bzy_pg_connect(void *host, int64_t port, void *user, void *pass, void *db)
+{
+	(void)pass;
+	void *sock = bzy_socket_connect(host, port);
+	if (!sock)
+	{
+		bzy_db_set_error("Could not connect to the PostgreSQL server.");
+		return NULL;
+	}
+
+	if (!bzy_pg_run_startup(sock, bzy_str_data(user), bzy_str_data(db)))
+	{
+		bzy_socket_close(sock);   /* Startup set the error. */
+		bzy_release(sock);
+		return NULL;
+	}
+
+	void *n = bzy_alloc(PGC_SIZE);
+	*(void**)n = pgc_vtable();
+	*(void**)((char*)n + PGC_SOCK) = sock;   /* Transfer the +1 from bzy_socket_connect. */
+	return n;
+}
+
+/* Send Terminate and close the socket. The node still owns its +1 Socket reference,
+   released when the PgConnection itself is released; the close is idempotent. */
+void bzy_pg_close(void *conn)
+{
+	if (!conn) { return; }
+	void *sock = *(void**)((char*)conn + PGC_SOCK);
+	if (sock)
+	{
+		char term[5] = { 'X', 0, 0, 0, 4 };   /* Terminate: tag 'X' + int32 length 4. */
+		bzy_sock_send_all(sock, term, 5);
+		bzy_socket_close(sock);
+	}
 }

@@ -19,6 +19,7 @@ char __vtable_NumberFormatException[8] = { 0 };
 char __vtable_XmlException[8] = { 0 };
 char __vtable_JsonException[8] = { 0 };
 char __vtable_HttpException[8] = { 0 };
+char __vtable_DbException[8] = { 0 };
 
 /* A descriptor for one object field at offset 24, preceded by the finalizer
    slot. The layout in memory is [finalizer][n][off0][typeinfo-pointer][vtable...],

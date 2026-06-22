@@ -5971,6 +5971,51 @@ static void cg_http_method(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 }
 
+/* Postgres.* namespace calls. connect can fail (sets the error sink + returns
+   NULL), so its lowering appends the bzy_db_check raise, the cg_http readRequest
+   pattern. */
+static void cg_postgres(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 9;   /* After "Postgres.". */
+	if (strcmp(m,"connect")!=0)
+	{
+		fprintf(stderr,"Codegen: unknown Postgres method '%s'\n", m);
+		exit(1);
+	}
+
+	/* (host, port, user, password, database) -> PgConnection. port widens to 64-bit. */
+	TypeRef ps[5];
+	ps[0]=e->args[0]->type;
+	memset(&ps[1],0,sizeof(ps[1]));
+	ps[1].kind=TY_LONG;
+	ps[2]=e->args[2]->type;
+	ps[3]=e->args[3]->type;
+	ps[4]=e->args[4]->type;
+	cg_call_with_args(cg,tt,"bzy_pg_connect",NULL,e->args,5,0,1,0,ps,5,0);
+
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);   /* Preserve across the check. */
+	int hk = cg_label(cg);
+	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), hk);
+	cg_emit(cg,".L%d:", hk);
+	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+	cg_aligned_call(cg,"bzy_db_check");
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
+/* DbResult/Row/PgConnection methods. Task 4 wires PgConnection.close(); the
+   DbResult/Row accessors arrive in Task 6. */
+static void cg_db_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	if (e->lhs->type.kind==TY_PGCONNECTION && strcmp(e->name,"close")==0)
+	{
+		cg_call_with_args(cg,tt,"bzy_pg_close",e->lhs,e->args,0,0,0,0,NULL,0,0);
+		return;
+	}
+
+	fprintf(stderr,"Codegen: unknown DB method '%s'\n", e->name);
+	exit(1);
+}
+
 static void cg_log(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 4;   /* After "Log.". */
@@ -8048,6 +8093,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		{
 			cg_http_method(cg,tt,e);
 		}
+		else if (e->lhs->type.kind==TY_PGCONNECTION || e->lhs->type.kind==TY_DBRESULT || e->lhs->type.kind==TY_DBROW)
+		{
+			cg_db_method(cg,tt,e);
+		}
 		else if (e->lhs->type.kind==TY_MAPPEDFILE)
 		{
 			cg_mappedfile_method(cg,tt,e);
@@ -8226,6 +8275,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"Http.",5)==0)
 		{
 			cg_http(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Postgres.",9)==0)
+		{
+			cg_postgres(cg,tt,e);
 		}
 		else
 		{
@@ -12690,6 +12743,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_http_set_body");
 	cg_emit(cg,"extern bzy_http_send_response");
 	cg_emit(cg,"extern bzy_http_send_request");
+	cg_emit(cg,"extern bzy_pg_connect");
+	cg_emit(cg,"extern bzy_pg_close");
+	cg_emit(cg,"extern bzy_db_check");
 	cg_emit(cg,"extern bzy_file_exists");
 	cg_emit(cg,"extern bzy_file_is_file");
 	cg_emit(cg,"extern bzy_file_is_folder");
@@ -12718,6 +12774,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"global __vtable_XmlException");            /* Referenced by the runtime bzy_xml_check. */
 	cg_emit(cg,"global __vtable_JsonException");           /* Referenced by the runtime bzy_json_check. */
 	cg_emit(cg,"global __vtable_HttpException");           /* Referenced by the runtime bzy_http_check. */
+	cg_emit(cg,"global __vtable_DbException");             /* Referenced by the runtime bzy_db_check. */
 	for (int i=0; i<unit_count; i++)   /* FFI: declare each extern C symbol for the linker. */
 	{
 		for (int k=0; k<units[i]->func_count; k++)
