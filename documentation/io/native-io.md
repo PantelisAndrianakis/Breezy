@@ -172,7 +172,10 @@ DtlsSocket c = l.accept();            // Parks: discovers a peer, runs the hands
 
 The runtime pins a conservative 1200-byte link MTU and drives DTLS handshake
 retransmission itself (UDP does not guarantee delivery), so a lost handshake flight
-is re-sent rather than treated as a dead connection.
+is re-sent rather than treated as a dead connection. The server also runs the DTLS
+HelloVerifyRequest cookie exchange (amplification protection): it replies to the first
+ClientHello with a return-routability cookie and only runs the full handshake once the
+client echoes it, so a spoofed-source flood cannot make the server do real work.
 
 ---
 

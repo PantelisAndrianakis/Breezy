@@ -36,6 +36,7 @@
 #define BZ_DTLS_CTRL_HANDLE_TIMEOUT     74   /* SSL_ctrl: re-queue the lost flight (DTLSv1_handle_timeout is a macro). */
 #define BZ_DTLS_CTRL_SET_LINK_MTU       120  /* SSL_ctrl: pin the link MTU. */
 #define BZ_SSL_OP_NO_QUERY_MTU          0x1000L  /* Do not ask the BIO for the path MTU. */
+#define BZ_SSL_OP_COOKIE_EXCHANGE       0x2000L  /* Server: require a HelloVerifyRequest cookie. */
 #define BZ_DTLS_LINK_MTU                1200 /* Conservative IPv6-safe datagram size. */
 
 /* Dynamically-resolved OpenSSL entry points (DTLS subset of the tls.c table). */
@@ -70,6 +71,11 @@ static struct
 	int   (*SSL_shutdown)(void *ssl);
 	void *(*SSL_get_rbio)(const void *ssl);
 	void *(*SSL_get_wbio)(const void *ssl);
+	void  (*CTX_set_cookie_generate_cb)(void *ctx, int (*cb)(void *ssl, unsigned char *c, unsigned int *l));
+	void  (*CTX_set_cookie_verify_cb)(void *ctx, int (*cb)(void *ssl, const unsigned char *c, unsigned int l));
+	int   (*SSL_set_ex_data)(void *ssl, int idx, void *data);
+	void *(*SSL_get_ex_data)(const void *ssl, int idx);
+	int   (*RAND_bytes)(unsigned char *buf, int num);   /* libcrypto: cookie secret. */
 } ossl;
 
 /* Minimal dl helpers (mirrors tls.c; kept local for own-TU). */
@@ -152,6 +158,11 @@ static int dtls_load(void)
 	SYM(SSL_shutdown, "SSL_shutdown");
 	SYM(SSL_get_rbio, "SSL_get_rbio");
 	SYM(SSL_get_wbio, "SSL_get_wbio");
+	SYM(CTX_set_cookie_generate_cb, "SSL_CTX_set_cookie_generate_cb");
+	SYM(CTX_set_cookie_verify_cb, "SSL_CTX_set_cookie_verify_cb");
+	SYM(SSL_set_ex_data, "SSL_set_ex_data");
+	SYM(SSL_get_ex_data, "SSL_get_ex_data");
+	SYMC(RAND_bytes, "RAND_bytes");
 	#undef SYM
 	#undef SYMC
 
@@ -355,6 +366,86 @@ static void dtls_set_mtu(void *ssl)
 	ossl.SSL_ctrl(ssl, BZ_DTLS_CTRL_SET_LINK_MTU, BZ_DTLS_LINK_MTU, NULL);
 }
 
+/* ---- DTLS HelloVerifyRequest cookie: stateless amplification protection. The
+   server replies to the first ClientHello with a cookie = keyed hash of the peer's
+   address + a per-process random secret; only a client that actually receives that
+   reply (i.e. owns the source address) can echo it back, so a spoofed-source flood
+   cannot make the server run the expensive handshake. The cookie callbacks read the
+   peer address the accept path stashed on the SSL via ex_data (index 0); a memory BIO
+   cannot answer BIO_dgram_get_peer, so passing the address ourselves is required. ---- */
+static unsigned char g_cookie_secret[16];
+static int g_cookie_secret_ready = 0;
+
+static void dtls_cookie_secret_init(void)
+{
+	if (g_cookie_secret_ready) { return; }
+	if (ossl.RAND_bytes(g_cookie_secret, (int)sizeof(g_cookie_secret)) != 1)
+	{
+		/* Degrade safe: a fixed secret still gives return-routability (an off-path
+		   spoofer never receives the cookie), just not unpredictability. */
+		memset(g_cookie_secret, 0x5a, sizeof(g_cookie_secret));
+	}
+	g_cookie_secret_ready = 1;
+}
+
+/* 16-byte cookie = two FNV-1a folds over (secret || peer address bytes). The same
+   ex_data storage is hashed at generate and verify time, so the bytes (incl. padding)
+   are identical and the comparison is stable. */
+static void dtls_make_cookie(const struct sockaddr_storage *ss, unsigned char *out, unsigned int *len)
+{
+	const unsigned char *a = (const unsigned char*)ss;
+	size_t alen = sizeof(struct sockaddr_in6);   /* Covers AF_INET6 + AF_INET. */
+	uint64_t h1 = 1469598103934665603ULL;
+	uint64_t h2 = 1469598103934665603ULL ^ 0x9e3779b97f4a7c15ULL;
+	for (size_t i = 0; i < sizeof(g_cookie_secret); i++)
+	{
+		h1 = (h1 ^ g_cookie_secret[i]) * 1099511628211ULL;
+		h2 = (h2 ^ g_cookie_secret[i]) * 1099511628211ULL;
+	}
+	for (size_t i = 0; i < alen; i++)
+	{
+		h1 = (h1 ^ a[i]) * 1099511628211ULL;
+		h2 = (h2 ^ a[i]) * 1099511628211ULL;
+	}
+	memcpy(out, &h1, 8);
+	memcpy(out + 8, &h2, 8);
+	*len = 16;
+}
+
+static int dtls_cookie_generate(void *ssl, unsigned char *c, unsigned int *l)
+{
+	struct sockaddr_storage *ss = (struct sockaddr_storage*)ossl.SSL_get_ex_data(ssl, 0);
+	if (!ss) { return 0; }
+	dtls_make_cookie(ss, c, l);
+	return 1;
+}
+
+static int dtls_cookie_verify(void *ssl, const unsigned char *c, unsigned int l)
+{
+	struct sockaddr_storage *ss = (struct sockaddr_storage*)ossl.SSL_get_ex_data(ssl, 0);
+	if (!ss) { return 0; }
+	unsigned char want[16];
+	unsigned int wl;
+	dtls_make_cookie(ss, want, &wl);
+	return (l == wl && memcmp(c, want, wl) == 0) ? 1 : 0;
+}
+
+/* Register the cookie callbacks + seed the secret on a server ctx (idempotent). */
+static void dtls_ctx_enable_cookie(void *ctx)
+{
+	dtls_cookie_secret_init();
+	ossl.CTX_set_cookie_generate_cb(ctx, dtls_cookie_generate);
+	ossl.CTX_set_cookie_verify_cb(ctx, dtls_cookie_verify);
+}
+
+/* Arm cookie exchange on one accepted server SSL: require the cookie + stash the peer
+   address the callbacks hash. `peer` must stay valid through the handshake. */
+static void dtls_ssl_arm_cookie(void *ssl, struct sockaddr_storage *peer)
+{
+	ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_OPTIONS, BZ_SSL_OP_COOKIE_EXCHANGE, NULL);
+	ossl.SSL_set_ex_data(ssl, 0, peer);
+}
+
 static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int insecure)
 {
 	if (!dtls_load()) { return NULL; }
@@ -497,6 +588,7 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 	{
 		ossl.CTX_free(ctx); bzy_io_fail("Network.dtlsListen: cannot load private key."); return NULL;
 	}
+	dtls_ctx_enable_cookie(ctx);   /* HelloVerifyRequest amplification protection. */
 
 	bzy_reactor_ensure();
 	int fd = socket(AF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0);
@@ -591,6 +683,7 @@ void *bzy_dtls_accept(void *l)
 	}
 	dtls_set_mtu(ssl);
 	ossl.SSL_set_accept_state(ssl);
+	dtls_ssl_arm_cookie(ssl, &peer);   /* `peer` stays valid through dtls_run in this frame. */
 
 	/* 3. Feed the peeked ClientHello into the rbio, then run the server handshake on
 	   the connected transport via the retransmitting pump. */
@@ -831,6 +924,7 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 	{
 		ossl.CTX_free(ctx); bzy_io_fail("Network.dtlsListen: cannot load private key."); return NULL;
 	}
+	dtls_ctx_enable_cookie(ctx);   /* HelloVerifyRequest amplification protection. */
 
 	bzy_iocp_ensure();
 
@@ -925,6 +1019,7 @@ void *bzy_dtls_accept(void *l)
 		}
 		dtls_set_mtu(ssl);
 		ossl.SSL_set_accept_state(ssl);
+		dtls_ssl_arm_cookie(ssl, &p->peer);   /* p is a heap DemuxPeer, stable through the handshake. */
 
 		DtlsDemuxOut *out = (DtlsDemuxOut*)calloc(1, sizeof(*out));
 		out->fd = dx->shared_fd;
