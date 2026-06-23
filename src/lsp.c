@@ -847,8 +847,9 @@ static char *first_line(const char *t)
 }
 
 /* Publish diagnostics for one URI. msg==NULL clears (empty array); otherwise a
-   single Error diagnostic. line0/char0 are already 0-based (LSP positions). */
-static void send_diagnostics(const char *uri, int line0, int char0, const char *msg)
+   single Error diagnostic. line0/char0/endchar0 are already 0-based (LSP positions);
+   the squiggle spans [char0, endchar0) -- the offending token. */
+static void send_diagnostics(const char *uri, int line0, int char0, int endchar0, const char *msg)
 {
 	if (line0 < 0)
 	{
@@ -858,6 +859,11 @@ static void send_diagnostics(const char *uri, int line0, int char0, const char *
 	if (char0 < 0)
 	{
 		char0 = 0;
+	}
+
+	if (endchar0 <= char0)
+	{
+		endchar0 = char0 + 1;   /* Always at least one character wide. */
 	}
 
 	Sb sb = {0};
@@ -871,7 +877,7 @@ static void send_diagnostics(const char *uri, int line0, int char0, const char *
 				 "{\"range\":{\"start\":{\"line\":%d,\"character\":%d},"
 				 "\"end\":{\"line\":%d,\"character\":%d}},"
 				 "\"severity\":1,\"source\":\"breezy\",\"message\":\"",
-				 line0, char0, line0, char0 + 1);
+				 line0, char0, line0, endchar0);
 		sb_puts(&sb, range);
 		sb_put_json_escaped(&sb, msg);
 		sb_puts(&sb, "\"}");
@@ -937,7 +943,7 @@ static void check_and_publish(const char *trigger_uri)
 	int clean = 0, have_diag = 0;
 	char *err_file = NULL;
 	char *err_msg = NULL;
-	int err_line = 0, err_col = 0;   /* 1-based as the compiler reports. */
+	int err_line = 0, err_col = 0, err_endcol = 0;   /* 1-based as the compiler reports. */
 
 	const char *text = out ? out : "";
 	const char *brace = strchr(text, '{');
@@ -955,10 +961,12 @@ static void check_and_publish(const char *trigger_uri)
 		{
 			JVal *jfile = jobj_get(j, "file");
 			JVal *jcol = jobj_get(j, "col");
+			JVal *jend = jobj_get(j, "endCol");
 			have_diag = 1;
 			err_file = dupstr((jfile && jfile->type == J_STR) ? jfile->str : path);
 			err_line = (int)jline->num;
 			err_col = jcol ? (int)jcol->num : 0;
+			err_endcol = jend ? (int)jend->num : 0;
 			err_msg = dupstr(jmsg->str);
 		}
 
@@ -985,6 +993,7 @@ static void check_and_publish(const char *trigger_uri)
 	/* 1-based (compiler) -> 0-based (LSP). col 0 (resolve errors) maps to 0. */
 	int l0 = err_line > 0 ? err_line - 1 : 0;
 	int c0 = err_col > 0 ? err_col - 1 : 0;
+	int ec0 = err_endcol > 0 ? err_endcol - 1 : c0 + 1;   /* Token span end; default 1 char. */
 
 	/* Publish to every open document IN THIS PROJECT: the error's file gets the
 	   diagnostic, the project's other open files are cleared. Documents in other
@@ -1003,19 +1012,19 @@ static void check_and_publish(const char *trigger_uri)
 
 		if (have_diag && same_file(g_paths[i], err_file))
 		{
-			send_diagnostics(g_uris[i], l0, c0, err_msg);
+			send_diagnostics(g_uris[i], l0, c0, ec0, err_msg);
 			matched = 1;
 		}
 		else
 		{
-			send_diagnostics(g_uris[i], 0, 0, NULL);
+			send_diagnostics(g_uris[i], 0, 0, 0, NULL);
 		}
 	}
 	/* Error in a file that is not currently open: publish under a derived URI. */
 	if (have_diag && !matched)
 	{
 		char *euri = path_to_uri(err_file);
-		send_diagnostics(euri, l0, c0, err_msg);
+		send_diagnostics(euri, l0, c0, ec0, err_msg);
 		free(euri);
 	}
 

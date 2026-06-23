@@ -78,9 +78,45 @@ void lexer_diag(const char *src, const char *file, int line, int col,
 
 	if (g_json_diag)
 	{
+		/* endCol = the 1-based column just past the offending token, so an editor can
+		   draw the squiggle across the whole token rather than one character. The token
+		   text is not passed in, so derive its extent from the source: an identifier /
+		   number word at `col` spans to its end; punctuation stays one character. */
+		int endcol = col > 0 ? col + 1 : 0;
+		if (src && col > 0)
+		{
+			const char *lp = src;
+			for (int ln = 1; ln < line && *lp; lp++)
+			{
+				if (*lp == '\n')
+				{
+					ln++;
+				}
+			}
+			const char *lend = lp;
+			while (*lend && *lend != '\n')
+			{
+				lend++;
+			}
+			if (col - 1 < (int)(lend - lp))
+			{
+				const char *t = lp + (col - 1);
+				if ((*t >= 'A' && *t <= 'Z') || (*t >= 'a' && *t <= 'z') || *t == '_')
+				{
+					const char *e = t;
+					while (e < lend && ((*e >= 'A' && *e <= 'Z') || (*e >= 'a' && *e <= 'z')
+										|| (*e >= '0' && *e <= '9') || *e == '_'))
+					{
+						e++;
+					}
+					endcol = col + (int)(e - t);
+				}
+			}
+		}
+
 		fputs("{\"file\":\"", stdout);
 		json_str(file);
-		fprintf(stdout, "\",\"line\":%d,\"col\":%d,\"message\":\"", line, col);
+		fprintf(stdout, "\",\"line\":%d,\"col\":%d,\"endCol\":%d,\"message\":\"", line, col, endcol);
 		json_str(msg);
 		json_str(arg);
 		fputs("\"}\n", stdout);

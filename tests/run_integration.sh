@@ -563,4 +563,18 @@ else
     echo "  lsp_definition: FAIL (got '$lsp_dfout')"; fail=1
 fi
 
+# Diagnostic span: the squiggle covers the whole offending token, not one character.
+# The widen fixture's second `int` (0-based line 2, chars 5..8) is where an identifier
+# was expected, so the diagnostic range must end at character 8.
+lsp_wid() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/widen/Main.bzy\"}}}"
+}
+lsp_wout="$(lsp_wid | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_wout" | grep -q '"start":{"line":2,"character":5},"end":{"line":2,"character":8}'; then
+    echo "  lsp_widen: OK"
+else
+    echo "  lsp_widen: FAIL (got '$lsp_wout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi
