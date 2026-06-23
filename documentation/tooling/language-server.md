@@ -25,12 +25,20 @@ editor with an LSP client can use it.
   a function call to the function.
 - **Find references.** From any use (or the declaration) the server lists every use
   of that symbol across the project, plus the declaration itself.
+- **Completion.** After `receiver.` the server offers that type's methods and fields;
+  on a bare word it offers the project's class and function names.
+
+All of this is **live**: it reflects your **unsaved** edits, not just the file on
+disk. As you type, diagnostics, hover, definition, and references re-evaluate against
+the current buffer.
 
 Under the hood the server forwards what the compiler itself reports — diagnostics
-from `breezy --check`, and hover/definition from `breezy --symbols` (a symbol index
-the compiler emits from the same resolved program) — so the editor never disagrees
-with a command-line build, and there is no second, divergent analyzer to keep in
-sync.
+from `breezy --check`, and hover/definition/references/completion from `breezy
+--symbols` (a symbol index the compiler emits from the same resolved program) — so
+the editor never disagrees with a command-line build, and there is no second,
+divergent analyzer to keep in sync. For unsaved edits it mirrors the project to a
+temporary copy with your in-memory buffers substituted and runs the compiler against
+that.
 
 The **project** is the directory holding the file, or the nearest ancestor
 containing a `breezy.toml` (the same scoping `breezy <dir>` uses). All `.bzy` files
@@ -93,23 +101,24 @@ only glue; the server itself is the same `breezy --lsp`.
 
 The server is intentionally small and grows from here.
 
-- **Diagnostics, hover, go-to-definition, and find-references** are served;
-  **completion, signature help, formatting, and rename** are not yet — each is a
-  further slice of exposing the compiler's symbol information. Completion in
-  particular waits on live-as-you-type (below): it needs the buffer you are mid-edit
-  in, which the on-save model does not have.
+- **Diagnostics, hover, go-to-definition, find-references, and completion** are
+  served; **signature help, formatting, and rename** are not yet.
 - **Definition and references are project-local and reach named declarations.** They
   work on a class, method, field, free function, or constructor in your own files.
   They do not yet resolve a **local variable or parameter** (no in-scope information in
   the index yet), an **inherited** member, or a **built-in** (the prelude has no
   user-visible definition site); those hover with a type but do not jump or list uses.
   A `new Foo` occurrence is anchored at the `new` keyword.
-- **On open and save, not on every keystroke.** A check reads the file from disk,
-  which is authoritative at open and save. Live-as-you-type checking of the unsaved
-  buffer is a planned follow-up.
+- **Completion resolves the receiver's type from the last parse that succeeded.** A
+  half-typed line does not parse, so the member list comes from the most recent
+  buildable version; a variable just introduced and not yet usable elsewhere offers
+  names but not its members.
+- **A recheck per change, no debounce.** Every edit re-mirrors the project and runs the
+  compiler. Correct and simple; incremental/debounced checking is the follow-up for a
+  large project.
 - **One diagnostic per check.** The compiler stops at the first error and reports
-  it; the next error appears after you fix that one and save. Batch diagnostics wait
-  on multi-error recovery in the compiler.
+  it; the next error appears after you fix that one. Batch diagnostics wait on
+  multi-error recovery in the compiler.
 
 A compiler error that is printed as plain text rather than a structured diagnostic
 is still surfaced — at line granularity — so an error is never silently invisible.
