@@ -23,6 +23,8 @@ editor with an LSP client can use it.
 - **Go to definition.** Jumping from a use takes you to its declaration — a method
   call to the method, a field to the field, `new Foo` and a class name to the class,
   a function call to the function.
+- **Find references.** From any use (or the declaration) the server lists every use
+  of that symbol across the project, plus the declaration itself.
 
 Under the hood the server forwards what the compiler itself reports — diagnostics
 from `breezy --check`, and hover/definition from `breezy --symbols` (a symbol index
@@ -91,15 +93,17 @@ only glue; the server itself is the same `breezy --lsp`.
 
 The server is intentionally small and grows from here.
 
-- **Diagnostics, hover, and go-to-definition** are served; **find-references,
-  completion, signature help, formatting, and rename** are not yet — each is a
-  further slice of exposing the compiler's symbol information.
-- **Go-to-definition is project-local and reaches named declarations.** It jumps to a
-  class, method, field, free function, or constructor in your own files. It does not
-  yet resolve a **local variable or parameter** (no in-scope information in the index
-  yet), an **inherited** member, or a **built-in** (the prelude has no user-visible
-  definition site); those hover with a type but do not jump. A `new Foo` occurrence is
-  anchored at the `new` keyword.
+- **Diagnostics, hover, go-to-definition, and find-references** are served;
+  **completion, signature help, formatting, and rename** are not yet — each is a
+  further slice of exposing the compiler's symbol information. Completion in
+  particular waits on live-as-you-type (below): it needs the buffer you are mid-edit
+  in, which the on-save model does not have.
+- **Definition and references are project-local and reach named declarations.** They
+  work on a class, method, field, free function, or constructor in your own files.
+  They do not yet resolve a **local variable or parameter** (no in-scope information in
+  the index yet), an **inherited** member, or a **built-in** (the prelude has no
+  user-visible definition site); those hover with a type but do not jump or list uses.
+  A `new Foo` occurrence is anchored at the `new` keyword.
 - **On open and save, not on every keystroke.** A check reads the file from disk,
   which is authoritative at open and save. Live-as-you-type checking of the unsaved
   buffer is a planned follow-up.
