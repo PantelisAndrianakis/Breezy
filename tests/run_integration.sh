@@ -577,4 +577,22 @@ else
     echo "  lsp_widen: FAIL (got '$lsp_wout')"; fail=1
 fi
 
+# References: the refs fixture declares `get` once and calls it twice. Find-references
+# over one call (0-based line 15, char 11) must list the declaration (line 5) and both
+# calls (lines 15, 16).
+lsp_ref() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/refs/Main.bzy\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/references\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/refs/Main.bzy\"},\"position\":{\"line\":15,\"character\":11},\"context\":{\"includeDeclaration\":true}}}"
+}
+lsp_rout="$(lsp_ref | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_rout" | grep -q '"line":5' \
+   && echo "$lsp_rout" | grep -q '"line":15' \
+   && echo "$lsp_rout" | grep -q '"line":16' \
+   && echo "$lsp_rout" | grep -q 'referencesProvider'; then
+    echo "  lsp_references: OK"
+else
+    echo "  lsp_references: FAIL (got '$lsp_rout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

@@ -1217,6 +1217,156 @@ static void handle_definition(JVal *id, JVal *params)
 	free(path);
 }
 
+/* Append one LSP Location {uri, range} (1-based span -> 0-based) to the array builder,
+   comma-separated via *first. */
+static void append_location(Sb *r, int *first, const char *file, int line1, int col1, int endcol1)
+{
+	int l0 = line1 > 0 ? line1 - 1 : 0;
+	int c0 = col1 > 0 ? col1 - 1 : 0;
+	int e0 = endcol1 > 0 ? endcol1 - 1 : c0 + 1;
+	if (e0 < c0)
+	{
+		e0 = c0;
+	}
+
+	if (!*first)
+	{
+		sb_putc(r, ',');
+	}
+	*first = 0;
+
+	char *uri = path_to_uri(file);
+	sb_puts(r, "{\"uri\":\"");
+	sb_put_json_escaped(r, uri);
+	char range[176];
+	snprintf(range, sizeof(range),
+			 "\",\"range\":{\"start\":{\"line\":%d,\"character\":%d},"
+			 "\"end\":{\"line\":%d,\"character\":%d}}}",
+			 l0, c0, l0, e0);
+	sb_puts(r, range);
+	free(uri);
+}
+
+/* textDocument/references: the occurrence under the cursor names a declaration (its
+   def triple in the --symbols index); reply every occurrence sharing that declaration
+   -- the symbol's uses -- plus the declaration itself when the client asks. A symbol
+   with no def link (a local, a built-in) has no references to report. */
+static void handle_references(JVal *id, JVal *params)
+{
+	JVal *td  = jobj_get(params, "textDocument");
+	JVal *uri = jobj_get(td, "uri");
+	JVal *pos = jobj_get(params, "position");
+	JVal *jl  = jobj_get(pos, "line");
+	JVal *jc  = jobj_get(pos, "character");
+	JVal *ctx = jobj_get(params, "context");
+	JVal *inc = ctx ? jobj_get(ctx, "includeDeclaration") : NULL;
+	int include_decl = inc && inc->type == J_BOOL && inc->bval;
+	if (!uri || uri->type != J_STR || !jl || jl->type != J_NUM || !jc || jc->type != J_NUM)
+	{
+		reply_result(id, "[]");
+		return;
+	}
+
+	int line1 = (int)jl->num + 1;
+	int char1 = (int)jc->num + 1;
+	char *path = uri_to_path(uri->str);
+	char *root = project_root(path);
+	char *out  = run_self_capture("--symbols", root);
+
+	const char *text  = out ? out : "";
+	const char *brace = strchr(text, '{');
+	Sb r = {0};
+	sb_putc(&r, '[');
+	int first = 1;
+	if (brace)
+	{
+		JVal *j = json_parse(brace);
+		JVal *syms = jobj_get(j, "symbols");
+		const char *dfile = NULL, *dname = "";
+		int dl = 0, dc = 0;
+		if (syms && syms->type == J_ARR)
+		{
+			/* Pass 1: the occurrence under the cursor and its declaration triple. */
+			for (int i = 0; i < syms->nitems; i++)
+			{
+				JVal *s  = syms->items[i];
+				JVal *sf = jobj_get(s, "file");
+				JVal *sl = jobj_get(s, "line");
+				JVal *sc = jobj_get(s, "col");
+				JVal *se = jobj_get(s, "endCol");
+				if (!sf || sf->type != J_STR || !sl || !sc || !se)
+				{
+					continue;
+				}
+				if ((int)sl->num != line1 || char1 < (int)sc->num || char1 >= (int)se->num)
+				{
+					continue;
+				}
+				if (!same_file(sf->str, path))
+				{
+					continue;
+				}
+
+				JVal *df = jobj_get(s, "defFile");
+				JVal *dlv = jobj_get(s, "defLine");
+				JVal *dcv = jobj_get(s, "defCol");
+				JVal *nm = jobj_get(s, "name");
+				if (df && df->type == J_STR && dlv && dlv->type == J_NUM && dcv && dcv->type == J_NUM)
+				{
+					dfile = df->str;
+					dl = (int)dlv->num;
+					dc = (int)dcv->num;
+					dname = (nm && nm->type == J_STR) ? nm->str : "";
+				}
+				break;
+			}
+
+			/* Pass 2: every occurrence sharing that declaration, + the declaration. */
+			if (dfile)
+			{
+				if (include_decl)
+				{
+					append_location(&r, &first, dfile, dl, dc, dc + (int)strlen(dname));
+				}
+				for (int i = 0; i < syms->nitems; i++)
+				{
+					JVal *s  = syms->items[i];
+					JVal *df = jobj_get(s, "defFile");
+					JVal *dlv = jobj_get(s, "defLine");
+					JVal *dcv = jobj_get(s, "defCol");
+					if (!df || df->type != J_STR || !dlv || dlv->type != J_NUM || !dcv || dcv->type != J_NUM)
+					{
+						continue;
+					}
+					if ((int)dlv->num != dl || (int)dcv->num != dc || !same_file(df->str, dfile))
+					{
+						continue;
+					}
+
+					JVal *sf = jobj_get(s, "file");
+					JVal *sl = jobj_get(s, "line");
+					JVal *sc = jobj_get(s, "col");
+					JVal *se = jobj_get(s, "endCol");
+					if (!sf || sf->type != J_STR || !sl || !sc || !se)
+					{
+						continue;
+					}
+					append_location(&r, &first, sf->str, (int)sl->num, (int)sc->num, (int)se->num);
+				}
+			}
+		}
+
+		json_free(j);
+	}
+
+	sb_putc(&r, ']');
+	reply_result(id, r.p);
+	free(r.p);
+	free(out);
+	free(root);
+	free(path);
+}
+
 /* ---- server loop ---- */
 
 int lsp_main(const char *self_exe)
@@ -1238,7 +1388,7 @@ int lsp_main(const char *self_exe)
 
 		if (strcmp(m, "initialize") == 0)
 		{
-			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true}}");
+			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"referencesProvider\":true}}");
 		}
 		else if (strcmp(m, "initialized") == 0)
 		{
@@ -1269,6 +1419,10 @@ int lsp_main(const char *self_exe)
 		else if (strcmp(m, "textDocument/definition") == 0)
 		{
 			handle_definition(id, jobj_get(root, "params"));
+		}
+		else if (strcmp(m, "textDocument/references") == 0)
+		{
+			handle_references(id, jobj_get(root, "params"));
 		}
 		else if (strcmp(m, "shutdown") == 0)
 		{

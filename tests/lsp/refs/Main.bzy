@@ -1,0 +1,19 @@
+// Fixture for find-references: the `get` method is declared once and called twice,
+// so references over one call must list both calls plus the declaration.
+class Box
+{
+	int v;
+	int get()
+	{
+		return this.v;
+	}
+}
+
+void main()
+{
+	Box a = new Box();
+	Box b = new Box();
+	int x = a.get();
+	int y = b.get();
+	print(x + y);
+}
