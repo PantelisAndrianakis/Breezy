@@ -1127,6 +1127,48 @@ static char *overlay_build(const char *real_root)
 	return tmp;
 }
 
+/* Map a path the index reports (which is under the overlay temp dir when live, or the
+   real project otherwise) to the real project path: real_root + the file's basename.
+   Basenames are unique in a flat one-class-per-file project, so this round-trips a temp
+   path to its real twin and leaves a real path effectively unchanged. */
+static char *index_to_real(const char *real_root, const char *file)
+{
+	const char *bn = file + strlen(file);
+	while (bn > file && bn[-1] != '/' && bn[-1] != '\\')
+	{
+		bn--;
+	}
+	Sb s = {0};
+	sb_puts(&s, real_root);
+	sb_putc(&s, '/');
+	sb_puts(&s, bn);
+	return s.p;
+}
+
+/* True if an index occurrence's file is the real trigger document. */
+static int occ_in_file(const char *real_root, const char *index_file, const char *real_path)
+{
+	char *r = index_to_real(real_root, index_file);
+	int ok = same_file(r, real_path);
+	free(r);
+	return ok;
+}
+
+/* Run `--symbols` for the trigger document's project, through the dirty-buffer overlay
+   when the document has unsaved text, so hover / definition / references reflect edits
+   that are not yet on disk. Returns the output (caller frees) and sets *real_root (the
+   real project dir, for index_to_real); the check root is internal. */
+static char *symbols_for_doc(const char *real_path, char **real_root_out)
+{
+	char *real_root = project_root(real_path);
+	int live = docs_text_for(real_path) != NULL;
+	char *check_root = live ? overlay_build(real_root) : dupstr(real_root);
+	char *out = run_self_capture("--symbols", check_root);
+	free(check_root);
+	*real_root_out = real_root;
+	return out;
+}
+
 /* Publish diagnostics for the trigger document's project. When `live`, the project is
    mirrored to a temp dir with the unsaved buffers substituted and checked there, so the
    squiggles reflect edits that are not yet on disk; the reported temp paths are remapped
@@ -1266,8 +1308,8 @@ static void handle_hover(JVal *id, JVal *params)
 	int line1 = (int)jl->num + 1;   /* LSP 0-based -> the compiler's 1-based. */
 	int char1 = (int)jc->num + 1;
 	char *path = uri_to_path(uri->str);
-	char *root = project_root(path);
-	char *out  = run_self_capture("--symbols", root);
+	char *real_root = NULL;
+	char *out  = symbols_for_doc(path, &real_root);
 
 	const char *text  = out ? out : "";
 	const char *brace = strchr(text, '{');
@@ -1296,7 +1338,7 @@ static void handle_hover(JVal *id, JVal *params)
 				{
 					continue;
 				}
-				if (!same_file(sf->str, path))
+				if (!occ_in_file(real_root, sf->str, path))
 				{
 					continue;
 				}
@@ -1330,7 +1372,7 @@ static void handle_hover(JVal *id, JVal *params)
 	}
 
 	free(out);
-	free(root);
+	free(real_root);
 	free(path);
 }
 
@@ -1353,8 +1395,8 @@ static void handle_definition(JVal *id, JVal *params)
 	int line1 = (int)jl->num + 1;
 	int char1 = (int)jc->num + 1;
 	char *path = uri_to_path(uri->str);
-	char *root = project_root(path);
-	char *out  = run_self_capture("--symbols", root);
+	char *real_root = NULL;
+	char *out  = symbols_for_doc(path, &real_root);
 
 	const char *text  = out ? out : "";
 	const char *brace = strchr(text, '{');
@@ -1381,7 +1423,7 @@ static void handle_definition(JVal *id, JVal *params)
 				{
 					continue;
 				}
-				if (!same_file(sf->str, path))
+				if (!occ_in_file(real_root, sf->str, path))
 				{
 					continue;
 				}
@@ -1391,10 +1433,13 @@ static void handle_definition(JVal *id, JVal *params)
 				JVal *dc = jobj_get(s, "defCol");
 				if (df && df->type == J_STR && dl && dl->type == J_NUM && dc && dc->type == J_NUM)
 				{
-					defuri = path_to_uri(df->str);
+					char *dr = index_to_real(real_root, df->str);   /* Overlay temp -> real. */
+					defuri = path_to_uri(dr);
+					free(dr);
 					defl = (int)dl->num;
 					defc = (int)dc->num;
 				}
+
 				break;
 			}
 		}
@@ -1425,13 +1470,13 @@ static void handle_definition(JVal *id, JVal *params)
 	}
 
 	free(out);
-	free(root);
+	free(real_root);
 	free(path);
 }
 
 /* Append one LSP Location {uri, range} (1-based span -> 0-based) to the array builder,
    comma-separated via *first. */
-static void append_location(Sb *r, int *first, const char *file, int line1, int col1, int endcol1)
+static void append_location(Sb *r, int *first, const char *real_root, const char *file, int line1, int col1, int endcol1)
 {
 	int l0 = line1 > 0 ? line1 - 1 : 0;
 	int c0 = col1 > 0 ? col1 - 1 : 0;
@@ -1447,7 +1492,8 @@ static void append_location(Sb *r, int *first, const char *file, int line1, int 
 	}
 	*first = 0;
 
-	char *uri = path_to_uri(file);
+	char *real = index_to_real(real_root, file);   /* Overlay temp path -> the real file. */
+	char *uri = path_to_uri(real);
 	sb_puts(r, "{\"uri\":\"");
 	sb_put_json_escaped(r, uri);
 	char range[176];
@@ -1457,6 +1503,7 @@ static void append_location(Sb *r, int *first, const char *file, int line1, int 
 			 l0, c0, l0, e0);
 	sb_puts(r, range);
 	free(uri);
+	free(real);
 }
 
 /* textDocument/references: the occurrence under the cursor names a declaration (its
@@ -1482,8 +1529,8 @@ static void handle_references(JVal *id, JVal *params)
 	int line1 = (int)jl->num + 1;
 	int char1 = (int)jc->num + 1;
 	char *path = uri_to_path(uri->str);
-	char *root = project_root(path);
-	char *out  = run_self_capture("--symbols", root);
+	char *real_root = NULL;
+	char *out  = symbols_for_doc(path, &real_root);
 
 	const char *text  = out ? out : "";
 	const char *brace = strchr(text, '{');
@@ -1514,7 +1561,7 @@ static void handle_references(JVal *id, JVal *params)
 				{
 					continue;
 				}
-				if (!same_file(sf->str, path))
+				if (!occ_in_file(real_root, sf->str, path))
 				{
 					continue;
 				}
@@ -1538,7 +1585,7 @@ static void handle_references(JVal *id, JVal *params)
 			{
 				if (include_decl)
 				{
-					append_location(&r, &first, dfile, dl, dc, dc + (int)strlen(dname));
+					append_location(&r, &first, real_root, dfile, dl, dc, dc + (int)strlen(dname));
 				}
 				for (int i = 0; i < syms->nitems; i++)
 				{
@@ -1563,7 +1610,7 @@ static void handle_references(JVal *id, JVal *params)
 					{
 						continue;
 					}
-					append_location(&r, &first, sf->str, (int)sl->num, (int)sc->num, (int)se->num);
+					append_location(&r, &first, real_root, sf->str, (int)sl->num, (int)sc->num, (int)se->num);
 				}
 			}
 		}
@@ -1575,7 +1622,7 @@ static void handle_references(JVal *id, JVal *params)
 	reply_result(id, r.p);
 	free(r.p);
 	free(out);
-	free(root);
+	free(real_root);
 	free(path);
 }
 

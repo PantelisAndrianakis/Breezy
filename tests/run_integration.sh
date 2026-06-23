@@ -611,4 +611,18 @@ else
     echo "  lsp_live: FAIL (got '$lsp_lout')"; fail=1
 fi
 
+# Live hover: open the sym file with a buffer that declares `int q` (the disk file has
+# no `q`), then hover `q`. The type comes back only if hover indexed the unsaved buffer.
+lsp_livehov() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\",\"text\":\"void main()\\n{\\n\\tint q = 5;\\n\\tprint(q);\\n}\\n\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\"},\"position\":{\"line\":3,\"character\":7}}}"
+}
+lsp_lhout="$(lsp_livehov | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_lhout" | grep -q 'q : int'; then
+    echo "  lsp_live_hover: OK"
+else
+    echo "  lsp_live_hover: FAIL (got '$lsp_lhout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi
