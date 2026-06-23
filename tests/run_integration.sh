@@ -625,4 +625,21 @@ else
     echo "  lsp_live_hover: FAIL (got '$lsp_lhout')"; fail=1
 fi
 
+# Completion: open a buffer with `Counter c = ...` then `c.` (which does not parse) and
+# request completion at the dot -- the server falls back to the last-saved index, finds
+# c's type, and lists Counter's members (get, value).
+lsp_comp() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\",\"text\":\"void main()\\n{\\n\\tCounter c = new Counter();\\n\\tc.\\n}\\n\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/completion\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\"},\"position\":{\"line\":3,\"character\":3}}}"
+}
+lsp_cout="$(lsp_comp | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_cout" | grep -q '"label":"get"' \
+   && echo "$lsp_cout" | grep -q '"label":"value"' \
+   && echo "$lsp_cout" | grep -q 'completionProvider'; then
+    echo "  lsp_completion: OK"
+else
+    echo "  lsp_completion: FAIL (got '$lsp_cout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

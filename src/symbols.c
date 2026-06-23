@@ -443,5 +443,92 @@ void symbols_emit(Unit **units, int unit_count)
 		}
 	}
 
+	/* The `classes` section: each user class with its own members, so completion can
+	   list `receiver.<members>` from the receiver's type. */
+	fputs("],\"classes\":[", stdout);
+	int cfirst = 1;
+	for (int i = 0; i < unit_count; i++)
+	{
+		Unit *u = units[i];
+		if (!is_user_unit(u))
+		{
+			continue;
+		}
+		for (int ci = 0; ci < u->class_count; ci++)
+		{
+			ClassDecl *d = u->klasses[ci];
+			if (!cfirst)
+			{
+				putchar(',');
+			}
+			cfirst = 0;
+			fputs("{\"name\":", stdout);
+			json_str(d->name);
+			fputs(",\"members\":[", stdout);
+			int mfirst = 1;
+			for (int k = 0; k < d->method_count; k++)
+			{
+				char ty[256];
+				ty[0] = '\0';
+				type_to_str(&d->methods[k]->ret_type, ty, (int)sizeof(ty));
+				if (!mfirst)
+				{
+					putchar(',');
+				}
+				mfirst = 0;
+				fputs("{\"name\":", stdout);
+				json_str(d->methods[k]->name);
+				fputs(",\"kind\":\"method\",\"type\":", stdout);
+				json_str(ty);
+				putchar('}');
+			}
+			for (int k = 0; k < d->field_count; k++)
+			{
+				char ty[256];
+				ty[0] = '\0';
+				type_to_str(&d->fields[k].type, ty, (int)sizeof(ty));
+				if (!mfirst)
+				{
+					putchar(',');
+				}
+				mfirst = 0;
+				fputs("{\"name\":", stdout);
+				json_str(d->fields[k].name);
+				fputs(",\"kind\":\"field\",\"type\":", stdout);
+				json_str(ty);
+				putchar('}');
+			}
+			fputs("]}", stdout);
+		}
+	}
+
+	/* The `functions` section: top-level function names, for name completion. */
+	fputs("],\"functions\":[", stdout);
+	int ffirst = 1;
+	for (int i = 0; i < unit_count; i++)
+	{
+		Unit *u = units[i];
+		if (!is_user_unit(u))
+		{
+			continue;
+		}
+		for (int k = 0; k < u->func_count; k++)
+		{
+			char ty[256];
+			ty[0] = '\0';
+			type_to_str(&u->funcs[k]->ret_type, ty, (int)sizeof(ty));
+			if (!ffirst)
+			{
+				putchar(',');
+			}
+			ffirst = 0;
+			fputs("{\"name\":", stdout);
+			json_str(u->funcs[k]->name);
+			fputs(",\"type\":", stdout);
+			json_str(ty);
+			putchar('}');
+		}
+	}
+
 	fputs("]}\n", stdout);
 }

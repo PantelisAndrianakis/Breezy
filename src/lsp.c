@@ -1626,6 +1626,219 @@ static void handle_references(JVal *id, JVal *params)
 	free(path);
 }
 
+/* The text on line `line0` up to column `char0` (a copy; the editor's 0-based pos). */
+static char *line_prefix(const char *text, int line0, int char0)
+{
+	const char *p = text;
+	for (int ln = 0; ln < line0 && *p; p++)
+	{
+		if (*p == '\n')
+		{
+			ln++;
+		}
+	}
+	const char *e = p;
+	int c = 0;
+	while (*e && *e != '\n' && c < char0)
+	{
+		e++;
+		c++;
+	}
+	int len = (int)(e - p);
+	char *r = malloc((size_t)len + 1);
+	memcpy(r, p, (size_t)len);
+	r[len] = '\0';
+	return r;
+}
+
+static int starts_with(const char *s, const char *prefix)
+{
+	return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+static int ident_char(char c)
+{
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+/* Append one CompletionItem {label, kind, detail}. */
+static void add_item(Sb *r, int *first, const char *label, int kind, const char *detail)
+{
+	if (!*first)
+	{
+		sb_putc(r, ',');
+	}
+	*first = 0;
+	sb_puts(r, "{\"label\":\"");
+	sb_put_json_escaped(r, label);
+	char k[48];
+	snprintf(k, sizeof(k), "\",\"kind\":%d", kind);
+	sb_puts(r, k);
+	if (detail && detail[0])
+	{
+		sb_puts(r, ",\"detail\":\"");
+		sb_put_json_escaped(r, detail);
+		sb_putc(r, '"');
+	}
+	sb_putc(r, '}');
+}
+
+/* textDocument/completion: from the dirty line up to the cursor, either complete the
+   members of `receiver.` (the receiver's type -> that class's members) or, on a bare
+   word, the project's class and function names. Prefix-filtered. */
+static void handle_completion(JVal *id, JVal *params)
+{
+	JVal *td  = jobj_get(params, "textDocument");
+	JVal *uri = jobj_get(td, "uri");
+	JVal *pos = jobj_get(params, "position");
+	JVal *jl  = jobj_get(pos, "line");
+	JVal *jc  = jobj_get(pos, "character");
+	if (!uri || uri->type != J_STR || !jl || jl->type != J_NUM || !jc || jc->type != J_NUM)
+	{
+		reply_result(id, "{\"isIncomplete\":false,\"items\":[]}");
+		return;
+	}
+
+	int line0 = (int)jl->num;
+	int char0 = (int)jc->num;
+	char *path = uri_to_path(uri->str);
+	char *buf = docs_text_for(path);   /* Borrowed: the unsaved buffer, or NULL. */
+	char *prefix = buf ? line_prefix(buf, line0, char0) : dupstr("");
+
+	/* The trailing word is the partial being typed; a `.` before it means member
+	   completion, with the identifier before the dot as the receiver. */
+	int n = (int)strlen(prefix);
+	int pe = n;
+	while (pe > 0 && ident_char(prefix[pe - 1]))
+	{
+		pe--;
+	}
+	char partial[64];
+	int pl = n - pe;
+	if (pl > 63)
+	{
+		pl = 63;
+	}
+	memcpy(partial, prefix + pe, (size_t)pl);
+	partial[pl] = '\0';
+	int member = 0;
+	char receiver[64] = "";
+	if (pe > 0 && prefix[pe - 1] == '.')
+	{
+		member = 1;
+		int re = pe - 1;
+		int rs = re;
+		while (rs > 0 && ident_char(prefix[rs - 1]))
+		{
+			rs--;
+		}
+		int rl = re - rs;
+		if (rl > 63)
+		{
+			rl = 63;
+		}
+		memcpy(receiver, prefix + rs, (size_t)rl);
+		receiver[rl] = '\0';
+	}
+	free(prefix);
+
+	char *real_root = NULL;
+	char *out = symbols_for_doc(path, &real_root);
+	if (!out || !strstr(out, "\"classes\""))
+	{
+		/* The dirty buffer did not parse (mid-edit, e.g. `obj.`); fall back to the
+		   last-saved version on disk so completion still has the project's types. */
+		free(out);
+		out = run_self_capture("--symbols", real_root);
+	}
+	const char *text = out ? out : "";
+	const char *brace = strchr(text, '{');
+	Sb r = {0};
+	sb_puts(&r, "{\"isIncomplete\":false,\"items\":[");
+	int first = 1;
+	if (brace)
+	{
+		JVal *j = json_parse(brace);
+		if (member && receiver[0])
+		{
+			/* Resolve the receiver's class from an occurrence of its name. */
+			const char *rtype = NULL;
+			JVal *syms = jobj_get(j, "symbols");
+			if (syms && syms->type == J_ARR)
+			{
+				for (int i = 0; i < syms->nitems; i++)
+				{
+					JVal *nm = jobj_get(syms->items[i], "name");
+					JVal *ty = jobj_get(syms->items[i], "type");
+					if (nm && nm->type == J_STR && ty && ty->type == J_STR && strcmp(nm->str, receiver) == 0)
+					{
+						rtype = ty->str;
+						break;
+					}
+				}
+			}
+			JVal *cls = jobj_get(j, "classes");
+			if (rtype && cls && cls->type == J_ARR)
+			{
+				for (int i = 0; i < cls->nitems; i++)
+				{
+					JVal *cn = jobj_get(cls->items[i], "name");
+					if (!cn || cn->type != J_STR || strcmp(cn->str, rtype) != 0)
+					{
+						continue;
+					}
+					JVal *mem = jobj_get(cls->items[i], "members");
+					for (int k = 0; mem && mem->type == J_ARR && k < mem->nitems; k++)
+					{
+						JVal *mn = jobj_get(mem->items[k], "name");
+						JVal *mk = jobj_get(mem->items[k], "kind");
+						JVal *mt = jobj_get(mem->items[k], "type");
+						if (!mn || mn->type != J_STR || (partial[0] && !starts_with(mn->str, partial)))
+						{
+							continue;
+						}
+						int kind = (mk && mk->type == J_STR && strcmp(mk->str, "method") == 0) ? 2 : 5;
+						add_item(&r, &first, mn->str, kind, (mt && mt->type == J_STR) ? mt->str : "");
+					}
+					break;
+				}
+			}
+		}
+		else
+		{
+			/* Bare word: class names + free-function names. */
+			JVal *cls = jobj_get(j, "classes");
+			for (int i = 0; cls && cls->type == J_ARR && i < cls->nitems; i++)
+			{
+				JVal *cn = jobj_get(cls->items[i], "name");
+				if (cn && cn->type == J_STR && (!partial[0] || starts_with(cn->str, partial)))
+				{
+					add_item(&r, &first, cn->str, 7, "class");
+				}
+			}
+			JVal *fns = jobj_get(j, "functions");
+			for (int i = 0; fns && fns->type == J_ARR && i < fns->nitems; i++)
+			{
+				JVal *fn = jobj_get(fns->items[i], "name");
+				JVal *ft = jobj_get(fns->items[i], "type");
+				if (fn && fn->type == J_STR && (!partial[0] || starts_with(fn->str, partial)))
+				{
+					add_item(&r, &first, fn->str, 3, (ft && ft->type == J_STR) ? ft->str : "");
+				}
+			}
+		}
+
+		json_free(j);
+	}
+
+	sb_puts(&r, "]}");
+	reply_result(id, r.p);
+	free(r.p);
+	free(out);
+	free(real_root);
+	free(path);
+}
+
 /* ---- server loop ---- */
 
 int lsp_main(const char *self_exe)
@@ -1647,7 +1860,7 @@ int lsp_main(const char *self_exe)
 
 		if (strcmp(m, "initialize") == 0)
 		{
-			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"referencesProvider\":true}}");
+			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true,\"referencesProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]}}}");
 		}
 		else if (strcmp(m, "initialized") == 0)
 		{
@@ -1706,6 +1919,10 @@ int lsp_main(const char *self_exe)
 		else if (strcmp(m, "textDocument/references") == 0)
 		{
 			handle_references(id, jobj_get(root, "params"));
+		}
+		else if (strcmp(m, "textDocument/completion") == 0)
+		{
+			handle_completion(id, jobj_get(root, "params"));
 		}
 		else if (strcmp(m, "shutdown") == 0)
 		{
