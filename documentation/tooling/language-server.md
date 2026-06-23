@@ -14,16 +14,21 @@ editor with an LSP client can use it.
 
 ## What it does
 
-When you **open** or **save** a `.bzy` file, the server re-checks the project and
-publishes diagnostics:
+- **Diagnostics.** When you **open** or **save** a `.bzy` file, the server re-checks
+  the project and publishes a compile error at the compiler's own position with the
+  compiler's own message (e.g. `Expected ';', got '}'.`), or clears the squiggles
+  when the project is clean. The squiggle spans the whole offending token.
+- **Hover.** Hovering a name shows its type — `c : Counter`, `get : int`,
+  `make : ()->Box`.
+- **Go to definition.** Jumping from a use takes you to its declaration — a method
+  call to the method, a field to the field, `new Foo` and a class name to the class,
+  a function call to the function.
 
-- A compile error → one `Error` diagnostic at the compiler's own position, with the
-  compiler's own message (e.g. `Expected ';', got '}'.`).
-- A clean project → the squiggles clear.
-
-Under the hood the server runs `breezy --check` on the file's project and forwards
-the result, so the diagnostics are **exactly** what a command-line build would
-report — no second, divergent analyzer to keep in sync.
+Under the hood the server forwards what the compiler itself reports — diagnostics
+from `breezy --check`, and hover/definition from `breezy --symbols` (a symbol index
+the compiler emits from the same resolved program) — so the editor never disagrees
+with a command-line build, and there is no second, divergent analyzer to keep in
+sync.
 
 The **project** is the directory holding the file, or the nearest ancestor
 containing a `breezy.toml` (the same scoping `breezy <dir>` uses). All `.bzy` files
@@ -86,18 +91,21 @@ only glue; the server itself is the same `breezy --lsp`.
 
 The server is intentionally small and grows from here.
 
-- **Diagnostics only.** No hover, go-to-definition, find-references, completion,
-  signature help, formatting, or rename yet. These need the compiler to expose
-  symbol and type information it currently uses internally.
+- **Diagnostics, hover, and go-to-definition** are served; **find-references,
+  completion, signature help, formatting, and rename** are not yet — each is a
+  further slice of exposing the compiler's symbol information.
+- **Go-to-definition is project-local and reaches named declarations.** It jumps to a
+  class, method, field, free function, or constructor in your own files. It does not
+  yet resolve a **local variable or parameter** (no in-scope information in the index
+  yet), an **inherited** member, or a **built-in** (the prelude has no user-visible
+  definition site); those hover with a type but do not jump. A `new Foo` occurrence is
+  anchored at the `new` keyword.
 - **On open and save, not on every keystroke.** A check reads the file from disk,
   which is authoritative at open and save. Live-as-you-type checking of the unsaved
   buffer is a planned follow-up.
 - **One diagnostic per check.** The compiler stops at the first error and reports
   it; the next error appears after you fix that one and save. Batch diagnostics wait
   on multi-error recovery in the compiler.
-- **A single-character squiggle** at the caret column. Widening it to span the whole
-  offending token is a follow-up (it needs end-column information on the syntax
-  tree).
 
 A compiler error that is printed as plain text rather than a structured diagnostic
 is still surfaced — at line granularity — so an error is never silently invisible.
