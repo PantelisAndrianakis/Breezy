@@ -548,4 +548,19 @@ else
     echo "  lsp_hover: FAIL (got '$lsp_hout')"; fail=1
 fi
 
+# Definition: go-to-definition over the `get()` method call (0-based line 14, char 12)
+# replies the Location of its declaration (0-based line 5, char 5 in the fixture).
+lsp_def() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/sym/Main.bzy\"},\"position\":{\"line\":14,\"character\":12}}}"
+}
+lsp_dfout="$(lsp_def | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_dfout" | grep -q '"line":5,"character":5' \
+   && echo "$lsp_dfout" | grep -q 'definitionProvider'; then
+    echo "  lsp_definition: OK"
+else
+    echo "  lsp_definition: FAIL (got '$lsp_dfout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

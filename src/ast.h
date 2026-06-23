@@ -355,6 +355,7 @@ typedef struct Func
 {
 	TypeRef ret_type;
 	char name[64];
+	int  name_line, name_col; /* 1-based position of the function/method name (for the LSP symbol index; 0 = unset). */
 	Param  *params;           /* Grown via func_add_param; param_count live, param_cap allocated. */
 	int param_count;
 	int param_cap;
@@ -390,10 +391,12 @@ typedef struct
 	char name[64];
 	int   is_static;          /* Static field: one shared global slot, not in the object. */
 	Expr *init;               /* Static-field declaration initializer, or NULL. */
+	int   name_line, name_col;/* 1-based position of the field name (for the LSP symbol index; 0 = unset). */
 } Field;
 typedef struct
 {
 	char  name[64];
+	int   name_line, name_col;/* 1-based position of the class name (for the LSP symbol index; 0 = unset). */
 	int is_static;            /* `static class`: every member is static, not instantiable. */
 	int is_record;            /* `record`: final class with compiler-synthesized hashCode/equals. */
 	char parent_name[64];

@@ -1113,6 +1113,101 @@ static void handle_hover(JVal *id, JVal *params)
 	free(path);
 }
 
+/* textDocument/definition: find the occurrence under the cursor in the --symbols
+   index and reply the Location of its declaration (defFile/defLine/defCol), or null
+   when the occurrence has no resolvable definition (a local, a built-in, ...). */
+static void handle_definition(JVal *id, JVal *params)
+{
+	JVal *td  = jobj_get(params, "textDocument");
+	JVal *uri = jobj_get(td, "uri");
+	JVal *pos = jobj_get(params, "position");
+	JVal *jl  = jobj_get(pos, "line");
+	JVal *jc  = jobj_get(pos, "character");
+	if (!uri || uri->type != J_STR || !jl || jl->type != J_NUM || !jc || jc->type != J_NUM)
+	{
+		reply_result(id, "null");
+		return;
+	}
+
+	int line1 = (int)jl->num + 1;
+	int char1 = (int)jc->num + 1;
+	char *path = uri_to_path(uri->str);
+	char *root = project_root(path);
+	char *out  = run_self_capture("--symbols", root);
+
+	const char *text  = out ? out : "";
+	const char *brace = strchr(text, '{');
+	char *defuri = NULL;
+	int defl = 0, defc = 0;
+	if (brace)
+	{
+		JVal *j = json_parse(brace);
+		JVal *syms = jobj_get(j, "symbols");
+		if (syms && syms->type == J_ARR)
+		{
+			for (int i = 0; i < syms->nitems; i++)
+			{
+				JVal *s  = syms->items[i];
+				JVal *sf = jobj_get(s, "file");
+				JVal *sl = jobj_get(s, "line");
+				JVal *sc = jobj_get(s, "col");
+				JVal *se = jobj_get(s, "endCol");
+				if (!sf || sf->type != J_STR || !sl || !sc || !se)
+				{
+					continue;
+				}
+				if ((int)sl->num != line1 || char1 < (int)sc->num || char1 >= (int)se->num)
+				{
+					continue;
+				}
+				if (!same_file(sf->str, path))
+				{
+					continue;
+				}
+
+				JVal *df = jobj_get(s, "defFile");
+				JVal *dl = jobj_get(s, "defLine");
+				JVal *dc = jobj_get(s, "defCol");
+				if (df && df->type == J_STR && dl && dl->type == J_NUM && dc && dc->type == J_NUM)
+				{
+					defuri = path_to_uri(df->str);
+					defl = (int)dl->num;
+					defc = (int)dc->num;
+				}
+				break;
+			}
+		}
+
+		json_free(j);
+	}
+
+	if (defuri)
+	{
+		int l0 = defl > 0 ? defl - 1 : 0;   /* 1-based (index) -> 0-based (LSP). */
+		int c0 = defc > 0 ? defc - 1 : 0;
+		Sb r = {0};
+		sb_puts(&r, "{\"uri\":\"");
+		sb_put_json_escaped(&r, defuri);
+		char range[176];
+		snprintf(range, sizeof(range),
+				 "\",\"range\":{\"start\":{\"line\":%d,\"character\":%d},"
+				 "\"end\":{\"line\":%d,\"character\":%d}}}",
+				 l0, c0, l0, c0);
+		sb_puts(&r, range);
+		reply_result(id, r.p);
+		free(r.p);
+		free(defuri);
+	}
+	else
+	{
+		reply_result(id, "null");
+	}
+
+	free(out);
+	free(root);
+	free(path);
+}
+
 /* ---- server loop ---- */
 
 int lsp_main(const char *self_exe)
@@ -1134,7 +1229,7 @@ int lsp_main(const char *self_exe)
 
 		if (strcmp(m, "initialize") == 0)
 		{
-			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true}}");
+			reply_result(id, "{\"capabilities\":{\"textDocumentSync\":1,\"hoverProvider\":true,\"definitionProvider\":true}}");
 		}
 		else if (strcmp(m, "initialized") == 0)
 		{
@@ -1161,6 +1256,10 @@ int lsp_main(const char *self_exe)
 		else if (strcmp(m, "textDocument/hover") == 0)
 		{
 			handle_hover(id, jobj_get(root, "params"));
+		}
+		else if (strcmp(m, "textDocument/definition") == 0)
+		{
+			handle_definition(id, jobj_get(root, "params"));
 		}
 		else if (strcmp(m, "shutdown") == 0)
 		{

@@ -2114,6 +2114,8 @@ static Func *parse_function(Parser *p)
 	parse_type(p,&f->ret_type);
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(f->name,name.text);
+	f->name_line=name.line;
+	f->name_col=name.col;
 	expect(p,TOKEN_LPAREN);
 	if (!check(p,TOKEN_RPAREN))
 	{
@@ -2172,6 +2174,8 @@ static ClassDecl *parse_class(Parser *p)
 	ClassDecl *c=class_new();
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(c->name,name.text);
+	c->name_line=name.line;
+	c->name_col=name.col;
 	if (match(p,TOKEN_LT))
 	{
 		do
@@ -2232,10 +2236,13 @@ static ClassDecl *parse_class(Parser *p)
 		/* Constructor: the class name immediately followed by '(' (no return type). */
 		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,c->name)==0 && p->peek.type==TOKEN_LPAREN)
 		{
+			Token cname=p->cur;
 			advance(p);                 /* Class name. */
 			Func *f=func_new();
 			f->ret_type.kind=TY_VOID;
 			strcpy(f->name,c->name);
+			f->name_line=cname.line;
+			f->name_col=cname.col;
 			expect(p,TOKEN_LPAREN);
 			if (!check(p,TOKEN_RPAREN))
 			{
@@ -2273,6 +2280,8 @@ static ClassDecl *parse_class(Parser *p)
 			Func *f=func_new();
 			f->ret_type=ty;
 			strcpy(f->name,mname.text);
+			f->name_line=mname.line;
+			f->name_col=mname.col;
 			advance(p);
 			if (!check(p,TOKEN_RPAREN))
 			{
@@ -2301,6 +2310,8 @@ static ClassDecl *parse_class(Parser *p)
 			Field *fl=class_add_field(c);
 			fl->type=ty;
 			strcpy(fl->name,mname.text);
+			fl->name_line=mname.line;
+			fl->name_col=mname.col;
 			fl->is_static=member_static;
 			fl->init=init;
 		}
@@ -2508,6 +2519,8 @@ static EnumDecl *parse_enum(Parser *p)
 			Func *f=func_new();
 			f->ret_type=ty;
 			strcpy(f->name,mname.text);
+			f->name_line=mname.line;
+			f->name_col=mname.col;
 			advance(p);
 			if (!check(p,TOKEN_RPAREN))
 			{

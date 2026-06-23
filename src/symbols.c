@@ -190,6 +190,122 @@ static void json_str(const char *s)
 
 static const char *g_file;
 static int g_first;
+static Unit **g_units;
+static int    g_nunits;
+
+/* A user (non-prelude) unit has a real source path; the prelude's is "<source>". */
+static int is_user_unit(const Unit *u)
+{
+	return u->file && u->file[0] && strcmp(u->file, "<source>") != 0;
+}
+
+/* Find a user class / free function by name and report the file it lives in. The
+   declaration carries its name position (parser), so the caller has the def location.
+   Linear scans -- fine at project scale, like the database drivers' column lookups. */
+static ClassDecl *find_class(const char *name, const char **file)
+{
+	for (int i = 0; i < g_nunits; i++)
+	{
+		Unit *u = g_units[i];
+		if (!is_user_unit(u))
+		{
+			continue;
+		}
+		for (int ci = 0; ci < u->class_count; ci++)
+		{
+			if (strcmp(u->klasses[ci]->name, name) == 0)
+			{
+				*file = u->file;
+				return u->klasses[ci];
+			}
+		}
+	}
+
+	return NULL;
+}
+
+static Func *find_func(const char *name, const char **file)
+{
+	for (int i = 0; i < g_nunits; i++)
+	{
+		Unit *u = g_units[i];
+		if (!is_user_unit(u))
+		{
+			continue;
+		}
+		for (int k = 0; k < u->func_count; k++)
+		{
+			if (strcmp(u->funcs[k]->name, name) == 0)
+			{
+				*file = u->file;
+				return u->funcs[k];
+			}
+		}
+	}
+
+	return NULL;
+}
+
+/* Resolve the named occurrence to its declaration site (file + 1-based line/col), so
+   the editor can jump there. Returns 1 when found. Locals/params are not resolved (no
+   scope info here -- a later follow-up); cross-file classes, methods, fields, free
+   functions, and constructors are. */
+static int resolve_def(const Expr *e, const char **deffile, int *defline, int *defcol)
+{
+	const char *f = NULL;
+	if (e->kind == EX_NEW || e->kind == EX_IDENT)
+	{
+		ClassDecl *c = find_class(e->name, &f);   /* `new Foo` / a bare class name. */
+		if (c && c->name_line)
+		{
+			*deffile = f;
+			*defline = c->name_line;
+			*defcol = c->name_col;
+			return 1;
+		}
+	}
+	else if (e->kind == EX_CALL && !strchr(e->name, '.'))
+	{
+		Func *fn = find_func(e->name, &f);        /* A free function (not a namespace call). */
+		if (fn && fn->name_line)
+		{
+			*deffile = f;
+			*defline = fn->name_line;
+			*defcol = fn->name_col;
+			return 1;
+		}
+	}
+	else if (e->kind == EX_METHOD_CALL && e->lhs && e->lhs->type.kind == TY_OBJECT)
+	{
+		ClassDecl *c = find_class(e->lhs->type.class_name, &f);
+		for (int k = 0; c && k < c->method_count; k++)
+		{
+			if (strcmp(c->methods[k]->name, e->name) == 0 && c->methods[k]->name_line)
+			{
+				*deffile = f;
+				*defline = c->methods[k]->name_line;
+				*defcol = c->methods[k]->name_col;
+				return 1;
+			}
+		}
+	}
+	else if (e->kind == EX_FIELD && e->lhs && e->lhs->type.kind == TY_OBJECT)
+	{
+		ClassDecl *c = find_class(e->lhs->type.class_name, &f);
+		for (int k = 0; c && k < c->field_count; k++)
+		{
+			if (strcmp(c->fields[k].name, e->name) == 0 && c->fields[k].name_line)
+			{
+				*deffile = f;
+				*defline = c->fields[k].name_line;
+				*defcol = c->fields[k].name_col;
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
 
 static void emit_occurrence(const Expr *e)
 {
@@ -211,6 +327,16 @@ static void emit_occurrence(const Expr *e)
 	json_str(e->name);
 	printf(",\"kind\":\"%s\",\"type\":", expr_kind_name(e->kind));
 	json_str(ty);
+
+	const char *deffile = NULL;
+	int defline = 0, defcol = 0;
+	if (resolve_def(e, &deffile, &defline, &defcol))
+	{
+		fputs(",\"defFile\":", stdout);
+		json_str(deffile);
+		printf(",\"defLine\":%d,\"defCol\":%d", defline, defcol);
+	}
+
 	putchar('}');
 }
 
@@ -283,6 +409,8 @@ static void walk_func(const Func *f)
 
 void symbols_emit(Unit **units, int unit_count)
 {
+	g_units = units;
+	g_nunits = unit_count;
 	g_first = 1;
 	fputs("{\"symbols\":[", stdout);
 
