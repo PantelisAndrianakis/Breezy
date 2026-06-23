@@ -595,4 +595,20 @@ else
     echo "  lsp_references: FAIL (got '$lsp_rout')"; fail=1
 fi
 
+# Live-as-you-type: didChange a clean file to a buffer with a missing semicolon (never
+# saved) -- the server checks the dirty buffer through a project overlay and publishes
+# the error under the real URI, leaving the disk file untouched.
+lsp_live() {
+    lsp_frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/good/good.bzy\",\"text\":\"void main()\\n{\\n\\tint x = 5;\\n}\\n\"}}}"
+    lsp_frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"$lsp_b/tests/lsp/good/good.bzy\"},\"contentChanges\":[{\"text\":\"void main()\\n{\\n\\tint x = 5\\n}\\n\"}]}}"
+}
+lsp_lout="$(lsp_live | ./breezy --lsp 2>/dev/null)"
+if echo "$lsp_lout" | grep -q "Expected ';'" \
+   && echo "$lsp_lout" | grep -q 'good/good.bzy'; then
+    echo "  lsp_live: OK"
+else
+    echo "  lsp_live: FAIL (got '$lsp_lout')"; fail=1
+fi
+
 if [ $fail -eq 0 ]; then echo "All integration tests passed"; else echo "FAILURES"; exit 1; fi

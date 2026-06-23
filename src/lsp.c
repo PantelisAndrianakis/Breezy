@@ -18,15 +18,21 @@
 #ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
+#include <windows.h>
+#include <direct.h>
 #define BZY_POPEN  _popen
 #define BZY_PCLOSE _pclose
 #else
+#include <dirent.h>
+#include <sys/stat.h>
 #define BZY_POPEN  popen
 #define BZY_PCLOSE pclose
 #endif
 
 /* argv[0]: the path this server re-invokes with --check (set in lsp_main). */
 static const char *g_self_exe;
+
+static int same_file(const char *a, const char *b);   /* Defined below; used by the doc store. */
 
 /* ---- a tiny growable string builder, used to compose outgoing messages ---- */
 
@@ -599,23 +605,62 @@ static void sb_put_json_escaped(Sb *sb, const char *s)
    grows for the session -- negligible.) */
 static char **g_uris;
 static char **g_paths;
+static char **g_texts;   /* The latest (possibly unsaved) buffer per doc, or NULL. */
 static int    g_ndocs;
 
-static void docs_add(const char *uri, const char *path)
+static int docs_index(const char *uri)
 {
 	for (int i = 0; i < g_ndocs; i++)
 	{
 		if (strcmp(g_uris[i], uri) == 0)
 		{
-			return;
+			return i;
 		}
+	}
+
+	return -1;
+}
+
+static void docs_add(const char *uri, const char *path)
+{
+	if (docs_index(uri) >= 0)
+	{
+		return;
 	}
 
 	g_uris = realloc(g_uris, sizeof(char *) * (g_ndocs + 1));
 	g_paths = realloc(g_paths, sizeof(char *) * (g_ndocs + 1));
+	g_texts = realloc(g_texts, sizeof(char *) * (g_ndocs + 1));
 	g_uris[g_ndocs] = dupstr(uri);
 	g_paths[g_ndocs] = dupstr(path);
+	g_texts[g_ndocs] = NULL;
 	g_ndocs++;
+}
+
+/* Record the document's current buffer text (full-sync didOpen / didChange). */
+static void docs_set_text(const char *uri, const char *text)
+{
+	int i = docs_index(uri);
+	if (i < 0)
+	{
+		return;
+	}
+	free(g_texts[i]);
+	g_texts[i] = text ? dupstr(text) : NULL;
+}
+
+/* The buffer text for an open file path (same_file match), or NULL if not open. */
+static char *docs_text_for(const char *path)
+{
+	for (int i = 0; i < g_ndocs; i++)
+	{
+		if (g_texts[i] && same_file(g_paths[i], path))
+		{
+			return g_texts[i];
+		}
+	}
+
+	return NULL;
 }
 
 /* file:///c:/a/b -> c:/a/b ; file:///home/x -> /home/x ; percent-decode. */
@@ -932,12 +977,167 @@ static char *run_self_capture(const char *flag, const char *root)
 	return outp.p;
 }
 
-static void check_and_publish(const char *trigger_uri)
+/* ---- live-as-you-type: a temp mirror of the project with dirty buffers ---- */
+
+static void write_all(const char *dst, const char *content)
+{
+	FILE *f = fopen(dst, "wb");
+	if (!f)
+	{
+		return;
+	}
+	size_t len = strlen(content);
+	if (len)
+	{
+		fwrite(content, 1, len, f);
+	}
+	fclose(f);
+}
+
+static void copy_file(const char *src, const char *dst)
+{
+	FILE *in = fopen(src, "rb");
+	if (!in)
+	{
+		return;
+	}
+	FILE *out = fopen(dst, "wb");
+	if (!out)
+	{
+		fclose(in);
+		return;
+	}
+	char buf[8192];
+	size_t r;
+	while ((r = fread(buf, 1, sizeof(buf), in)) > 0)
+	{
+		fwrite(buf, 1, r, out);
+	}
+	fclose(in);
+	fclose(out);
+}
+
+static void make_dir(const char *path)
+{
+#ifdef _WIN32
+	_mkdir(path);
+#else
+	mkdir(path, 0700);
+#endif
+}
+
+static unsigned fnv1a(const char *s)
+{
+	unsigned h = 2166136261u;
+	for (; *s; s++)
+	{
+		h ^= (unsigned char)*s;
+		h *= 16777619u;
+	}
+	return h;
+}
+
+/* Mirror one project file into the temp dir: the open dirty buffer if there is one,
+   else a copy of the file on disk. */
+static void overlay_one(const char *real_root, const char *tmp, const char *name)
+{
+	Sb rf = {0};
+	sb_puts(&rf, real_root);
+	sb_putc(&rf, '/');
+	sb_puts(&rf, name);
+	Sb df = {0};
+	sb_puts(&df, tmp);
+	sb_putc(&df, '/');
+	sb_puts(&df, name);
+
+	char *dirty = docs_text_for(rf.p);
+	if (dirty)
+	{
+		write_all(df.p, dirty);
+	}
+	else
+	{
+		copy_file(rf.p, df.p);
+	}
+
+	free(rf.p);
+	free(df.p);
+}
+
+/* Build a temp mirror of real_root's .bzy files with any open dirty buffer
+   substituted, and return the temp dir path (caller frees). One stable temp dir per
+   project (FNV of the root), reused and overwritten. Breezy is whole-program, so the
+   whole project is mirrored, not just the edited file. */
+static char *overlay_build(const char *real_root)
+{
+#ifdef _WIN32
+	const char *base = getenv("TEMP");
+	if (!base)
+	{
+		base = getenv("TMP");
+	}
+	if (!base)
+	{
+		base = ".";
+	}
+#else
+	const char *base = "/tmp";
+#endif
+	Sb t = {0};
+	sb_puts(&t, base);
+	sb_puts(&t, "/bzylsp_");
+	char h[16];
+	snprintf(h, sizeof(h), "%08x", fnv1a(real_root));
+	sb_puts(&t, h);
+	char *tmp = t.p;
+	make_dir(tmp);
+
+#ifdef _WIN32
+	Sb pat = {0};
+	sb_puts(&pat, real_root);
+	sb_puts(&pat, "\\*.bzy");
+	WIN32_FIND_DATAA fd;
+	HANDLE hf = FindFirstFileA(pat.p, &fd);
+	free(pat.p);
+	if (hf != INVALID_HANDLE_VALUE)
+	{
+		do
+		{
+			overlay_one(real_root, tmp, fd.cFileName);
+		}
+		while (FindNextFileA(hf, &fd));
+		FindClose(hf);
+	}
+#else
+	DIR *d = opendir(real_root);
+	if (d)
+	{
+		struct dirent *e;
+		while ((e = readdir(d)) != NULL)
+		{
+			size_t nl = strlen(e->d_name);
+			if (nl >= 5 && strcmp(e->d_name + nl - 4, ".bzy") == 0)
+			{
+				overlay_one(real_root, tmp, e->d_name);
+			}
+		}
+		closedir(d);
+	}
+#endif
+	return tmp;
+}
+
+/* Publish diagnostics for the trigger document's project. When `live`, the project is
+   mirrored to a temp dir with the unsaved buffers substituted and checked there, so the
+   squiggles reflect edits that are not yet on disk; the reported temp paths are remapped
+   back to the real project. Otherwise disk is checked (open/save). */
+static void check_and_publish(const char *trigger_uri, int live)
 {
 	char *path = uri_to_path(trigger_uri);
 	char *root = project_root(path);
+	char *check_root = live ? overlay_build(root) : dupstr(root);
 
-	char *out = run_self_capture("--check", root);
+	char *out = run_self_capture("--check", check_root);
 
 	/* Decide: clean, a precise JSON diagnostic, or a scraped plain-text error. */
 	int clean = 0, have_diag = 0;
@@ -990,6 +1190,17 @@ static void check_and_publish(const char *trigger_uri)
 		}
 	}
 
+	/* The overlay check reports temp-dir paths; map them back to the real project so
+	   the diagnostic publishes under the file's real URI. */
+	if (live && err_file && strncmp(err_file, check_root, strlen(check_root)) == 0)
+	{
+		Sb rm = {0};
+		sb_puts(&rm, root);
+		sb_puts(&rm, err_file + strlen(check_root));
+		free(err_file);
+		err_file = rm.p;
+	}
+
 	/* 1-based (compiler) -> 0-based (LSP). col 0 (resolve errors) maps to 0. */
 	int l0 = err_line > 0 ? err_line - 1 : 0;
 	int c0 = err_col > 0 ? err_col - 1 : 0;
@@ -1031,6 +1242,7 @@ static void check_and_publish(const char *trigger_uri)
 	free(err_file);
 	free(err_msg);
 	free(out);
+	free(check_root);
 	free(root);
 	free(path);
 }
@@ -1404,13 +1616,37 @@ int lsp_main(const char *self_exe)
 				char *path = uri_to_path(uri->str);
 				docs_add(uri->str, path);
 				free(path);
-				check_and_publish(uri->str);
+				JVal *txt = jobj_get(td, "text");   /* didOpen carries the buffer. */
+				if (txt && txt->type == J_STR)
+				{
+					docs_set_text(uri->str, txt->str);
+				}
+				check_and_publish(uri->str, 0);   /* Disk is authoritative on open/save. */
 			}
 		}
 		else if (strcmp(m, "textDocument/didChange") == 0)
 		{
-			/* v1 checks on open/save (disk is authoritative then), not on the dirty
-			   buffer. Live-as-you-type (a dirty-buffer overlay) is a later follow-up. */
+			/* Full sync: contentChanges[0].text is the whole new buffer. Check it live
+			   through the overlay so the squiggles track unsaved edits. */
+			JVal *params = jobj_get(root, "params");
+			JVal *td = jobj_get(params, "textDocument");
+			JVal *uri = jobj_get(td, "uri");
+			if (uri && uri->type == J_STR)
+			{
+				char *path = uri_to_path(uri->str);
+				docs_add(uri->str, path);
+				free(path);
+				JVal *changes = jobj_get(params, "contentChanges");
+				if (changes && changes->type == J_ARR && changes->nitems > 0)
+				{
+					JVal *txt = jobj_get(changes->items[0], "text");
+					if (txt && txt->type == J_STR)
+					{
+						docs_set_text(uri->str, txt->str);
+					}
+				}
+				check_and_publish(uri->str, 1);   /* Live: the dirty-buffer overlay. */
+			}
 		}
 		else if (strcmp(m, "textDocument/hover") == 0)
 		{
