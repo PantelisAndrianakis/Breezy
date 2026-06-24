@@ -297,12 +297,17 @@ static int tls_flush(void *s)
 }
 
 /* Read one chunk of ciphertext from the network into the SSL's rbio.
-   1 ok, 0 EOF, -1 error. */
-static int tls_feed(void *s)
+   1 ok, 0 EOF, -1 error, -2 timeout (timeout_ms >= 0 elapsed with no bytes). */
+static int tls_feed(void *s, int64_t timeout_ms)
 {
 	void *rbio = ossl.SSL_get_rbio(TLS_SSL(s));
 	char buf[4096];
-	int n = bzy_sock_recv(TLS_TRANSPORT(s), buf, (int)sizeof(buf), -1);
+	int n = bzy_sock_recv(TLS_TRANSPORT(s), buf, (int)sizeof(buf), timeout_ms);
+	if (n == -2)
+	{
+		return -2;   /* No ciphertext within the deadline; SSL state is left intact to resume. */
+	}
+
 	if (n < 0)
 	{
 		return -1;
@@ -323,9 +328,11 @@ static int tls_feed(void *s)
 
 /* Run an SSL op to true completion, pumping ciphertext both ways and retrying
    after each round. op_kind: 0 = handshake, 1 = read, 2 = write. For read/write
-   buf/len are the plaintext buffer. Returns: handshake -> 1 ok / -1 fail;
-   read -> bytes (0 EOF, -1 err); write -> bytes written (-1 err). */
-static int tls_run(void *s, int op_kind, void *buf, int len)
+   buf/len are the plaintext buffer. timeout_ms < 0 blocks forever; >= 0 bounds each
+   network feed, so a read that has no plaintext within the deadline returns -2 with
+   the SSL session intact (a later read resumes the same record). Returns: handshake
+   -> 1 ok / -1 fail; read -> bytes (0 EOF, -1 err, -2 timeout); write -> bytes (-1 err). */
+static int tls_run(void *s, int op_kind, void *buf, int len, int64_t timeout_ms)
 {
 	for (;;)
 	{
@@ -386,7 +393,12 @@ static int tls_run(void *s, int op_kind, void *buf, int len)
 
 		if (err == BZ_SSL_ERROR_WANT_READ)
 		{
-			int f = tls_feed(s);
+			int f = tls_feed(s, timeout_ms);
+			if (f == -2)
+			{
+				return -2;    /* Timed out waiting for ciphertext (read op only). */
+			}
+
 			if (f <= 0)
 			{
 				return -1;    /* Peer closed mid-op. */
@@ -476,7 +488,7 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 	ossl.SSL_set_connect_state(ssl);
 
 	void *s = tls_sock_wrap(transport, ssl, ctx);   /* The TlsSocket now owns transport + ssl + ctx. */
-	if (tls_run(s, 0, NULL, 0) != 1)
+	if (tls_run(s, 0, NULL, 0, -1) != 1)
 	{
 		bzy_release(s);   /* rc 1 -> 0: the finalizer frees ssl/ctx and releases transport. */
 		return NULL;
@@ -607,7 +619,7 @@ void *bzy_tls_accept(void *l)
 	ossl.SSL_set_accept_state(ssl);
 
 	void *s = tls_sock_wrap(transport, ssl, NULL);   /* Server conn shares the listener ctx. */
-	if (tls_run(s, 0, NULL, 0) != 1)
+	if (tls_run(s, 0, NULL, 0, -1) != 1)
 	{
 		bzy_io_fail("TlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
 	}
@@ -636,7 +648,7 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 		return NULL;
 	}
 
-	int n = tls_run(s, 1, buf, max);
+	int n = tls_run(s, 1, buf, max, -1);
 	if (n < 0)
 	{
 		if (buf != stackbuf)
@@ -649,6 +661,50 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 	}
 
 	void *arr = tls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean EOF). */
+	if (buf != stackbuf)
+	{
+		free(buf);
+	}
+
+	return arr;
+}
+
+/* TlsSocket.read(max, timeoutMs): like bzy_tls_read, but returns NULL (not an
+   exception, not an empty array) when no plaintext arrives within timeoutMs. A
+   negative timeout blocks forever, matching bzy_tls_read. The deadline bounds each
+   network feed rather than the whole call, so a read interleaved with retransmits may
+   wait a little past timeoutMs; it never resolves early. The SSL session is left
+   intact on a timeout, so the next read resumes the same record. */
+void *bzy_tls_read_timeout(void *s, int64_t maxbytes, int64_t ms)
+{
+	if (TLS_CLOSED(s))
+	{
+		bzy_io_fail("TlsSocket.read: socket is closed.");
+		return NULL;
+	}
+
+	int max = (int)(maxbytes > 0 ? maxbytes : 1);
+	char stackbuf[16384];
+	char *buf = (max <= (int)sizeof(stackbuf)) ? stackbuf : (char*)malloc((size_t)max);
+	if (!buf)
+	{
+		bzy_io_fail("TlsSocket.read: out of memory.");
+		return NULL;
+	}
+
+	int n = tls_run(s, 1, buf, max, ms);
+	if (n == -1)
+	{
+		if (buf != stackbuf)
+		{
+			free(buf);
+		}
+
+		bzy_io_fail("TlsSocket.read: TLS read error.");
+		return NULL;
+	}
+
+	void *arr = (n == -2) ? NULL : tls_bytes_to_array(buf, n);   /* -2 -> NULL (timed out). */
 	if (buf != stackbuf)
 	{
 		free(buf);
@@ -672,7 +728,7 @@ int64_t bzy_tls_write(void *s, void *data)
 		return 0;
 	}
 
-	int n = tls_run(s, 2, (void*)bytes, len);
+	int n = tls_run(s, 2, (void*)bytes, len, -1);
 	if (n < 0)
 	{
 		bzy_io_fail("TlsSocket.write: TLS write error.");
@@ -695,7 +751,7 @@ int bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms)
 		return -1;
 	}
 
-	return tls_run(s, 1, buf, max);   /* >0 bytes, 0 clean EOF, -1 error. */
+	return tls_run(s, 1, buf, max, -1);   /* >0 bytes, 0 clean EOF, -1 error. */
 }
 
 int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len)
@@ -710,7 +766,7 @@ int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len)
 	{
 		int64_t rem = len - off;
 		int chunk = rem > (1 << 24) ? (1 << 24) : (int)rem;
-		int n = tls_run(s, 2, (void*)(buf + off), chunk);
+		int n = tls_run(s, 2, (void*)(buf + off), chunk, -1);
 		if (n < 0)
 		{
 			return -1;

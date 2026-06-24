@@ -2913,16 +2913,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			resolve_args(st,e,tc);
 			if (strcmp(e->name,"read")==0)
 			{
-				if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+				if (e->arg_count<1 || !ty_is_int(e->args[0]->type.kind))
 				{
-					die(e->line,"TlsSocket.read(maxBytes) takes one integer.",NULL);
+					die(e->line,"TlsSocket.read(maxBytes[, timeoutMs]) takes integer(s).",NULL);
+				}
+
+				if (e->arg_count>1 && !ty_is_int(e->args[1]->type.kind))
+				{
+					die(e->line,"TlsSocket.read second arg is an integer timeout.",NULL);
+				}
+
+				if (e->arg_count>2)
+				{
+					die(e->line,"TlsSocket.read takes at most maxBytes, timeoutMs.",NULL);
 				}
 
 				TypeRef el;
 				memset(&el,0,sizeof(el));
 				el.kind=TY_BYTE;
 				e->type.kind=TY_ARRAY;
-				e->type.elem=typeref_box(el);   /* byte[]. */
+				e->type.elem=typeref_box(el);   /* byte[] (null on timeout). */
 			}
 			else if (strcmp(e->name,"write")==0)
 			{

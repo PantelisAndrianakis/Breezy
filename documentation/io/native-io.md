@@ -135,6 +135,14 @@ TlsSocket c = l.accept();             // Parks; runs the handshake.
   `port()` reports the bound port.
 - `TlsSocket.read(max)` / `write(byte[])` / `close()` - same semantics as
   `Socket`, encrypted.
+- `TlsSocket.read(max, timeoutMs)` - a **timed** read: returns the decrypted
+  bytes, or **`null`** when no plaintext arrives within `timeoutMs` (a negative
+  timeout blocks forever, like the one-argument form). The encrypted session is
+  left intact on a timeout, so the next read resumes the same record - this is how
+  a single breeze can own a TLS connection and still wake on a schedule (e.g. to
+  send a keepalive) without a second breeze racing on the socket. The deadline
+  bounds each network wait rather than the whole call, so a read interleaved with
+  retransmits may wait a little past `timeoutMs`; it never returns early.
 
 Verification is always on (no insecure mode); a handshake or certificate failure
 throws `IOException`.

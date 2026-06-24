@@ -6738,7 +6738,7 @@ static void cg_tls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
 	int fallible = 1;
 	if (strcmp(n,"read")==0)
 	{
-		fn = "bzy_tls_read";
+		fn = e->arg_count==2 ? "bzy_tls_read_timeout" : "bzy_tls_read";
 	}
 	else if (strcmp(n,"write")==0)
 	{
@@ -6750,7 +6750,7 @@ static void cg_tls_socket_method(Codegen *cg, TypeTable *tt, Expr *e)
 		fallible = 0;
 	}
 
-	TypeRef ps[1];
+	TypeRef ps[2];
 	for (int i=0; i<e->arg_count; i++)
 	{
 		ps[i]=e->args[i]->type;
@@ -12982,6 +12982,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_tls_accept");
 	cg_emit(cg,"extern bzy_tls_listener_port");
 	cg_emit(cg,"extern bzy_tls_read");
+	cg_emit(cg,"extern bzy_tls_read_timeout");
 	cg_emit(cg,"extern bzy_tls_write");
 	cg_emit(cg,"extern bzy_tls_close");
 	cg_emit(cg,"extern bzy_tls_close_listener");
