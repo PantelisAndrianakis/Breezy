@@ -544,56 +544,102 @@ void *bzy_str_repeat(void *s, int64_t n)
 	return o;
 }
 
-void *bzy_str_split(void *s, void *sep)
+/* Split core. When is_set, each byte of `delim` is its own separator (split on
+   any one of them); otherwise `delim` is a single substring separator. With
+   skip_empty, empty fields are dropped. An empty delimiter yields the whole
+   string as one field (subject to skip_empty). */
+static void *split_core(void *s, void *delim, int is_set, int64_t skip_empty)
 {
 	const char *t = bzy_str_data(s);
 	int64_t tl = bzy_str_len(s);
-	const char *sp = bzy_str_data(sep);
-	int64_t spl = bzy_str_len(sep);
+	const char *d = bzy_str_data(delim);
+	int64_t dl = bzy_str_len(delim);
 
-	int64_t count = 1;
-	if (spl > 0)
+	void **items = NULL;
+	int64_t count = 0, cap = 0;
+
+#define SPLIT_PUSH(p, n)                                                       \
+	do {                                                                       \
+		if (!(skip_empty && (n) == 0)) {                                       \
+			if (count == cap) {                                                \
+				cap = cap ? cap * 2 : 8;                                       \
+				items = realloc(items, (size_t)cap * sizeof(void *));          \
+			}                                                                  \
+			items[count++] = bzy_str_new((p), (n));                            \
+		}                                                                      \
+	} while (0)
+
+	if (dl == 0)
 	{
-		int64_t i = 0;
-		while (i + spl <= tl)
+		SPLIT_PUSH(t, tl);
+	}
+	else
+	{
+		int64_t start = 0, i = 0;
+		while (i < tl)
 		{
-			if (memcmp(t + i, sp, (size_t)spl) == 0)
+			int hit = 0;
+			int64_t step = 0;
+			if (is_set)
 			{
-				count++;
-				i += spl;
+				if (memchr(d, t[i], (size_t)dl))
+				{
+					hit = 1;
+					step = 1;
+				}
+			}
+			else if (i + dl <= tl && memcmp(t + i, d, (size_t)dl) == 0)
+			{
+				hit = 1;
+				step = dl;
+			}
+
+			if (hit)
+			{
+				SPLIT_PUSH(t + start, i - start);
+				i += step;
+				start = i;
 			}
 			else
 			{
 				i++;
 			}
 		}
+
+		SPLIT_PUSH(t + start, tl - start);   /* Final field. */
 	}
+
+#undef SPLIT_PUSH
 
 	void *arr = bzy_array_new(count, 1);             /* Managed string elements. */
 	void **elems = (void**)((char*)arr + 32);
-	if (spl == 0)
+	for (int64_t k = 0; k < count; k++)
 	{
-		elems[0] = bzy_str_new(t, tl);
-		return arr;
+		elems[k] = items[k];
 	}
 
-	int64_t idx = 0, start = 0, i = 0;
-	while (i + spl <= tl)
-	{
-		if (memcmp(t + i, sp, (size_t)spl) == 0)
-		{
-			elems[idx++] = bzy_str_new(t + start, i - start);
-			i += spl;
-			start = i;
-		}
-		else
-		{
-			i++;
-		}
-	}
-
-	elems[idx] = bzy_str_new(t + start, tl - start); /* The final piece. */
+	free(items);
 	return arr;
+}
+
+void *bzy_str_split(void *s, void *sep)
+{
+	return split_core(s, sep, 0, 0);
+}
+
+void *bzy_str_split_opt(void *s, void *sep, int64_t skip_empty)
+{
+	return split_core(s, sep, 0, skip_empty);
+}
+
+void *bzy_str_split_any(void *s, void *chars)
+{
+	return split_core(s, chars, 1, 0);
+}
+
+void *bzy_str_split_any_opt(void *s, void *chars, int64_t skip_empty)
+{
+	return split_core(s, chars, 1, skip_empty);
 }
 
 void bzy_print_str(void *s)

@@ -1,0 +1,31 @@
+void main()
+{
+	// Existing single-substring split is unchanged.
+	string[] a = "red,green,blue".split(",");
+	print(a.length);            // 3
+	print(a[1]);                // green
+
+	// Trailing empty field is kept by default.
+	string[] b = "x,y,".split(",");
+	print(b.length);            // 3
+
+	// skip-empty drops empty fields.
+	string[] c = "x,,y,".split(",", true);
+	print(c.length);            // 2
+	print(c[0] + c[1]);         // xy
+
+	// splitAny: split on any one of several characters.
+	string[] d = "a,b;c d".splitAny(",; ");
+	print(d.length);            // 4
+	print(d[0] + d[1] + d[2] + d[3]);   // abcd
+
+	// splitAny + skip-empty collapses runs of delimiters.
+	string[] e = "a,,b;;c".splitAny(",;", true);
+	print(e.length);            // 3
+	print(e[0] + e[1] + e[2]);  // abc
+
+	// Multi-char substring separator still works (string, not char set).
+	string[] f = "1\r\n2\r\n3".split("\r\n");
+	print(f.length);            // 3
+	print(f[2]);                // 3
+}

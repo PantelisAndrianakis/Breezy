@@ -429,11 +429,15 @@ static void resolve_string_method(Expr *e)
 
 		e->type.kind = TY_STRING;
 	}
-	else if (strcmp(nm,"split")==0)
+	else if (strcmp(nm,"split")==0 || strcmp(nm,"splitAny")==0)
 	{
-		if (e->arg_count != 1 || e->args[0]->type.kind != TY_STRING)
+		/* split(sep) / splitAny(chars), optionally + a bool to drop empty fields. */
+		int ok = (e->arg_count == 1 && e->args[0]->type.kind == TY_STRING)
+				 || (e->arg_count == 2 && e->args[0]->type.kind == TY_STRING
+					 && e->args[1]->type.kind == TY_BOOL);
+		if (!ok)
 		{
-			die(e->line,"String.split expects one string argument.",NULL);
+			die(e->line,"String.split/splitAny expects a string and an optional bool.",NULL);
 		}
 
 		TypeRef elem;

@@ -5493,7 +5493,8 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"lastIndexOf")==0      ? "bzy_str_last_index_of" :
 		strcmp(nm,"charAt")==0           ? "bzy_str_char_at" :
 		strcmp(nm,"repeat")==0           ? "bzy_str_repeat" :
-		strcmp(nm,"split")==0            ? "bzy_str_split" :
+		strcmp(nm,"split")==0    ? (e->arg_count==2 ? "bzy_str_split_opt" : "bzy_str_split") :
+		strcmp(nm,"splitAny")==0 ? (e->arg_count==2 ? "bzy_str_split_any_opt" : "bzy_str_split_any") :
 		strcmp(nm,"toBytes")==0          ? "bzy_str_to_bytes" :
 		strcmp(nm,"toInt")==0            ? "bzy_str_to_int" :
 		strcmp(nm,"toLong")==0           ? "bzy_str_to_long" :
@@ -13173,6 +13174,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_last_index_of");
 	cg_emit(cg,"extern bzy_str_repeat");
 	cg_emit(cg,"extern bzy_str_split");
+	cg_emit(cg,"extern bzy_str_split_opt");
+	cg_emit(cg,"extern bzy_str_split_any");
+	cg_emit(cg,"extern bzy_str_split_any_opt");
 	cg_emit(cg,"extern bzy_str_to_int");
 	cg_emit(cg,"extern bzy_str_to_long");
 	cg_emit(cg,"extern bzy_str_to_byte");

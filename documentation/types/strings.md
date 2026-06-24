@@ -74,6 +74,21 @@ foreach (string p in parts)
 }
 ```
 
+`split(sep)` cuts on the whole `sep` **substring** and keeps empty fields
+(`"a,,b".split(",")` is three elements). Two extras cover the common
+field-parsing needs:
+
+- `split(sep, skipEmpty)` - pass `true` to drop empty fields, so a trailing
+  separator or a run of separators leaves no blanks.
+- `splitAny(chars)` / `splitAny(chars, skipEmpty)` - cut on **any single
+  character** in `chars`, not the whole string: `"a,b;c".splitAny(",;")` is
+  `["a", "b", "c"]`.
+
+```breezy
+string[] cols = line.split("\t", true);     // Tab-separated, no blank fields.
+string[] toks = "a, b; c".splitAny(", ;", true);   // ["a", "b", "c"].
+```
+
 **Raw bytes:** `s.toBytes()` returns a `byte[]` of the string's UTF-8 bytes, and `fromBytes(byte[])` builds a string back from raw bytes - a verbatim copy both directions (`fromBytes(s.toBytes())` reproduces `s` exactly). This is the serialization bridge for native interop; see [C interop -> byte[] ↔ string](../ffi/c-interop.md).
 
 ---
