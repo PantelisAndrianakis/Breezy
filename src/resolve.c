@@ -483,7 +483,10 @@ static void resolve_regex(Expr *e)
 	int predicate = (strcmp(m,"matches")==0 || strcmp(m,"test")==0);
 	int find = strcmp(m,"find")==0;
 	int replace = strcmp(m,"replace")==0;
-	if (!predicate && !find && !replace)
+	int match = strcmp(m,"capture")==0;        /* string[] of [whole, g1, ...]. */
+	int find_all = strcmp(m,"findAll")==0;     /* string[] of whole matches. */
+	int match_all = strcmp(m,"captureAll")==0; /* string[][] of per-match groups. */
+	if (!predicate && !find && !replace && !match && !find_all && !match_all)
 	{
 		die(e->line,"Unknown Regex method: ",m);
 	}
@@ -500,6 +503,30 @@ static void resolve_regex(Expr *e)
 		{
 			die(e->line,"Regex arguments must be strings.",NULL);
 		}
+	}
+
+	if (match || find_all)
+	{
+		TypeRef el;
+		memset(&el,0,sizeof(el));
+		el.kind = TY_STRING;
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(el);
+		return;
+	}
+
+	if (match_all)
+	{
+		TypeRef inner;
+		memset(&inner,0,sizeof(inner));
+		inner.kind = TY_STRING;
+		TypeRef row;
+		memset(&row,0,sizeof(row));
+		row.kind = TY_ARRAY;
+		row.elem = typeref_box(inner);
+		e->type.kind = TY_ARRAY;
+		e->type.elem = typeref_box(row);
+		return;
 	}
 
 	e->type.kind = predicate ? TY_BOOL : TY_STRING;

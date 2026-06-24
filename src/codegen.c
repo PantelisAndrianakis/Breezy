@@ -7714,9 +7714,12 @@ static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 6;   /* After "Regex.". */
 	const char *fn =
-		strcmp(m,"matches")==0 ? "bzy_regex_matches" :
-		strcmp(m,"test")==0    ? "bzy_regex_test" :
-		strcmp(m,"find")==0    ? "bzy_regex_find" :
+		strcmp(m,"matches")==0  ? "bzy_regex_matches" :
+		strcmp(m,"test")==0     ? "bzy_regex_test" :
+		strcmp(m,"find")==0     ? "bzy_regex_find" :
+		strcmp(m,"capture")==0    ? "bzy_regex_capture" :
+		strcmp(m,"findAll")==0    ? "bzy_regex_find_all" :
+		strcmp(m,"captureAll")==0 ? "bzy_regex_capture_all" :
 		"bzy_regex_replace";
 	TypeRef ps[3];
 	for (int i=0; i<e->arg_count; i++)
@@ -13228,6 +13231,9 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_regex_test");
 	cg_emit(cg,"extern bzy_regex_find");
 	cg_emit(cg,"extern bzy_regex_replace");
+	cg_emit(cg,"extern bzy_regex_capture");
+	cg_emit(cg,"extern bzy_regex_find_all");
+	cg_emit(cg,"extern bzy_regex_capture_all");
 	cg_emit(cg,"extern bzy_throw");
 	cg_emit(cg,"extern bzy_enum_no_constant");
 	cg_emit(cg,"extern bzy_io_check");

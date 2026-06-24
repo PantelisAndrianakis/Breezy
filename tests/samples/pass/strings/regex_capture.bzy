@@ -1,0 +1,31 @@
+void main()
+{
+	// Leftmost match with two capture groups: [whole, g1, g2].
+	string[] g = Regex.capture("(\\w+)=(\\d+)", "level=42");
+	print(g.length);             // 3
+	print(g[0]);                 // level=42
+	print(g[1]);                 // level
+	print(g[2]);                 // 42
+
+	// No match -> empty array.
+	string[] none = Regex.capture("(\\d+)", "abc");
+	print(none.length);          // 0
+
+	// Optional group that did not participate yields "".
+	string[] opt = Regex.capture("a(x)?b", "ab");
+	print(opt.length);           // 2
+	print("[" + opt[1] + "]");   // []
+
+	// findAll -> every whole match.
+	string[] xs = Regex.findAll("[0-9]+", "a12b345c6");
+	print(xs.length);            // 3
+	print(xs[0]);                // 12
+	print(xs[1]);                // 345
+	print(xs[2]);                // 6
+
+	// captureAll -> per-match group arrays (string[][]).
+	string[][] ms = Regex.captureAll("(\\w)=(\\w)", "a=b c=d");
+	print(ms.length);            // 2
+	print(ms[0][1] + ms[0][2]);  // ab
+	print(ms[1][1] + ms[1][2]);  // cd
+}

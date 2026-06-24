@@ -4,7 +4,7 @@
 #include <string.h>
 
 /* ===== Pattern AST ===== */
-enum { N_EMPTY, N_LIT, N_ANY, N_CLASS, N_CAT, N_ALT, N_STAR, N_PLUS, N_QUEST, N_REPEAT, N_BOL, N_EOL };
+enum { N_EMPTY, N_LIT, N_ANY, N_CLASS, N_CAT, N_ALT, N_STAR, N_PLUS, N_QUEST, N_REPEAT, N_BOL, N_EOL, N_GROUP };
 
 typedef struct Node Node;
 struct Node
@@ -14,6 +14,7 @@ struct Node
 	unsigned char set[32];   /* N_CLASS: 256-bit membership bitmap. */
 	int neg;                 /* N_CLASS: negated. */
 	int min, max;            /* N_REPEAT: max < 0 means unbounded. */
+	int gidx;                /* N_GROUP: 1-based capturing-group index. */
 	Node *a, *b;
 };
 
@@ -22,6 +23,7 @@ typedef struct
 	const char *p;
 	const char *end;
 	int ok;
+	int ngroup;              /* Capturing groups seen so far (assigns gidx). */
 } PS;
 
 static Node *node_new(int type)
@@ -212,7 +214,8 @@ static Node *parse_atom(PS *s)
 	if (c == '(')
 	{
 		ps_next(s);
-		Node *n = parse_alt(s);
+		int idx = ++s->ngroup;           /* Assign in opening-paren order. */
+		Node *inner = parse_alt(s);
 		if (ps_peek(s) == ')')
 		{
 			ps_next(s);
@@ -222,6 +225,9 @@ static Node *parse_atom(PS *s)
 			s->ok = 0;
 		}
 
+		Node *n = node_new(N_GROUP);
+		n->gidx = idx;
+		n->a = inner;
 		return n;
 	}
 
@@ -393,6 +399,11 @@ static Node *parse_alt(PS *s)
 /* ===== Compiled program ===== */
 enum { I_CHAR, I_ANY, I_CLASS, I_MATCH, I_JMP, I_SPLIT, I_BOL, I_EOL, I_SAVE };
 
+/* Capture save slots: 2 per group (open, close), slot 0/1 = whole match.
+   MAXSAVE = 64 records up to 31 capturing groups; extra groups still match
+   but are not captured. */
+#define MAXSAVE 64
+
 typedef struct
 {
 	int op;
@@ -406,6 +417,8 @@ typedef struct
 {
 	Inst *in;
 	int n, cap;
+	int captures;            /* Emit I_SAVE pairs around groups (else non-capturing). */
+	int ngroup;              /* Capturing groups in the pattern (0 = whole match only). */
 } Prog;
 
 static int emit(Prog *p, int op)
@@ -491,6 +504,23 @@ static void emit_node(Prog *p, Node *n)
 		p->in[sp].y = p->n;
 		break;
 	}
+	case N_GROUP:
+	{
+		if (p->captures && n->gidx * 2 + 1 < MAXSAVE)
+		{
+			int s1 = emit(p, I_SAVE);
+			p->in[s1].x = 2 * n->gidx;
+			emit_node(p, n->a);
+			int s2 = emit(p, I_SAVE);
+			p->in[s2].x = 2 * n->gidx + 1;
+		}
+		else
+		{
+			emit_node(p, n->a);          /* Non-capturing, or beyond the slot cap. */
+		}
+
+		break;
+	}
 	case N_REPEAT:
 	{
 		for (int i = 0; i < n->min; i++)
@@ -525,12 +555,13 @@ static void emit_node(Prog *p, Node *n)
 
 /* Compile pattern -> program. unanchored prepends a non-greedy .*? search loop;
    pc 0 is always the start. An empty program (n == 0) never matches. */
-static Prog *compile(const char *pat, int patlen, int unanchored)
+static Prog *compile(const char *pat, int patlen, int unanchored, int captures)
 {
 	PS s;
 	s.p = pat;
 	s.end = pat + patlen;
 	s.ok = 1;
+	s.ngroup = 0;
 	Node *root = parse_alt(&s);
 	if (s.p != s.end)
 	{
@@ -538,18 +569,28 @@ static Prog *compile(const char *pat, int patlen, int unanchored)
 	}
 
 	Prog *p = calloc(1, sizeof(Prog));
+	p->captures = captures;
+	p->ngroup = s.ngroup;
 	if (!s.ok)
 	{
 		node_free(root);
 		return p;                        /* n == 0 -> never matches. */
 	}
 
+	/* Whole-match close save (slot 1) is emitted only when capturing, so the
+	   capture-free program stays byte-identical to the non-capturing engine. */
 	if (unanchored)
 	{
 		int sp = emit(p, I_SPLIT);       /* pc 0. */
 		p->in[sp].x = p->n;              /* Prefer to start matching here (leftmost). */
-		emit(p, I_SAVE);                 /* Record the match start. */
+		emit(p, I_SAVE);                 /* Record the match start (slot 0). */
 		emit_node(p, root);
+		if (captures)
+		{
+			int cl = emit(p, I_SAVE);
+			p->in[cl].x = 1;
+		}
+
 		emit(p, I_MATCH);
 		p->in[sp].y = p->n;              /* Else consume one char and retry. */
 		emit(p, I_ANY);
@@ -560,6 +601,12 @@ static Prog *compile(const char *pat, int patlen, int unanchored)
 	{
 		emit(p, I_SAVE);
 		emit_node(p, root);
+		if (captures)
+		{
+			int cl = emit(p, I_SAVE);
+			p->in[cl].x = 1;
+		}
+
 		emit(p, I_MATCH);
 	}
 
@@ -719,9 +766,177 @@ static int run(Prog *p, const char *text, int len, int anchored, int *os, int *o
 	return 0;
 }
 
+/* ===== Capture-tracking Pike VM ===== */
+/* Separate thread type and runner so the capture-free run() above is never
+   slowed by carrying save slots. Used only by match/findAll/matchAll. */
+typedef struct
+{
+	int pc;
+	int saves[MAXSAVE];
+} ThC;
+
+static void addthread_c(Prog *p, ThC *l, int *ln, int *seen, int gen,
+						int pc, int *saves, int sp, int len)
+{
+	if (seen[pc] == gen)
+	{
+		return;
+	}
+
+	seen[pc] = gen;
+	Inst *in = &p->in[pc];
+	switch (in->op)
+	{
+	case I_JMP:
+		addthread_c(p, l, ln, seen, gen, in->x, saves, sp, len);
+		break;
+	case I_SPLIT:
+		addthread_c(p, l, ln, seen, gen, in->x, saves, sp, len);
+		addthread_c(p, l, ln, seen, gen, in->y, saves, sp, len);
+		break;
+	case I_SAVE:
+	{
+		int slot = in->x;
+		int old = saves[slot];
+		saves[slot] = sp;
+		addthread_c(p, l, ln, seen, gen, pc + 1, saves, sp, len);
+		saves[slot] = old;           /* Restore for sibling threads. */
+		break;
+	}
+	case I_BOL:
+		if (sp == 0)
+		{
+			addthread_c(p, l, ln, seen, gen, pc + 1, saves, sp, len);
+		}
+
+		break;
+	case I_EOL:
+		if (sp == len)
+		{
+			addthread_c(p, l, ln, seen, gen, pc + 1, saves, sp, len);
+		}
+
+		break;
+	default:                             /* I_CHAR / I_ANY / I_CLASS / I_MATCH. */
+		l[*ln].pc = pc;
+		memcpy(l[*ln].saves, saves, sizeof(int) * (size_t)MAXSAVE);
+		(*ln)++;
+		break;
+	}
+}
+
+/* Run with capture tracking; on success fills out[MAXSAVE] with the winning
+   thread's save slots (unset slots stay -1). Returns 1 on match. */
+static int run_captures(Prog *p, const char *text, int len, int *out)
+{
+	if (p->n == 0)
+	{
+		return 0;
+	}
+
+	ThC *cl = malloc(sizeof(ThC) * (size_t)p->n);
+	ThC *nl = malloc(sizeof(ThC) * (size_t)p->n);
+	int *seen = malloc(sizeof(int) * (size_t)p->n);
+	for (int i = 0; i < p->n; i++)
+	{
+		seen[i] = -1;
+	}
+
+	int init[MAXSAVE];
+	for (int i = 0; i < MAXSAVE; i++)
+	{
+		init[i] = -1;
+	}
+
+	int gen = 0, cln = 0, matched = 0;
+	int won[MAXSAVE];
+	gen++;
+	addthread_c(p, cl, &cln, seen, gen, 0, init, 0, len);
+	for (int sp = 0; ; sp++)
+	{
+		unsigned char c = (sp < len) ? (unsigned char)text[sp] : 0;
+		int nln = 0;
+		gen++;
+		for (int i = 0; i < cln; i++)
+		{
+			Inst *in = &p->in[cl[i].pc];
+			if (in->op == I_CHAR)
+			{
+				if (sp < len && c == in->ch)
+				{
+					addthread_c(p, nl, &nln, seen, gen, cl[i].pc + 1, cl[i].saves, sp + 1, len);
+				}
+			}
+			else if (in->op == I_ANY)
+			{
+				if (sp < len)
+				{
+					addthread_c(p, nl, &nln, seen, gen, cl[i].pc + 1, cl[i].saves, sp + 1, len);
+				}
+			}
+			else if (in->op == I_CLASS)
+			{
+				if (sp < len && cls_match(in, c))
+				{
+					addthread_c(p, nl, &nln, seen, gen, cl[i].pc + 1, cl[i].saves, sp + 1, len);
+				}
+			}
+			else if (in->op == I_MATCH)
+			{
+				matched = 1;
+				memcpy(won, cl[i].saves, sizeof(won));
+				break;                   /* Leftmost-first: drop lower-priority threads. */
+			}
+		}
+
+		ThC *tmp = cl;
+		cl = nl;
+		nl = tmp;
+		cln = nln;
+		if (sp >= len)
+		{
+			break;
+		}
+	}
+
+	free(cl);
+	free(nl);
+	free(seen);
+	if (matched)
+	{
+		memcpy(out, won, sizeof(int) * (size_t)MAXSAVE);
+		return 1;
+	}
+
+	return 0;
+}
+
+/* Build a string[] of [whole, g1, g2, ...] for one match, slicing text by the
+   save slots. A group that did not participate yields "". */
+static void *group_array(const char *t, int *saves, int ngroup)
+{
+	int count = ngroup + 1;
+	void *arr = bzy_array_new(count, 1);
+	void **elems = (void**)((char*)arr + 32);
+	for (int k = 0; k < count; k++)
+	{
+		int so = 2 * k, sc = 2 * k + 1;
+		if (sc < MAXSAVE && saves[so] >= 0 && saves[sc] >= saves[so])
+		{
+			elems[k] = bzy_str_new(t + saves[so], saves[sc] - saves[so]);
+		}
+		else
+		{
+			elems[k] = bzy_str_new("", 0);
+		}
+	}
+
+	return arr;
+}
+
 int64_t bzy_regex_matches(void *pat, void *text)
 {
-	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 0);
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 0, 0);
 	int r = run(p, bzy_str_data(text), (int)bzy_str_len(text), 1, NULL, NULL);
 	free(p->in);
 	free(p);
@@ -730,7 +945,7 @@ int64_t bzy_regex_matches(void *pat, void *text)
 
 int64_t bzy_regex_test(void *pat, void *text)
 {
-	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1);
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1, 0);
 	int r = run(p, bzy_str_data(text), (int)bzy_str_len(text), 0, NULL, NULL);
 	free(p->in);
 	free(p);
@@ -739,7 +954,7 @@ int64_t bzy_regex_test(void *pat, void *text)
 
 void *bzy_regex_find(void *pat, void *text)
 {
-	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1);
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1, 0);
 	const char *t = bzy_str_data(text);
 	int s = 0, e = 0;
 	int r = run(p, t, (int)bzy_str_len(text), 0, &s, &e);
@@ -753,9 +968,114 @@ void *bzy_regex_find(void *pat, void *text)
 	return bzy_str_new(t + s, e - s);
 }
 
+/* Leftmost match's groups: [whole, g1, ...]; empty array if no match. */
+void *bzy_regex_capture(void *pat, void *text)
+{
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1, 1);
+	const char *t = bzy_str_data(text);
+	int saves[MAXSAVE];
+	int r = run_captures(p, t, (int)bzy_str_len(text), saves);
+	int ng = p->ngroup;
+	free(p->in);
+	free(p);
+	if (!r)
+	{
+		return bzy_array_new(0, 1);
+	}
+
+	return group_array(t, saves, ng);
+}
+
+/* A growable list of owned element pointers, assembled into a managed array. */
+typedef struct
+{
+	void **items;
+	int64_t count, cap;
+} ElemList;
+
+static void elemlist_push(ElemList *el, void *v)
+{
+	if (el->count == el->cap)
+	{
+		el->cap = el->cap ? el->cap * 2 : 16;
+		el->items = realloc(el->items, (size_t)el->cap * sizeof(void *));
+	}
+
+	el->items[el->count++] = v;
+}
+
+static void *elemlist_to_array(ElemList *el)
+{
+	void *arr = bzy_array_new(el->count, 1);
+	void **elems = (void**)((char*)arr + 32);
+	for (int64_t i = 0; i < el->count; i++)
+	{
+		elems[i] = el->items[i];
+	}
+
+	free(el->items);
+	return arr;
+}
+
+/* Walk every non-overlapping match. emit_groups selects whole-match strings
+   (findAll) versus per-match group arrays (matchAll). Empty matches advance one
+   char, mirroring replace(). Offsets are relative to the current slice, so ^/$
+   bind to the slice — the same limitation replace() already has. */
+static void *regex_walk(void *pat, void *text, int emit_groups)
+{
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1, 1);
+	const char *t = bzy_str_data(text);
+	int tl = (int)bzy_str_len(text);
+	int ng = p->ngroup;
+	ElemList el = { NULL, 0, 0 };
+	int pos = 0;
+	while (pos <= tl)
+	{
+		int saves[MAXSAVE];
+		if (!run_captures(p, t + pos, tl - pos, saves))
+		{
+			break;
+		}
+
+		int ms = saves[0], me = saves[1];
+		if (emit_groups)
+		{
+			int abs[MAXSAVE];
+			for (int i = 0; i < MAXSAVE; i++)
+			{
+				abs[i] = saves[i] < 0 ? -1 : saves[i] + pos;
+			}
+
+			elemlist_push(&el, group_array(t, abs, ng));
+		}
+		else
+		{
+			elemlist_push(&el, bzy_str_new(t + pos + ms, me - ms));
+		}
+
+		pos = (me == ms) ? pos + me + 1 : pos + me;   /* Empty match: step one char. */
+	}
+
+	free(p->in);
+	free(p);
+	return elemlist_to_array(&el);
+}
+
+/* Every whole match as a string[]. */
+void *bzy_regex_find_all(void *pat, void *text)
+{
+	return regex_walk(pat, text, 0);
+}
+
+/* Every match's groups as a string[][]. */
+void *bzy_regex_capture_all(void *pat, void *text)
+{
+	return regex_walk(pat, text, 1);
+}
+
 void *bzy_regex_replace(void *pat, void *text, void *repl)
 {
-	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1);
+	Prog *p = compile(bzy_str_data(pat), (int)bzy_str_len(pat), 1, 0);
 	const char *t = bzy_str_data(text);
 	int tl = (int)bzy_str_len(text);
 	const char *rp = bzy_str_data(repl);
