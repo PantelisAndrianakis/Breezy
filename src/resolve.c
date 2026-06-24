@@ -532,6 +532,39 @@ static void resolve_regex(Expr *e)
 	e->type.kind = predicate ? TY_BOOL : TY_STRING;
 }
 
+/* Path.* : pure path-string helpers. join takes two strings, the rest one;
+   all return a string. */
+static void resolve_path(Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Path.". */
+	int join = strcmp(m,"join")==0;
+	int ok = join
+			 || strcmp(m,"fileName")==0
+			 || strcmp(m,"dirName")==0
+			 || strcmp(m,"extension")==0
+			 || strcmp(m,"absolute")==0;
+	if (!ok)
+	{
+		die(e->line,"Unknown Path method: ",m);
+	}
+
+	int want = join ? 2 : 1;
+	if (e->arg_count != want)
+	{
+		die(e->line,"Wrong number of arguments for this Path method.",NULL);
+	}
+
+	for (int i=0; i<e->arg_count; i++)
+	{
+		if (e->args[i]->type.kind != TY_STRING)
+		{
+			die(e->line,"Path arguments must be strings.",NULL);
+		}
+	}
+
+	e->type.kind = TY_STRING;
+}
+
 /* Require argument i to be a string. */
 static void file_arg_string(Expr *e, int i)
 {
@@ -4719,6 +4752,12 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	if (strncmp(e->name,"File.",5)==0)
 	{
 		resolve_file(e);
+		break;
+	}
+
+	if (strncmp(e->name,"Path.",5)==0)
+	{
+		resolve_path(e);
 		break;
 	}
 

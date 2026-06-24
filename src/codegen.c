@@ -7731,6 +7731,26 @@ static void cg_regex(Codegen *cg, TypeTable *tt, Expr *e)
 					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
 }
 
+/* Path.* builtins -> bzy_path_* (string args, owned-string result). */
+static void cg_path(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *m = e->name + 5;   /* After "Path.". */
+	const char *fn =
+		strcmp(m,"join")==0      ? "bzy_path_join" :
+		strcmp(m,"fileName")==0  ? "bzy_path_file_name" :
+		strcmp(m,"dirName")==0   ? "bzy_path_dir_name" :
+		strcmp(m,"extension")==0 ? "bzy_path_extension" :
+		"bzy_path_absolute";
+	TypeRef ps[2];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,NULL,e->args,e->arg_count,0,
+					  ty_is_managed(e->type.kind), 0, ps, e->arg_count, 0);
+}
+
 /* File.* builtins. Selects the bzy_file_* symbol, lowers via cg_call_with_args,
    and for fallible ops emits a post-call bzy_io_check(pc, frame) that throws an
    IOException if the op set the runtime error (the value result, if any, is
@@ -8671,6 +8691,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (strncmp(e->name,"File.",5)==0)
 		{
 			cg_file(cg,tt,e);
+		}
+		else if (strncmp(e->name,"Path.",5)==0)
+		{
+			cg_path(cg,tt,e);
 		}
 		else if (strncmp(e->name,"System.",7)==0)
 		{
@@ -13330,6 +13354,11 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_file_search_recursive");
 	cg_emit(cg,"extern bzy_file_set_attribute");
 	cg_emit(cg,"extern bzy_file_has_attribute");
+	cg_emit(cg,"extern bzy_path_join");
+	cg_emit(cg,"extern bzy_path_file_name");
+	cg_emit(cg,"extern bzy_path_dir_name");
+	cg_emit(cg,"extern bzy_path_extension");
+	cg_emit(cg,"extern bzy_path_absolute");
 	cg_emit(cg,"global __bzy_exception_funcs");
 	cg_emit(cg,"global __bzy_exception_func_count");
 	cg_emit(cg,"global __bzy_vtable_parents");

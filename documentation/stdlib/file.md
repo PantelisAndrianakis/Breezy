@@ -42,6 +42,36 @@ string[] all = File.searchRecursive("data", "*");             // Whole tree.
 
 ---
 
+## Path strings: `Path`
+
+The paths `File.search` hands back often need taking apart and putting back
+together. `Path` is a small namespace of **pure path-string** operations
+(`absolute` also reads the working directory). Both `/` and `\` count as
+separators on input, so Windows-style paths work unchanged; output uses `/`,
+which every `File` operation accepts on both platforms.
+
+```breezy
+string p   = Path.join("data/npc", "Npcgrp.txt");  // "data/npc/Npcgrp.txt"
+string f   = Path.fileName("a/b/c.txt");           // "c.txt"
+string d   = Path.dirName("a/b/c.txt");            // "a/b"
+string e   = Path.extension("a/b/c.txt");          // ".txt"
+string abs = Path.absolute("out/x.xml");           // "<cwd>/out/x.xml", normalized
+```
+
+- `join(a, b)` — `a` then a separator then `b`. A trailing separator on `a` is
+  not doubled; if `b` is rooted (`/x`, `\x`, or a drive like `c:\x`) it wins,
+  and an empty `a` returns `b`.
+- `fileName(p)` — everything after the last separator (`""` if `p` ends in one).
+- `dirName(p)` — everything before the last separator (`""` if there is none).
+- `extension(p)` — from the last `.` in the file name, **including** the dot;
+  `""` when the name has no dot, or the dot is its first character (so
+  `.gitignore` has no extension and `a.tar.gz` → `.gz`).
+- `absolute(p)` — makes `p` absolute against the working directory and collapses
+  `.`, `..`, and duplicate separators. It does **not** require `p` to exist, so
+  it is safe on an output path before the file is written.
+
+---
+
 ## Binary I/O
 
 ```breezy

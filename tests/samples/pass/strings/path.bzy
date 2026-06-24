@@ -1,0 +1,24 @@
+void main()
+{
+	// join: plain, trailing separator not doubled, rooted second part wins.
+	print(Path.join("data/npc", "Npcgrp.txt"));      // data/npc/Npcgrp.txt
+	print(Path.join("data/npc/", "Npcgrp.txt"));     // data/npc/Npcgrp.txt
+	print(Path.join("a", "/rooted"));                // /rooted
+
+	// fileName / dirName.
+	print(Path.fileName("a/b/c.txt"));               // c.txt
+	print(Path.fileName("bare.txt"));                // bare.txt
+	print("[" + Path.fileName("a/b/") + "]");        // []
+	print(Path.dirName("a/b/c.txt"));                // a/b
+	print("[" + Path.dirName("bare.txt") + "]");     // []
+
+	// extension: normal, none, dotfile, double.
+	print(Path.extension("a/b/c.txt"));              // .txt
+	print("[" + Path.extension("noext") + "]");      // []
+	print("[" + Path.extension(".gitignore") + "]"); // []
+	print(Path.extension("a.tar.gz"));               // .gz
+
+	// absolute on rooted input is cwd-independent: normalizes . / .. / seps.
+	print(Path.absolute("/a/b/../c/./d"));           // /a/c/d
+	print(Path.absolute("/a/b\\..\\c"));             // /a/c
+}
