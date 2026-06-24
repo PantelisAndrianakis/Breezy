@@ -60,6 +60,7 @@ typedef struct
 	Stmt *cur_accum_stmt;    /* P5: the accumulation stmt to lower to sb appends, or NULL. */
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
+	const char *cur_file;    /* Source path of the unit whose functions are being emitted (for stack-trace records; NULL for synthesized frames). */
 	int exception_try_count; /* File-unique try-region label counter (__exceptiontry<k>_*). */
 	int cur_try_count;       /* Try-regions in the function currently being emitted. */
 	int cur_try_cap;

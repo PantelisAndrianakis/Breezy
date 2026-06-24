@@ -102,7 +102,16 @@ catch (NumberFormatException e)
 
 ## Uncaught exceptions
 
-If no handler matches, the exception is **uncaught**: the program prints `Uncaught exception: <message>` plus a function-name stack trace, then aborts. This makes unexpected failures loud and traceable rather than silent.
+If no handler matches, the exception is **uncaught**: the program prints `Uncaught exception: <message>` plus a stack trace — one frame per function on the abandoned call chain, each with its source file and line — then aborts. This makes unexpected failures loud and traceable rather than silent.
+
+```
+Uncaught exception: boom
+  at deep (Main.bzy:1)
+  at mid (Main.bzy:9)
+  at main (Main.bzy:14)
+```
+
+The line shown is where each function appears in its source file.
 
 ---
 

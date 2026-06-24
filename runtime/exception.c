@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Must match the codegen record layout (8 qwords). */
+/* Must match the codegen record layout (11 qwords). */
 typedef struct
 {
 	int64_t start;
@@ -14,6 +14,9 @@ typedef struct
 	int64_t *objs;
 	int64_t ntry;
 	void *tryptr;
+	const char *file;   /* Source path for stack traces (NULL = no source). */
+	int64_t nline;      /* Number of [pc, line] pairs. */
+	int64_t *lines;     /* Flat [pc0, line0, pc1, line1, ...]. */
 } BzyExceptionFunc;
 
 /* Must match the codegen try-region layout (4 qwords). */
@@ -104,6 +107,26 @@ static BzyExceptionFunc *exception_find(int64_t pc)
 	return NULL;
 }
 
+/* The source line of the largest PC->line entry at or before pc (0 if none).
+   A one-entry table always returns that entry; a per-call-site table resolves
+   the nearest preceding marker. */
+static int64_t line_for(BzyExceptionFunc *f, int64_t pc)
+{
+	int64_t best_line = 0;
+	int64_t best_pc = -1;
+	for (int64_t i = 0; i < f->nline; i++)
+	{
+		int64_t lpc = f->lines[i*2];
+		if (lpc <= pc && lpc > best_pc)
+		{
+			best_pc = lpc;
+			best_line = f->lines[i*2 + 1];
+		}
+	}
+
+	return best_line;
+}
+
 void bzy_throw(void *exc, int64_t pc, int64_t frame)
 {
 	if (bzy_in_callback())
@@ -115,6 +138,8 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 	}
 
 	const char *trace[256];
+	const char *trace_file[256];
+	int64_t trace_line[256];
 	int n = 0;
 
 	/* The thrown object arrives owned (+1), so releasing frame locals below
@@ -129,6 +154,8 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 
 		if (n < 256)
 		{
+			trace_file[n] = f->file;
+			trace_line[n] = line_for(f, pc);
 			trace[n++] = f->name;
 		}
 
@@ -174,7 +201,14 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 	fprintf(stderr, "\n");
 	for (int i = 0; i < n; i++)
 	{
-		fprintf(stderr, "  at %s\n", trace[i]);
+		if (trace_file[i] && trace_line[i] > 0)
+		{
+			fprintf(stderr, "  at %s (%s:%lld)\n", trace[i], trace_file[i], (long long)trace_line[i]);
+		}
+		else
+		{
+			fprintf(stderr, "  at %s\n", trace[i]);
+		}
 	}
 
 	if (bzy_sched_current())

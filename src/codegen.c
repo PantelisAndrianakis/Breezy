@@ -11741,6 +11741,25 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 	}
 
 	fprintf(cg->out, "0\n");
+
+	/* Source path for stack traces (NUL-terminated), or no string when the unit
+	   has none (synthesized frames). */
+	if (cg->cur_file)
+	{
+		fprintf(cg->out, "__exceptionfile%d: db ", i);
+		for (const char *p=cg->cur_file; *p; p++)
+		{
+			fprintf(cg->out, "%d,", (unsigned char)*p);
+		}
+
+		fprintf(cg->out, "0\n");
+	}
+
+	/* PC->line table: [pc_label, line] pairs. One entry (the function start ->
+	   its declaration line) for now; per-call-site entries can extend this. */
+	cg_emit(cg,"__exceptionlines%d:", i);
+	cg_emit(cg,"    dq %s, %d", label, f->name_line);
+
 	if (f->obj_local_count > 0)
 	{
 		fprintf(cg->out, "__exceptionobjs%d: dq ", i);
@@ -11790,6 +11809,10 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 	{
 		cg_emit(cg,"    dq 0");
 	}
+
+	cg_emit(cg, cg->cur_file ? "    dq __exceptionfile%d" : "    dq 0", i);   /* Source path, or 0. */
+	cg_emit(cg,"    dq 1");                          /* PC->line pair count. */
+	cg_emit(cg,"    dq __exceptionlines%d", i);
 
 	cg_emit(cg,"section .text");
 }
@@ -13292,6 +13315,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<unit_count; i++)
 	{
 		Unit *u=units[i];
+		cg->cur_file = u->file;   /* Source path for this unit's stack-trace records. */
 		for (int k=0; k<u->func_count; k++)
 		{
 			Func *f=u->funcs[k];
@@ -13329,6 +13353,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	for (int i=0; i<unit_count; i++)
 	{
 		Unit *u=units[i];
+		cg->cur_file = u->file;   /* Source path for this unit's stack-trace records. */
 		for (int ci=0; ci<u->class_count; ci++)
 		{
 			ClassDecl *d=u->klasses[ci];
