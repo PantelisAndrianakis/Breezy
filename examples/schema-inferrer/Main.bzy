@@ -1,0 +1,347 @@
+// Infers an XSD schema from one or more sample XML files - a practical port of
+// the .NET XmlSchemaInference tool. Reads each document into Breezy's XML DOM,
+// merges the observed structure (elements, attributes, occurrence, simple
+// types) across every instance, and emits a valid schema.
+//
+//   breezy <thisDir> Main            -> runs a built-in demo, prints the XSD.
+//   Main out.xsd in1.xml in2.xml     -> infers a merged schema, writes out.xsd.
+//
+// Simple-type inference is value-based and widening: boolean < int < decimal,
+// anything mixed or non-numeric becomes xs:string. Elements are typed by tag
+// name (merged globally), which suits regular, data-style XML.
+
+// Type codes for inferred simple types.
+//   0 = unset, 1 = boolean, 2 = int, 3 = decimal, 4 = string.
+
+int inferType(string value)
+{
+	string s = value.trim();
+	if (s.length() == 0)
+	{
+		return 4;
+	}
+
+	if (s.equals("true") or s.equals("false"))
+	{
+		return 1;
+	}
+
+	if (Regex.matches("-?[0-9]+", s))
+	{
+		return 2;
+	}
+
+	if (Regex.matches("-?[0-9]*\\.[0-9]+", s))
+	{
+		return 3;
+	}
+
+	return 4;
+}
+
+// Combine two observed types into the narrowest that covers both.
+int widenType(int a, int b)
+{
+	if (a == 0)
+	{
+		return b;
+	}
+
+	if (b == 0)
+	{
+		return a;
+	}
+
+	if (a == b)
+	{
+		return a;
+	}
+
+	if ((a == 2 and b == 3) or (a == 3 and b == 2))
+	{
+		return 3;
+	}
+
+	return 4;
+}
+
+string typeName(int code)
+{
+	if (code == 1)
+	{
+		return "xs:boolean";
+	}
+
+	if (code == 2)
+	{
+		return "xs:int";
+	}
+
+	if (code == 3)
+	{
+		return "xs:decimal";
+	}
+
+	return "xs:string";
+}
+
+// Aggregated structure observed for one element tag.
+class ElemModel
+{
+	string name = "";
+	int instanceCount = 0;
+	bool hasChildren = false;
+	int textType = 0;
+
+	List<string> attrOrder = new List<string>();
+	map<string, int> attrCount = new map<string, int>();   // Instances that had the attribute.
+	map<string, int> attrType = new map<string, int>();    // Widened type code.
+
+	List<string> childOrder = new List<string>();
+	map<string, int> childSeen = new map<string, int>();    // Names already in childOrder.
+	map<string, int> childPresent = new map<string, int>(); // Instances with >= 1 of the child.
+	map<string, int> childMax = new map<string, int>();     // Max count seen in one instance.
+}
+
+// An element is simple when it carries only text - no children, no attributes.
+bool isSimple(ElemModel m)
+{
+	return (not m.hasChildren) and m.attrOrder.size == 0;
+}
+
+// Bundles the merged model set, creation order (for stable output), and the
+// set of document roots.
+class Inferer
+{
+	map<string, ElemModel> models = new map<string, ElemModel>();
+	List<string> order = new List<string>();
+	List<string> roots = new List<string>();
+	map<string, int> rootSeen = new map<string, int>();
+
+	ElemModel getModel(string name)
+	{
+		if (not this.models.containsKey(name))
+		{
+			ElemModel m = new ElemModel();
+			m.name = name;
+			this.models.put(name, m);
+			this.order.add(name);
+		}
+
+		return this.models.get(name);
+	}
+
+	void observeRoot(XmlNode node)
+	{
+		if (not this.rootSeen.containsKey(node.name))
+		{
+			this.rootSeen.put(node.name, 1);
+			this.roots.add(node.name);
+		}
+
+		this.observe(node);
+	}
+
+	void observe(XmlNode node)
+	{
+		ElemModel m = this.getModel(node.name);
+		m.instanceCount = m.instanceCount + 1;
+
+		int ai = 0;
+		while (ai < node.attrCount)
+		{
+			string an = node.attrNameAt(ai);
+			string av = node.attr(an);
+			if (not m.attrCount.containsKey(an))
+			{
+				m.attrOrder.add(an);
+			}
+
+			m.attrCount.put(an, m.attrCount.getOrDefault(an, 0) + 1);
+			m.attrType.put(an, widenType(m.attrType.getOrDefault(an, 0), inferType(av)));
+			ai = ai + 1;
+		}
+
+		string t = node.text.trim();
+		if (t.length() > 0)
+		{
+			m.textType = widenType(m.textType, inferType(t));
+		}
+
+		if (node.children.size > 0)
+		{
+			m.hasChildren = true;
+		}
+
+		map<string, int> local = new map<string, int>();
+		int ci = 0;
+		while (ci < node.children.size)
+		{
+			XmlNode c = node.children.get(ci);
+			if (not m.childSeen.containsKey(c.name))
+			{
+				m.childSeen.put(c.name, 1);
+				m.childOrder.add(c.name);
+			}
+
+			local.put(c.name, local.getOrDefault(c.name, 0) + 1);
+			this.observe(c);
+			ci = ci + 1;
+		}
+
+		foreach (string cn in local)
+		{
+			m.childPresent.put(cn, m.childPresent.getOrDefault(cn, 0) + 1);
+			m.childMax.put(cn, Math.max(m.childMax.getOrDefault(cn, 0), local.get(cn)));
+		}
+	}
+
+	void emitOneAttr(StringBuilder sb, ElemModel m, string an, string indent)
+	{
+		string use = "optional";
+		if (m.attrCount.getOrDefault(an, 0) == m.instanceCount)
+		{
+			use = "required";
+		}
+
+		sb.append(indent + "<xs:attribute name=\"" + an + "\" type=\""
+				  + typeName(m.attrType.getOrDefault(an, 0)) + "\" use=\"" + use + "\"/>\n");
+	}
+
+	void emitAttrs(StringBuilder sb, ElemModel m, string indent)
+	{
+		int ai = 0;
+		while (ai < m.attrOrder.size)
+		{
+			this.emitOneAttr(sb, m, m.attrOrder.get(ai), indent);
+			ai = ai + 1;
+		}
+	}
+
+	void emitComplexType(StringBuilder sb, ElemModel m)
+	{
+		sb.append("\t<xs:complexType name=\"" + m.name + "\">\n");
+
+		bool hasText = m.textType != 0;
+		bool hasAttr = m.attrOrder.size > 0;
+
+		if (m.hasChildren)
+		{
+			sb.append("\t\t<xs:sequence>\n");
+			int ci = 0;
+			while (ci < m.childOrder.size)
+			{
+				string cn = m.childOrder.get(ci);
+				ElemModel cm = this.models.get(cn);
+				string ty = cn;
+				if (isSimple(cm))
+				{
+					ty = typeName(cm.textType);
+				}
+
+				string minO = "1";
+				if (m.childPresent.getOrDefault(cn, 0) < m.instanceCount)
+				{
+					minO = "0";
+				}
+
+				string maxO = "1";
+				if (m.childMax.getOrDefault(cn, 0) > 1)
+				{
+					maxO = "unbounded";
+				}
+
+				sb.append("\t\t\t<xs:element name=\"" + cn + "\" type=\"" + ty
+						  + "\" minOccurs=\"" + minO + "\" maxOccurs=\"" + maxO + "\"/>\n");
+				ci = ci + 1;
+			}
+
+			sb.append("\t\t</xs:sequence>\n");
+			this.emitAttrs(sb, m, "\t\t");
+		}
+		else if (hasText and hasAttr)
+		{
+			sb.append("\t\t<xs:simpleContent>\n");
+			sb.append("\t\t\t<xs:extension base=\"" + typeName(m.textType) + "\">\n");
+			this.emitAttrs(sb, m, "\t\t\t\t");
+			sb.append("\t\t\t</xs:extension>\n");
+			sb.append("\t\t</xs:simpleContent>\n");
+		}
+		else
+		{
+			this.emitAttrs(sb, m, "\t\t");
+		}
+
+		sb.append("\t</xs:complexType>\n");
+	}
+
+	string buildXsd()
+	{
+		StringBuilder sb = new StringBuilder();
+		sb.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+		sb.append("<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n");
+
+		int ri = 0;
+		while (ri < this.roots.size)
+		{
+			string rn = this.roots.get(ri);
+			ElemModel rm = this.models.get(rn);
+			string ty = rn;
+			if (isSimple(rm))
+			{
+				ty = typeName(rm.textType);
+			}
+
+			sb.append("\t<xs:element name=\"" + rn + "\" type=\"" + ty + "\"/>\n");
+			ri = ri + 1;
+		}
+
+		int oi = 0;
+		while (oi < this.order.size)
+		{
+			ElemModel m = this.models.get(this.order.get(oi));
+			if (not isSimple(m))
+			{
+				this.emitComplexType(sb, m);
+			}
+
+			oi = oi + 1;
+		}
+
+		sb.append("</xs:schema>\n");
+		return sb.toString();
+	}
+}
+
+string DEMO_XML()
+{
+	return "<catalog>"
+		   + "<book id=\"1\" price=\"9.99\"><title>A</title><author>X</author></book>"
+		   + "<book id=\"2\" price=\"12.50\" rare=\"true\"><title>B</title></book>"
+		   + "</catalog>";
+}
+
+void main()
+{
+	string[] args = System.args();
+	Inferer inf = new Inferer();
+
+	if (args.length == 0)
+	{
+		// Demo: infer from an embedded document and print the schema.
+		inf.observeRoot(Xml.parse(DEMO_XML()));
+		print(inf.buildXsd());
+		return;
+	}
+
+	// Tool: args[0] is the output path, args[1..] are input XML files.
+	int i = 1;
+	while (i < args.length)
+	{
+		inf.observeRoot(Xml.parse(File.readText(args[i])));
+		i = i + 1;
+	}
+
+	File.writeText(args[0], inf.buildXsd());
+	print("Wrote " + args[0] + ".");
+}
