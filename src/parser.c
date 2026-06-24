@@ -1355,7 +1355,18 @@ static Stmt *parse_if(Parser *p)
 	s->then_blk=parse_block(p);
 	if (match(p,TOKEN_ELSE))
 	{
-		s->else_blk=parse_block(p);
+		if (check(p,TOKEN_IF))
+		{
+			/* `else if` chains: wrap the trailing if-statement in a one-statement
+			   block so the else branch stays a Block, like an explicit `else {}`. */
+			Block *b=block_new();
+			block_push(b,parse_if(p));
+			s->else_blk=b;
+		}
+		else
+		{
+			s->else_blk=parse_block(p);
+		}
 	}
 
 	return s;

@@ -81,6 +81,7 @@ check unroll_fold tests/samples/pass/basics/unroll_fold.bzy "216"
 check int_div     tests/samples/pass/basics/int_div.bzy $'-33\n-1\n33\n33\n-1\n306783378'
 check int_dirty   tests/samples/pass/basics/int_dirty.bzy $'1410065408\n88129088\n-851744153\n1\n-1894967296\n1832519941\n15'
 check if_else     tests/samples/pass/control-flow/if_else.bzy    "1"
+check else_if     tests/samples/pass/control-flow/else_if.bzy    "20"
 check while       tests/samples/pass/control-flow/while.bzy      "10"
 check multi_fn    tests/samples/pass/basics/multi_fn.bzy   "42"
 check inheritance tests/samples/pass/oop/proj_inherit  "2"
@@ -129,6 +130,7 @@ check floats_fn   tests/samples/pass/numbers/floats_fn.bzy $'10'
 check promote     tests/samples/pass/numbers/promote.bzy   $'5\n5\n12\n13\nfalse\ntrue'
 check promote_signed tests/samples/pass/numbers/promote_signed.bzy $'8\n2\n15\n1\n0\n10000000005'
 check string      tests/samples/pass/strings/string.bzy    $'Hello, Breezy\n13'
+check string_null tests/samples/pass/strings/string_null.bzy $'1\n2'
 check str_concat_val tests/samples/pass/strings/str_concat_value.bzy $'Score: 42\n42 points\nx=3 y=7\nok? true\nd=1.5\nab'
 check concat_chain    tests/samples/pass/strings/concat_chain.bzy  $'abcdeab\nn=123'
 check str_accum    tests/samples/pass/strings/str_accum.bzy  $'ab0ab1ab2ab3ab4\nx---\nz'

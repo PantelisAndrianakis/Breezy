@@ -1,0 +1,22 @@
+// An else-if chain: the parser threads a trailing `if` after `else` into a
+// one-statement block, so only the matching arm runs.
+void main()
+{
+	int x = 2;
+	if (x == 1)
+	{
+		print(10);
+	}
+	else if (x == 2)
+	{
+		print(20);
+	}
+	else if (x == 3)
+	{
+		print(30);
+	}
+	else
+	{
+		print(99);
+	}
+}

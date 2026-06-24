@@ -2184,18 +2184,26 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (a==TY_STRING || b==TY_STRING)
 		{
-			/* Concatenation with '+': when either operand is a string, the other
-			   may be a string or any scalar (integer, floating, or bool) — the
-			   scalar is converted to its text form. Objects/arrays are rejected. */
-			int a_ok = a==TY_STRING || ty_is_int(a) || ty_is_float(a) || a==TY_BOOL;
-			int b_ok = b==TY_STRING || ty_is_int(b) || ty_is_float(b) || b==TY_BOOL;
-			if (e->op!=TOKEN_PLUS || !a_ok || !b_ok)
+			/* A null-reference check (`s == null` / `s != null`) is a managed-vs-null
+			   comparison, not concatenation — let it fall through to the ==/!= logic
+			   below. (String value-equality still uses .equals(), so `s1 == s2` keeps
+			   landing in the error path here.) */
+			int null_cmp = (e->op==TOKEN_EQ || e->op==TOKEN_NEQ) && (a==TY_NULL || b==TY_NULL);
+			if (!null_cmp)
 			{
-				die(e->line,"Strings support '+' concatenation with strings or scalar values only.",NULL);
-			}
+				/* Concatenation with '+': when either operand is a string, the other
+				   may be a string or any scalar (integer, floating, or bool) — the
+				   scalar is converted to its text form. Objects/arrays are rejected. */
+				int a_ok = a==TY_STRING || ty_is_int(a) || ty_is_float(a) || a==TY_BOOL;
+				int b_ok = b==TY_STRING || ty_is_int(b) || ty_is_float(b) || b==TY_BOOL;
+				if (e->op!=TOKEN_PLUS || !a_ok || !b_ok)
+				{
+					die(e->line,"Strings support '+' concatenation with strings or scalar values only.",NULL);
+				}
 
-			e->type.kind=TY_STRING;
-			break;
+				e->type.kind=TY_STRING;
+				break;
+			}
 		}
 
 		if (ty_is_float(a) || ty_is_float(b))

@@ -1,0 +1,25 @@
+// A string can be compared to null: System.getenv returns the null string for an
+// unset variable, distinguishable from a real string. (Value-equality still uses
+// .equals(); only the null-reference check goes through ==/!=.)
+void main()
+{
+	string missing = System.getenv("BZY_DEFINITELY_UNSET_VAR_XYZ");
+	if (missing == null)
+	{
+		print(1);
+	}
+	else
+	{
+		print(0);
+	}
+
+	string here = "x";
+	if (here != null)
+	{
+		print(2);
+	}
+	else
+	{
+		print(0);
+	}
+}

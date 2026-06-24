@@ -42,11 +42,14 @@ foreach (string a in args)
 
 ## Environment variables
 
-`System.getenv(name)` returns the value of an environment variable as a `string`, or the **`null` string** when the variable is not set - so an unset variable is distinguishable from one set to the empty string.
+`System.getenv(name)` returns the value of an environment variable as a `string`, or the **`null` string** when the variable is not set - so an unset variable is distinguishable from one set to the empty string. Test for the unset case with `== null` before using the value (calling a method on the null string is an error):
 
 ```breezy
 string path = System.getenv("PATH");        // The PATH value, or null if unset.
-print(path.length() > 0);
+if (path != null)
+{
+	print(path.length() > 0);
+}
 ```
 
 ---
