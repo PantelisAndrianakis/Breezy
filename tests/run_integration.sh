@@ -59,6 +59,23 @@ check_throws() {
     elif echo "$out" | grep -qF "$expect"; then echo "  $name: OK (threw)"
     else echo "  $name: FAIL (missing '$expect' in: $out)"; fail=1; fi
 }
+check_trace() {
+    # Build, run, expect a non-zero exit, and assert every remaining argument is a
+    # substring of stderr. Frame lines are asserted by basename:line so the
+    # machine-dependent path prefix in the trace does not matter.
+    local name="$1" target="$2"; shift 2
+    bzy_build "$target" || { echo "  $name: COMPILE FAILED"; fail=1; return; }
+    local out; out="$(./out.exe 2>&1)"; local code=$?
+    out="${out//$'\r'/}"
+    if [ $code -eq 0 ]; then echo "  $name: FAIL (expected abort)"; fail=1; return; fi
+    local want
+    for want in "$@"; do
+        if ! printf '%s' "$out" | grep -qF -- "$want"; then
+            echo "  $name: FAIL (missing '$want' in: $out)"; fail=1; return
+        fi
+    done
+    echo "  $name: OK (trace)"
+}
 echo "Integration tests"
 check minimal     tests/samples/pass/basics/minimal.bzy    "0"
 check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
@@ -260,6 +277,11 @@ else
 fi
 check parse       tests/samples/pass/numbers/parse.bzy         $'42\n7\ntrue'
 check_throws throw tests/samples/pass/exceptions/throw.bzy "boom"
+check_trace  stack_trace tests/samples/pass/exceptions/throw.bzy \
+    "Uncaught exception: boom" \
+    "at deep (" "throw.bzy:6)" \
+    "at mid (" "throw.bzy:11)" \
+    "at main (" "throw.bzy:16)"
 check catch       tests/samples/pass/exceptions/catch.bzy         $'caught it\n0'
 check catch_multi tests/samples/pass/exceptions/proj_catch_multi   $'bee\n99'
 check catch_subclass tests/samples/pass/exceptions/proj_catch_subclass $'missing\n0'

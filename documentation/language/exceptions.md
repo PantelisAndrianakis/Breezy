@@ -106,12 +106,20 @@ If no handler matches, the exception is **uncaught**: the program prints `Uncaug
 
 ```
 Uncaught exception: boom
-  at deep (Main.bzy:1)
-  at mid (Main.bzy:9)
-  at main (Main.bzy:14)
+  at deep (Main.bzy:6)
+  at mid (Main.bzy:11)
+  at main (Main.bzy:16)
 ```
 
-The line shown is where each function appears in its source file.
+Each line is the statement that was executing in that frame — the `throw` in
+the innermost function, and the call site in every frame above it.
+
+Automatic exceptions get the same trace: an out-of-range array index, a failed
+`Enum.valueOf`, a parse error or an I/O error all unwind through this path. A few
+low-level guards instead print a one-line diagnostic and exit **without** a trace,
+because they fire with no active call frame to walk — the startup CPU-feature
+check for 256-bit SIMD, running out of memory, and the bounds check on `Vector`
+and `Memory` element access (a hard abort by design, not a catchable throw).
 
 ---
 
