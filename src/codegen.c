@@ -38,6 +38,11 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->cur_try_c=NULL;
 	cg->cur_try_vt=NULL;
 	cg->cur_try_cap=0;
+	cg->line_lbl_seq=0;
+	cg->cur_line=NULL;
+	cg->cur_line_count=0;
+	cg->cur_line_cap=0;
+	cg->cur_line_last=0;
 	cg->breeze_thunks=NULL;
 	cg->breeze_thunk_cap=0;
 	cg->blocking_thunks=NULL;
@@ -11195,6 +11200,27 @@ static void cg_emit_blocking_thunk(Codegen *cg, FuncInfo *fi)
 	cg_emit(cg,"    ret");
 }
 
+/* Emit a bodyless ..@line label at the current text position and record it with
+   its source line, so the unwinder can map a frame PC to the statement that was
+   executing when it threw or made a call. Deduped against the previous marker;
+   non-positive lines (synthesized statements) are skipped. The label emits no
+   instructions, so it has no run-time cost and does not change the success path. */
+static void cg_line_mark(Codegen *cg, int line)
+{
+	if (line <= 0 || line == cg->cur_line_last)
+	{
+		return;
+	}
+
+	int id = cg->line_lbl_seq++;
+	cg_emit(cg,"..@line%d:", id);
+	cg->cur_line = grow_ensure(cg->cur_line, cg->cur_line_count, &cg->cur_line_cap, 2*sizeof(int));
+	cg->cur_line[cg->cur_line_count*2]   = id;
+	cg->cur_line[cg->cur_line_count*2+1] = line;
+	cg->cur_line_count++;
+	cg->cur_line_last = line;
+}
+
 static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 {
 	/* No expression is mid-evaluation at a statement boundary, so every temp slot
@@ -11213,6 +11239,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		fprintf(stderr,"Codegen: scratch cursor %d at a statement boundary (unbalanced arena alloc/free).\n", cg->cur_scratch);
 		exit(1);
 	}
+
+	cg_line_mark(cg, s->line);   /* Stack-trace position for any call/throw in this statement. */
 
 	switch (s->kind)
 	{
@@ -11755,10 +11783,16 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 		fprintf(cg->out, "0\n");
 	}
 
-	/* PC->line table: [pc_label, line] pairs. One entry (the function start ->
-	   its declaration line) for now; per-call-site entries can extend this. */
+	/* PC->line table: [pc_label, line] pairs. The function start maps to its
+	   declaration line (the fallback for any PC before the first statement); each
+	   statement adds a marker, so a frame PC resolves to the line of the statement
+	   that threw or made the call. */
 	cg_emit(cg,"__exceptionlines%d:", i);
 	cg_emit(cg,"    dq %s, %d", label, f->name_line);
+	for (int t=0; t<cg->cur_line_count; t++)
+	{
+		cg_emit(cg,"    dq ..@line%d, %d", cg->cur_line[t*2], cg->cur_line[t*2+1]);
+	}
 
 	if (f->obj_local_count > 0)
 	{
@@ -11811,7 +11845,7 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 	}
 
 	cg_emit(cg, cg->cur_file ? "    dq __exceptionfile%d" : "    dq 0", i);   /* Source path, or 0. */
-	cg_emit(cg,"    dq 1");                          /* PC->line pair count. */
+	cg_emit(cg,"    dq %d", 1 + cg->cur_line_count);   /* PC->line pair count (func-start + per-statement markers). */
 	cg_emit(cg,"    dq __exceptionlines%d", i);
 
 	cg_emit(cg,"section .text");
@@ -12144,6 +12178,8 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	int is_main = (this_class==NULL && strcmp(f->name,"main")==0);
 	cg->cur_func = f;            /* Promotion helpers consult this; hand-rolled frames clear it. */
 	cg->cur_try_count = 0;
+	cg->cur_line_count = 0;      /* Stack-trace markers are per function; the label counter stays file-unique. */
+	cg->cur_line_last = 0;
 	int locals = f->frame_size;
 	if (locals < 16)
 	{
