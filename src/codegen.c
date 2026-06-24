@@ -5471,6 +5471,23 @@ static void cg_math(Codegen *cg, TypeTable *tt, Expr *e)
 	exit(1);
 }
 
+/* double.toFixed(digits) -> bzy_str_from_f64_fixed(receiver, digits). The
+   receiver is passed as a typed argument (not self) so the generic arg
+   classifier routes the double to xmm0 and the int to an integer register. */
+static void cg_double_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *fn = (e->lhs->type.kind==TY_FLOAT)
+					 ? "bzy_str_from_f32_fixed" : "bzy_str_from_f64_fixed";
+	Expr *args2[2];
+	args2[0] = e->lhs;
+	args2[1] = e->args[0];
+	TypeRef ps2[2];
+	ps2[0] = e->lhs->type;
+	ps2[1] = e->args[0]->type;
+	cg_call_with_args(cg,tt,fn,NULL,args2,2,0,
+					  ty_is_managed(e->type.kind), 0, ps2, 2, 0);
+}
+
 /* string.method(...) -> bzy_str_* (receiver passed as self; bool/int or owned result). */
 static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
@@ -5493,6 +5510,8 @@ static void cg_string_method(Codegen *cg, TypeTable *tt, Expr *e)
 		strcmp(nm,"lastIndexOf")==0      ? "bzy_str_last_index_of" :
 		strcmp(nm,"charAt")==0           ? "bzy_str_char_at" :
 		strcmp(nm,"repeat")==0           ? "bzy_str_repeat" :
+		strcmp(nm,"padLeft")==0  ? (e->arg_count==2 ? "bzy_str_pad_left_ch"  : "bzy_str_pad_left") :
+		strcmp(nm,"padRight")==0 ? (e->arg_count==2 ? "bzy_str_pad_right_ch" : "bzy_str_pad_right") :
 		strcmp(nm,"split")==0    ? (e->arg_count==2 ? "bzy_str_split_opt" : "bzy_str_split") :
 		strcmp(nm,"splitAny")==0 ? (e->arg_count==2 ? "bzy_str_split_any_opt" : "bzy_str_split_any") :
 		strcmp(nm,"toBytes")==0          ? "bzy_str_to_bytes" :
@@ -8573,6 +8592,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_STRING)
 		{
 			cg_string_method(cg,tt,e);
+		}
+		else if (ty_is_float(e->lhs->type.kind))
+		{
+			cg_double_method(cg,tt,e);
 		}
 		else if (strcmp(e->name,"getClassName")==0
 				 && !types_find_method(types_find_class(tt,e->lhs->type.class_name),"getClassName"))
@@ -13177,6 +13200,12 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_str_split_opt");
 	cg_emit(cg,"extern bzy_str_split_any");
 	cg_emit(cg,"extern bzy_str_split_any_opt");
+	cg_emit(cg,"extern bzy_str_pad_left");
+	cg_emit(cg,"extern bzy_str_pad_left_ch");
+	cg_emit(cg,"extern bzy_str_pad_right");
+	cg_emit(cg,"extern bzy_str_pad_right_ch");
+	cg_emit(cg,"extern bzy_str_from_f64_fixed");
+	cg_emit(cg,"extern bzy_str_from_f32_fixed");
 	cg_emit(cg,"extern bzy_str_to_int");
 	cg_emit(cg,"extern bzy_str_to_long");
 	cg_emit(cg,"extern bzy_str_to_byte");

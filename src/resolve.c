@@ -429,6 +429,19 @@ static void resolve_string_method(Expr *e)
 
 		e->type.kind = TY_STRING;
 	}
+	else if (strcmp(nm,"padLeft")==0 || strcmp(nm,"padRight")==0)
+	{
+		/* padLeft(width) / padRight(width), optionally + a pad string. */
+		int ok = (e->arg_count == 1 && ty_is_int(e->args[0]->type.kind))
+				 || (e->arg_count == 2 && ty_is_int(e->args[0]->type.kind)
+					 && e->args[1]->type.kind == TY_STRING);
+		if (!ok)
+		{
+			die(e->line,"String.padLeft/padRight expects a width and an optional pad string.",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+	}
 	else if (strcmp(nm,"split")==0 || strcmp(nm,"splitAny")==0)
 	{
 		/* split(sep) / splitAny(chars), optionally + a bool to drop empty fields. */
@@ -2735,6 +2748,23 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		{
 			resolve_args(st,e,tc);
 			resolve_string_method(e);
+			break;
+		}
+
+		if (ty_is_float(e->lhs->type.kind))
+		{
+			resolve_args(st,e,tc);
+			if (strcmp(e->name,"toFixed")!=0)
+			{
+				die(e->line,"Unknown method on a floating-point value: ",e->name);
+			}
+
+			if (e->arg_count != 1 || !ty_is_int(e->args[0]->type.kind))
+			{
+				die(e->line,"toFixed expects one integer argument (fraction digits).",NULL);
+			}
+
+			e->type.kind = TY_STRING;
 			break;
 		}
 

@@ -265,6 +265,7 @@ check regex       tests/samples/pass/strings/regex.bzy         $'true\ntrue\n123
 check regex_capture tests/samples/pass/strings/regex_capture.bzy $'3\nlevel=42\nlevel\n42\n0\n2\n[]\n3\n12\n345\n6\n2\nab\ncd'
 check path        tests/samples/pass/strings/path.bzy          $'data/npc/Npcgrp.txt\ndata/npc/Npcgrp.txt\n/rooted\nc.txt\nbare.txt\n[]\na/b\n[]\n.txt\n[]\n[]\n.gz\n/a/c/d\n/a/c'
 check split_opts  tests/samples/pass/strings/split_opts.bzy     $'3\ngreen\n3\n2\nxy\n4\nabcd\n3\nabc\n3\n3'
+check format      tests/samples/pass/strings/format.bzy         $'000017\n123456\n[   ab]\n[ab   ]\n[ab...]\n1.500\n3.14159\n2\n1.68'
 check str_query   tests/samples/pass/strings/str_query.bzy     $'true\ntrue\n5\n10'
 check str_transform tests/samples/pass/strings/str_transform.bzy $'Hello.World\nHello World\nHELLO WORLD\nHello'
 check str_more    tests/samples/pass/strings/str_more.bzy      $'true\nfalse\n101\n4\nababab'

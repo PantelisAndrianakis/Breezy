@@ -1,0 +1,23 @@
+void main()
+{
+	// Zero-padded integer (the D6 / D5 use): stringify, then padLeft with "0".
+	int id = 17;
+	print(("" + id).padLeft(6, "0"));         // 000017
+	int big = 123456;
+	print(("" + big).padLeft(5, "0"));        // 123456 (already at/over width)
+
+	// padLeft default fill is a space; padRight mirrors it.
+	print("[" + "ab".padLeft(5) + "]");       // [   ab]
+	print("[" + "ab".padRight(5) + "]");      // [ab   ]
+	print("[" + "ab".padRight(5, ".") + "]"); // [ab...]
+
+	// Fixed-point float (the 0.000 / 0.00000 use).
+	double a = 1.5;
+	print(a.toFixed(3));                      // 1.500
+	double b = 3.14159;
+	print(b.toFixed(5));                      // 3.14159
+	double c = 2.0;
+	print(c.toFixed(0));                      // 2
+	double d = 1.6789;
+	print(d.toFixed(2));                      // 1.68
+}

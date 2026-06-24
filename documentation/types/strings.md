@@ -62,6 +62,18 @@ string up = path.toUpper();            // /API/USERS  (path itself is unchanged)
 
 - `substring(a, b)`, `replace(from, to)`, `repeat(n)`
 - `trim()`, `toUpper()`, `toLower()`
+- `padLeft(width)` / `padRight(width)` - pad with spaces to at least `width`; a
+  string already that long is returned unchanged. Pass a second argument to pad
+  with a different character: `("" + id).padLeft(6, "0")` -> `"000017"`.
+
+**Formatting numbers:** a floating-point value has `toFixed(digits)`, which
+returns a string with exactly that many fraction digits (rounded):
+
+```breezy
+double price = 1.5;
+print(price.toFixed(3));        // 1.500
+print((3.14159).toFixed(2));    // 3.14
+```
 
 **Split into an array:**
 

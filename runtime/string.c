@@ -622,6 +622,61 @@ static void *split_core(void *s, void *delim, int is_set, int64_t skip_empty)
 	return arr;
 }
 
+/* Pad s to at least `width` bytes with `pad`, on the left or right. width and
+   pad count bytes, not runes - fine for the ASCII pad characters ('0', ' ')
+   these are used with. A string already at or over width is returned as is. */
+static void *pad_core(void *s, int64_t width, char pad, int on_left)
+{
+	const char *t = bzy_str_data(s);
+	int64_t tl = bzy_str_len(s);
+	if (width <= tl)
+	{
+		return bzy_str_new(t, tl);
+	}
+
+	int64_t fill = width - tl;
+	char *buf = malloc((size_t)width);
+	if (on_left)
+	{
+		memset(buf, pad, (size_t)fill);
+		memcpy(buf + fill, t, (size_t)tl);
+	}
+	else
+	{
+		memcpy(buf, t, (size_t)tl);
+		memset(buf + tl, pad, (size_t)fill);
+	}
+
+	void *out = bzy_str_new(buf, width);
+	free(buf);
+	return out;
+}
+
+static char pad_char(void *pad)
+{
+	return bzy_str_len(pad) > 0 ? bzy_str_data(pad)[0] : ' ';
+}
+
+void *bzy_str_pad_left(void *s, int64_t width)
+{
+	return pad_core(s, width, ' ', 1);
+}
+
+void *bzy_str_pad_left_ch(void *s, int64_t width, void *pad)
+{
+	return pad_core(s, width, pad_char(pad), 1);
+}
+
+void *bzy_str_pad_right(void *s, int64_t width)
+{
+	return pad_core(s, width, ' ', 0);
+}
+
+void *bzy_str_pad_right_ch(void *s, int64_t width, void *pad)
+{
+	return pad_core(s, width, pad_char(pad), 0);
+}
+
 void *bzy_str_split(void *s, void *sep)
 {
 	return split_core(s, sep, 0, 0);

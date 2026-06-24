@@ -30,3 +30,27 @@ void *bzy_str_from_f64(double v)
 	int n = snprintf(buf, sizeof(buf), "%.17g", v);
 	return bzy_str_new(buf, (int64_t)n);
 }
+
+/* Fixed-point: exactly `digits` fraction digits (clamped to 0..17), rounded. */
+void *bzy_str_from_f64_fixed(double v, int64_t digits)
+{
+	if (digits < 0)
+	{
+		digits = 0;
+	}
+
+	if (digits > 17)
+	{
+		digits = 17;
+	}
+
+	char buf[64];
+	int n = snprintf(buf, sizeof(buf), "%.*f", (int)digits, v);
+	return bzy_str_new(buf, (int64_t)n);
+}
+
+/* Same, for a 32-bit float receiver (promoted to double for formatting). */
+void *bzy_str_from_f32_fixed(float v, int64_t digits)
+{
+	return bzy_str_from_f64_fixed((double)v, digits);
+}
