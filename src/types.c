@@ -213,6 +213,21 @@ static void mark_class_shared(TypeTable *tt, const char *name)
 	}
 }
 
+/* An interface used as a shared type (a channel rejects interface elements, but a
+   shared class's interface-typed field, a spawn param, or a shared container's
+   element can all carry one) means any implementor's instances may cross a core.
+   Implementors are not born shared - their field stores take the runtime gate via
+   types_class_hierarchy_shared - so marking the interface is all that is needed. */
+static void mark_interface_shared(TypeTable *tt, const char *name)
+{
+	InterfaceInfo *it=types_find_interface(tt,name);
+	if (it && !it->is_shared)
+	{
+		it->is_shared=1;
+		g_shared_changed=1;
+	}
+}
+
 static void add_shared_container(TypeTable *tt, TypeRef *t)
 {
 	for (int i=0; i<tt->shared_container_count; i++)
@@ -242,7 +257,8 @@ static void mark_type_shared(TypeTable *tt, TypeRef *t)
 	switch (t->kind)
 	{
 	case TY_OBJECT:
-		mark_class_shared(tt,t->class_name);
+		mark_class_shared(tt,t->class_name);     /* No-op if the name is an interface... */
+		mark_interface_shared(tt,t->class_name); /* ...and vice versa. */
 		break;
 	case TY_ARRAY:
 	case TY_MAP:
@@ -440,14 +456,40 @@ int types_typeref_maybe_shared(TypeTable *tt, TypeRef *t)
 	return 0;
 }
 
-/* The shared-set fixpoint marks a class by exact name, so a subclass reached only
-   through a base-typed handoff (a channel/parameter/field of the parent's type) is
-   never marked is_shared even though share_walk promotes its instances at runtime.
-   A field store through such a subclass reference would then publish an unshared
-   value into a SHARED object. This reports whether that risk exists for a class
-   whose own is_shared is clear: true when a shared class sits above it (a parent
-   handoff reaches this instance) or below it (a shared subclass instance is reached
-   through this base reference). Codegen gates a runtime SHARED-bit test on it. */
+/* True if any interface this class declares it implements is itself shared. */
+static int class_implements_shared_iface(TypeTable *tt, ClassInfo *c)
+{
+	for (int i=0; i<c->implements_count; i++)
+	{
+		InterfaceInfo *it=types_find_interface(tt,c->implements[i]);
+		if (it && it->is_shared)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/* A class is "shared-reachable" if its own instances may cross a core: it is a
+   shared class, or it implements a shared interface (it can be handed off through
+   that interface type). */
+static int class_shared_reachable(TypeTable *tt, ClassInfo *c)
+{
+	return c->is_shared || class_implements_shared_iface(tt,c);
+}
+
+/* The shared-set fixpoint marks a class by exact name, so a class reached only
+   through a SUPERTYPE handoff - a base class (`extends`) or an interface
+   (`implements`) used as the channel/parameter/field/container type - is never
+   marked is_shared even though share_walk promotes its instances at runtime. A
+   field store through such a reference would then publish an unshared value into a
+   SHARED object. This reports whether that risk exists for a class whose own
+   is_shared is clear: true when a shared-reachable class sits above it in the class
+   hierarchy (a supertype handoff reaches this instance), below it (a shared
+   subtype instance is reached through this base reference), or when the class (or
+   an ancestor) implements a shared interface. Codegen gates a runtime SHARED-bit
+   test on it. */
 int types_class_hierarchy_shared(TypeTable *tt, ClassInfo *c)
 {
 	if (!c)
@@ -455,9 +497,9 @@ int types_class_hierarchy_shared(TypeTable *tt, ClassInfo *c)
 		return 0;
 	}
 
-	for (ClassInfo *p=c->parent; p; p=p->parent)
+	for (ClassInfo *p=c; p; p=p->parent)
 	{
-		if (p->is_shared)
+		if ((p!=c && p->is_shared) || class_implements_shared_iface(tt,p))
 		{
 			return 1;
 		}
@@ -466,7 +508,7 @@ int types_class_hierarchy_shared(TypeTable *tt, ClassInfo *c)
 	for (int i=0; i<tt->class_count; i++)
 	{
 		ClassInfo *s=tt->classes[i];
-		if (!s->is_shared)
+		if (!class_shared_reachable(tt,s))
 		{
 			continue;
 		}

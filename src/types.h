@@ -56,6 +56,7 @@ typedef struct
 	int      *vslot;         /* [method] global vtable slot. */
 	int       method_count;
 	int       method_cap;    /* One cap for all five parallel arrays (grown in lockstep). */
+	int       is_shared;     /* 1 if a value of this interface type may cross a core boundary (handoff/shared-class field). */
 } InterfaceInfo;
 typedef struct
 {

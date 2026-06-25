@@ -710,6 +710,20 @@ static void test_vec_gating_and_store_barriers(void)
 		TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "test qword [rbx + 16], 8") == NULL, 1);
 	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") == NULL, 1);
+
+	/* Interface polymorphism gate: a class reached only through a shared interface
+	   (here a shared class's interface-typed field) is not statically shared, yet
+	   share_walk promotes its instances. Its field stores must runtime-test the
+	   receiver and deep-share - same hazard as base-class polymorphism. */
+	emit(
+		"interface Beast { int id(); }"
+		"class Dog implements Beast { List<int> items; int id() { return 1; } void put() { items = new List<int>(); } }"
+		"class Pen { Beast occupant; }"
+		"void pump(channel<Pen> ch) { }"
+		"void main() { Dog d; d = new Dog(); d.put(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "test qword [rbx + 16], 8") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") != NULL, 1);
 }
 
 static void test_subclass_declared_before_parent(void)
