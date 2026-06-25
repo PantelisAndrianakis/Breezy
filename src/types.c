@@ -440,6 +440,49 @@ int types_typeref_maybe_shared(TypeTable *tt, TypeRef *t)
 	return 0;
 }
 
+/* The shared-set fixpoint marks a class by exact name, so a subclass reached only
+   through a base-typed handoff (a channel/parameter/field of the parent's type) is
+   never marked is_shared even though share_walk promotes its instances at runtime.
+   A field store through such a subclass reference would then publish an unshared
+   value into a SHARED object. This reports whether that risk exists for a class
+   whose own is_shared is clear: true when a shared class sits above it (a parent
+   handoff reaches this instance) or below it (a shared subclass instance is reached
+   through this base reference). Codegen gates a runtime SHARED-bit test on it. */
+int types_class_hierarchy_shared(TypeTable *tt, ClassInfo *c)
+{
+	if (!c)
+	{
+		return 0;
+	}
+
+	for (ClassInfo *p=c->parent; p; p=p->parent)
+	{
+		if (p->is_shared)
+		{
+			return 1;
+		}
+	}
+
+	for (int i=0; i<tt->class_count; i++)
+	{
+		ClassInfo *s=tt->classes[i];
+		if (!s->is_shared)
+		{
+			continue;
+		}
+
+		for (ClassInfo *p=s->parent; p; p=p->parent)
+		{
+			if (p==c)
+			{
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 FuncInfo *types_find_func(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->func_count; i++)

@@ -98,6 +98,7 @@ InterfaceInfo *types_find_interface(TypeTable *tt, const char *name);
 int        types_is_interface(TypeTable *tt, const char *name);
 void       types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count);   /* Conservative-static: mark cross-core-reachable types shared (channels, spawn params, statics). */
 int        types_typeref_maybe_shared(TypeTable *tt, TypeRef *t);   /* 1 if a value of this static type may be SHARED at runtime (codegen gating). */
+int        types_class_hierarchy_shared(TypeTable *tt, ClassInfo *c);   /* 1 if a shared ancestor or descendant means an instance reached via a base-typed handoff may be SHARED at runtime. */
 ClassInfo *types_find_class(TypeTable *tt, const char *name);
 FuncInfo  *types_find_func(TypeTable *tt, const char *name);
 int        types_func_overload_count(TypeTable *tt, const char *name);     /* Same-name free functions. */

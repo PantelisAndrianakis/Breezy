@@ -687,6 +687,29 @@ static void test_vec_gating_and_store_barriers(void)
 		"void main() { Box b; b = new Box(); b.items = new List<int>(); }",
 		TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") == NULL, 1);
+
+	/* Polymorphism gate: a subclass reached only through a base-typed handoff is
+	   not statically shared, but share_walk can promote its instances at runtime.
+	   A field store through the subclass reference must runtime-test the receiver's
+	   SHARED bit and deep-share the value when set. */
+	emit(
+		"class Animal { }"
+		"class Dog extends Animal { List<int> items; void put() { items = new List<int>(); } }"
+		"void pump(channel<Animal> ch) { }"
+		"void main() { Dog d; d = new Dog(); d.put(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "test qword [rbx + 16], 8") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") != NULL, 1);
+
+	/* No handoff anywhere: the same subclass field store stays barrier-free, so a
+	   confined hierarchy pays neither the test nor the share call. */
+	emit(
+		"class Animal { }"
+		"class Dog extends Animal { List<int> items; void put() { items = new List<int>(); } }"
+		"void main() { Dog d; d = new Dog(); d.put(); }",
+		TARGET_LINUX);
+	ASSERT_INT(strstr(g_asm, "test qword [rbx + 16], 8") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "call bzy_share_crosscore") == NULL, 1);
 }
 
 static void test_subclass_declared_before_parent(void)

@@ -9040,22 +9040,44 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 	{
 		cg_expr_owned(cg,tt,value);
 		cg_emit(cg,"    mov [rbp - %d], rax", cg->assign_save);
+
+		ClassInfo *rc = (target->lhs->type.kind==TY_OBJECT)
+						? types_find_class(tt,target->lhs->type.class_name) : NULL;
+		int self_shared  = rc && rc->is_shared;
+		int maybe_shared = rc && !rc->is_shared && types_class_hierarchy_shared(tt,rc);
+
 		/* A field store on a shared-class instance publishes the value to every
 		   breeze that can reach the object: instances of is_shared classes are
 		   born SHARED, so deep-share the incoming value unconditionally here
 		   (the value is parked in assign_save across the call). */
-		if (target->lhs->type.kind==TY_OBJECT)
+		if (self_shared)
 		{
-			ClassInfo *rc = types_find_class(tt,target->lhs->type.class_name);
-			if (rc && rc->is_shared)
-			{
-				cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
-				cg_aligned_call(cg,"bzy_share_crosscore");
-			}
+			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 0));
+			cg_aligned_call(cg,"bzy_share_crosscore");
 		}
 
 		cg_expr(cg,tt,target->lhs);
 		cg_emit(cg,"    mov rbx, rax");
+
+		/* The receiver class is not statically shared, but a shared ancestor or
+		   subclass means an instance reached through a base-typed handoff can be
+		   SHARED at runtime (share_walk set its bit after the handoff). Gate the
+		   deep-share on the receiver's SHARED bit: a confined receiver pays only a
+		   predicted-not-taken test; a shared one publishes the value safely. */
+		if (maybe_shared)
+		{
+			int rsave = cg_scratch_alloc(cg, 16);
+			int skip = cg_label(cg);
+			cg_emit(cg,"    test qword [rbx + 16], 8");        /* BZY_GCINFO_SHARED. */
+			cg_emit(cg,"    jz .L%d", skip);
+			cg_emit(cg,"    mov [rbp - %d], rbx", rsave);       /* Park receiver across the call. */
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), cg->assign_save);
+			cg_aligned_call(cg,"bzy_share_crosscore");
+			cg_emit(cg,"    mov rbx, [rbp - %d]", rsave);       /* Reload receiver. */
+			cg_emit(cg,".L%d:", skip);
+			cg_scratch_free(cg, 16);
+		}
+
 		cg_emit(cg,"    mov rdx, [rbx + %d]", target->anno_int);
 		cg_emit(cg,"    mov rax, [rbp - %d]", cg->assign_save);
 		cg_emit(cg,"    mov [rbx + %d], rax", target->anno_int);
