@@ -350,7 +350,19 @@ typedef struct
 	TypeRef type;
 	char name[64];
 	Expr *def;   /* Default value (a literal) used when the argument is omitted, or NULL. */
+	int offset;  /* Resolver: stack slot of this parameter (the escape summary maps an arg index to its offset). */
 } Param;
+
+/* Interprocedural escape summary: which of a function's inputs escape its body.
+   Monotone (bits are only ever set), so the call-graph fixpoint that fills it
+   always terminates. A summary is consulted at a call site only when the callee
+   is uniquely resolved; an unsolved or non-unique callee is treated as escaping. */
+typedef struct
+{
+	unsigned char      solved;        /* The fixpoint has computed this body at least once. */
+	unsigned char      this_escapes;  /* Methods only: the receiver escapes the body. */
+	unsigned long long param_escapes; /* Bit k set => params[k] escapes; >64 params => all treated as escaping. */
+} EscSummary;
 typedef struct Func
 {
 	TypeRef ret_type;
@@ -370,6 +382,8 @@ typedef struct Func
 	int     cap_env_off[32];  /* Lambda body: byte offset of each capture in the env object. */
 	int     cap_local_off[32];/* Lambda body: stack slot each capture is copied into. */
 	int     frame_size;       /* Resolver. */
+	int     this_offset;      /* Resolver: stack slot of `this` for a method body; -1 for a free/static function. */
+	EscSummary esc;           /* Escape pass: which inputs escape this body (interprocedural summary). */
 	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
 	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
 	int     stack_alloc_bytes;      /* Escape pass: total frame bytes reserved for stack objects. */

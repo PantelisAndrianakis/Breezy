@@ -342,6 +342,35 @@ static void test_devirt_unoverridden_base_method(void)
 	ASSERT_INT(strstr(g_asm, "call Animal__tag") != NULL, 1);
 }
 
+static void test_escape_summary_seed(void)
+{
+	/* The conservative escape seed (no callee knowledge yet): a method that only
+	   reads or writes fields of `this` does not let `this` escape, while a setter
+	   that stores its object argument into a field marks that parameter escaping. */
+	const char *srcs[] =
+	{
+		"class Box { Box link; int v;"
+		" void put(int n) { this.v = n; }"
+		" int get() { return this.v; }"
+		" void chain(Box b) { this.link = b; } }",
+		"void main() { Box x; x = new Box(); x.put(3); }"
+	};
+	TypeTable *tt = build_tt(srcs, 2);
+	ClassInfo *c = types_find_class(tt, "Box");
+	ASSERT_INT(c != NULL, 1);
+	MethodInfo *put = types_find_method(c, "put");
+	MethodInfo *get = types_find_method(c, "get");
+	MethodInfo *chain = types_find_method(c, "chain");
+	/* Writing a field of `this` never escapes `this`. */
+	ASSERT_INT(put->ast->esc.this_escapes, 0);
+	ASSERT_INT(get->ast->esc.this_escapes, 0);
+	ASSERT_INT(chain->ast->esc.this_escapes, 0);
+	/* chain's object parameter (index 0) is stored into a field -> escapes;
+	   put's scalar parameter never reaches a capture position. */
+	ASSERT_INT((int)(chain->ast->esc.param_escapes & 1ull), 1);
+	ASSERT_INT((int)(put->ast->esc.param_escapes & 1ull), 0);
+}
+
 static void test_bitwise_emission(void)
 {
 	/* Bitwise by a fits-imm32 constant lowers to the immediate form (no rbx
@@ -1703,6 +1732,7 @@ int main(void)
 	RUN(test_devirt_monomorphic_direct);
 	RUN(test_devirt_polymorphic_stays_indirect);
 	RUN(test_devirt_unoverridden_base_method);
+	RUN(test_escape_summary_seed);
 	RUN(test_bitwise_emission);
 	RUN(test_logical_emission);
 	RUN(test_mul_strength_reduction);

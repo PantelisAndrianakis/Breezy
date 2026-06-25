@@ -6871,17 +6871,18 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	g_break_depth=0;
 	SymTable st;
 	sym_init(&st);
+	f->this_offset=-1;
 	if (this_class)
 	{
 		TypeRef tr;
 		tr.kind=TY_OBJECT;
 		strcpy(tr.class_name,this_class);
-		sym_add(&st,"this",tr);
+		f->this_offset=sym_add(&st,"this",tr)->offset;
 	}
 
 	for (int i=0; i<f->param_count; i++)
 	{
-		sym_add(&st,f->params[i].name,f->params[i].type);
+		f->params[i].offset=sym_add(&st,f->params[i].name,f->params[i].type)->offset;
 	}
 
 	resolve_block(&st,f->body,this_class);

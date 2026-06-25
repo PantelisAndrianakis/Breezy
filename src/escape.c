@@ -325,6 +325,33 @@ static void mark_block_stack(TypeTable *tt, Block *b, Func *f, int base)
 	}
 }
 
+/* Read the conservative escape set into the function's summary: a parameter (or
+   `this`) escapes when its frame slot is captured somewhere in the body. With no
+   callee knowledge every call position captures, so this is the seed that the
+   call-graph fixpoint later refines. Only object parameters can hold a reference
+   that escapes; scalar args never reach mark_captured, so their bits stay clear. */
+static void summarize(Func *f)
+{
+	f->esc.this_escapes = (f->this_offset >= 0 && esc_has(f->this_offset)) ? 1 : 0;
+	f->esc.param_escapes = 0;
+	if (f->param_count > 64)
+	{
+		f->esc.param_escapes = ~0ull;   /* Beyond bit 63 there is no room to be precise: treat the tail as escaping. */
+	}
+	else
+	{
+		for (int i = 0; i < f->param_count; i++)
+		{
+			if (f->params[i].type.kind == TY_OBJECT && esc_has(f->params[i].offset))
+			{
+				f->esc.param_escapes |= (1ull << i);
+			}
+		}
+	}
+
+	f->esc.solved = 1;
+}
+
 void escape_annotate(TypeTable *tt, Func *f)
 {
 	g_esc_n = 0;
@@ -340,5 +367,6 @@ void escape_annotate(TypeTable *tt, Func *f)
 	int base = locals + 72;
 
 	scan_block_escapes(f->body);
+	summarize(f);
 	mark_block_stack(tt, f->body, f, base);
 }
