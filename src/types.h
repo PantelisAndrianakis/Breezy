@@ -106,4 +106,5 @@ MethodInfo*types_find_method(ClassInfo *c, const char *name);
 int        types_method_overload_count(ClassInfo *c, const char *name);   /* Same-name entries (inherited + own). */
 MethodInfo*types_find_method_idx(ClassInfo *c, const char *name, int idx); /* The idx-th same-name overload, declaration order. */
 FieldInfo *types_find_field(ClassInfo *c, const char *name);
+int        types_method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name, int overload_idx); /* Class-hierarchy analysis: a call to this overload on this static type resolves to one implementation (no descendant override). 0 for unknown/static/builtin. */
 #endif

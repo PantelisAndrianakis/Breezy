@@ -3440,73 +3440,6 @@ static void cg_blocking_call(Codegen *cg, TypeTable *tt, Expr *e, FuncInfo *fi)
 	cg_scratch_free(cg, sz);
 }
 
-/* Class-hierarchy analysis: true when a call to `method_name` on static type
-   `class_name` is monomorphic -- no strict descendant of that class declares its
-   own override, so every possible runtime type resolves the method to the same
-   implementation. The whole program is compiled at once, so the hierarchy is
-   complete. Returns 0 for unknown classes, static methods, or builtins. */
-static int method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name, int overload_idx)
-{
-	ClassInfo *base = types_find_class(tt, class_name);
-	if (!base)
-	{
-		return 0;
-	}
-
-	MethodInfo *bm = types_find_method_idx(base, method_name, overload_idx);
-	if (!bm || bm->vtable_slot < 0)
-	{
-		return 0;   /* Not found, or a static method (already called directly). */
-	}
-
-	char bsig[160];
-	overload_encode_types(bsig, sizeof(bsig), bm->param_types, bm->param_count);
-
-	for (int i = 0; i < tt->class_count; i++)
-	{
-		ClassInfo *d = tt->classes[i];
-		if (d == base)
-		{
-			continue;
-		}
-
-		int is_descendant = 0;
-		for (ClassInfo *p = d->parent; p; p = p->parent)
-		{
-			if (p == base)
-			{
-				is_descendant = 1;
-				break;
-			}
-		}
-
-		if (!is_descendant)
-		{
-			continue;
-		}
-
-		/* A descendant that declares an override of THIS exact overload (same name
-		   and signature) makes the call polymorphic. */
-		for (int mi = 0; mi < d->method_count; mi++)
-		{
-			if (strcmp(d->methods[mi].name, method_name) != 0
-					|| strcmp(d->methods[mi].owner_class, d->name) != 0)
-			{
-				continue;
-			}
-
-			char dsig[160];
-			overload_encode_types(dsig, sizeof(dsig), d->methods[mi].param_types, d->methods[mi].param_count);
-			if (strcmp(dsig, bsig) == 0)
-			{
-				return 0;
-			}
-		}
-	}
-
-	return 1;
-}
-
 static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	ClassInfo *c=types_find_class(tt,e->anno_str);
@@ -3517,7 +3450,7 @@ static void cg_method_call(Codegen *cg, TypeTable *tt, Expr *e)
 	if (c)
 	{
 		MethodInfo *m=types_find_method_idx(c,e->name,e->anno_overload);
-		if (m && m->vtable_slot>=0 && method_is_monomorphic(tt,e->anno_str,e->name,e->anno_overload))
+		if (m && m->vtable_slot>=0 && types_method_is_monomorphic(tt,e->anno_str,e->name,e->anno_overload))
 		{
 			cg_call_with_args(cg,tt,m->asm_label,e->lhs,e->args,e->arg_count,0,
 							  ty_is_managed(e->type.kind), ty_is_float(e->type.kind),

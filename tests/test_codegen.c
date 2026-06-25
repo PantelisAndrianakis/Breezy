@@ -371,6 +371,25 @@ static void test_escape_summary_seed(void)
 	ASSERT_INT((int)(put->ast->esc.param_escapes & 1ull), 0);
 }
 
+static void test_method_monomorphic_query(void)
+{
+	/* The hierarchy predicate now lives in the type layer, shared by codegen
+	   devirtualization and (next) the escape pass. A never-overridden or leaf
+	   method resolves to one implementation; an overridden one does not; a static
+	   method reports 0 (it is already called directly, not via the vtable). */
+	const char *srcs[] =
+	{
+		"class Animal { int tag() { return 7; } void speak() { print(0); } static int kind() { return 1; } }",
+		"class Dog extends Animal { void speak() { print(1); } }",
+		"void main() { Animal a; a = new Dog(); int t; t = a.tag(); }"
+	};
+	TypeTable *tt = build_tt(srcs, 3);
+	ASSERT_INT(types_method_is_monomorphic(tt, "Animal", "tag", 0), 1);    /* Never overridden. */
+	ASSERT_INT(types_method_is_monomorphic(tt, "Animal", "speak", 0), 0);  /* Overridden by Dog. */
+	ASSERT_INT(types_method_is_monomorphic(tt, "Dog", "speak", 0), 1);     /* Leaf class. */
+	ASSERT_INT(types_method_is_monomorphic(tt, "Animal", "kind", 0), 0);   /* Static method. */
+}
+
 static void test_bitwise_emission(void)
 {
 	/* Bitwise by a fits-imm32 constant lowers to the immediate form (no rbx
@@ -1733,6 +1752,7 @@ int main(void)
 	RUN(test_devirt_polymorphic_stays_indirect);
 	RUN(test_devirt_unoverridden_base_method);
 	RUN(test_escape_summary_seed);
+	RUN(test_method_monomorphic_query);
 	RUN(test_bitwise_emission);
 	RUN(test_logical_emission);
 	RUN(test_mul_strength_reduction);

@@ -545,6 +545,73 @@ FieldInfo *types_find_field(ClassInfo *c, const char *name)
 	return NULL;
 }
 
+/* Class-hierarchy analysis: true when a call to `method_name` on static type
+   `class_name` is monomorphic -- no strict descendant of that class declares its
+   own override, so every possible runtime type resolves the method to the same
+   implementation. The whole program is compiled at once, so the hierarchy is
+   complete. Returns 0 for unknown classes, static methods, or builtins. */
+int types_method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name, int overload_idx)
+{
+	ClassInfo *base = types_find_class(tt, class_name);
+	if (!base)
+	{
+		return 0;
+	}
+
+	MethodInfo *bm = types_find_method_idx(base, method_name, overload_idx);
+	if (!bm || bm->vtable_slot < 0)
+	{
+		return 0;   /* Not found, or a static method (already called directly). */
+	}
+
+	char bsig[160];
+	overload_encode_types(bsig, sizeof(bsig), bm->param_types, bm->param_count);
+
+	for (int i = 0; i < tt->class_count; i++)
+	{
+		ClassInfo *d = tt->classes[i];
+		if (d == base)
+		{
+			continue;
+		}
+
+		int is_descendant = 0;
+		for (ClassInfo *p = d->parent; p; p = p->parent)
+		{
+			if (p == base)
+			{
+				is_descendant = 1;
+				break;
+			}
+		}
+
+		if (!is_descendant)
+		{
+			continue;
+		}
+
+		/* A descendant that declares an override of THIS exact overload (same name
+		   and signature) makes the call polymorphic. */
+		for (int mi = 0; mi < d->method_count; mi++)
+		{
+			if (strcmp(d->methods[mi].name, method_name) != 0
+					|| strcmp(d->methods[mi].owner_class, d->name) != 0)
+			{
+				continue;
+			}
+
+			char dsig[160];
+			overload_encode_types(dsig, sizeof(dsig), d->methods[mi].param_types, d->methods[mi].param_count);
+			if (strcmp(dsig, bsig) == 0)
+			{
+				return 0;
+			}
+		}
+	}
+
+	return 1;
+}
+
 void types_register_unit_names(TypeTable *tt, Unit *u)
 {
 	for (int ci=0; ci<u->class_count; ci++)
