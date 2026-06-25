@@ -17,6 +17,80 @@ static int *g_esc=NULL;
 static int  g_esc_n=0;
 static int  g_esc_cap=0;
 
+/* The type table for the body currently being scanned, so a call position can
+   look up the callee's summary. NULL => no interprocedural knowledge, so every
+   call position captures (the original conservative behaviour). */
+static TypeTable *g_cur_tt=NULL;
+
+/* The unique body a call site invokes, or NULL when the callee is not provably
+   unique (a closure/function-value call, an unknown/builtin/extern/variadic
+   target, an interface or overridable method). Only a non-NULL result lets a
+   capture be withheld, so every NULL path stays conservative and sound. */
+static Func *resolve_callee(TypeTable *tt, Expr *e)
+{
+	if (!tt)
+	{
+		return NULL;
+	}
+
+	if (e->kind==EX_CALL)
+	{
+		if (e->anno_indirect)
+		{
+			return NULL;   /* Call through a function value: target unknown here. */
+		}
+
+		FuncInfo *fi=types_find_func_idx(tt,e->name,e->anno_overload);
+		if (!fi || fi->is_extern || fi->is_variadic || !fi->ast)
+		{
+			return NULL;   /* Builtin (namespaced name), extern, variadic, or no body. */
+		}
+
+		return fi->ast;
+	}
+
+	if (e->kind==EX_METHOD_CALL)
+	{
+		ClassInfo *c=types_find_class(tt,e->anno_str);
+		if (!c)
+		{
+			return NULL;   /* Interface-typed or unknown receiver. */
+		}
+
+		MethodInfo *m=types_find_method_idx(c,e->name,e->anno_overload);
+		if (!m || !m->ast)
+		{
+			return NULL;
+		}
+
+		if (m->vtable_slot<0)
+		{
+			return m->ast;   /* Static method: one implementation, no dispatch. */
+		}
+
+		if (types_method_is_monomorphic(tt,e->anno_str,e->name,e->anno_overload))
+		{
+			return m->ast;   /* No descendant override: one implementation. */
+		}
+
+		return NULL;   /* Polymorphic: the runtime body is not known here. */
+	}
+
+	return NULL;
+}
+
+/* Does argument index `i` escape the callee body? Positions past bit 63 cannot be
+   represented, so they are treated as escaping (the >64-param summary fallback). */
+static int callee_arg_escapes(Func *cal, int i)
+{
+	if (i>=64)
+	{
+		return 1;
+	}
+
+	return ((cal->esc.param_escapes>>i)&1ull) ? 1 : 0;
+}
+
 static void esc_add(int off)
 {
 	for (int i=0; i<g_esc_n; i++)
@@ -73,21 +147,43 @@ static void walk_expr(Expr *e)
 	switch (e->kind)
 	{
 	case EX_CALL:
+	{
+		/* Capture each argument only if the resolved callee lets that parameter
+		   escape; an unresolved callee (NULL) captures all, as before. */
+		Func *cal=resolve_callee(g_cur_tt,e);
 		for (int i=0; i<e->arg_count; i++)
 		{
-			mark_captured(e->args[i]);
+			if (!cal || callee_arg_escapes(cal,i))
+			{
+				mark_captured(e->args[i]);
+			}
+
 			walk_expr(e->args[i]);
 		}
+
 		break;
+	}
 	case EX_METHOD_CALL:
-		mark_captured(e->lhs);     /* The receiver is passed as this. */
+	{
+		Func *cal=resolve_callee(g_cur_tt,e);
+		if (!cal || cal->esc.this_escapes)
+		{
+			mark_captured(e->lhs);     /* The receiver is passed as this. */
+		}
+
 		walk_expr(e->lhs);
 		for (int i=0; i<e->arg_count; i++)
 		{
-			mark_captured(e->args[i]);
+			if (!cal || callee_arg_escapes(cal,i))
+			{
+				mark_captured(e->args[i]);
+			}
+
 			walk_expr(e->args[i]);
 		}
+
 		break;
+	}
 	case EX_FIELD:
 		walk_expr(e->lhs);
 		break;
@@ -352,8 +448,55 @@ static void summarize(Func *f)
 	f->esc.solved = 1;
 }
 
+void escape_solve(TypeTable *tt, Func **funcs, int count)
+{
+	g_cur_tt = tt;
+
+	/* Optimistic start: every summary empty, so the first pass assumes callees
+	   leak nothing and grows escapes only as evidence appears. The transfer is
+	   monotone (a wider callee summary can only widen its callers), so this climbs
+	   to the least fixpoint and never oscillates. */
+	for (int i = 0; i < count; i++)
+	{
+		if (funcs[i])
+		{
+			funcs[i]->esc.this_escapes = 0;
+			funcs[i]->esc.param_escapes = 0;
+			funcs[i]->esc.solved = 0;
+		}
+	}
+
+	/* Iterate to stability. Bound the loop at the total representable bits as a
+	   backstop; real convergence is two or three passes. */
+	long guard = (long)count * 65 + 16;
+	int changed = 1;
+	while (changed && guard-- > 0)
+	{
+		changed = 0;
+		for (int i = 0; i < count; i++)
+		{
+			Func *f = funcs[i];
+			if (!f || !f->body)
+			{
+				continue;
+			}
+
+			unsigned char old_this = f->esc.this_escapes;
+			unsigned long long old_params = f->esc.param_escapes;
+			g_esc_n = 0;
+			scan_block_escapes(f->body);
+			summarize(f);
+			if (f->esc.this_escapes != old_this || f->esc.param_escapes != old_params)
+			{
+				changed = 1;
+			}
+		}
+	}
+}
+
 void escape_annotate(TypeTable *tt, Func *f)
 {
+	g_cur_tt = tt;   /* So this body's call sites consult the (now fixed) summaries. */
 	g_esc_n = 0;
 	f->stack_alloc_bytes = 0;
 

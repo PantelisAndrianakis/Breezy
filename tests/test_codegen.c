@@ -390,6 +390,30 @@ static void test_method_monomorphic_query(void)
 	ASSERT_INT(types_method_is_monomorphic(tt, "Animal", "kind", 0), 0);   /* Static method. */
 }
 
+static void test_escape_interproc_stacks_nonleaking_receiver(void)
+{
+	/* v's only use is the receiver of get(), whose interprocedural summary says
+	   `this` does not escape, so v is stack-allocated: its vtable is stored into a
+	   frame slot with no bzy_alloc. (The method call itself is not dead-code
+	   eliminated -- same pattern as test_devirt_monomorphic_direct.) */
+	emit("class V { long x; long get() { return this.x; } }"
+		 " void main() { V v; v = new V(); long s; s = v.get(); }", TARGET_WINDOWS);
+	const char *body = fn_body("bzy_user_main:");
+	ASSERT_INT(strstr(body, "__vtable_V") != NULL, 1);     /* V is constructed in main. */
+	ASSERT_INT(strstr(body, "call bzy_alloc") == NULL, 1); /* ...on the stack, not the heap. */
+}
+
+static void test_escape_interproc_heaps_when_callee_leaks(void)
+{
+	/* identity returns its parameter, so the parameter escapes; v flows into that
+	   escaping position and must stay heap-allocated -- a real bzy_alloc in main.
+	   This is the soundness direction: withholding must not reach a leaking callee. */
+	emit("class V { long x; } V identity(V p) { return p; }"
+		 " void main() { V v; v = new V(); V r; r = identity(v); }", TARGET_WINDOWS);
+	const char *body = fn_body("bzy_user_main:");
+	ASSERT_INT(strstr(body, "call bzy_alloc") != NULL, 1);
+}
+
 static void test_bitwise_emission(void)
 {
 	/* Bitwise by a fits-imm32 constant lowers to the immediate form (no rbx
@@ -1753,6 +1777,8 @@ int main(void)
 	RUN(test_devirt_unoverridden_base_method);
 	RUN(test_escape_summary_seed);
 	RUN(test_method_monomorphic_query);
+	RUN(test_escape_interproc_stacks_nonleaking_receiver);
+	RUN(test_escape_interproc_heaps_when_callee_leaks);
 	RUN(test_bitwise_emission);
 	RUN(test_logical_emission);
 	RUN(test_mul_strength_reduction);

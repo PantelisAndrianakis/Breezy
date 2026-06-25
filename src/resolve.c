@@ -9,6 +9,7 @@
 #include "enums.h"
 #include "lexer.h"
 #include "overload.h"
+#include "grow.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,13 @@ static int g_lambda_seq;       /* Monotonic id for synthetic lambda body labels.
 
 static const char *g_cur_file;   /* File of the unit being resolved, for diagnostics. */
 static const char *g_cur_src;    /* Its source buffer, for the diagnostic line echo. */
+
+/* Every resolved body (free functions, methods, constructors, lambda bodies),
+   collected in resolution order so the whole-program escape fixpoint and the
+   per-function lowering passes can run after the entire program is resolved. */
+static Func **g_lower=NULL;
+static int    g_lower_n=0;
+static int    g_lower_cap=0;
 
 static void die(int line, const char *msg, const char *arg)
 {
@@ -6888,7 +6896,21 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	resolve_block(&st,f->body,this_class);
 	f->frame_size=sym_frame_size(&st);
 	ownership_annotate(f);
-	escape_annotate(g_types,f);
+
+	/* The escape pass and the layout passes it feeds (frame sizing depends on the
+	   stack objects escape marks) are deferred: escape now consults a whole-program
+	   summary that is not complete until every body is resolved. Collect this body
+	   and lower it in resolve_program once the program is whole. */
+	g_lower=grow_ensure(g_lower,g_lower_n,&g_lower_cap,sizeof(*g_lower));
+	g_lower[g_lower_n++]=f;
+}
+
+/* Per-function lowering, run after the interprocedural escape summaries are fixed.
+   Order preserved from the old resolve_func tail: escape marks stack objects,
+   then the frame/const/promote/range passes consume that and the resolved body. */
+static void lower_func(TypeTable *tt, Func *f)
+{
+	escape_annotate(tt,f);
 	p5_scan_block(f->body,f);   /* P5: recognize string self-accumulation loops (annotation only). */
 	frame_annotate(f);
 	constprop_annotate(f);   /* Rewrite single-assignment literal-scalar reads to the literal (frees their registers). */
@@ -6906,6 +6928,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 	g_lam_count = 0;     /* Reset the lambda registry: a process may compile more than once (the test harness). */
 	g_lambda_seq = 0;
 	g_desugar_seq = 0;
+	g_lower_n = 0;       /* Reset the deferred-lowering list (the buffer is reused across compiles). */
 	g_program_uses_avx = 0;   /* Per-program (the test harness compiles several in one process). */
 	g_program_uses_avx2 = 0;
 	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
@@ -6954,5 +6977,13 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 				}
 			}
 		}
+	}
+
+	/* The program is whole: fix the interprocedural escape summaries, then lower
+	   every body (stack-object marking + frame/const/promote/range passes). */
+	escape_solve(tt,g_lower,g_lower_n);
+	for (int i=0; i<g_lower_n; i++)
+	{
+		lower_func(tt,g_lower[i]);
 	}
 }
