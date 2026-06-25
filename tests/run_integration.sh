@@ -352,6 +352,7 @@ check timer_crash tests/samples/pass/concurrency/timer_crash.bzy   $'42'
 check_abort timer_deadlock tests/samples/fail/concurrency/timer_deadlock.bzy
 unset BZY_WORKERS
 check channel     tests/samples/pass/concurrency/channel.bzy       $'60'
+check crosscore_field tests/samples/pass/concurrency/crosscore_subclass_field.bzy $'4000000'
 check select_basic tests/samples/pass/concurrency/select_basic.bzy $'10\n99\n1\n5\nfull'
 check select_block tests/samples/pass/concurrency/select_block.bzy $'42'
 check mc_sum      tests/samples/pass/concurrency/mc_sum.bzy        $'100'

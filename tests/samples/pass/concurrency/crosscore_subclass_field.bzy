@@ -1,0 +1,108 @@
+// Regression: a subclass reached only through a base-typed channel handoff is not
+// statically marked shared, yet share_walk promotes its instances at runtime. A
+// field reassigned after the handoff must deep-share its value; otherwise a
+// confined Cell becomes reachable from two cores with a non-atomic refcount, and
+// the racing retain/release drifts the count to zero early -> use-after-free.
+//
+// The slot is written exactly once after the handoff, then left stable: both
+// breezes only read it (each iteration rebinds a held reference, churning the
+// Cell's refcount from two cores). There is no concurrent mutation of the field,
+// so the only hazard is the cross-core refcount itself - which the field-store
+// SHARED-bit barrier makes atomic. Before the fix this segfaults under multiple
+// workers; after it, the count stays balanced. Every Cell carries v = 1, so the
+// checksums are timing-independent (deterministic output).
+
+class Cell
+{
+	int v;
+
+	void init(int x)
+	{
+		v = x;
+	}
+}
+
+class Animal
+{
+	Cell peek()
+	{
+		return new Cell();
+	}
+}
+
+class Dog extends Animal
+{
+	Cell slot;
+
+	void init()
+	{
+		slot = new Cell();
+		slot.init(1);
+	}
+
+	Cell peek()
+	{
+		return slot;
+	}
+
+	void refill()
+	{
+		Cell c;
+		c = new Cell();
+		c.init(1);
+		slot = c;             // Post-handoff field store into the SHARED Dog (one shot).
+	}
+}
+
+void worker(channel<Animal> inbox, channel<int> start, channel<int> back)
+{
+	Animal a;
+	a = inbox.recv();
+	int go;
+	go = start.recv();        // Wait until main has done its single post-handoff store.
+	Cell held;
+	held = a.peek();
+	int sum;
+	sum = 0;
+	int i;
+	for (i = 0; i < 2000000; i++)
+	{
+		held = a.peek();      // Rebind the stable Cell: retain it, release the prior hold (cross-core refcount churn).
+		sum += held.v;
+	}
+
+	back.send(sum);
+}
+
+void main()
+{
+	channel<Animal> ch;
+	ch = new channel<Animal>(1);
+	channel<int> start;
+	start = new channel<int>(1);
+	channel<int> back;
+	back = new channel<int>(1);
+
+	Dog d;
+	d = new Dog();
+	d.init();
+	spawn worker(ch, start, back);
+	ch.send(d);               // share_walk(d): d + its current slot become SHARED.
+	d.refill();               // One post-handoff store; the slot is stable from here on.
+	start.send(1);            // Release the worker now that the slot is fixed.
+
+	Cell held;
+	held = d.peek();
+	int sum;
+	sum = 0;
+	int i;
+	for (i = 0; i < 2000000; i++)
+	{
+		held = d.peek();      // Same stable Cell: churn its refcount from this core too.
+		sum += held.v;
+	}
+
+	int w;
+	w = back.recv();
+	print(sum + w);           // 4000000
+}
