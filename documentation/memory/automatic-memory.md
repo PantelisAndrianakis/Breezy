@@ -8,15 +8,20 @@ In Breezy you **never write `free`**, you never think about ownership, and you s
 
 ## Layer 1: Escape analysis - the fast path
 
-The compiler analyses whether an object can outlive the scope that created it. If it **cannot** escape, the object is **allocated on the stack** - no heap allocation and no reference counting at all. This is the C-like core: the per-tick scratch objects, network packets, and temporaries a server creates by the million never touch the heap.
+The compiler analyses whether an object can outlive the scope that created it. If it **cannot** escape, the object is **allocated on the stack** - no heap allocation and no reference counting at all. This is the core: the per-tick scratch objects, network packets, and temporaries a server creates by the million never touch the heap.
+
+**Calling a method on an object does not force it onto the heap.** The analysis is *interprocedural*: it looks across the call and checks whether the callee actually lets the receiver (or an argument) escape. A method that only reads or updates its own fields leaks nothing, so the object stays on the stack even though you called methods on it - the case ordinary object-oriented code hits constantly.
 
 ```breezy
 void tick()
 {
-	Vector2f delta = new Vector2f(1.0f, 2.0f);   // Does not escape -> stack-allocated, free.
-	// No malloc, no refcount; gone at scope exit.
+	Vector2f delta = new Vector2f(1.0f, 2.0f);
+	float m = delta.length();   // length() does not let `delta` escape...
+	// ...so delta stays on the stack: no malloc, no refcount, gone at scope exit.
 }
 ```
+
+An object falls back to the heap (Layer 2) the moment it can truly outlive the frame: it is **returned**, **stored** into a field, array, or static, **captured by a closure**, sent across a [channel](../concurrency/channels.md), or passed into a call the compiler cannot pin to a single body - a **polymorphic** (overridable) method, an **interface** receiver, a **function value**, or an external function. When in doubt the compiler keeps it on the heap, so the choice is always safe.
 
 ---
 
