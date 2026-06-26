@@ -2544,6 +2544,64 @@ void cg_magic_signed(long long d, long long *M_out, int *s_out)
 	*s_out = p - 64;
 }
 
+/* Granlund-Montgomery UNSIGNED magic for a constant divisor d (>= 3, non-pow2):
+   the unsigned quotient of n by d is, when add == 0, MULHU(n, M) >> s; when add == 1
+   (the magic does not fit 64 bits), q = MULHU(n, M); q = (((n - q) >> 1) + q) >> (s-1).
+   Hacker's Delight fig. 10-8, scaled to 64-bit. The differential gate proves it
+   matches the hardware `div`. */
+void cg_magic_unsigned(unsigned long long d, unsigned long long *M_out, int *s_out, int *add_out)
+{
+	unsigned long long two63 = 0x8000000000000000ULL;
+	unsigned long long nc = (unsigned long long)(-1) - (0ULL - d) % d;
+	int p = 63;
+	int a = 0;
+	unsigned long long q1 = two63 / nc, r1 = two63 - q1 * nc;
+	unsigned long long q2 = (two63 - 1) / d, r2 = (two63 - 1) - q2 * d;
+	unsigned long long delta;
+	do
+	{
+		p++;
+		if (r1 >= nc - r1)
+		{
+			q1 = 2 * q1 + 1;
+			r1 = 2 * r1 - nc;
+		}
+		else
+		{
+			q1 = 2 * q1;
+			r1 = 2 * r1;
+		}
+
+		if (r2 + 1 >= d - r2)
+		{
+			if (q2 >= two63 - 1)
+			{
+				a = 1;
+			}
+
+			q2 = 2 * q2 + 1;
+			r2 = 2 * r2 + 1 - d;
+		}
+		else
+		{
+			if (q2 >= two63)
+			{
+				a = 1;
+			}
+
+			q2 = 2 * q2;
+			r2 = 2 * r2 + 1;
+		}
+
+		delta = d - 1 - r2;
+	}
+	while (p < 128 && (q1 < delta || (q1 == delta && r1 == 0)));
+
+	*M_out = q2 + 1;
+	*s_out = p - 64;
+	*add_out = a;
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 {
 	if (e->type.kind==TY_STRING)
@@ -2778,6 +2836,54 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 		{
 			cg_emit(cg,"    imul rdx, rdx, %lld", d);    /* q * d. */
 			cg_emit(cg,"    sub rbx, rdx");              /* n - q*d = remainder (sign of n). */
+			cg_emit(cg,"    mov rax, rbx");
+		}
+
+		cg_extend_int_result(cg, e, want_low32);
+		return;
+	}
+
+	/* Unsigned variant: a constant non-power-of-two UNSIGNED divisor uses the unsigned
+	   magic (MULHU + shifts, with the add-correction when the magic overflows 64 bits)
+	   instead of `div`. The dividend is zero-extended in rax. */
+	if ((e->op==TOKEN_SLASH || e->op==TOKEN_PERCENT)
+			&& e->rhs->kind==EX_INT
+			&& e->rhs->int_val >= 3 && e->rhs->int_val <= 0x7FFFFFFFLL
+			&& (e->rhs->int_val & (e->rhs->int_val - 1)) != 0
+			&& (ty_is_unsigned(e->lhs->type.kind) || ty_is_unsigned(e->rhs->type.kind)))
+	{
+		unsigned long long d = (unsigned long long)e->rhs->int_val;
+		unsigned long long M;
+		int s;
+		int add;
+		cg_magic_unsigned(d, &M, &s, &add);
+		cg_emit(cg,"    mov rbx, rax");                  /* n preserved. */
+		cg_emit(cg,"    mov rdx, %llu", M);              /* Magic multiplier. */
+		cg_emit(cg,"    mul rdx");                        /* rdx:rax = n * M (unsigned); high half -> rdx (= q). */
+		if (add)
+		{
+			cg_emit(cg,"    mov rax, rbx");
+			cg_emit(cg,"    sub rax, rdx");              /* n - q. */
+			cg_emit(cg,"    shr rax, 1");                /* (n - q) >> 1. */
+			cg_emit(cg,"    add rdx, rax");              /* + q. */
+			if (s > 1)
+			{
+				cg_emit(cg,"    shr rdx, %d", s - 1);
+			}
+		}
+		else if (s > 0)
+		{
+			cg_emit(cg,"    shr rdx, %d", s);            /* q >>= s. */
+		}
+
+		if (e->op==TOKEN_SLASH)
+		{
+			cg_emit(cg,"    mov rax, rdx");              /* Quotient. */
+		}
+		else
+		{
+			cg_emit(cg,"    imul rdx, rdx, %lld", (long long)d);   /* q * d (low 64 bits = exact here). */
+			cg_emit(cg,"    sub rbx, rdx");              /* n - q*d = remainder. */
 			cg_emit(cg,"    mov rax, rbx");
 		}
 

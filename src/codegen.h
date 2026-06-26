@@ -110,6 +110,11 @@ int  cg_label(Codegen *cg);
    SRA(MULHI_S(n, M) [+ n when M < 0], s) + (n >>> 63). Shared by the emitter and
    the IR backend so both lower constant division identically. */
 void cg_magic_signed(long long d, long long *M_out, int *s_out);
+
+/* Granlund-Montgomery UNSIGNED magic (M, shift s, and an add flag) for a constant
+   divisor d (>= 3, non-power-of-two). add == 0: q = MULHU(n, M) >> s. add == 1:
+   q = MULHU(n, M); q = (((n - q) >> 1) + q) >> (s - 1). Shared by both backends. */
+void cg_magic_unsigned(unsigned long long d, unsigned long long *M_out, int *s_out, int *add_out);
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count);
 
 /* Emit one per-function exception record (PC range, frame size, name, object-local

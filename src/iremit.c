@@ -620,7 +620,8 @@ static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
    (cg_binary), so both backends lower constant division identically. */
 static int magic_div_ok(IROp op, TypeKind type, long long d)
 {
-	return (op == IR_DIV || op == IR_MOD) && !ty_is_unsigned(type)
+	(void)type;   /* Signed and unsigned both lower via magic; emit_divmod_magic branches. */
+	return (op == IR_DIV || op == IR_MOD)
 		   && d >= 3 && d <= 0x7FFFFFFFLL && (d & (d - 1)) != 0;
 }
 
@@ -634,9 +635,7 @@ static int magic_div_ok(IROp op, TypeKind type, long long d)
 static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
 {
 	Codegen *cg = e->cg;
-	long long M;
-	int s;
-	cg_magic_signed(d, &M, &s);
+	int uns = ty_is_unsigned(in->type);
 
 	char nloc[40];
 	int r = ra_vreg_reg(e->a, in->a);
@@ -649,28 +648,59 @@ static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
 		snprintf(nloc, sizeof nloc, "[rbp - %d]", e->spill_base + ra_vreg_slot(e->a, in->a) * 8);
 	}
 
-	cg_emit(cg, "    mov rax, %s", nloc);          /* n -> rax. */
-	cg_emit(cg, "    mov rdx, %lld", M);           /* Magic multiplier. */
-	cg_emit(cg, "    imul rdx");                    /* rdx:rax = n * M (signed); high half -> rdx. */
-	if (M < 0)
+	if (uns)
 	{
-		cg_emit(cg, "    add rdx, %s", nloc);      /* M < 0: q += n. */
+		unsigned long long M;
+		int s;
+		int add;
+		cg_magic_unsigned((unsigned long long)d, &M, &s, &add);
+		cg_emit(cg, "    mov rax, %s", nloc);          /* n -> rax. */
+		cg_emit(cg, "    mov rdx, %llu", M);           /* Magic multiplier. */
+		cg_emit(cg, "    mul rdx");                     /* rdx:rax = n * M (unsigned); high half -> rdx (= q). */
+		if (add)
+		{
+			cg_emit(cg, "    mov rax, %s", nloc);
+			cg_emit(cg, "    sub rax, rdx");           /* n - q. */
+			cg_emit(cg, "    shr rax, 1");             /* (n - q) >> 1. */
+			cg_emit(cg, "    add rdx, rax");           /* + q. */
+			if (s > 1)
+			{
+				cg_emit(cg, "    shr rdx, %d", s - 1);
+			}
+		}
+		else if (s > 0)
+		{
+			cg_emit(cg, "    shr rdx, %d", s);         /* q >>= s. */
+		}
 	}
-
-	if (s > 0)
+	else
 	{
-		cg_emit(cg, "    sar rdx, %d", s);         /* q >>= s. */
-	}
+		long long M;
+		int s;
+		cg_magic_signed(d, &M, &s);
+		cg_emit(cg, "    mov rax, %s", nloc);          /* n -> rax. */
+		cg_emit(cg, "    mov rdx, %lld", M);           /* Magic multiplier. */
+		cg_emit(cg, "    imul rdx");                    /* rdx:rax = n * M (signed); high half -> rdx. */
+		if (M < 0)
+		{
+			cg_emit(cg, "    add rdx, %s", nloc);      /* M < 0: q += n. */
+		}
 
-	cg_emit(cg, "    mov rax, %s", nloc);          /* n. */
-	cg_emit(cg, "    shr rax, 63");                /* Sign bit of n. */
-	cg_emit(cg, "    add rdx, rax");               /* q += sign bit -> truncate toward zero. */
+		if (s > 0)
+		{
+			cg_emit(cg, "    sar rdx, %d", s);         /* q >>= s. */
+		}
+
+		cg_emit(cg, "    mov rax, %s", nloc);          /* n. */
+		cg_emit(cg, "    shr rax, 63");                /* Sign bit of n. */
+		cg_emit(cg, "    add rdx, rax");               /* q += sign bit -> truncate toward zero. */
+	}
 
 	if (in->op == IR_MOD)
 	{
-		cg_emit(cg, "    imul rdx, rdx, %lld", d);  /* q * d. */
+		cg_emit(cg, "    imul rdx, rdx, %lld", d);  /* q * d (low 64 bits = exact for the remainder). */
 		cg_emit(cg, "    mov rax, %s", nloc);
-		cg_emit(cg, "    sub rax, rdx");             /* n - q*d = remainder (sign of n). */
+		cg_emit(cg, "    sub rax, rdx");             /* n - q*d = remainder. */
 	}
 
 	const char *Rd = dst_reg(e, in->dst);

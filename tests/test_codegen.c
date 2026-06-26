@@ -803,9 +803,10 @@ static void test_magic_division(void)
 	emit("void run(long n, long d) { long a; a = n / d; print(\"\" + a); } void main() { run(10, 3); }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "idiv") != NULL, 1);
 
-	/* An unsigned constant divisor keeps idiv/div (magic is signed-only for now). */
+	/* An unsigned constant non-pow2 divisor uses the unsigned magic (mul + shifts),
+	   so no div/idiv remains in main's body. */
 	emit("void main() { uint n; n = 100u; uint a; a = n / 3u; }", TARGET_LINUX);
-	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "div") != NULL, 1);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "div") == NULL, 1);
 }
 
 static void test_branch_fusion(void)
