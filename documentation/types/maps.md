@@ -138,6 +138,7 @@ The guarantee is **per operation**: a check-then-act sequence like `if (!m.conta
 - **`.size` is a field**, not a method.
 - **`getKeys`/`getValues`/`getEntries` return owned snapshots** - iterating them is safe.
 - **Use `containsKey` to test membership** (it replaced an older `has`).
+- **`Map` is accepted as a PascalCase spelling** of `map`, so it reads like the other generic containers (`List`, `TreeMap`); `Map<K,V>` and `map<K,V>` are interchangeable.
 
 ---
 

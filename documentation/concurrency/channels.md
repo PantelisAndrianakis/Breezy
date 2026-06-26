@@ -93,6 +93,7 @@ select
 - **Pass channels to spawned workers** as arguments (up to four arguments of any type).
 - **Any value can cross a channel safely** - objects, strings, [arrays](../types/arrays.md), [collections](../types/collections.md), and [maps](../types/maps.md) included. The runtime marks the whole object graph shared at the handoff, and shared containers synchronize their operations automatically.
 - **Prefer channels over shared mutable state** for cross-breeze communication - sharing is safe, but message passing stays the faster, clearer architecture.
+- **`Channel` is accepted as a PascalCase spelling** of `channel`; `Channel<T>` and `channel<T>` are interchangeable.
 
 ---
 

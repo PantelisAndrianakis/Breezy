@@ -22,6 +22,7 @@ static const struct
 	{"ulong",TOKEN_ULONG},{"bool",TOKEN_BOOL},
 	{"float",TOKEN_FLOAT},{"double",TOKEN_DOUBLE},{"f64x2",TOKEN_F64X2},{"f32x4",TOKEN_F32X4},{"i32x4",TOKEN_I32X4},{"f64x4",TOKEN_F64X4},{"f32x8",TOKEN_F32X8},{"i32x8",TOKEN_I32X8},{"string",TOKEN_STRING},
 	{"map",TOKEN_MAP},{"channel",TOKEN_CHANNEL},
+	{"Map",TOKEN_MAP},{"Channel",TOKEN_CHANNEL},   /* PascalCase aliases: the container generics read as classes (List/TreeMap). */
 	{"and",TOKEN_AND},{"or",TOKEN_OR},{"xor",TOKEN_XOR},{"not",TOKEN_NOT},
 	{"true",TOKEN_TRUE},{"false",TOKEN_FALSE},{"null",TOKEN_NULL},{NULL,0}
 };

@@ -18,7 +18,7 @@ class Chat
 	int port;                 // Discovery/chat port every client listens on.
 	int id;                   // Random per-run id, so we can ignore our own broadcasts.
 	string name;
-	map<int, string> peers;   // Known peer ids -> names; a map is auto-shared across breezes.
+	Map<int, string> peers;   // Known peer ids -> names; a Map is auto-shared across breezes.
 
 	// Broadcast one tab-delimited frame to every client on the network.
 	void send(string frame)
@@ -96,7 +96,7 @@ void main()
 	c.port = port;
 	c.id = Random.get(1, 2000000000);
 	c.name = name;
-	c.peers = new map<int, string>();
+	c.peers = new Map<int, string>();
 
 	spawn receiver(c);   // Listen for peers and messages in the background.
 	c.announce();        // Tell the network we are here.
