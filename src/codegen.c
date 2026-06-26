@@ -1476,6 +1476,36 @@ static int cg_sr_addr(Codegen *cg, Expr *e)
    (lhs) then the index (rhs); clobbers rax/rcx/rdx. An out-of-range index calls
    bzy_oob (no return). xmm0 is untouched on the in-range path, so a float/double
    value being stored survives address computation. */
+/* Emit a kept array bounds check where the index is already in cg_iarg(0) and the
+   base in rax. A constant-length array (anno_len_const, set by bce.c for a
+   `new T[N]` never re-bound on this path) compares the index against the immediate
+   N - no [base+24] length load on the hot path - matching the folded fast path and
+   Go's immediate slice-length compare; otherwise the length is loaded from [rax+24].
+   The non-constant path is byte-identical to the inline form it replaces. The
+   in-bounds jump skips the bzy_oob slow path, which never returns. */
+static void cg_emit_index_bounds(Codegen *cg, Expr *e)
+{
+	int ok = cg_label(cg);
+	int pc = cg_label(cg);
+	if (e->anno_len_const > 0)
+	{
+		cg_emit(cg,"    cmp %s, %lld", cg_iarg(cg, 0), e->anno_len_const);   /* Unsigned: catches negative and >= length. */
+		cg_emit(cg,"    jb .L%d", ok);
+		cg_emit(cg,"    mov %s, %lld", cg_iarg(cg, 1), e->anno_len_const);   /* Length, for the oob report only. */
+	}
+	else
+	{
+		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
+		cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
+		cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
+	}
+	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
+	cg_emit(cg,".L%d:", pc);
+	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
+	cg_emit(cg,"    call bzy_oob");        /* Never returns. */
+	cg_emit(cg,".L%d:", ok);
+}
+
 static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	if (cg_sr_addr(cg, e))
@@ -1621,16 +1651,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_expr(cg,tt,e->lhs);                 /* Base -> rax (rematerialized). */
 		if (!safe)
 		{
-			cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
-			int ok = cg_label(cg);
-			int pc = cg_label(cg);
-			cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
-			cg_emit(cg,"    jb .L%d", ok);     /* Unsigned: catches negative and >= length. */
-			cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
-			cg_emit(cg,".L%d:", pc);
-			cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
-			cg_emit(cg,"    call bzy_oob");
-			cg_emit(cg,".L%d:", ok);
+			cg_emit_index_bounds(cg, e);
 		}
 
 		cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));
@@ -1644,16 +1665,7 @@ static void cg_index_addr(Codegen *cg, TypeTable *tt, Expr *e)
 	cg_temp_pop(cg);             /* base */
 	if (!safe)
 	{
-		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
-		int ok = cg_label(cg);
-		int pc = cg_label(cg);
-		cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
-		cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
-		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
-		cg_emit(cg,".L%d:", pc);               /* The throw-site PC (within this function/try). */
-		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
-		cg_emit(cg,"    call bzy_oob");        /* rcx=index, rdx=length, r8=pc, r9=rbp; never returns. */
-		cg_emit(cg,".L%d:", ok);
+		cg_emit_index_bounds(cg, e);
 	}
 
 	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));   /* e->type is the element type. */
@@ -1773,16 +1785,7 @@ static void cg_index_addr_based(Codegen *cg, TypeTable *tt, Expr *e)
 
 	if (!safe)
 	{
-		cg_emit(cg,"    mov %s, [rax + 24]", cg_iarg(cg, 1)); /* Length. */
-		int ok = cg_label(cg);
-		int pc = cg_label(cg);
-		cg_emit(cg,"    cmp %s, %s", cg_iarg(cg, 0), cg_iarg(cg, 1));
-		cg_emit(cg,"    jb .L%d", ok);         /* Unsigned: catches negative and >= length. */
-		cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 2), pc);
-		cg_emit(cg,".L%d:", pc);
-		cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 3));
-		cg_emit(cg,"    call bzy_oob");        /* Never returns. */
-		cg_emit(cg,".L%d:", ok);
+		cg_emit_index_bounds(cg, e);
 	}
 
 	cg_emit(cg,"    lea rbx, [rax + %s*%d + 32]", cg_iarg(cg, 0), cg_elem_stride(e->type.kind));

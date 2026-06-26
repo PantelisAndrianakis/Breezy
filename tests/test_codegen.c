@@ -798,6 +798,28 @@ static void test_branch_fusion(void)
 	ASSERT_INT(strstr(g_asm, "cmp r12d, 3\n    jge") != NULL, 1);
 }
 
+static void test_const_length_bounds_uses_immediate(void)
+{
+	/* A constant-length array (new long[32]) indexed by a data-dependent REG-const
+	   expression (sp - 1, sp computed from a runtime load so its range is unknown)
+	   keeps its bounds check, but compares the index against the immediate length
+	   32 - NOT a [base + 24] runtime length load. This is the interpreter
+	   stack[sp - 1] shape; the immediate compare matches Go's slice-length compare
+	   and drops a dependent load from the hot path. Before the fix the folded fast
+	   path took only a bare-register index, so a REG-const index fell to the generic
+	   path which always loaded [base + 24]. */
+	emit("void main()\n"
+		 "{\n"
+		 "	long[] a;\n"
+		 "	a = new long[32];\n"
+		 "	int sp;\n"
+		 "	sp = (int)a[0] + 3;\n"
+		 "	a[sp - 1] = a[sp - 1] + 5;\n"
+		 "	print(\"\" + a[5]);\n"
+		 "}\n", TARGET_WINDOWS);
+	ASSERT_INT(strstr(g_asm, "cmp rcx, 32") != NULL, 1);
+}
+
 static void test_unroll_folds_derived_constant(void)
 {
 	/* cb = u * 8 inside an unrolled 8-trip loop: u is a per-copy constant, so
@@ -1823,6 +1845,7 @@ int main(void)
 	RUN(test_inplace_mac);
 	RUN(test_register_index_addr);
 	RUN(test_boundscheck_cse_repeated_index);
+	RUN(test_const_length_bounds_uses_immediate);
 	RUN(test_foreach_base_hoist);
 	RUN(test_map_foreach_snapshot_handle);
 	RUN(test_shared_set_closure);
