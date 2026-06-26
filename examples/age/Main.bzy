@@ -17,7 +17,6 @@ class AgeCalculator
 		{
 			years = years - 1;
 		}
-		
 		return years;
 	}
 }
