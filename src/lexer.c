@@ -214,6 +214,40 @@ static char next_ch(Lexer *l)
 
 /* Finish a float literal whose mantissa already occupies t->text[0..i): scan an
    optional exponent (e[+/-]?digits) and an optional 'f' suffix, then mark it. */
+/* True if c is a digit of the given base (10 decimal, 16 hex, 2 binary). */
+static int is_base_digit(char c, int base)
+{
+	if (base == 16)
+	{
+		return isxdigit((unsigned char)c) != 0;
+	}
+
+	if (base == 2)
+	{
+		return c == '0' || c == '1';
+	}
+
+	return isdigit((unsigned char)c) != 0;
+}
+
+/* Append a run of base digits into buf starting at i, skipping `_` separators
+   that sit between two digits (so `1_000` and `0xDEAD_BEEF` read as the digits
+   alone). Returns the new length. A `_` not followed by a digit ends the run. */
+static int scan_digits(Lexer *l, char *buf, int i, int base)
+{
+	while (i < 255 && (is_base_digit(peek_ch(l), base)
+					   || (peek_ch(l) == '_' && is_base_digit(l->src[l->pos + 1], base))))
+	{
+		char dc = next_ch(l);
+		if (dc != '_')
+		{
+			buf[i++] = dc;
+		}
+	}
+
+	return i;
+}
+
 static Token finish_float(Lexer *l, Token *t, int i)
 {
 	if (peek_ch(l) == 'e' || peek_ch(l) == 'E')
@@ -224,10 +258,7 @@ static Token finish_float(Lexer *l, Token *t, int i)
 			t->text[i++] = next_ch(l);
 		}
 
-		while (isdigit((unsigned char)peek_ch(l)) && i < 255)
-		{
-			t->text[i++] = next_ch(l);
-		}
+		i = scan_digits(l, t->text, i, 10);
 	}
 
 	t->text[i] = '\0';
@@ -341,10 +372,7 @@ Token lexer_next(Lexer *l)
 		{
 			t.text[i++] = next_ch(l);   /* The '0'. */
 			t.text[i++] = next_ch(l);   /* The 'x'/'X'. */
-			while (isxdigit((unsigned char)peek_ch(l)) && i < 255)
-			{
-				t.text[i++] = next_ch(l);
-			}
+			i = scan_digits(l, t.text, i, 16);
 
 			t.text[i] = '\0';
 			t.suffix[0] = '\0';
@@ -356,10 +384,7 @@ Token lexer_next(Lexer *l)
 		{
 			t.text[i++] = next_ch(l);   /* The '0'. */
 			t.text[i++] = next_ch(l);   /* The 'b'/'B'. */
-			while ((peek_ch(l) == '0' || peek_ch(l) == '1') && i < 255)
-			{
-				t.text[i++] = next_ch(l);
-			}
+			i = scan_digits(l, t.text, i, 2);
 
 			t.text[i] = '\0';
 			t.suffix[0] = '\0';
@@ -367,20 +392,14 @@ Token lexer_next(Lexer *l)
 			return t;
 		}
 
-		while (isdigit((unsigned char)peek_ch(l)) && i < 255)
-		{
-			t.text[i++] = next_ch(l);
-		}
+		i = scan_digits(l, t.text, i, 10);
 
 		if (peek_ch(l) == '.' || peek_ch(l) == 'e' || peek_ch(l) == 'E')
 		{
 			if (peek_ch(l) == '.')
 			{
 				t.text[i++] = next_ch(l);
-				while (isdigit((unsigned char)peek_ch(l)) && i < 255)
-				{
-					t.text[i++] = next_ch(l);
-				}
+				i = scan_digits(l, t.text, i, 10);
 			}
 
 			return finish_float(l, &t, i);

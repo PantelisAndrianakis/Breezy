@@ -1,0 +1,5 @@
+// A `_` separator must sit between digits; a trailing one is not part of the number.
+void main()
+{
+	print(1_);
+}

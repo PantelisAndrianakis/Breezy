@@ -120,9 +120,14 @@ print(flags);        // 0
 
 Integer literals may be written in **hexadecimal** (`0x`/`0X`) or **binary** (`0b`/`0B`) as well as decimal; a bare leading zero stays decimal (there is no octal).
 
+A `_` may be used as a **digit separator** anywhere between two digits of any numeric literal (decimal, hex, binary, or floating-point) to group them for readability; it has no effect on the value. A `_` that is not between two digits - leading, trailing, or doubled - is not part of the number.
+
 ```breezy
 print(0xFF);         // 255
 print(0b1010);       // 10
+print(1_000_000);    // 1000000
+print(0xDE_AD);      // 57005
+print(0b1010_0101);  // 165
 ```
 
 ---

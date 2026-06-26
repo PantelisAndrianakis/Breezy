@@ -82,6 +82,8 @@ check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
 check nest_cmt    tests/samples/pass/basics/nested_comments.bzy "7"
 check str_escapes tests/samples/pass/basics/string_escapes.bzy  "ABCDE"
 check_fail nul_escape tests/samples/fail/basics/nul_escape.bzy
+check digit_sep   tests/samples/pass/basics/digit_separators.bzy $'1000000\n57005\n165\n1000.5'
+check_fail trailing_us tests/samples/fail/basics/trailing_underscore.bzy
 check simd_pack   tests/samples/pass/simd/pack_lanes.bzy    $'3.5\n7.25\n10.75'
 check simd_elemop tests/samples/pass/simd/elementwise.bzy   $'4.5\n10\n4.5\n16\n2\n4'
 check simd_dot    tests/samples/pass/simd/dot_load.bzy       $'72\n3\n10'

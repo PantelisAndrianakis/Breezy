@@ -1,0 +1,8 @@
+// Digit separators: `_` may sit between digits in any numeric literal.
+void main()
+{
+	print(1_000_000);    // 1000000
+	print(0xDE_AD);      // 57005
+	print(0b1010_0101);  // 165
+	print(1_000.5);      // 1000.5
+}
