@@ -9,11 +9,13 @@
    forces a re-read, which tests use to flip BZY_IR around a single case. */
 static int g_ir_cached = -1;
 static int g_ir_regions_cached = -1;
+static int g_ir_calls_cached = -1;
 
 void bzy_config_reset_cache(void)
 {
 	g_ir_cached = -1;
 	g_ir_regions_cached = -1;
+	g_ir_calls_cached = -1;
 }
 
 int bzy_ir_enabled(void)
@@ -41,6 +43,21 @@ int bzy_ir_regions_enabled(void)
 	}
 
 	return g_ir_regions_cached && bzy_ir_enabled();
+}
+
+int bzy_ir_calls_enabled(void)
+{
+	if (g_ir_calls_cached < 0)
+	{
+		/* Default OFF (experimental). When set, an IR region may contain a direct
+		   call (IR_CALL), so call-containing loops get the IR allocator instead of
+		   the emitter fallback. Develop-behind-flag: the default build is unchanged
+		   until this is differentially proven and flipped on. */
+		const char *v = getenv("BZY_IR_CALLS");
+		g_ir_calls_cached = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+	}
+
+	return g_ir_calls_cached && bzy_ir_enabled();
 }
 
 /* Append each double-quoted token in `val` to the grown string array `*arr`

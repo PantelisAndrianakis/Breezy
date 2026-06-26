@@ -21,6 +21,7 @@ typedef enum
 	IR_BR,        /* Unconditional jump to blk_true. */
 	IR_BRCOND,    /* if a != 0 jump blk_true else blk_false. */
 	IR_SEL,       /* dst = (a <cmp_op> b) ? c : d - a branchless select (cmov). */
+	IR_CALL,      /* dst = call call_label(call_args...); clobbers all caller-saved registers. */
 	IR_RET        /* return a (IR_NO_REG for void). */
 } IROp;
 
@@ -41,6 +42,9 @@ typedef struct
 	int      blk_true;    /* IR_BR/IR_BRCOND target block index. */
 	int      blk_false;   /* IR_BRCOND else target block index. */
 	int      line;        /* Source line, for diagnostics. */
+	const char *call_label;  /* IR_CALL: mangled callee symbol. */
+	IRReg   *call_args;      /* IR_CALL: argument vregs in ABI order (arena-owned). */
+	int      call_argc;      /* IR_CALL: argument count. */
 } IRInstr;
 
 typedef struct

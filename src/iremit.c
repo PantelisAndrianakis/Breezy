@@ -1298,6 +1298,12 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 
 		emit_epilogue(e);
 		break;
+	case IR_CALL:
+		/* Produced only under BZY_IR_CALLS (Lever 2, in progress); marshalling is not
+		   implemented yet and lowering never emits IR_CALL otherwise. Abort loudly
+		   rather than silently miscompile if that invariant is ever broken. */
+		fprintf(stderr, "internal error: IR_CALL reached iremit without marshalling support.\n");
+		abort();
 	default:
 		break;
 	}

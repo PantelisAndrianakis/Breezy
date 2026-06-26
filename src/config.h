@@ -49,6 +49,11 @@ int bzy_ir_enabled(void);
    backend itself is disabled. */
 int bzy_ir_regions_enabled(void);
 
+/* 1 if an IR region may contain a direct function call (IR_CALL). Default OFF
+   (experimental); set BZY_IR_CALLS=1 to enable. Always 0 when the IR backend is
+   disabled. Develop-behind-flag for Lever 2 (IR call lowering). */
+int bzy_ir_calls_enabled(void);
+
 /* Discard the cached env flags so the next bzy_ir_*_enabled() call re-reads the
    environment. Used by tests to toggle BZY_IR around a single case. */
 void bzy_config_reset_cache(void);
