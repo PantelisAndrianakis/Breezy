@@ -2502,6 +2502,48 @@ static void cg_eval_low32_operand(Codegen *cg, TypeTable *tt, Expr *operand, int
 	cg_expr(cg, tt, operand);
 }
 
+/* Granlund-Montgomery signed magic number for a positive constant divisor d
+   (d >= 3, not a power of two). Produces M (the multiplier) and the post-shift s
+   such that, for a signed dividend n, the quotient is
+       q = SRA(MULHI_S(n, M) [+ n when M < 0], s) + (n >>> 63).
+   The textbook algorithm (Hacker's Delight, fig. 10-1); the differential gate
+   proves it agrees with idiv bit-for-bit across the sign edge cases. */
+static void cg_magic_signed(long long d, long long *M_out, int *s_out)
+{
+	unsigned long long ad = (unsigned long long)d;          /* d > 0 here. */
+	unsigned long long two63 = 0x8000000000000000ULL;
+	unsigned long long anc = two63 - 1 - two63 % ad;        /* |nc|. */
+	int p = 63;
+	unsigned long long q1 = two63 / anc, r1 = two63 - q1 * anc;
+	unsigned long long q2 = two63 / ad,  r2 = two63 - q2 * ad;
+	unsigned long long delta;
+	do
+	{
+		p++;
+		q1 += q1;
+		r1 += r1;
+		if (r1 >= anc)
+		{
+			q1++;
+			r1 -= anc;
+		}
+
+		q2 += q2;
+		r2 += r2;
+		if (r2 >= ad)
+		{
+			q2++;
+			r2 -= ad;
+		}
+
+		delta = ad - r2;
+	}
+	while (q1 < delta || (q1 == delta && r1 == 0));
+
+	*M_out = (long long)(q2 + 1);
+	*s_out = p - 64;
+}
+
 static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 {
 	if (e->type.kind==TY_STRING)
@@ -2691,6 +2733,52 @@ static void cg_binary(Codegen *cg, TypeTable *tt, Expr *e, int want_low32)
 			cg_emit(cg,"    add rax, rdx");
 			cg_emit(cg,"    and rax, %lld", d - 1);
 			cg_emit(cg,"    sub rax, rdx");
+		}
+
+		cg_extend_int_result(cg, e, want_low32);
+		return;
+	}
+
+	/* Strength-reduce '/' or '%' by a positive non-power-of-two literal: a multiply
+	   by a precomputed magic constant plus shifts replaces idiv (20-40 cycles, blocks
+	   the divider unit) with ~5 cycles. Signed dividends only (unsigned keeps idiv);
+	   the divisor is bounded to imm32 so the remainder reconstruction `imul r, r, d`
+	   stays an immediate. The dividend is in rax (sign-extended for an int). */
+	if ((e->op==TOKEN_SLASH || e->op==TOKEN_PERCENT)
+			&& e->rhs->kind==EX_INT
+			&& e->rhs->int_val >= 3 && e->rhs->int_val <= 0x7FFFFFFFLL
+			&& (e->rhs->int_val & (e->rhs->int_val - 1)) != 0
+			&& !ty_is_unsigned(e->lhs->type.kind) && !ty_is_unsigned(e->rhs->type.kind))
+	{
+		long long d = e->rhs->int_val;
+		long long M;
+		int s;
+		cg_magic_signed(d, &M, &s);
+		cg_emit(cg,"    mov rbx, rax");                  /* n preserved in rbx (the idiv divisor scratch reg, free here). */
+		cg_emit(cg,"    mov rdx, %lld", M);              /* Magic multiplier. */
+		cg_emit(cg,"    imul rdx");                       /* rdx:rax = n * M (signed); high half -> rdx. */
+		if (M < 0)
+		{
+			cg_emit(cg,"    add rdx, rbx");              /* M < 0: q += n. */
+		}
+
+		if (s > 0)
+		{
+			cg_emit(cg,"    sar rdx, %d", s);            /* q >>= s (arithmetic). */
+		}
+
+		cg_emit(cg,"    mov rax, rbx");
+		cg_emit(cg,"    shr rax, 63");                   /* Sign bit of n (0 or 1). */
+		cg_emit(cg,"    add rdx, rax");                  /* q += sign bit -> truncates toward zero. */
+		if (e->op==TOKEN_SLASH)
+		{
+			cg_emit(cg,"    mov rax, rdx");              /* Quotient. */
+		}
+		else
+		{
+			cg_emit(cg,"    imul rdx, rdx, %lld", d);    /* q * d. */
+			cg_emit(cg,"    sub rbx, rdx");              /* n - q*d = remainder (sign of n). */
+			cg_emit(cg,"    mov rax, rbx");
 		}
 
 		cg_extend_int_result(cg, e, want_low32);

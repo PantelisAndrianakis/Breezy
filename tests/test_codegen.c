@@ -776,9 +776,36 @@ static void test_div_strength_reduction(void)
 	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
 	ASSERT_INT(strstr(g_asm, "shr rax, 2") != NULL, 1);
 
-	/* A non-power-of-two constant divisor still uses idiv (general path). */
-	emit("void main() { int n; n = 100; int a; a = n / 3; }", TARGET_LINUX);
+	/* A non-power-of-two constant divisor lowers to a magic-number multiply, not
+	   idiv (see test_magic_division for the full shape and the differential proof). */
+	emit("void main() { long n; n = 100; long a; a = n / 3; }", TARGET_LINUX);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "imul") != NULL, 1);
+}
+
+static void test_magic_division(void)
+{
+	/* '/' by a non-power-of-two constant: a signed magic multiply (imul) + shift,
+	   no idiv. The dividend is saved in rbx (the idiv scratch reg, free here), the
+	   high half lands in rdx, and the sign bit corrects toward-zero truncation. */
+	emit("void main() { long n; n = 1234567; long a; a = n / 7; }", TARGET_LINUX);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "mov rbx, rax") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "imul rdx") != NULL, 1);
+	ASSERT_INT(strstr(g_asm, "shr rax, 63") != NULL, 1);
+
+	/* '%' by a non-power-of-two constant: the magic quotient, then n - q*d. */
+	emit("void main() { long n; n = 1234567; long a; a = n % 100; }", TARGET_LINUX);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "idiv") == NULL, 1);
+	ASSERT_INT(strstr(g_asm, "imul rdx, rdx, 100") != NULL, 1);
+
+	/* A runtime (non-constant) divisor keeps idiv. */
+	emit("void run(long n, long d) { long a; a = n / d; print(\"\" + a); } void main() { run(10, 3); }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "idiv") != NULL, 1);
+
+	/* An unsigned constant divisor keeps idiv/div (magic is signed-only for now). */
+	emit("void main() { uint n; n = 100u; uint a; a = n / 3u; }", TARGET_LINUX);
+	ASSERT_INT(strstr(fn_body("bzy_user_main:"), "div") != NULL, 1);
 }
 
 static void test_branch_fusion(void)
@@ -1854,6 +1881,7 @@ int main(void)
 	RUN(test_subclass_declared_before_parent);
 	RUN(test_map_compound_lowering);
 	RUN(test_div_strength_reduction);
+	RUN(test_magic_division);
 	RUN(test_branch_fusion);
 	RUN(test_divisibility_test);
 	RUN(test_unroll_folds_derived_constant);
