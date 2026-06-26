@@ -2508,7 +2508,7 @@ static void cg_eval_low32_operand(Codegen *cg, TypeTable *tt, Expr *operand, int
        q = SRA(MULHI_S(n, M) [+ n when M < 0], s) + (n >>> 63).
    The textbook algorithm (Hacker's Delight, fig. 10-1); the differential gate
    proves it agrees with idiv bit-for-bit across the sign edge cases. */
-static void cg_magic_signed(long long d, long long *M_out, int *s_out)
+void cg_magic_signed(long long d, long long *M_out, int *s_out)
 {
 	unsigned long long ad = (unsigned long long)d;          /* d > 0 here. */
 	unsigned long long two63 = 0x8000000000000000ULL;

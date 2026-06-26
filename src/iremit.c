@@ -613,6 +613,80 @@ static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
 	finish_dst(e, in->dst);
 }
 
+/* 1 if a DIV/MOD by the constant d should use the magic-multiply lowering instead
+   of idiv: a signed, positive, non-power-of-two divisor in [3, 2^31] (bounded so the
+   remainder's `imul r, r, d` stays an imm32). Power-of-two divisors take the shift
+   path; unsigned, negative, and runtime divisors keep idiv. Mirrors the emitter
+   (cg_binary), so both backends lower constant division identically. */
+static int magic_div_ok(IROp op, TypeKind type, long long d)
+{
+	return (op == IR_DIV || op == IR_MOD) && !ty_is_unsigned(type)
+		   && d >= 3 && d <= 0x7FFFFFFFLL && (d & (d - 1)) != 0;
+}
+
+/* dst = a / d or a % d for a positive non-power-of-two constant d, via a
+   Granlund-Montgomery magic multiply rather than idiv (~5 vs 20-40 cycles). Uses
+   only rax and rdx - the registers idiv already clobbers - plus the dividend's own
+   home, which survives the imul: its register (a div-bearing function does not
+   allocate rdx, and rax is never allocatable, so the dividend's register is neither)
+   or its spill slot, read back via a memory operand. So no extra scratch register is
+   needed and the allocator's clobber model is unchanged. */
+static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
+{
+	Codegen *cg = e->cg;
+	long long M;
+	int s;
+	cg_magic_signed(d, &M, &s);
+
+	char nloc[40];
+	int r = ra_vreg_reg(e->a, in->a);
+	if (r >= 0)
+	{
+		snprintf(nloc, sizeof nloc, "%s", ra_reg_name(r));
+	}
+	else
+	{
+		snprintf(nloc, sizeof nloc, "[rbp - %d]", e->spill_base + ra_vreg_slot(e->a, in->a) * 8);
+	}
+
+	cg_emit(cg, "    mov rax, %s", nloc);          /* n -> rax. */
+	cg_emit(cg, "    mov rdx, %lld", M);           /* Magic multiplier. */
+	cg_emit(cg, "    imul rdx");                    /* rdx:rax = n * M (signed); high half -> rdx. */
+	if (M < 0)
+	{
+		cg_emit(cg, "    add rdx, %s", nloc);      /* M < 0: q += n. */
+	}
+
+	if (s > 0)
+	{
+		cg_emit(cg, "    sar rdx, %d", s);         /* q >>= s. */
+	}
+
+	cg_emit(cg, "    mov rax, %s", nloc);          /* n. */
+	cg_emit(cg, "    shr rax, 63");                /* Sign bit of n. */
+	cg_emit(cg, "    add rdx, rax");               /* q += sign bit -> truncate toward zero. */
+
+	if (in->op == IR_MOD)
+	{
+		cg_emit(cg, "    imul rdx, rdx, %lld", d);  /* q * d. */
+		cg_emit(cg, "    mov rax, %s", nloc);
+		cg_emit(cg, "    sub rax, rdx");             /* n - q*d = remainder (sign of n). */
+	}
+
+	const char *Rd = dst_reg(e, in->dst);
+	const char *res = (in->op == IR_MOD) ? "rax" : "rdx";   /* Quotient in rdx, remainder in rax. */
+	if (ty_is_int(in->type) && ty_bits(in->type) <= 32)
+	{
+		norm_reg(cg, Rd, res, in->type);   /* Re-extend the 32-bit result, like the idiv path. */
+	}
+	else if (strcmp(Rd, res))
+	{
+		cg_emit(cg, "    mov %s, %s", Rd, res);
+	}
+
+	finish_dst(e, in->dst);
+}
+
 /* 1 if vreg v is a known constant fitting a 32-bit immediate (-> *out). */
 static int const_imm32(Emit *e, IRReg v, long long *out)
 {
@@ -1027,6 +1101,13 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 				&& e->cis[in->b] && pow2_log(e->cval[in->b], &k))
 		{
 			emit_divmod_pow2(e, in, k);
+			break;
+		}
+
+		if (in->b != IR_NO_REG && in->b < e->a->vreg_count
+				&& e->cis[in->b] && magic_div_ok(in->op, in->type, e->cval[in->b]))
+		{
+			emit_divmod_magic(e, in, e->cval[in->b]);
 			break;
 		}
 
@@ -1608,6 +1689,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 				int k;
 				int folds = ((comm || op == IR_SUB) && b_imm)
 							|| ((op == IR_DIV || op == IR_MOD) && pow2_log(e->cval[in->b], &k))
+							|| ((op == IR_DIV || op == IR_MOD) && magic_div_ok(op, in->type, e->cval[in->b]))
 							|| ((op == IR_CMP || op == IR_SEL) && b_imm);
 				if (!folds)
 				{

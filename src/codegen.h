@@ -104,6 +104,12 @@ typedef struct
 void cg_init(Codegen *cg, FILE *out);
 void cg_emit(Codegen *cg, const char *fmt, ...);
 int  cg_label(Codegen *cg);
+
+/* Granlund-Montgomery signed magic number (M, shift s) for a positive constant
+   divisor d (>= 3, non-power-of-two): the signed quotient of n by d is
+   SRA(MULHI_S(n, M) [+ n when M < 0], s) + (n >>> 63). Shared by the emitter and
+   the IR backend so both lower constant division identically. */
+void cg_magic_signed(long long d, long long *M_out, int *s_out);
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count);
 
 /* Emit one per-function exception record (PC range, frame size, name, object-local
