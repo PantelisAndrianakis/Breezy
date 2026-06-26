@@ -18,7 +18,16 @@ void ir_func_free(IRFunc *f)
 
 	for (int i = 0; i < f->block_count; i++)
 	{
-		free(f->blocks[i].instrs);
+		IRBlock *b = &f->blocks[i];
+		for (int j = 0; j < b->count; j++)
+		{
+			if (b->instrs[j].op == IR_CALL)
+			{
+				free(b->instrs[j].call_args);   /* The arg-vreg array malloc'd in lowering. */
+			}
+		}
+
+		free(b->instrs);
 	}
 
 	free(f->blocks);

@@ -93,6 +93,22 @@ static void instr_def_use(const IRAlloc *a, const IRInstr *in, int *def, int use
 		return;
 	}
 
+	if (in->op == IR_CALL)
+	{
+		/* Defines the result vreg (rax); uses the argument vregs (call_args, not
+		   a/b/c). Eligibility caps the arg count at 4, so uses[4] holds them all. */
+		*def = (in->dst != IR_NO_REG) ? in->dst : -1;
+		for (int i = 0; i < in->call_argc; i++)
+		{
+			if (in->call_args[i] != IR_NO_REG)
+			{
+				uses[(*nuse)++] = in->call_args[i];
+			}
+		}
+
+		return;
+	}
+
 	*def = (in->dst != IR_NO_REG) ? in->dst : -1;
 	if (in->a != IR_NO_REG)
 	{
@@ -298,6 +314,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	char *live = malloc((size_t)nval);
 	long long *weight = calloc((size_t)nval, sizeof(long long));   /* Per-value spill weight. */
 	char *used_deep = calloc((size_t)nval, 1);   /* Touched in a maximum-depth block. */
+	char *crosses_call = calloc((size_t)nval, 1);   /* Live across an IR_CALL -> caller-saved-excluded. */
 
 	int maxdepth = 0;
 	for (int b = 0; b < f->block_count; b++)
@@ -323,6 +340,20 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			int uses[4];
 			int nuse;
 			instr_def_use(a, in, &def, uses, &nuse);
+			if (in->op == IR_CALL)
+			{
+				/* `live` here is the call's live-out. Every value live after the call
+				   except its own result is live across it, so it must not occupy a
+				   caller-saved register (the call clobbers those). */
+				for (int w = 0; w < nval; w++)
+				{
+					if (live[w] && w != def)
+					{
+						crosses_call[w] = 1;
+					}
+				}
+			}
+
 			if (def >= 0)
 			{
 				weight[def] += fac;
@@ -423,6 +454,16 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		if (!bad)
 		{
 			uf[A] = B;
+		}
+	}
+
+	/* A coalesced root is live across a call if any of its members is. */
+	char *root_crosses = calloc((size_t)nval, 1);
+	for (int p = 0; p < nval; p++)
+	{
+		if (crosses_call[p])
+		{
+			root_crosses[uf_find(uf, p)] = 1;
 		}
 	}
 
@@ -552,6 +593,24 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				if (color[r2] >= 0 && rintf[(size_t)r * nval + r2])
 				{
 					used[color[r2]] = 1;
+				}
+			}
+
+			/* Live across a call: exclude every register the call clobbers. Only the
+			   registers callee-saved on BOTH ABIs survive (rbx, r12-r15); the
+			   ra_is_callee_saved(.,1) Linux predicate names exactly that GP set (rsi/rdi
+			   are caller-saved on Linux, and all xmm return 0), so it is the
+			   ABI-independent "safe across a call" test - conservative on Win64 (where
+			   rsi/rdi would also survive) but always sound. A cross-call value that
+			   finds no such register spills. */
+			if (root_crosses[r])
+			{
+				for (int rr = 0; rr < RA_NALL; rr++)
+				{
+					if (!ra_is_callee_saved(rr, 1))
+					{
+						used[rr] = 1;
+					}
 				}
 			}
 
@@ -798,6 +857,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	free(live);
 	free(weight);
 	free(used_deep);
+	free(crosses_call);
+	free(root_crosses);
 	free(uf);
 	free(rintf);
 	free(root_live);

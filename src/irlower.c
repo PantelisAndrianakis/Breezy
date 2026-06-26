@@ -1,6 +1,8 @@
 ﻿#include "irlower.h"
 #include "lexer.h"   /* TokenType values for operators. */
+#include "config.h"  /* bzy_ir_calls_enabled. */
 #include <string.h>  /* strcmp for the arr.length field name. */
+#include <stdlib.h>  /* malloc for the IR_CALL argument-vreg array. */
 
 /* A scalar integer kind the v1 IR backend can hold in a register: any integer,
    bool, or void (for void-returning functions). Floats and managed kinds are out
@@ -23,6 +25,27 @@ static int elig_arrayref(const TypeRef *t)
 	return t && t->kind == TY_ARRAY && t->elem && elig_elem_kind(t->elem->kind);
 }
 
+/* TypeTable for the current codegen run, set once by ir_set_tt before lowering.
+   Resolves a direct call's callee (FuncInfo + asm_label) during eligibility and
+   lowering. NULL when the IR functions run outside codegen (unit tests), where
+   call eligibility is therefore off. */
+static TypeTable *g_ir_tt = NULL;
+
+void ir_set_tt(TypeTable *tt)
+{
+	g_ir_tt = tt;
+}
+
+/* Region mode (Plan 4): eligibility for a loop subtree emitted inline inside an
+   emitter function. Regions additionally reject ST_RETURN (a region cannot run the
+   function epilogue) and managed assignment targets; v1 also confines IR calls to
+   regions. Set only during the region eligibility scan. */
+static int elig_region_mode = 0;
+
+/* The callee FuncInfo of a direct IR-lowerable call, or NULL. Defined after
+   elig_expr (it validates each argument with it). */
+static FuncInfo *elig_call_target(const Expr *e);
+
 static int elig_expr(const Expr *e)
 {
 	if (!e)
@@ -32,6 +55,12 @@ static int elig_expr(const Expr *e)
 
 	switch (e->kind)
 	{
+	case EX_CALL:
+		/* Region-only in v1: a region shares the emitter function's frame, whose
+		   Win64 shadow + 16-alignment are always reserved, so a <=4-arg call needs
+		   no frame surgery. A whole IR function would need its own frame work first,
+		   so whole-function eligibility (elig_region_mode == 0) keeps rejecting calls. */
+		return elig_region_mode && elig_call_target(e) != NULL;
 	case EX_INT:
 	case EX_BOOL:
 	case EX_FLOAT:
@@ -57,18 +86,67 @@ static int elig_expr(const Expr *e)
 	case EX_CAST:
 		return elig_type(e->type.kind) && elig_type(e->lhs->type.kind) && elig_expr(e->lhs);
 	default:
-		/* EX_STR, EX_CALL, EX_METHOD_CALL, EX_NEW*, EX_THIS, EX_NULL, EX_INCDEC. */
+		/* EX_STR, EX_METHOD_CALL, EX_NEW*, EX_THIS, EX_NULL, EX_INCDEC. */
 		return 0;
 	}
 }
 
-static int elig_block(const Block *b);
+/* The callee of a direct, IR-lowerable call: a non-indirect call to a user
+   function (a Breezy body, standard ABI) with <= 4 scalar arguments of one register
+   class and a scalar-or-void return. NULL when the call is not IR-eligible - a
+   closure call, a builtin/intrinsic (not in the function table, or namespaced like
+   `Math.`/`Clock.`), an extern/blocking/variadic/dynamic FFI function, an
+   array/managed arg, a mixed int/fp arg sequence, or > 4 args. Gated by the
+   default-off BZY_IR_CALLS flag, so the default build never widens here. */
+static FuncInfo *elig_call_target(const Expr *e)
+{
+	if (!bzy_ir_calls_enabled() || !g_ir_tt || e->anno_indirect)
+	{
+		return NULL;
+	}
 
-/* Region mode (Plan 4): eligibility for a loop subtree emitted inline inside an
-   emitter function. Regions additionally reject ST_RETURN (a region cannot run
-   the function epilogue) and managed assignment targets (reassigning an array
-   local would skip refcounting; element stores remain fine). */
-static int elig_region_mode = 0;
+	if (strchr(e->name, '.'))
+	{
+		return NULL;   /* A namespaced builtin (Math., Clock., File., ...). */
+	}
+
+	FuncInfo *fi = types_find_func_idx(g_ir_tt, e->name, e->anno_overload);
+	if (!fi || !fi->ast || fi->is_extern || fi->is_dynamic || fi->is_blocking || fi->is_variadic)
+	{
+		return NULL;   /* A codegen intrinsic (print/input/...), or a special-ABI FFI. */
+	}
+
+	if (fi->param_count > 4 || e->arg_count != fi->param_count)
+	{
+		return NULL;
+	}
+
+	if (!(e->type.kind == TY_VOID || (elig_type(e->type.kind) && !ty_is_float(e->type.kind))))
+	{
+		return NULL;   /* Return: integer/bool scalar or void (fp returns are a follow-up). */
+	}
+
+	for (int i = 0; i < fi->param_count; i++)
+	{
+		TypeKind pk = fi->param_types[i].kind;
+		if (!elig_type(pk) || ty_is_float(pk))
+		{
+			return NULL;   /* Integer/bool scalar args only in v1 (no fp/arrays/managed). */
+		}
+	}
+
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		if (!elig_expr(e->args[i]))
+		{
+			return NULL;
+		}
+	}
+
+	return fi;
+}
+
+static int elig_block(const Block *b);
 
 static int elig_stmt(const Stmt *s)
 {
@@ -191,6 +269,7 @@ int ir_eligible(const Func *f)
 typedef struct
 {
 	IRFunc *f;
+	TypeTable *tt;   /* For resolving a direct call's callee (IR_CALL); NULL outside codegen. */
 	int     cur;
 	int     break_blk;
 	int     cont_blk;
@@ -689,6 +768,38 @@ static IRReg low_expr(Low *L, const Expr *e)
 		in->b = rb;
 		in->line = e->line;
 		return r;
+	}
+	case EX_CALL:
+	{
+		FuncInfo *fi = elig_call_target(e);
+		if (!fi)
+		{
+			L->ok = 0;          /* Re-validate (eligibility already passed; defensive). */
+			return IR_NO_REG;
+		}
+
+		/* Lower each argument to a vreg left-to-right (appending its IR to the
+		   current block), then emit the call. The arg vregs live in an arena-owned
+		   array freed by ir_func_free. ir_emit's pointer is taken AFTER the args are
+		   lowered, so no intervening append invalidates it. */
+		IRReg *args = NULL;
+		if (e->arg_count > 0)
+		{
+			args = malloc((size_t)e->arg_count * sizeof(IRReg));
+			for (int i = 0; i < e->arg_count; i++)
+			{
+				args[i] = low_expr(L, e->args[i]);
+			}
+		}
+
+		IRReg dst = (e->type.kind == TY_VOID) ? IR_NO_REG : ir_reg(L->f);
+		IRInstr *in = ir_emit(L->f, L->cur, IR_CALL, e->type.kind);
+		in->dst = dst;
+		in->call_label = fi->asm_label;   /* Stable: FuncInfo outlives the IR (whole compile). */
+		in->call_args = args;
+		in->call_argc = e->arg_count;
+		in->line = e->line;
+		return dst;
 	}
 	default:
 		L->ok = 0;
@@ -1427,6 +1538,7 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 	int entry = ir_block_new(irf);
 	Low L;
 	L.f = irf;
+	L.tt = g_ir_tt;
 	L.cur = entry;
 	L.break_blk = -1;
 	L.cont_blk = -1;
@@ -1548,6 +1660,7 @@ IRFunc *ir_lower_region(const Func *f, const Stmt *s)
 	int entry = ir_block_new(irf);
 	Low L;
 	L.f = irf;
+	L.tt = g_ir_tt;
 	L.cur = entry;
 	L.break_blk = -1;
 	L.cont_blk = -1;

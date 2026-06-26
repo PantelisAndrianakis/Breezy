@@ -11,6 +11,11 @@
    coroutines, channels, foreach, switch, throw. Arrays arrive in a later plan. */
 int ir_eligible(const Func *f);
 
+/* Set the TypeTable for the current codegen run (used to resolve a direct call's
+   callee during IR call lowering). Call once before lowering; safe to leave unset
+   outside codegen (call eligibility is then off). */
+void ir_set_tt(TypeTable *tt);
+
 /* Lower an eligible function to IR, or NULL if a construct it cannot yet handle
    is reached (the caller then falls back to the emitter). Caller owns the result
    and must ir_func_free it. */

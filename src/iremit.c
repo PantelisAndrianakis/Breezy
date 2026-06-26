@@ -1299,11 +1299,42 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		emit_epilogue(e);
 		break;
 	case IR_CALL:
-		/* Produced only under BZY_IR_CALLS (Lever 2, in progress); marshalling is not
-		   implemented yet and lowering never emits IR_CALL otherwise. Abort loudly
-		   rather than silently miscompile if that invariant is ever broken. */
-		fprintf(stderr, "internal error: IR_CALL reached iremit without marshalling support.\n");
-		abort();
+	{
+		/* Marshal the integer arguments into the ABI registers. To avoid a
+		   parallel-move conflict (an argument currently in a later argument's target
+		   register), stage every argument through the reserved outgoing area, then
+		   load the argument registers from it. [rsp, rsp+32) is the Win64 shadow /
+		   the outgoing-arg bottom, always reserved by the region's enclosing frame;
+		   a <=4-arg callee reads no stack args, so this scratch is free until the
+		   call, and rsp is fixed across the region. v1 is integer args/return only
+		   and region-only, so the frame and alignment are already in place. */
+		int argc = in->call_argc;
+		for (int i = 0; i < argc; i++)
+		{
+			const char *src = vreg_in(e, in->call_args[i], "rax");   /* rax: never an allocatable reg. */
+			cg_emit(cg, "    mov [rsp + %d], %s", i * 8, src);
+		}
+
+		for (int i = 0; i < argc; i++)
+		{
+			cg_emit(cg, "    mov %s, [rsp + %d]", iremit_iarg(cg, i), i * 8);
+		}
+
+		cg_emit(cg, "    call %s", in->call_label);
+
+		if (in->dst != IR_NO_REG)
+		{
+			const char *Rd = dst_reg(e, in->dst);   /* Result returns in rax. */
+			if (strcmp(Rd, "rax"))
+			{
+				cg_emit(cg, "    mov %s, rax", Rd);
+			}
+
+			finish_dst(e, in->dst);
+		}
+
+		break;
+	}
 	default:
 		break;
 	}
@@ -1415,6 +1446,13 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 			case IR_MOVE:
 			case IR_RET:
 				mc_mark(mc, nv, in->a);                     /* Copies/returns the full register. */
+				break;
+			case IR_CALL:
+				for (int i = 0; i < in->call_argc; i++)
+				{
+					mc_mark(mc, nv, in->call_args[i]);      /* Each arg passes the full 64-bit register. */
+				}
+
 				break;
 			default:
 				break;                                      /* add/sub/mul/and/or/xor/shl/neg/const: low-32 safe. */
@@ -1585,6 +1623,18 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 			if (op == IR_SEL && in->d != IR_NO_REG && in->d < f->vreg_count && e->cis[in->d])
 			{
 				e->cdead[in->d] = 0;   /* The false side is read, never folded. */
+			}
+
+			if (op == IR_CALL)
+			{
+				for (int ai = 0; ai < in->call_argc; ai++)
+				{
+					IRReg av = in->call_args[ai];
+					if (av != IR_NO_REG && av < f->vreg_count && e->cis[av])
+					{
+						e->cdead[av] = 0;   /* An argument is materialized into a register, never folded. */
+					}
+				}
 			}
 		}
 	}

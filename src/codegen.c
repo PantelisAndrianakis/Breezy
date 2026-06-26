@@ -13042,6 +13042,7 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 {
+	ir_set_tt(tt);   /* Resolve direct-call callees during IR call lowering (Lever 2). */
 	cg_emit(cg,"bits 64");
 	cg_emit(cg,"default rel");
 	/* Multi-byte nop padding for align directives: loop headers fall through
