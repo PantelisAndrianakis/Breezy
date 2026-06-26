@@ -21,6 +21,22 @@ The parts of a `+` chain are joined in a single pass into one new string sized t
 
 ---
 
+## Escapes
+
+Inside a string literal a backslash introduces an escape:
+
+| Escape | Meaning |
+| --- | --- |
+| `\n` `\t` `\r` | Newline, tab, carriage return. |
+| `\b` `\f` `\v` `\a` | Backspace, form feed, vertical tab, alert. |
+| `\\` `\"` | A literal backslash or double quote. |
+| `\xHH` | The raw byte with hex value `HH` (exactly two hex digits) - for example `\x41` is `A`. |
+| `\uXXXX` | The Unicode code point with the given four hex digits, encoded as UTF-8. |
+
+A string is NUL-terminated, so an embedded NUL is **not** representable: `\0` and `\x00`, and the `\u` escape for code point zero, are rejected at compile time with a clear message.
+
+---
+
 ## StringBuilder - efficient accumulation
 
 Building a string by repeated `+` in a loop is O(n²) because each step copies everything so far. The compiler **automatically lowers the common `s = s + …` (and `s += …`) accumulation loop to a StringBuilder** (O(n) total), so the straightforward code is already fast. An explicit **`StringBuilder`** is still the right choice when the accumulator is read mid-loop, the loop can exit early, or the accumulation isn't a simple append-on-the-end — the cases the automatic lowering deliberately leaves untouched. It appends into a doubling buffer (O(n) total) and snapshots to an immutable `string` with `toString()`.

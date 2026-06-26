@@ -1,0 +1,5 @@
+// String escapes: hex byte (backslash-x) and Unicode code point (backslash-u).
+void main()
+{
+	print("\x41\x42\x43\u0044\u0045");
+}

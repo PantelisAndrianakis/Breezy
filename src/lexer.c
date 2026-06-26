@@ -68,6 +68,27 @@ static void json_str(const char *s)
 	}
 }
 
+/* Hex digit value, or -1 if the character is not a hex digit. */
+static int hex_val(char c)
+{
+	if (c >= '0' && c <= '9')
+	{
+		return c - '0';
+	}
+
+	if (c >= 'a' && c <= 'f')
+	{
+		return c - 'a' + 10;
+	}
+
+	if (c >= 'A' && c <= 'F')
+	{
+		return c - 'A' + 10;
+	}
+
+	return -1;
+}
+
 void lexer_diag(const char *src, const char *file, int line, int col,
 				const char *msg, const char *arg)
 {
@@ -400,12 +421,85 @@ Token lexer_next(Lexer *l)
 				case 'r':
 					d = '\r';
 					break;
+				case 'b':
+					d = '\b';
+					break;
+				case 'f':
+					d = '\f';
+					break;
+				case 'v':
+					d = '\v';
+					break;
+				case 'a':
+					d = '\a';
+					break;
 				case '\\':
 					d = '\\';
 					break;
 				case '"':
 					d = '"';
 					break;
+				case '0':
+					lexer_diag(l->src, l->file, l->line, l->col - 1, "A NUL byte in a string literal is not supported (strings are NUL-terminated).", NULL);
+					break;
+				case 'x':
+				{
+					/* \xHH: exactly two hex digits, one raw byte. */
+					int h1 = hex_val(next_ch(l));
+					int h2 = hex_val(next_ch(l));
+					if (h1 < 0 || h2 < 0)
+					{
+						lexer_diag(l->src, l->file, l->line, l->col - 1, "A \\x escape needs two hex digits.", NULL);
+					}
+
+					int xb = (h1 << 4) | h2;
+					if (xb == 0)
+					{
+						lexer_diag(l->src, l->file, l->line, l->col - 1, "A NUL byte (\\x00) in a string literal is not supported.", NULL);
+					}
+
+					d = (char)xb;
+					break;
+				}
+				case 'u':
+				{
+					/* \uXXXX: four hex digits, a code point, written as UTF-8. */
+					int cp = 0;
+					for (int k = 0; k < 4; k++)
+					{
+						int h = hex_val(next_ch(l));
+						if (h < 0)
+						{
+							lexer_diag(l->src, l->file, l->line, l->col - 1, "A \\u escape needs four hex digits.", NULL);
+						}
+
+						cp = (cp << 4) | h;
+					}
+
+					if (cp == 0)
+					{
+						lexer_diag(l->src, l->file, l->line, l->col - 1, "A NUL code point (\\u0000) in a string literal is not supported.", NULL);
+					}
+
+					/* UTF-8 encode (code points up to U+FFFF: one to three bytes). */
+					if (cp < 0x80 && i < 255)
+					{
+						t.text[i++] = (char)cp;
+					}
+					else if (cp < 0x800 && i < 254)
+					{
+						t.text[i++] = (char)(0xC0 | (cp >> 6));
+						t.text[i++] = (char)(0x80 | (cp & 0x3F));
+					}
+					else if (i < 253)
+					{
+						t.text[i++] = (char)(0xE0 | (cp >> 12));
+						t.text[i++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+						t.text[i++] = (char)(0x80 | (cp & 0x3F));
+					}
+
+					continue;   /* Bytes already appended; skip the single-byte store below. */
+				}
 				default:
 				{
 					char esc[3] = { '\\', e, '\0' };

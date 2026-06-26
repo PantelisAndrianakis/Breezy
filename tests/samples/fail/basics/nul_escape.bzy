@@ -1,0 +1,5 @@
+// A NUL byte in a string literal is rejected (strings are NUL-terminated).
+void main()
+{
+	print("a\x00b");
+}
