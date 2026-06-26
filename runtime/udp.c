@@ -84,6 +84,46 @@ void *bzy_udp_new(int64_t port)
 	return bzy_sock_wrap(fd);   /* Same managed handle + closesocket finalizer. */
 }
 
+/* An IPv4 broadcast/discovery socket: a real AF_INET socket (broadcast is an IPv4
+   concept, unreachable on the dual-stack AF_INET6 socket) with SO_BROADCAST so it may
+   target 255.255.255.255, and SO_REUSEADDR so several clients on one host can share the
+   discovery port. Otherwise an ordinary UdpSocket: send/receive/port/close all apply. */
+void *bzy_udp_broadcast_new(int64_t port)
+{
+	bzy_iocp_ensure();
+	SOCKET fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	u_long nb = 1;
+	ioctlsocket(fd, FIONBIO, &nb);
+	int yes = 1;
+	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));   /* Share the port across same-host clients. */
+	setsockopt(fd, SOL_SOCKET, SO_BROADCAST, (const char*)&yes, sizeof(yes));   /* Permit sending to the broadcast address. */
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons((unsigned short)port);
+	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+
+	bzy_iocp_associate((void*)fd);
+	return bzy_sock_wrap(fd);
+}
+
+/* True when the socket is the dual-stack AF_INET6 one (so an IPv4 target needs v4-mapping
+   before sendto). False for the AF_INET broadcast socket, which takes a plain sockaddr_in.
+   Defaults to the v6 answer on error, preserving the original behaviour. */
+static int udp_sock_is_v6(void *u)
+{
+	struct sockaddr_storage ss;
+	int len = sizeof(ss);
+	if (getsockname(U_FD(u), (struct sockaddr*)&ss, &len) != 0)
+	{
+		return 1;
+	}
+
+	return ss.ss_family == AF_INET6;
+}
+
 int64_t bzy_udp_port(void *u)
 {
 	struct sockaddr_in6 addr;
@@ -139,7 +179,7 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 		return 0;
 	}
 
-	if (fam == AF_INET)
+	if (fam == AF_INET && udp_sock_is_v6(u))
 	{
 		udp_v4mapped(&dst, &dstlen);   /* Dual-stack AF_INET6 socket: IPv4 target must be v4-mapped. */
 	}
@@ -392,6 +432,50 @@ void *bzy_udp_new(int64_t port)
 	return bzy_sock_wrap(fd);
 }
 
+/* An IPv4 broadcast/discovery socket: a real AF_INET socket (broadcast is an IPv4
+   concept, unreachable on the dual-stack AF_INET6 socket) with SO_BROADCAST so it may
+   target 255.255.255.255, and SO_REUSEADDR/SO_REUSEPORT so several clients on one host can
+   share the discovery port. Otherwise an ordinary UdpSocket: send/receive/port/close all apply. */
+void *bzy_udp_broadcast_new(int64_t port)
+{
+	bzy_reactor_ensure();
+	int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+	if (fd < 0)
+	{
+		return NULL;
+	}
+
+	int yes = 1;
+	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));   /* Share the port across same-host clients. */
+#ifdef SO_REUSEPORT
+	setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));   /* Linux: multiple same-host receivers on one port. */
+#endif
+	setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes));   /* Permit sending to the broadcast address. */
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons((unsigned short)port);
+	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+	return bzy_sock_wrap(fd);
+}
+
+/* True when the socket is the dual-stack AF_INET6 one (so an IPv4 target needs v4-mapping
+   before sendto). False for the AF_INET broadcast socket, which takes a plain sockaddr_in.
+   Defaults to the v6 answer on error, preserving the original behaviour. */
+static int udp_sock_is_v6(void *u)
+{
+	struct sockaddr_storage ss;
+	socklen_t len = sizeof(ss);
+	if (getsockname((int)U_FD(u), (struct sockaddr*)&ss, &len) != 0)
+	{
+		return 1;
+	}
+
+	return ss.ss_family == AF_INET6;
+}
+
 int64_t bzy_udp_port(void *u)
 {
 	struct sockaddr_in6 addr;
@@ -444,7 +528,7 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 		return 0;
 	}
 
-	if (fam == AF_INET)
+	if (fam == AF_INET && udp_sock_is_v6(u))
 	{
 		udp_v4mapped(&dst, &dstlen);   /* Dual-stack AF_INET6 socket: IPv4 target must be v4-mapped. */
 	}

@@ -57,7 +57,22 @@ Socket c = Network.connect("example.com", port);  // Hostname (either family).
 
 There is no IPv4-only or IPv6-only mode and no API change - existing code gains IPv6 for free, on both platforms. UDP (`Network.udp`) is dual-stack the same way.
 
-> **Transport security (TLS):** the `Network.readUrl` HTTP client already does HTTPS natively. For a raw `Socket`, TLS is reachable by binding a native TLS library through the [FFI surface](../ffi/c-interop.md) (blocking mode); first-class asynchronous server-side TLS is a future addition.
+---
+
+## LAN discovery with UDP broadcast
+
+`Network.udpBroadcast(port)` opens a UDP socket that may send to the IPv4 **broadcast** address `255.255.255.255`, which the local segment delivers to every host bound to that port - so a client can find its peers with no server and no addresses to configure. It is an ordinary `UdpSocket` otherwise: `sendTextTo` / `sendTo` / `receive` / `port` / `close` all apply.
+
+```breezy
+UdpSocket u = Network.udpBroadcast(49737);     // Broadcast-capable; reuses the port across same-host clients.
+u.sendTextTo("255.255.255.255", 49737, "hello, network");   // Reaches every client on the segment.
+Datagram d = u.receive();                       // Hear back from any of them; d.host() is the sender.
+```
+
+Unlike `Network.udp` (a dual-stack IPv6 socket), this is a plain IPv4 socket: it sets `SO_BROADCAST` so the broadcast send is permitted, and `SO_REUSEADDR` (plus `SO_REUSEPORT` where available) so several clients on one machine can share the discovery port - which is what lets you test a chat by running it twice locally. A broadcast loops back to the sender too, so tag your datagrams with a per-run id and skip your own. Broadcast does not cross routers; it reaches the local subnet only. See [`examples/chat`](../../examples/chat/Main.bzy) for a complete auto-discovering chat.
+
+> **Transport security (TLS):**
+ the `Network.readUrl` HTTP client already does HTTPS natively. For a raw `Socket`, TLS is reachable by binding a native TLS library through the [FFI surface](../ffi/c-interop.md) (blocking mode); first-class asynchronous server-side TLS is a future addition.
 
 ---
 
@@ -198,6 +213,7 @@ client echoes it, so a spoofed-source flood cannot make the server do real work.
 - **Listeners are dual-stack** (accept IPv6 and IPv4); `Network.connect` takes an IPv6 literal, IPv4 literal, or hostname - no API change.
 - **`Network.readUrl` is one-call HTTP/HTTPS GET**, returns the body, and throws `IOException` on failure.
 - **For more than a GET body**, use a raw `Socket`.
+- **`Network.udpBroadcast(port)` is a broadcast-capable UDP socket** - a plain IPv4 socket with `SO_BROADCAST` + `SO_REUSEADDR`, for sending to `255.255.255.255` (local-subnet peer discovery); otherwise an ordinary `UdpSocket`. Broadcasts loop back to the sender and do not cross routers.
 - **`Network.rawSocket(protocol)` is privilege-gated** - needs `CAP_NET_RAW`/root or Administrator, throws `IOException` when denied, and on Windows cannot send TCP/UDP.
 - **`Network.tlsConnect` / `tlsListen` need OpenSSL at runtime** (loaded dynamically) and throw `IOException` when it is absent or when verification fails; on Windows, pass a CA-bundle path since OpenSSL does not read the Windows certificate store.
 - **`Network.dtls*` is DTLS over UDP** - same OpenSSL dependency as TLS; client + server both work on both platforms (POSIX = connected socket per peer, Windows = single-socket demultiplexer), and `dtlsConnectInsecure` skips peer verification on purpose.

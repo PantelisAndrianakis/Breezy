@@ -1,0 +1,113 @@
+// Network chat over UDP broadcast. Run this same program on several machines (or
+// several times on one machine): type a name, then every line you type is broadcast
+// to all other clients on the local network, tagged with your name. Clients announce
+// themselves on a fixed discovery port, so peers appear automatically - there is no
+// server to run and no addresses to configure.
+//
+// How it works: Network.udpBroadcast opens an IPv4 socket that may send to the
+// broadcast address (255.255.255.255), which the router delivers to every host on the
+// local segment. Each client sends a "JOIN" frame on startup; when a client first
+// hears a peer it echoes its own JOIN back, so discovery is mutual. Chat lines travel
+// the same way as "MSG" frames.
+//
+// See documentation/io/native-io.md (UDP) and documentation/concurrency/breezes.md.
+
+class Chat
+{
+	UdpSocket sock;            // Shared by the sender (main) and the receiver breeze.
+	int port;                 // Discovery/chat port every client listens on.
+	int id;                   // Random per-run id, so we can ignore our own broadcasts.
+	string name;
+	map<int, string> peers;   // Known peer ids -> names; a map is auto-shared across breezes.
+
+	// Broadcast one tab-delimited frame to every client on the network.
+	void send(string frame)
+	{
+		sock.sendTextTo("255.255.255.255", port, frame);
+	}
+
+	// "I am here." Sent on startup, and echoed whenever we first hear a new peer, so
+	// two clients always learn each other without a central server.
+	void announce()
+	{
+		this.send("JOIN\t" + id + "\t" + name);
+	}
+
+	// Process one received frame: learn new peers, print chat lines.
+	void handle(string frame)
+	{
+		// A frame is tab-delimited: kind, sender id, sender name, and (for MSG) the text.
+		// ponytail: a literal tab typed into a message would split the text field. Fine
+		// for a chat demo; switch to a length-prefixed framing if that ever matters.
+		string[] f = frame.split("\t");
+		if (f.length < 3)
+		{
+			return;   // Not a frame we understand.
+		}
+
+		int from = f[1].toInt();
+		if (from == id)
+		{
+			return;   // Our own broadcast, looped back to us.
+		}
+
+		string who = f[2];
+		if (not peers.containsKey(from))
+		{
+			peers.put(from, who);
+			print("* " + who + " joined.");
+			this.announce();   // Reply so the newcomer learns us too. Only on first sight, so no echo storm.
+		}
+
+		if (f[0].equals("MSG") and f.length >= 4)
+		{
+			print(who + ": " + f[3]);
+		}
+	}
+}
+
+// Receive datagrams forever on its own breeze, handing each to the chat. A stray or
+// foreign datagram on this port is ignored rather than allowed to crash the listener.
+void receiver(Chat c)
+{
+	while (true)
+	{
+		Datagram d = c.sock.receive();   // Parks the breeze until a datagram arrives.
+		try
+		{
+			c.handle(d.text());
+		}
+		catch (Exception e)
+		{
+			// Not one of our frames; drop it and keep listening.
+		}
+	}
+}
+
+void main()
+{
+	int port = 49737;
+
+	print("Your name:");
+	string name = input();
+
+	Chat c = new Chat();
+	c.sock = Network.udpBroadcast(port);
+	c.port = port;
+	c.id = Random.get(1, 2000000000);
+	c.name = name;
+	c.peers = new map<int, string>();
+
+	spawn receiver(c);   // Listen for peers and messages in the background.
+	c.announce();        // Tell the network we are here.
+
+	print("Connected as " + name + ". Type a message and press enter.");
+	while (true)
+	{
+		string text = input();
+		if (text.length() > 0)
+		{
+			c.send("MSG\t" + c.id + "\t" + name + "\t" + text);
+		}
+	}
+}

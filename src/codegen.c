@@ -5953,6 +5953,10 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 	{
 		fn = "bzy_udp_new";
 	}
+	else if (strcmp(m,"udpBroadcast")==0)
+	{
+		fn = "bzy_udp_broadcast_new";
+	}
 	else
 	{
 		fprintf(stderr,"Codegen: unknown Network method '%s'\n", m);
@@ -13282,6 +13286,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_socket_write_text");
 	cg_emit(cg,"extern bzy_socket_close");
 	cg_emit(cg,"extern bzy_udp_new");
+	cg_emit(cg,"extern bzy_udp_broadcast_new");
 	cg_emit(cg,"extern bzy_udp_port");
 	cg_emit(cg,"extern bzy_udp_send_to");
 	cg_emit(cg,"extern bzy_udp_send_text_to");

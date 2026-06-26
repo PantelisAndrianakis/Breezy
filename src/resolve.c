@@ -787,6 +787,17 @@ static void resolve_network(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"udpBroadcast")==0)
+	{
+		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
+		{
+			die(e->line,"Network.udpBroadcast(port) takes one integer port.",NULL);
+		}
+
+		e->type.kind=TY_UDPSOCKET;
+		return;
+	}
+
 	if (strcmp(m,"rawSocket")==0)
 	{
 		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))

@@ -331,6 +331,7 @@ void    bzy_socket_close(void *s);
 /* UDP sockets (6b-2): connectionless datagrams. receive() parks and returns a
    Datagram carrying the payload + the sender's address (so a server can reply). */
 void   *bzy_udp_new(int64_t port);                           /* Bind 0.0.0.0:port (0 = ephemeral); owned. */
+void   *bzy_udp_broadcast_new(int64_t port);                 /* AF_INET + SO_BROADCAST + SO_REUSEADDR; for 255.255.255.255 discovery. */
 int64_t bzy_udp_port(void *u);                               /* Bound port. */
 int64_t bzy_udp_send_to(void *u, void *host, int64_t port, void *data);   /* data: byte[]; returns count. */
 int64_t bzy_udp_send_text_to(void *u, void *host, int64_t port, void *str);
