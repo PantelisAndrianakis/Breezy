@@ -183,7 +183,7 @@ int64_t bzy_clock_nanos(void);    /* High-resolution monotonic counter, in nanos
 void    bzy_require_avx(void);     /* Abort with a diagnostic if the CPU lacks AVX; emitted at startup by AVX programs. */
 void    bzy_require_avx2(void);    /* As above for AVX2 (i32x8). */
 void   *bzy_clock_date(int64_t millis);                /* "yyyy-MM-dd HH:mm:ss", local time; owned. */
-void   *bzy_clock_date_fmt(int64_t millis, void *fmt); /* Java-style pattern, local time; owned. */
+void   *bzy_clock_date_fmt(int64_t millis, void *fmt); /* Date-format pattern, local time; owned. */
 
 int64_t bzy_rnd_bool(void);                            /* 0 or 1. */
 int64_t bzy_rnd_int(void);                             /* Full 32-bit signed range. */
@@ -395,7 +395,7 @@ void *bzy_logger_open(void *path);            /* Owned (+1); opens path in appen
 void  bzy_logger_log(void *logger, void *str);/* Move the string into the channel (ownership transfers). */
 void  bzy_logger_close(void *logger);         /* Drain, flush, close the file, join the logger breeze. */
 
-/* System.shell (VB.NET Shell-style): run "cmd /c <command>". wait==0 -> launch
+/* System.shell: run "cmd /c <command>". wait==0 -> launch
    async, return the process id (0 on failure). wait!=0 -> block until exit and
    return the exit code; that blocking path offloads so the breeze parks. */
 int64_t bzy_system_shell(void *command, int64_t wait);

@@ -12,7 +12,7 @@ time** - so a program links with no GTK dependency, and a program that never ref
 
 ## Is a desktop available?
 
-`Desktop.isEnabled()` is the equivalent of Java's `!GraphicsEnvironment.isHeadless()`: it
+`Desktop.isEnabled()` reports whether a graphical display is available: it
 returns `true` only when GTK can be loaded **and** a display exists (an X11/Wayland server on
 Linux, an interactive session on Windows). Guard GUI code with it so the same program runs
 safely on a headless server or in CI.

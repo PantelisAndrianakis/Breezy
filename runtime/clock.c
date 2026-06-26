@@ -214,7 +214,7 @@ int64_t bzy_local_offset_secs(int64_t secs)
 	return local_offset((time_t)secs);
 }
 
-/* Format millis (epoch ms) in local time using a Java-style pattern. Tokens:
+/* Format millis (epoch ms) in local time using a date-format pattern. Tokens:
    yyyy yy MM dd HH hh mm ss SSS a; any other character is copied literally. */
 static void *format_date(int64_t millis, const char *f, int fl)
 {

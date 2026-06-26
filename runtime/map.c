@@ -82,8 +82,8 @@ static int key_managed(void *m)
    barrier both run BEFORE the stripe is taken - user code under a container
    lock could touch another shared container and, on a stripe collision,
    deadlock. The user equals during a locked probe is the residual exception: a
-   user equals that touches the SAME shared map is documented user error (as in
-   Java). Displaced/removed occupants are released AFTER the stripe is dropped
+   user equals that touches the SAME shared map is documented user error.
+   Displaced/removed occupants are released AFTER the stripe is dropped
    so destructor cascades never run under the lock. */
 static int map_is_shared(void *m)
 {

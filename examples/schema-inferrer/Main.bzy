@@ -1,5 +1,5 @@
-// Infers an XSD schema from one or more sample XML files - a practical port of
-// the .NET XmlSchemaInference tool. Reads each document into Breezy's XML DOM,
+// Infers an XSD schema from one or more sample XML files. Reads each document
+// into Breezy's XML DOM,
 // merges the observed structure (elements, attributes, occurrence, simple
 // types) across every instance, and emits a valid schema.
 //

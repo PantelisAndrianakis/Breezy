@@ -1,6 +1,6 @@
 # Static Members & Static Classes
 
-Most fields and methods belong to an **object** - each `Counter` has its own count. A **static** member belongs to the **class itself**: there is exactly one copy shared by the whole program, reached through the class name. Breezy follows the Java model: mark individual members `static`, or mark a whole class `static` to make it a non-instantiable bag of shared state and utilities.
+Most fields and methods belong to an **object** - each `Counter` has its own count. A **static** member belongs to the **class itself**: there is exactly one copy shared by the whole program, reached through the class name. Breezy supports both levels: mark individual members `static`, or mark a whole class `static` to make it a non-instantiable bag of shared state and utilities.
 
 ← [Back to the guide](../guide.md)
 

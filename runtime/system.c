@@ -41,7 +41,7 @@ static int64_t shell_run(const char *command, int64_t wait)
 	free(line);
 	if (!ok)
 	{
-		return 0;                            /* Launch failed (VB.NET Shell returns 0). */
+		return 0;                            /* Launch failed (returns 0). */
 	}
 
 	int64_t ret;

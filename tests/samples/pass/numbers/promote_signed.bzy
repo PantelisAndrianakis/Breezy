@@ -1,4 +1,4 @@
-// Mixed-signedness arithmetic: unsigned wins (C-style), at the wider rank.
+// Mixed-signedness arithmetic: unsigned wins, at the wider rank.
 void main()
 {
 	int s;

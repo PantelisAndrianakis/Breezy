@@ -36,11 +36,11 @@ where nasm >nul 2>&1 || (echo ERROR: nasm still missing & set "OK=0")
 where make >nul 2>&1 || where mingw32-make >nul 2>&1 || (echo ERROR: make still missing & set "OK=0")
 if not "%OK%"=="1" goto error
 
-REM The compiler sources arrive with Part 01 of the plan.
+REM The compiler sources live under src\.
 if not exist "src\main.c" (
   echo ==^> Toolchain ready.
-  echo     Compiler sources are not present yet -- implement Part 01
-  echo     ^(docs\superpowers\plans\breezy-compiler\01-compiler-core.md^), then run build.bat again.
+  echo     Compiler sources are not present yet -- add them under src\,
+  echo     then run build.bat again.
   goto done
 )
 

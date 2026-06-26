@@ -2366,7 +2366,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Shift operators '<<'/'>>' require integer operands.",NULL);
 			}
 
-			/* C-style: the result takes the left operand's type; the shift count's
+			/* The result takes the left operand's type; the shift count's
 			   type and signedness do not affect the result. A signed left operand
 			   shifts arithmetically ('>>' = sar), an unsigned one logically (shr). */
 			e->type.kind = a;
@@ -2379,7 +2379,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		/* Integer promotion: the wider rank wins. For mixed signedness, unsigned
-		   wins (C-style) — the result is the unsigned type at the wider rank. */
+		   wins — the result is the unsigned type at the wider rank. */
 		TypeKind wider = ty_rank(a)>=ty_rank(b) ? a : b;
 		e->type.kind = (ty_is_signed(a)!=ty_is_signed(b)) ? ty_to_unsigned(wider) : wider;
 		break;
@@ -5585,7 +5585,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			inject_match_binds(s, s->cond->type.class_name);
 		}
 		/* Permitted operands: integers, bool, enum, string. Floats are rejected
-		   (exact-equality matching is unsafe for floating point, as in Java). */
+		   (exact-equality matching is unsafe for floating point). */
 		if (!ty_is_int(ck) && ck!=TY_BOOL && !is_enum_switch && !is_string_switch)
 		{
 			if (ty_is_float(ck))
@@ -6295,12 +6295,11 @@ static void resolve_block(SymTable *st, Block *b, const char *tc)
 	}
 }
 
-/* Frame analysis (Task 1 of the fixed-rsp plan, docs/superpowers/plans/
-   2026-06-05-fixed-rsp-frame.md). max_temp_depth approximates the deepest count
+/* Frame analysis. max_temp_depth approximates the deepest count
    of values codegen must preserve across a sub-evaluation (today via push rax);
-   max_outgoing_args is the widest call. These size the future static-rsp frame.
+   max_outgoing_args is the widest call. These size the static-rsp frame.
    Over-estimating only wastes a few frame bytes; the precise calibration cross-
-   check is Task 5's "no push remains" assertion. Nothing reads these yet. */
+   check is the "no push remains" assertion. Nothing reads these yet. */
 static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 {
 	if (!e)

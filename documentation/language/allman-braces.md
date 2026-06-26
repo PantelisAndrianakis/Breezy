@@ -22,7 +22,7 @@ void main()
 }
 ```
 
-K&R style (the opening brace on the same line as the statement) is *accepted* by the compiler for interoperability, but **all standard-library code and official examples use Allman** - so prefer it in your own code.
+Same-line brace style (the opening brace on the same line as the statement) is *accepted* by the compiler, but **all standard-library code and official examples use Allman** - so prefer it in your own code.
 
 ---
 
@@ -35,6 +35,7 @@ Breezy source is indented with **tab characters**, not spaces. One tab per nesti
 ## Comments
 
 - Use `//` for a single-line comment and `/* ... */` for a block comment.
+- Block comments **nest**, so you can comment out a region that already contains a block comment without it closing early.
 - Write comments as **proper sentences**: start with a capital letter and end with a period.
 
 ```breezy

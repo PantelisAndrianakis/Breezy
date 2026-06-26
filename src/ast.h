@@ -192,7 +192,7 @@ static inline int ty_rank(TypeKind k)
 }
 
 /* The unsigned integer kind of the same width. Unsigned and non-integer kinds
-   are returned unchanged. Used for C-style "unsigned wins" mixed-sign promotion. */
+   are returned unchanged. Used for the "unsigned wins" mixed-sign promotion. */
 static inline TypeKind ty_to_unsigned(TypeKind k)
 {
 	switch (k)

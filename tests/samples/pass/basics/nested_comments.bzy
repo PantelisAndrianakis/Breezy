@@ -1,0 +1,11 @@
+// Nested block comments: an inner block comment must not close the outer one.
+void main()
+{
+	/* outer
+	   /* inner nested */
+	   still inside outer
+	*/
+	int x = 7;
+	/* a /* b /* c */ d */ e */
+	print(x);
+}

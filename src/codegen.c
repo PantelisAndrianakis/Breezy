@@ -9288,7 +9288,7 @@ static void cg_assign_object(Codegen *cg, TypeTable *tt, Expr *target, Expr *val
 	}
 }
 
-/* C-style for: init once, then test/body/post, with continue landing on the
+/* The for loop: init once, then test/body/post, with continue landing on the
    post step so the increment still runs. break -> end. Reuses the shared
    loop-label fields on Codegen. */
 /* ---- Loop-invariant register caching (LICM-lite) for innermost loops ----
@@ -10842,7 +10842,7 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 	}
 }
 
-/* C-style switch: case/default are label statements in the body block, so
+/* The switch: case/default are label statements in the body block, so
    fallthrough is automatic (bodies emit contiguously) and only break exits.
    A pre-pass assigns a label per case/default; dispatch is a compare-chain;
    break targets the switch end. */

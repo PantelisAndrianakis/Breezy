@@ -1,6 +1,6 @@
 # One Class Per File - No Headers, Ever
 
-Breezy takes the Java/C# approach to project structure and pushes it further: **one class per `.bzy` file is the recommended layout** (file name matching the class), though the compiler lets you put several classes in one file when that reads better. There are **no header files, no forward declarations, no `#include`, and no hand-written imports**. You write logic, not boilerplate.
+Breezy keeps project structure simple: **one class per `.bzy` file is the recommended layout** (file name matching the class), though the compiler lets you put several classes in one file when that reads better. There are **no header files, no forward declarations, no `#include`, and no hand-written imports**. You write logic, not boilerplate.
 
 ← [Back to the guide](../guide.md)
 

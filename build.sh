@@ -77,11 +77,11 @@ for t in gcc make nasm; do
 done
 [ "$ok" -eq 1 ] || { err "toolchain incomplete — see messages above."; exit 1; }
 
-# The compiler sources arrive with Part 01 of the plan.
+# The compiler sources live under src/.
 if [ ! -f src/main.c ]; then
   say "Toolchain ready."
-  say "Compiler sources are not present yet — implement Part 01"
-  say "(docs/superpowers/plans/breezy-compiler/01-compiler-core.md), then run ./build.sh again."
+  say "Compiler sources are not present yet — add them under src/,"
+  say "then run ./build.sh again."
   exit 0
 fi
 

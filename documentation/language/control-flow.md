@@ -1,6 +1,6 @@
 # Control Flow
 
-Control flow decides *which* statements run and *how many times*. Breezy's control structures are the familiar C/Java family: `if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, and `return`. This page covers each one completely.
+Control flow decides *which* statements run and *how many times*. Breezy's control structures are the familiar set: `if`/`else`, `while`, `for`, `foreach`, `switch`, `break`/`continue`, and `return`. This page covers each one completely.
 
 ← [Back to the guide](../guide.md)
 
@@ -81,7 +81,7 @@ while (i < 100)
 
 ## for
 
-A C-style `for` loop bundles three parts: an initializer, a condition, and a step. Declare the loop variable on the line above the loop, then assign it in the initializer (`int j;` then `for (j = 0; ...)`). The `++` and `--` operators increment and decrement.
+A `for` loop bundles three parts: an initializer, a condition, and a step. Declare the loop variable on the line above the loop, then assign it in the initializer (`int j;` then `for (j = 0; ...)`). The `++` and `--` operators increment and decrement.
 
 ```breezy
 int sum = 0;
@@ -144,7 +144,7 @@ foreach (int n in nums)
 
 ## switch
 
-`switch` selects a branch by value. It uses **C-style fallthrough**: a `case` runs into the next one unless you `break`. A `default` branch handles everything unmatched. Dense integer cases compile to a fast jump table.
+`switch` selects a branch by value. It uses **fallthrough**: a `case` runs into the next one unless you `break`. A `default` branch handles everything unmatched. Dense integer cases compile to a fast jump table.
 
 ```breezy
 switch (code)

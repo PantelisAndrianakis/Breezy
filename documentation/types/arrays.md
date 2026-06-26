@@ -63,7 +63,7 @@ int[] table = new int[3];
 print(table[5]);   // Throws: "array index 5 out of bounds for length 3".
 ```
 
-This turns what would be undefined behaviour in C into a clean, catchable error.
+This turns what would be an out-of-bounds memory error into a clean, catchable error.
 
 ---
 

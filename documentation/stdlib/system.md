@@ -1,6 +1,6 @@
 # System
 
-`System` is a **static namespace** for launching operating-system commands, reading command-line arguments and environment variables, and waiting for a termination signal. The command launcher is modelled on VB.NET's `Shell`.
+`System` is a **static namespace** for launching operating-system commands, reading command-line arguments and environment variables, and waiting for a termination signal.
 
 ← [Back to the guide](../guide.md)
 

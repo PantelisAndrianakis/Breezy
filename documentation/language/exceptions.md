@@ -1,6 +1,6 @@
 # Exceptions
 
-When something goes wrong - a bad argument, a missing file, an out-of-range index - Breezy uses **exceptions** to signal the error and let an outer handler deal with it, instead of threading error codes through every return value. The model is Java-style `throw` / `try` / `catch` with an exception hierarchy and stack traces, and it is **zero-cost when nothing is thrown**.
+When something goes wrong - a bad argument, a missing file, an out-of-range index - Breezy uses **exceptions** to signal the error and let an outer handler deal with it, instead of threading error codes through every return value. The model is `throw` / `try` / `catch` with an exception hierarchy and stack traces, and it is **zero-cost when nothing is thrown**.
 
 ← [Back to the guide](../guide.md)
 

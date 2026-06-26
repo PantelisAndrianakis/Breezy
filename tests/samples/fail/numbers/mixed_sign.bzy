@@ -1,4 +1,4 @@
-// Mixed-signedness arithmetic itself is allowed (a + b promotes to uint, C-style
+// Mixed-signedness arithmetic itself is allowed (a + b promotes to uint,
 // "unsigned wins"); the rejection here is assigning that uint result back to an
 // int without a cast.
 void main()

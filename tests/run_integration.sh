@@ -79,6 +79,7 @@ check_trace() {
 echo "Integration tests"
 check minimal     tests/samples/pass/basics/minimal.bzy    "0"
 check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
+check nest_cmt    tests/samples/pass/basics/nested_comments.bzy "7"
 check simd_pack   tests/samples/pass/simd/pack_lanes.bzy    $'3.5\n7.25\n10.75'
 check simd_elemop tests/samples/pass/simd/elementwise.bzy   $'4.5\n10\n4.5\n16\n2\n4'
 check simd_dot    tests/samples/pass/simd/dot_load.bzy       $'72\n3\n10'

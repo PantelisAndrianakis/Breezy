@@ -46,7 +46,7 @@ When an arithmetic expression mixes numeric types, the result **promotes** to th
 
 - **Floating wins.** If either operand is `double`, the result is `double`; otherwise if either is `float`, the result is `float`. Integers convert into the floating type automatically. So `int + float` is a `float`, and `int + double` is a `double`.
 - **Wider integer wins.** For two integers of the **same** signedness, the result is the wider one: `byte + int` is an `int`, `int + long` is a `long`.
-- **Unsigned wins on a sign mix.** If one operand is signed and the other unsigned, the result is the **unsigned** type at the wider rank: `int + uint` is a `uint`, `long + uint` is a `ulong`. As in C, a negative value treated as unsigned wraps around - so mix signs deliberately.
+- **Unsigned wins on a sign mix.** If one operand is signed and the other unsigned, the result is the **unsigned** type at the wider rank: `int + uint` is a `uint`, `long + uint` is a `ulong`. A negative value treated as unsigned wraps around - so mix signs deliberately.
 
 ```breezy
 int i = 3;
@@ -64,9 +64,9 @@ The result type is what the expression *produces*; assigning it to a narrower or
 
 ## Arithmetic operators
 
-The arithmetic operators are `+`, `-`, `*`, `/`, and `%` (modulo / remainder), each with a compound-assignment form (`+=`, `-=`, `*=`, `/=`, `%=`). `*`, `/`, and `%` share the same precedence and bind tighter than `+` and `-`, as in C and Java.
+The arithmetic operators are `+`, `-`, `*`, `/`, and `%` (modulo / remainder), each with a compound-assignment form (`+=`, `-=`, `*=`, `/=`, `%=`). `*`, `/`, and `%` share the same precedence and bind tighter than `+` and `-`.
 
-`%` returns the remainder of an integer division and **requires integer operands** - applying it to a `float` or `double` is a compile error (use a library routine for floating-point remainder). The result follows the **sign of the dividend**, matching C: `-7 % 3` is `-1`, and `7 % -3` is `1`. Mixed-width and mixed-signedness operands promote by the same rules as the other arithmetic operators above.
+`%` returns the remainder of an integer division and **requires integer operands** - applying it to a `float` or `double` is a compile error (use a library routine for floating-point remainder). The result follows the **sign of the dividend**: `-7 % 3` is `-1`, and `7 % -3` is `1`. Mixed-width and mixed-signedness operands promote by the same rules as the other arithmetic operators above.
 
 ```breezy
 print(17 % 5);       // 2
@@ -81,7 +81,7 @@ print(i);            // 2
 
 ## Bitwise shift operators
 
-`<<` (left shift) and `>>` (right shift) move an integer's bits, with compound forms `<<=` and `>>=`. They **require integer operands** (a `float`/`double` is a compile error) and sit at their own precedence level: **looser than `+`/`-`, tighter than the comparisons** - so `1 + 1 << 3` is `(1 + 1) << 3` and `4 >> 1 == 2` is `(4 >> 1) == 2`, matching C and Java.
+`<<` (left shift) and `>>` (right shift) move an integer's bits, with compound forms `<<=` and `>>=`. They **require integer operands** (a `float`/`double` is a compile error) and sit at their own precedence level: **looser than `+`/`-`, tighter than the comparisons** - so `1 + 1 << 3` is `(1 + 1) << 3` and `4 >> 1 == 2` is `(4 >> 1) == 2`.
 
 The result takes the **left operand's type**; the shift count's type does not affect it. Right shift follows the left operand's signedness: a **signed** value shifts arithmetically (the sign bit is preserved), an **unsigned** value shifts logically (zeros fill from the top).
 
@@ -104,7 +104,7 @@ print(a);            // 32
 
 `&` (AND), `|` (OR), `^` (XOR), and the prefix `~` (NOT) combine integers bit by bit, with compound forms `&=`, `|=`, and `^=`. Like the shifts, they **require integer operands** - applying them to a `float`/`double` is a compile error.
 
-Precedence follows C and Java: `|` is loosest, then `^`, then `&`, all **looser than the comparisons** (so `a & b == c` is `a & (b == c)`). A binary `& | ^` promotes its operands the same way arithmetic does - the wider operand's type wins, and unsigned wins on mixed signedness. `~` keeps its operand's type.
+Precedence runs `|` loosest, then `^`, then `&`, all **looser than the comparisons** (so `a & b == c` is `a & (b == c)`). A binary `& | ^` promotes its operands the same way arithmetic does - the wider operand's type wins, and unsigned wins on mixed signedness. `~` keeps its operand's type.
 
 ```breezy
 print(0xF0 | 0x0F);  // 255

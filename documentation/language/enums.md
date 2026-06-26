@@ -1,6 +1,6 @@
 # Enums
 
-An **enum** is a type with a fixed set of named constant values - directions, colours, operations, states. Breezy enums follow the Java model: each constant is a **singleton object** of the enum's class, so constants can carry fields, take constructor arguments, define methods, and even give each constant its own behaviour. They are far more than named integers.
+An **enum** is a type with a fixed set of named constant values - directions, colours, operations, states. In Breezy each constant is a **singleton object** of the enum's class, so constants can carry fields, take constructor arguments, define methods, and even give each constant its own behaviour. They are far more than named integers.
 
 ← [Back to the guide](../guide.md)
 

@@ -241,8 +241,8 @@ static Expr *parse_comparison(Parser *p)
 	return left;
 }
 
-/* Shift level: binds looser than '+'/'-' but tighter than the comparisons,
-   matching C/Java. `a + b << c` is `(a + b) << c`; `a << b < c` is
+/* Shift level: binds looser than '+'/'-' but tighter than the comparisons.
+   `a + b << c` is `(a + b) << c`; `a << b < c` is
    `(a << b) < c`. Left-associative. */
 static Expr *parse_shift(Parser *p)
 {
@@ -1535,7 +1535,7 @@ static Expr *parse_case_const(Parser *p)
 	}
 
 	/* A float literal is parsed only so the resolver can reject float/double
-	   switches with a clear operand-level message (Java forbids them). */
+	   switches with a clear operand-level message (they are forbidden). */
 	if (check(p,TOKEN_FLOAT_LIT))
 	{
 		Expr *e=expr_new(EX_FLOAT,line);
@@ -1783,7 +1783,7 @@ static Stmt *parse_switch(Parser *p)
 		}
 		else if (check(p,TOKEN_LBRACE))
 		{
-			Block *grp=parse_block(p);            /* Java/K&R braces: flatten. */
+			Block *grp=parse_block(p);            /* Brace-delimited group: flatten. */
 			for (int i=0; i<grp->count; i++)
 			{
 				block_push(s->then_blk,grp->stmts[i]);

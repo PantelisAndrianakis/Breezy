@@ -2,7 +2,7 @@
 
 Welcome to Breezy - a statically-typed, object-oriented language that compiles straight to native x86-64 assembly, with memory and concurrency handled for you automatically.
 
-This guide teaches the whole language one feature at a time. Each page is self-contained: it explains the concept, the exact syntax, complete worked examples, the rules the compiler enforces, and the gotchas to avoid. If you have written Java or C#, most of it will feel familiar; if you are new to programming, start at the top and work down.
+This guide teaches the whole language one feature at a time. Each page is self-contained: it explains the concept, the exact syntax, complete worked examples, the rules the compiler enforces, and the gotchas to avoid. If you have written object-oriented code before, most of it will feel familiar; if you are new to programming, start at the top and work down.
 
 > **New here?** Read [What is Breezy?](../README.md) first for the high-level picture, then come back.
 

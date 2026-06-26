@@ -92,7 +92,7 @@ Together with `fromCBytes` (C pointer -> string) and value-array argument marsha
 
 ## Callbacks
 
-A C library can call back into Breezy through a function pointer - a `qsort` comparator, an OpenSSL verify hook, an event handler. Declare the callback parameter with a **C-style function type** `ret(paramtypes)` and pass a matching Breezy function **by name**; the compiler checks the signature and hands C the function's address directly - **no trampoline, no wrapper**, because a Breezy function already uses the platform C ABI.
+A C library can call back into Breezy through a function pointer - a `qsort` comparator, an OpenSSL verify hook, an event handler. Declare the callback parameter with a **function type** `ret(paramtypes)` and pass a matching Breezy function **by name**; the compiler checks the signature and hands C the function's address directly - **no trampoline, no wrapper**, because a Breezy function already uses the platform C ABI.
 
 ```breezy
 extern long qsort(long[] base, long n, long size, long(long,long) cmp);

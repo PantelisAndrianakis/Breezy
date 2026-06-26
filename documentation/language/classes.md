@@ -1,6 +1,6 @@
 # Classes & Objects
 
-A **class** is a blueprint that bundles **data** (fields) with the **behaviour** that acts on it (methods). An **object** is one concrete thing built from that blueprint. Breezy is object-oriented in the Java/C# tradition, so if you have seen those languages this will feel familiar - with a few Breezy-specific rules that this page spells out completely.
+A **class** is a blueprint that bundles **data** (fields) with the **behaviour** that acts on it (methods). An **object** is one concrete thing built from that blueprint. Breezy is object-oriented, so if you have written object-oriented code before this will feel familiar - with a few Breezy-specific rules that this page spells out completely.
 
 ← [Back to the guide](../guide.md)
 

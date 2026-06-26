@@ -250,15 +250,28 @@ Token lexer_next(Lexer *l)
 		{
 			next_ch(l);   /* Consume '/'. */
 			next_ch(l);   /* Consume '*'. */
-			while (peek_ch(l) && !(peek_ch(l) == '*' && l->src[l->pos+1] == '/'))
+			/* Block comments nest: track depth so an inner block comment does not
+			   close the outer one early. An unterminated comment runs to EOF, the
+			   same as a single-level one. */
+			int depth = 1;
+			while (peek_ch(l) && depth > 0)
 			{
-				next_ch(l);
-			}
-
-			if (peek_ch(l))
-			{
-				next_ch(l);   /* Consume '*'. */
-				next_ch(l);   /* Consume '/'. */
+				if (peek_ch(l) == '/' && l->src[l->pos+1] == '*')
+				{
+					next_ch(l);   /* Consume '/'. */
+					next_ch(l);   /* Consume '*'. */
+					depth++;
+				}
+				else if (peek_ch(l) == '*' && l->src[l->pos+1] == '/')
+				{
+					next_ch(l);   /* Consume '*'. */
+					next_ch(l);   /* Consume '/'. */
+					depth--;
+				}
+				else
+				{
+					next_ch(l);
+				}
 			}
 		}
 		else

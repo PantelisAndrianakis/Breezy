@@ -1,6 +1,6 @@
-# Automatic Memory - C Footprint, Zero Bookkeeping
+# Automatic Memory - Lean Footprint, Zero Bookkeeping
 
-In Breezy you **never write `free`**, you never think about ownership, and you still **never pay for a tracing garbage collector**. Memory is reclaimed deterministically, with a steady-state footprint close to hand-written C. Breezy reaches that with **three cooperating layers**, all applied automatically by the compiler.
+In Breezy you **never write `free`**, you never think about ownership, and you still **never pay for a tracing garbage collector**. Memory is reclaimed deterministically, with a steady-state footprint close to hand-managed memory. Breezy reaches that with **three cooperating layers**, all applied automatically by the compiler.
 
 ← [Back to the guide](../guide.md)
 
@@ -29,7 +29,7 @@ An object falls back to the heap (Layer 2) the moment it can truly outlive the f
 
 Anything that **does** outlive its scope - a `Client` stored in a map, long-lived world state - gets a small **reference count**. The compiler inserts the retain and release operations for you, and frees the object the instant its last reference drops. Reclamation is **deterministic**: no pause, no heap headroom, no background GC thread spiking your latency.
 
-This is what lets Breezy promise "the ergonomics of a managed language, the footprint and latency of C" - memory tracks your live data, not a bloated collector heap.
+This is what lets Breezy promise "the ergonomics of a managed language, the footprint and latency of manual memory management" - memory tracks your live data, not a bloated collector heap.
 
 ---
 
@@ -37,7 +37,7 @@ This is what lets Breezy promise "the ergonomics of a managed language, the foot
 
 Reference counting alone cannot reclaim reference **cycles** - say an order that points at a customer who points back at their orders. Each keeps the other's count above zero forever. Breezy adds a **periodic, incremental cycle collector** that finds and frees such cycles in the background - **without you annotating a single weak reference**. Everything stays automatic.
 
-The result is a steady-state memory profile close to hand-written C, with the convenience of a managed language and none of the stop-the-world pauses.
+The result is a steady-state memory profile close to hand-managed memory, with the convenience of a managed language and none of the stop-the-world pauses.
 
 ---
 
