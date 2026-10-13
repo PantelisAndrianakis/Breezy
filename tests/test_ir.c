@@ -10,6 +10,7 @@
 #include "types.h"
 #include "resolve.h"
 #include "prelude.h"
+#include "cemit.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -1197,6 +1198,79 @@ static void test_region_eligible_c_rejects_string_switch(void)
 	ASSERT_INT(ir_region_eligible_c(first_loop(f)), 0);
 }
 
+static void test_cemit_region_safe_index(void)
+{
+	/* A BCE-safe accumulation loop translates to a region function that loads
+	   its locals from the frame, runs the loop and stores them back, with no
+	   bounds check left. */
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int[] a)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < a.length; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)a[i] * 3;\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
+	char sym[64];
+	ASSERT_INT(cemit_region(first_loop(f), sym), 1);
+	ASSERT(strncmp(sym, "bzy_creg_", 9) == 0);
+	const char *c = cemit_source();
+	ASSERT(c != NULL);
+	ASSERT(strstr(c, "#include <stdint.h>") != NULL);
+	ASSERT(strstr(c, "(char *fp)") != NULL);
+	ASSERT(strstr(c, "*(int64_t *)(fp - ") != NULL);
+	ASSERT(strstr(c, "bzy_oob(i0_") == NULL);
+	cemit_reset();
+	ASSERT(cemit_source() == NULL);
+}
+
+static void test_cemit_region_checked_index(void)
+{
+	/* An unproven index keeps a bounds check that reports through fp. */
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int[] a, int n)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)a[i];\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
+	char sym[64];
+	ASSERT_INT(cemit_region(first_loop(f), sym), 1);
+	ASSERT(strstr(cemit_source(), "bzy_oob(i0_") != NULL);
+	ASSERT(strstr(cemit_source(), "(int64_t)fp") != NULL);
+	cemit_reset();
+}
+
+static void test_cemit_rejects_call(void)
+{
+	/* A call inside the loop is outside the C route: nothing is emitted. */
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int n)\n"
+						"{\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		s = s + g(i);\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n"
+						"long g(int i) { return (long)i; }\n");
+	char sym[64];
+	ASSERT_INT(cemit_region(first_loop(f), sym), 0);
+	ASSERT(cemit_source() == NULL);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
@@ -1243,6 +1317,9 @@ int main(void)
 	RUN(test_lower_folds_unrolled_product);
 	RUN(test_region_eligible_c_accepts_int_switch);
 	RUN(test_region_eligible_c_rejects_string_switch);
+	RUN(test_cemit_region_safe_index);
+	RUN(test_cemit_region_checked_index);
+	RUN(test_cemit_rejects_call);
 	SUMMARY();
 	return 0;
 }
