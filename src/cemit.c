@@ -64,6 +64,21 @@ static const char *C_PRELUDE =
 	"\n"
 	"void bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame) __attribute__((noreturn));\n"
 	"\n"
+	"/* 1 when the running CPU has the x86-64-v3 feature level (AVX2, BMI1/2, FMA,\n"
+	"   MOVBE). Decided on first use; a racing first call stores the same value. */\n"
+	"static int bzy_c_v3 = -1;\n"
+	"\n"
+	"static inline int bzy_c_has_v3(void)\n"
+	"{\n"
+	"\tif (bzy_c_v3 < 0)\n"
+	"\t{\n"
+	"\t\t__builtin_cpu_init();\n"
+	"\t\tbzy_c_v3 = __builtin_cpu_supports(\"x86-64-v3\") ? 1 : 0;\n"
+	"\t}\n"
+	"\n"
+	"\treturn bzy_c_v3;\n"
+	"}\n"
+	"\n"
 	"static inline int64_t bzy_c_sdiv64(int64_t a, int64_t b)\n"
 	"{\n"
 	"\tint64_t d;\n"
@@ -326,7 +341,7 @@ static void c_index_lvalue(CUnit *u, const Expr *e)
 			}
 
 			cbuf_printf(&u->out, "if (__builtin_expect((uint64_t)i%d_ >= (uint64_t)%dULL, 0)) ", k, ft->count);
-			cbuf_printf(&u->out, "{ bzy_oob(i%d_, %d, (int64_t)((char *)__builtin_return_address(0) - 1), (int64_t)fp); } ", k, ft->count);
+			cbuf_printf(&u->out, "{ bzy_oob(i%d_, %d, (int64_t)(ra - 1), (int64_t)fp); } ", k, ft->count);
 		}
 
 		cbuf_printf(&u->out, "&bzy_fin_%d[i%d_]; }))", idx, k);
@@ -359,7 +374,7 @@ static void c_index_lvalue(CUnit *u, const Expr *e)
 		}
 
 		cbuf_printf(&u->out, "if (__builtin_expect((uint64_t)i%d_ >= (uint64_t)n%d_, 0)) ", k, k);
-		cbuf_printf(&u->out, "{ bzy_oob(i%d_, n%d_, (int64_t)((char *)__builtin_return_address(0) - 1), (int64_t)fp); } ", k, k);
+		cbuf_printf(&u->out, "{ bzy_oob(i%d_, n%d_, (int64_t)(ra - 1), (int64_t)fp); } ", k, k);
 	}
 
 	cbuf_printf(&u->out, "(%s *)(a%d_ + 32) + i%d_; }))", et, k, k);
@@ -947,6 +962,18 @@ static void c_store_slot(int off, TypeKind k)
 	}
 }
 
+/* The exported region symbol. The body is compiled twice, once for the
+   x86-64-v3 feature level and once for the baseline, and this function picks
+   one at run time. It is what the Breezy frame calls, so its return address
+   (minus one) is the pc a bounds failure reports. */
+static void c_region_dispatch(const char *sym)
+{
+	cbuf_printf(&g_src, "__attribute__((target(\"arch=x86-64-v3\"), noinline)) static void %s_v3(char *fp, char *ra)\n{\n\t%s_body(fp, ra);\n}\n", sym, sym);
+	cbuf_printf(&g_src, "__attribute__((noinline)) static void %s_base(char *fp, char *ra)\n{\n\t%s_body(fp, ra);\n}\n", sym, sym);
+	cbuf_printf(&g_src, "void %s(char *fp)\n{\n\tchar *ra = (char *)__builtin_return_address(0);\n", sym);
+	cbuf_printf(&g_src, "\tif (bzy_c_has_v3())\n\t{\n\t\t%s_v3(fp, ra);\n\t}\n\telse\n\t{\n\t\t%s_base(fp, ra);\n\t}\n}\n", sym, sym);
+}
+
 int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs)
 {
 	CUnit u;
@@ -974,7 +1001,7 @@ int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs)
 		c_emit_final(u.finals[i]);
 	}
 
-	cbuf_printf(&g_src, "\nvoid %s(char *fp)\n{\n", sym);
+	cbuf_printf(&g_src, "\nstatic inline __attribute__((always_inline)) void %s_body(char *fp, char *ra)\n{\n", sym);
 	for (int i = 0; i < u.nlocal; i++)
 	{
 		c_load_slot(u.local_off[i], u.local_kind[i]);
@@ -986,7 +1013,8 @@ int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs)
 		c_store_slot(u.local_off[i], u.local_kind[i]);
 	}
 
-	cbuf_printf(&g_src, "\t(void)fp;\n}\n");
+	cbuf_printf(&g_src, "\t(void)fp;\n\t(void)ra;\n}\n");
+	c_region_dispatch(sym);
 	cbuf_free(&u.out);
 	return 1;
 }

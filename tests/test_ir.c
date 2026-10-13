@@ -1226,6 +1226,12 @@ static void test_cemit_region_safe_index(void)
 	ASSERT(strstr(c, "#include <stdint.h>") != NULL);
 	ASSERT(strstr(c, "(char *fp)") != NULL);
 	ASSERT(strstr(c, "*(int64_t *)(fp - ") != NULL);
+	/* The body is compiled twice, for x86-64-v3 and for the baseline, and the
+	   exported symbol picks one at run time. */
+	ASSERT(strstr(c, "__builtin_cpu_supports(\"x86-64-v3\")") != NULL);
+	ASSERT(strstr(c, "target(\"arch=x86-64-v3\")") != NULL);
+	ASSERT(strstr(c, "_v3(char *fp, char *ra)") != NULL);
+	ASSERT(strstr(c, "_base(char *fp, char *ra)") != NULL);
 	ASSERT(strstr(c, "bzy_oob(i0_") == NULL);
 	cemit_reset();
 	ASSERT(cemit_source() == NULL);
