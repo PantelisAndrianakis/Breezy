@@ -4,6 +4,7 @@
 #include "resolve.h"
 #include "codegen.h"
 #include "config.h"   /* bzy_config_reset_cache: toggle BZY_IR for the SIMD case. */
+#include "cemit.h"    /* cemit_source/cemit_reset: inspect the C route's output. */
 #include "prelude.h"
 #include "overload.h"
 #include "generics.h"   /* Mirror the driver: drop uninstantiated generic templates (e.g. the Pool<T> prelude class) before resolve/codegen. */
@@ -1837,6 +1838,91 @@ static void test_simd_vectorize_int_add(void)
 	bzy_config_reset_cache();
 }
 
+static void c_route_on(void)
+{
+	putenv("BZY_IR=1");
+	putenv("BZY_C=1");
+	bzy_config_reset_cache();
+	cemit_reset();
+}
+
+static void c_route_off(void)
+{
+	putenv("BZY_C=0");
+	putenv("BZY_IR=0");
+	bzy_config_reset_cache();
+	cemit_reset();
+}
+
+static void test_c_region_call(void)
+{
+	/* An eligible loop becomes a call into generated C: rbp goes in the first
+	   argument register and no inline IR region body is emitted. */
+	c_route_on();
+	emit("void main() {"
+		 " int[] a; a = new int[100];"
+		 " long s; s = 0;"
+		 " for (int i = 0; i < a.length; i = i + 1) { s = s + (long)a[i] * 3; }"
+		 " print(s); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "mov rcx, rbp") != NULL);
+	ASSERT(strstr(g_asm, "call bzy_creg_") != NULL);
+	ASSERT(strstr(g_asm, "ir-region begin") == NULL);
+	ASSERT(cemit_source() != NULL);
+	c_route_on();
+	emit("void main() {"
+		 " int[] a; a = new int[100];"
+		 " long s; s = 0;"
+		 " for (int i = 0; i < a.length; i = i + 1) { s = s + (long)a[i] * 3; }"
+		 " print(s); }", TARGET_LINUX);
+	ASSERT(strstr(g_asm, "mov rdi, rbp") != NULL);
+	c_route_off();
+}
+
+static void test_c_switch_region(void)
+{
+	/* A loop with an integer switch is a C region (the IR path rejects it). */
+	c_route_on();
+	emit("void main() {"
+		 " long acc; acc = 0;"
+		 " for (int i = 0; i < 1000; i = i + 1) {"
+		 "  switch (i % 3) { case 0: acc = acc + 1; break; case 1: acc = acc + 2; break; default: acc = acc + 5; } }"
+		 " print(acc); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "call bzy_creg_") != NULL);
+	ASSERT(strstr(cemit_source(), "switch ((int64_t)") != NULL);
+	c_route_off();
+}
+
+static void test_c_whole_function(void)
+{
+	/* A throw-free leaf function is declared extern and defined in C under its label. */
+	c_route_on();
+	emit("long steps(long n) {"
+		 " long c; c = 0;"
+		 " while (n > 1) { if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; } c = c + 1; }"
+		 " return c; }"
+		 " void main() { print(steps(27)); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "extern bzy_steps") != NULL);
+	ASSERT(strstr(g_asm, "bzy_steps:") == NULL);
+	ASSERT(strstr(cemit_source(), "__asm__(\"bzy_steps\")") != NULL);
+	c_route_off();
+}
+
+static void test_c_route_off_by_default(void)
+{
+	/* With BZY_C unset, codegen is unchanged and no C is produced. */
+	putenv("BZY_IR=1");
+	bzy_config_reset_cache();
+	cemit_reset();
+	emit("void main() {"
+		 " int[] a; a = new int[100];"
+		 " long s; s = 0;"
+		 " for (int i = 0; i < a.length; i = i + 1) { s = s + (long)a[i] * 3; }"
+		 " print(s); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "call bzy_creg_") == NULL);
+	ASSERT(cemit_source() == NULL);
+	c_route_off();
+}
+
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
@@ -1907,6 +1993,10 @@ int main(void)
 	RUN(test_ffi_variadic_parses);
 	RUN(test_ffi_variadic_win64_fpdup);
 	RUN(test_simd_vectorize_int_add);
+	RUN(test_c_region_call);
+	RUN(test_c_switch_region);
+	RUN(test_c_whole_function);
+	RUN(test_c_route_off_by_default);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_system_realtime_io_lowers);

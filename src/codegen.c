@@ -9,6 +9,7 @@
 #include "iremit.h"
 #include "regalloc.h"
 #include "overload.h"
+#include "cemit.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -68,6 +69,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->region_stmt=NULL;
 	cg->region_irf=NULL;
 	cg->region_alloc=NULL;
+	cg->region_csym=NULL;
 	cg->region_base=0;
 	cg->target=TARGET_WINDOWS;   /* Driver overrides via --target. */
 }
@@ -11685,7 +11687,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		if (cg->hoist_n == 0 && cg->sr_n == 0 && cg->defer_n == 0 && !cg->unrolling)
 		{
 			int r = cg_region_find(cg, s);
-			if (r >= 0)
+			/* A C region reads locals from their home slots, which are stale for the
+			   doubles an armed enclosing loop keeps in xmm6-11 (and SysV would not
+			   preserve those registers across the call), so it waits for lpromo_n == 0. */
+			if (r >= 0 && (!cg->region_csym[r][0] || cg->lpromo_n == 0))
 			{
 				cg_emit_region_stmt(cg, f, r);
 				break;
@@ -11747,7 +11752,10 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		if (cg->hoist_n == 0 && cg->sr_n == 0 && cg->defer_n == 0 && !cg->unrolling)
 		{
 			int r = cg_region_find(cg, s);
-			if (r >= 0)
+			/* A C region reads locals from their home slots, which are stale for the
+			   doubles an armed enclosing loop keeps in xmm6-11 (and SysV would not
+			   preserve those registers across the call), so it waits for lpromo_n == 0. */
+			if (r >= 0 && (!cg->region_csym[r][0] || cg->lpromo_n == 0))
 			{
 				cg_emit_region_stmt(cg, f, r);
 				break;
@@ -12179,6 +12187,25 @@ static int cg_region_line_allowed(int line)
    the hoist accounting) and ST_SWITCH are never descended into. A hot-spill
    allocation (a value in the deepest loop would spill, which the emitter's
    tuned heuristics tend to handle better) keeps the loop on the emitter. */
+/* Appends one recorded region. irf/a are NULL for a C region; csym is "" for an IR region. */
+static void cg_region_record(Codegen *cg, const Stmt *s, IRFunc *irf, IRAlloc *a, const char *csym)
+{
+	if (cg->region_count == cg->region_cap)
+	{
+		cg->region_cap = cg->region_cap ? cg->region_cap * 2 : 8;
+		cg->region_stmt  = realloc(cg->region_stmt,  (size_t)cg->region_cap * sizeof(*cg->region_stmt));
+		cg->region_irf   = realloc(cg->region_irf,   (size_t)cg->region_cap * sizeof(*cg->region_irf));
+		cg->region_alloc = realloc(cg->region_alloc, (size_t)cg->region_cap * sizeof(*cg->region_alloc));
+		cg->region_csym  = realloc(cg->region_csym,  (size_t)cg->region_cap * sizeof(*cg->region_csym));
+	}
+
+	cg->region_stmt[cg->region_count] = s;
+	cg->region_irf[cg->region_count] = irf;
+	cg->region_alloc[cg->region_count] = a;
+	snprintf(cg->region_csym[cg->region_count], sizeof(cg->region_csym[0]), "%s", csym);
+	cg->region_count++;
+}
+
 static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 {
 	if (!b)
@@ -12192,6 +12219,21 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
 			const char *verdict = "ineligible";
+			if (bzy_c_enabled() && ir_region_eligible_c(s) && cg_region_line_allowed(s->line))
+			{
+				char sym[64];
+				if (cemit_region(s, sym))
+				{
+					cg_region_record(cg, s, NULL, NULL, sym);
+					if (cg_region_debug())
+					{
+						fprintf(stderr, "ir-region: %s line %d: C-REGION %s\n", f->name, s->line, sym);
+					}
+
+					continue;
+				}
+			}
+
 			if (ir_region_eligible(s)
 					&& cg_region_line_allowed(s->line))
 			{
@@ -12202,18 +12244,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 					int vec_override = a->hot_spill && ir_region_vectorizable(f, s, a);
 					if (!a->hot_spill || cg_region_hotspill_override() || vec_override)
 					{
-						if (cg->region_count == cg->region_cap)
-						{
-							cg->region_cap = cg->region_cap ? cg->region_cap * 2 : 8;
-							cg->region_stmt  = realloc(cg->region_stmt,  (size_t)cg->region_cap * sizeof(*cg->region_stmt));
-							cg->region_irf   = realloc(cg->region_irf,   (size_t)cg->region_cap * sizeof(*cg->region_irf));
-							cg->region_alloc = realloc(cg->region_alloc, (size_t)cg->region_cap * sizeof(*cg->region_alloc));
-						}
-
-						cg->region_stmt[cg->region_count] = s;
-						cg->region_irf[cg->region_count] = irf;
-						cg->region_alloc[cg->region_count] = a;
-						cg->region_count++;
+						cg_region_record(cg, s, irf, a, "");
 						if (cg_region_debug())
 						{
 							fprintf(stderr, "ir-region: %s line %d: REGION (%d locals, %d spill bytes%s)\n",
@@ -12275,6 +12306,39 @@ static int cg_region_find(Codegen *cg, const Stmt *s)
    disjoint, so at most one of them spans any given region. */
 static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
 {
+	if (cg->region_csym[r][0])
+	{
+		/* The C body reads and writes locals only through their home slots, so
+		   every promoted local is flushed before the call and reloaded after it.
+		   r12-r15 survive the call (callee-saved), xmm2-5 do not; the reload
+		   covers both. The fixed-rsp frame already holds shadow space and 16-byte
+		   alignment for a bare call. */
+		for (int i = 0; i < f->promo_count; i++)
+		{
+			cg_emit(cg, "    mov [rbp - %d], %s", f->promo_off[i], CG_PROMO_REGS[f->promo_reg[i]]);
+		}
+
+		for (int i = 0; i < f->fpromo_count; i++)
+		{
+			cg_emit(cg, "    movsd [rbp - %d], %s", f->fpromo_off[i], CG_FPROMO_REGS[f->fpromo_reg[i]]);
+		}
+
+		cg_emit(cg, "extern %s", cg->region_csym[r]);
+		cg_emit(cg, "    mov %s, rbp", cg_iarg(cg, 0));
+		cg_emit(cg, "    call %s", cg->region_csym[r]);
+		for (int i = 0; i < f->promo_count; i++)
+		{
+			cg_emit(cg, "    mov %s, [rbp - %d]", CG_PROMO_REGS[f->promo_reg[i]], f->promo_off[i]);
+		}
+
+		for (int i = 0; i < f->fpromo_count; i++)
+		{
+			cg_emit(cg, "    movsd %s, [rbp - %d]", CG_FPROMO_REGS[f->fpromo_reg[i]], f->fpromo_off[i]);
+		}
+
+		return;
+	}
+
 	IRAlloc *a = cg->region_alloc[r];
 	for (int i = 0; i < f->promo_count; i++)
 	{
@@ -12328,6 +12392,15 @@ static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
 
 static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f, const char *this_class)
 {
+	/* C route: a throw-free leaf function is defined in generated C under its
+	   label; the asm only declares it. It calls nothing, so no exception can
+	   unwind through its frame and it needs no exception record. */
+	if (bzy_c_enabled() && this_class == NULL && !f->is_lambda && ir_eligible(f) && cemit_func(f, label))
+	{
+		cg_emit(cg, "extern %s", label);
+		return;
+	}
+
 	/* Experimental IR backend: a free (non-method) function that lowers cleanly
 	   is emitted from IR instead of the syntax-directed path. Gated by BZY_IR and
 	   guarded by ir_eligible; a NULL lowering falls through to the emitter. */
@@ -12363,6 +12436,11 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		for (int i = 0; i < cg->region_count; i++)
 		{
 			IRAlloc *a = cg->region_alloc[i];
+			if (!a)
+			{
+				continue;   /* A C region uses no frame area. */
+			}
+
 			int ncs = 0;
 			for (int j = 0; j < RA_NREGS; j++)
 			{
@@ -12628,8 +12706,11 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 
 	for (int i = 0; i < cg->region_count; i++)
 	{
-		ra_free(cg->region_alloc[i]);
-		ir_func_free(cg->region_irf[i]);
+		if (cg->region_alloc[i])
+		{
+			ra_free(cg->region_alloc[i]);
+			ir_func_free(cg->region_irf[i]);
+		}
 	}
 
 	cg->region_count = 0;

@@ -75,6 +75,7 @@ typedef struct
 	const Stmt **region_stmt; /* IR loop regions: the loop statements the pre-scan recorded. Grown dynamically. */
 	IRFunc     **region_irf;  /* Their lowered IR. */
 	IRAlloc    **region_alloc;/* Their register allocations (also sized the shared frame area). */
+	char      (*region_csym)[64]; /* C route: the region's generated function, or "" for an IR region. */
 	int         region_count; /* Regions recorded for the current function. */
 	int         region_cap;
 	int         region_base;                 /* rbp offset of the shared region spill/callee-save area. */
