@@ -1255,6 +1255,33 @@ static void test_cemit_region_checked_index(void)
 	cemit_reset();
 }
 
+static void test_cemit_checks_against_constant_length(void)
+{
+	/* When BCE knows an array's exact length (new T[N]) but cannot prove the
+	   index, the check compares against the constant, so gcc can reason about
+	   it (and drop it when the index range is provably inside). */
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int n)\n"
+						"{\n"
+						"	int[] a;\n"
+						"	a = new int[64];\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)a[i & 127];\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
+	char sym[64];
+	int offs[64];
+	int noffs = 0;
+	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT(strstr(cemit_source(), "n0_ = (int64_t)64LL;") != NULL);
+	cemit_reset();
+}
+
 static void test_cemit_rejects_call(void)
 {
 	/* A call inside the loop is outside the C route: nothing is emitted. */
@@ -1326,6 +1353,7 @@ int main(void)
 	RUN(test_region_eligible_c_rejects_string_switch);
 	RUN(test_cemit_region_safe_index);
 	RUN(test_cemit_region_checked_index);
+	RUN(test_cemit_checks_against_constant_length);
 	RUN(test_cemit_rejects_call);
 	SUMMARY();
 	return 0;

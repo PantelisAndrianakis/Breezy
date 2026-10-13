@@ -360,7 +360,7 @@ int main(int argc, char *argv[])
 		fputs(cemit_source(), cf);
 		fclose(cf);
 		printf("Wrote out_c.c\n");
-		if (system("gcc -O2 -fwrapv -fno-strict-aliasing -ffp-contract=off -c out_c.c -o out_c.obj") != 0)
+		if (system("gcc -O3 -fwrapv -fno-strict-aliasing -ffp-contract=off -c out_c.c -o out_c.obj") != 0)
 		{
 			fprintf(stderr, "Compiling out_c.c failed.\n");
 			return 1;

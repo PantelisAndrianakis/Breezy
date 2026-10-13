@@ -253,7 +253,17 @@ static void c_index_lvalue(CUnit *u, const Expr *e)
 	cbuf_printf(&u->out, "; ");
 	if (!e->anno_index_safe)
 	{
-		cbuf_printf(&u->out, "int64_t n%d_ = *(int64_t *)(a%d_ + 24); ", k, k);
+		if (e->anno_len_const > 0)
+		{
+			/* BCE knows the exact length (new T[N]); comparing against the constant
+			   lets gcc drop the check wherever the index range is provably inside. */
+			cbuf_printf(&u->out, "int64_t n%d_ = (int64_t)%lldLL; ", k, e->anno_len_const);
+		}
+		else
+		{
+			cbuf_printf(&u->out, "int64_t n%d_ = *(int64_t *)(a%d_ + 24); ", k, k);
+		}
+
 		cbuf_printf(&u->out, "if (__builtin_expect((uint64_t)i%d_ >= (uint64_t)n%d_, 0)) ", k, k);
 		cbuf_printf(&u->out, "{ bzy_oob(i%d_, n%d_, (int64_t)((char *)__builtin_return_address(0) - 1), (int64_t)fp); } ", k, k);
 	}
