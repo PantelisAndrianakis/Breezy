@@ -38,6 +38,148 @@ static void die(int line, const char *msg, const char *arg)
 	lexer_diag(g_cur_src, g_cur_file, line, 0, msg, arg);
 }
 
+/* Registered final-array tables (reset per program); ids handed out are index + 1. */
+static FinalTable *g_finals = NULL;
+static int g_final_n = 0;
+static int g_final_cap = 0;
+
+/* Set right before resolving the base of an index or of a `.length`, and
+   consumed by the very next EX_IDENT / EX_FIELD: the one place a final array
+   may appear. */
+static int g_final_base = 0;
+
+int final_table_count(void)
+{
+	return g_final_n;
+}
+
+const FinalTable *final_table(int idx)
+{
+	return &g_finals[idx];
+}
+
+/* die() with a message built around a name: pre + name + post. */
+static void die_named(int line, const char *pre, const char *name, const char *post)
+{
+	char buf[256];
+	snprintf(buf, sizeof(buf), "%s%s%s", pre, name, post);
+	die(line, buf, NULL);
+}
+
+static void die_final_use(int line, const char *name)
+{
+	die_named(line, "Final array ", name, " can only be indexed or read for its length.");
+}
+
+/* The value of one literal in a final array's list. Returns 'i' (integer,
+   possibly negated), 'f' (floating point, possibly negated), 'b' (bool) or 0
+   when the element is not a literal. */
+static char final_literal(const Expr *e, long long *iv, double *dv)
+{
+	int neg = 0;
+	if (e->kind == EX_UNARY && e->op == TOKEN_MINUS && e->lhs)
+	{
+		neg = 1;
+		e = e->lhs;
+	}
+
+	if (e->kind == EX_INT)
+	{
+		*iv = neg ? -e->int_val : e->int_val;
+		*dv = (double)*iv;
+		return 'i';
+	}
+
+	if (e->kind == EX_FLOAT)
+	{
+		*iv = 0;
+		*dv = neg ? -e->float_val : e->float_val;
+		return 'f';
+	}
+
+	if (e->kind == EX_BOOL && !neg)
+	{
+		*iv = e->int_val ? 1 : 0;
+		*dv = 0.0;
+		return 'b';
+	}
+
+	return 0;
+}
+
+/* 1 if integer v fits element kind k without a cast. */
+static int final_int_fits(TypeKind k, long long v)
+{
+	int bits = ty_bits(k);
+	if (bits >= 64)
+	{
+		return ty_is_signed(k) || v >= 0;
+	}
+
+	if (ty_is_signed(k))
+	{
+		long long lim = 1LL << (bits - 1);
+		return v >= -lim && v < lim;
+	}
+
+	return v >= 0 && v < (1LL << bits);
+}
+
+/* Validates a final array's type and literal list and registers its table.
+   Returns the table id + 1. */
+static int final_register(const TypeRef *t, Expr *init, int line)
+{
+	TypeKind ek = (t->kind == TY_ARRAY && t->elem) ? t->elem->kind : TY_VOID;
+	int elem_ok = ty_is_int(ek) || ek == TY_BOOL || ek == TY_DOUBLE;
+	if (!elem_ok || !init || init->kind != EX_ARRAYLIT)
+	{
+		die(line, "A final array needs an initializer of literal values, like { 1, 2, 3 }.", NULL);
+	}
+
+	g_finals = grow_ensure(g_finals, g_final_n, &g_final_cap, sizeof(FinalTable));
+	FinalTable *ft = &g_finals[g_final_n];
+	int cap = init->arg_count > 0 ? init->arg_count : 1;
+	ft->elem = ek;
+	ft->count = init->arg_count;
+	ft->ivals = calloc((size_t)cap, sizeof(long long));
+	ft->dvals = calloc((size_t)cap, sizeof(double));
+	for (int i = 0; i < init->arg_count; i++)
+	{
+		long long iv = 0;
+		double dv = 0.0;
+		char kind = final_literal(init->args[i], &iv, &dv);
+		if (kind == 0)
+		{
+			die(init->args[i]->line, "A final array needs an initializer of literal values, like { 1, 2, 3 }.", NULL);
+		}
+
+		int fits = 0;
+		if (ek == TY_BOOL)
+		{
+			fits = (kind == 'b');
+		}
+		else if (ek == TY_DOUBLE)
+		{
+			fits = (kind == 'i' || kind == 'f');
+		}
+		else
+		{
+			fits = (kind == 'i' && final_int_fits(ek, iv));
+		}
+
+		if (!fits)
+		{
+			die(init->args[i]->line, "Value does not fit the final array's element type.", NULL);
+		}
+
+		ft->ivals[i] = iv;
+		ft->dvals[i] = dv;
+	}
+
+	g_final_n++;
+	return g_final_n;
+}
+
 static ClassInfo *class_of(const TypeRef *t)
 {
 	return t->kind==TY_OBJECT ? types_find_class(g_types,t->class_name) : NULL;
@@ -2011,7 +2153,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;   /* e->type already TY_GENERIC + elem, set by the parser. */
 	}
 	case EX_INDEX:
+		g_final_base = (e->lhs->kind == EX_IDENT || e->lhs->kind == EX_FIELD);
 		resolve_expr(st,e->lhs,tc);
+		g_final_base = 0;
 		resolve_expr(st,e->rhs,tc);
 		if (e->lhs->type.kind==TY_GENERIC && strcmp(e->lhs->type.class_name,"List")==0)
 		{
@@ -2085,6 +2229,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	case EX_IDENT:
 	{
 		Symbol *s=sym_find(st,e->name);
+		int final_ok = g_final_base;
+		g_final_base = 0;
 		if (!s && g_cur_lam)
 		{
 			/* Inside a lambda body, a name not bound by a parameter/local that
@@ -2093,6 +2239,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			if (!c)
 			{
 				Symbol *encs = g_lam_enc ? sym_find(g_lam_enc, e->name) : NULL;
+				if (encs && encs->final_id)
+				{
+					die_final_use(e->line, e->name);
+				}
+
 				if (encs)
 				{
 					c = lam_add_cap(g_cur_lam, e->name, encs->type, encs->offset);
@@ -2138,6 +2289,16 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 						e->type=fld->type;
 						e->anno_int=-1;             /* Static-field sentinel (see codegen). */
 						strcpy(e->anno_str,tc);
+						if (fld->final_id)
+						{
+							if (!final_ok)
+							{
+								die_final_use(e->line, fld->name);
+							}
+
+							e->anno_final = fld->final_id;
+						}
+
 						break;
 					}
 
@@ -2157,10 +2318,23 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		e->type=s->type;
 		e->anno_int=s->offset;
+		if (s->final_id)
+		{
+			if (!final_ok)
+			{
+				die_final_use(e->line, e->name);
+			}
+
+			e->anno_final = s->final_id;
+		}
+
 		break;
 	}
 	case EX_LAMBDA:
 		resolve_lambda(st, e, NULL, tc);   /* No target type here: params must be annotated. */
+		break;
+	case EX_ARRAYLIT:
+		die(e->line, "An array literal can only initialize a final array.", NULL);
 		break;
 	case EX_NEW:
 	{
@@ -2397,6 +2571,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_FIELD:
 	{
+		int final_ok = g_final_base;
+		g_final_base = 0;
 		/* Enum constant access (Color.RED): the lhs is the enum type name, not a
 		   variable. The node stays EX_FIELD; codegen re-detects it via enum_is and
 		   loads the singleton slot, so lhs is left unresolved. */
@@ -2444,6 +2620,16 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				e->type=f->type;
 				e->anno_int=-1;
 				strcpy(e->anno_str,e->lhs->name);
+				if (f->final_id)
+				{
+					if (!final_ok)
+					{
+						die_final_use(e->line, e->name);
+					}
+
+					e->anno_final = f->final_id;
+				}
+
 				break;
 			}
 		}
@@ -2481,7 +2667,10 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		g_final_base = (strcmp(e->name,"length") == 0
+						&& (e->lhs->kind == EX_IDENT || e->lhs->kind == EX_FIELD));
 		resolve_expr(st,e->lhs,tc);
+		g_final_base = 0;
 		if (e->lhs->type.kind==TY_ARRAY)
 		{
 			if (strcmp(e->name,"length")!=0)
@@ -5401,6 +5590,22 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"Unknown type: ",s->decl_type.class_name);
 		}
 
+		if (s->is_final)
+		{
+			int id = final_register(&s->decl_type, s->decl_init, s->line);
+			s->decl_init = NULL;   /* The table replaces the initializer. */
+			s->final_id = id;
+			Symbol *fsym = sym_add(st, s->decl_name, s->decl_type);
+			fsym->final_id = id;
+			s->decl_offset = fsym->offset;
+			break;
+		}
+
+		if (s->decl_init && s->decl_init->kind == EX_ARRAYLIT)
+		{
+			die(s->line, "An array literal can only initialize a final array.", NULL);
+		}
+
 		if (s->decl_init)
 		{
 			resolve_value(st,s->decl_init,&s->decl_type,tc);
@@ -5423,6 +5628,11 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"Enum constants are immutable.",NULL);
 		}
 
+		if (s->target->kind == EX_INDEX && (s->target->lhs->kind == EX_IDENT || s->target->lhs->kind == EX_FIELD))
+		{
+			g_final_base = 1;   /* The pre-resolve below sees an index base. */
+		}
+
 		if (s->target->kind==EX_INDEX)
 		{
 			/* A List subscript store `list[i] = v` becomes `list.set(i, v)`. Resolve
@@ -5430,6 +5640,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			   native indexed store). The receiver is a plain lvalue base, so the
 			   re-resolve on the array fall-through is idempotent. */
 			resolve_expr(st,s->target->lhs,tc);
+			g_final_base = 0;
 			if (s->target->lhs->type.kind==TY_GENERIC && strcmp(s->target->lhs->type.class_name,"List")==0)
 			{
 				Expr *call = expr_new(EX_METHOD_CALL, s->line);
@@ -5444,7 +5655,23 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			}
 		}
 
+		if (s->target->kind == EX_IDENT || s->target->kind == EX_FIELD)
+		{
+			g_final_base = 1;   /* Reported as an assignment, not as a misuse. */
+		}
+
 		resolve_expr(st,s->target,tc);
+		g_final_base = 0;
+		if ((s->target->kind == EX_IDENT || s->target->kind == EX_FIELD) && s->target->anno_final)
+		{
+			die_named(s->line, "Cannot assign to final array ", s->target->name, ".");
+		}
+
+		if (s->target->kind == EX_INDEX && s->target->lhs->anno_final)
+		{
+			die_named(s->line, "Cannot write to an element of final array ", s->target->lhs->name, ".");
+		}
+
 		resolve_value(st,s->value,&s->target->type,tc);
 		if (!assignable(&s->target->type, &s->value->type))
 		{
@@ -6942,6 +7169,42 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 	g_program_uses_avx = 0;   /* Per-program (the test harness compiles several in one process). */
 	g_program_uses_avx2 = 0;
 	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
+
+	for (int i = 0; i < g_final_n; i++)
+	{
+		free(g_finals[i].ivals);
+		free(g_finals[i].dvals);
+	}
+
+	g_final_n = 0;   /* Final tables are per program (the test harness compiles several). */
+	for (int i = 0; i < unit_count; i++)
+	{
+		Unit *u = units[i];
+		g_cur_file = u->file;
+		g_cur_src = u->src;
+		for (int ci = 0; ci < u->class_count; ci++)
+		{
+			ClassDecl *d = u->klasses[ci];
+			for (int k = 0; k < d->field_count; k++)
+			{
+				Field *fd = &d->fields[k];
+				if (!fd->is_final)
+				{
+					continue;
+				}
+
+				if (!fd->is_static && !d->is_static)
+				{
+					die(fd->name_line, "Only local variables and static fields can be final.", NULL);
+				}
+
+				int id = final_register(&fd->type, fd->init, fd->name_line);
+				FieldInfo *fi = types_find_field(types_find_class(tt, d->name), fd->name);
+				fi->final_id = id;
+				fd->init = NULL;   /* The table replaces the initializer: no startup store. */
+			}
+		}
+	}
 
 	for (int i=0; i<unit_count; i++)
 	{

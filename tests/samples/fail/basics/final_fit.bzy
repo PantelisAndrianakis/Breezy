@@ -1,0 +1,4 @@
+void main()
+{
+	final byte[] B = { 300 };
+}

@@ -1,0 +1,11 @@
+static class D
+{
+	static final int[] T = { 1 };
+}
+
+void main()
+{
+	int[] o;
+	o = new int[1];
+	D.T = o;
+}

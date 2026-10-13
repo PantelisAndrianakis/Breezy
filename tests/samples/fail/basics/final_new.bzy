@@ -1,0 +1,4 @@
+void main()
+{
+	final int[] T = new int[3];
+}

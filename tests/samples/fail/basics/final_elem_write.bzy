@@ -1,0 +1,5 @@
+void main()
+{
+	final int[] T = { 1, 2 };
+	T[0] = 5;
+}

@@ -8,6 +8,7 @@ typedef struct
 	TypeRef type;
 	int offset;       /* Instance field byte offset; -1 for a static field (global slot). */
 	int is_static;    /* Static field: one shared global slot, not in the object. */
+	int final_id;     /* Static final array: table id + 1, or 0. */
 } FieldInfo;
 typedef struct
 {

@@ -1,0 +1,9 @@
+void f(int[] a)
+{
+}
+
+void main()
+{
+	final int[] T = { 1 };
+	f(T);
+}

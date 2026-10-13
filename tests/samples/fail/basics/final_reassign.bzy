@@ -1,0 +1,7 @@
+void main()
+{
+	final int[] T = { 1 };
+	int[] o;
+	o = new int[1];
+	T = o;
+}

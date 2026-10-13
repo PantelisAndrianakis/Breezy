@@ -43,6 +43,15 @@ check_fail() {
     if [ $? -ne 0 ]; then echo "  $name: OK (rejected)"
     else echo "  $name: FAIL (compiled, expected rejection)"; fail=1; fi
 }
+check_fail_msg() {
+    # Like check_fail, but also asserts the compiler's message contains $3.
+    local name="$1" target="$2" expect="$3"
+    local out; out="$(./breezy "$target" 2>&1)"; local code=$?
+    out="${out//$'\r'/}"
+    if [ $code -eq 0 ]; then echo "  $name: FAIL (compiled, expected rejection)"; fail=1
+    elif printf '%s' "$out" | grep -qF -- "$expect"; then echo "  $name: OK (rejected)"
+    else echo "  $name: FAIL (missing '$expect' in: $out)"; fail=1; fi
+}
 check_abort() {
     local name="$1" target="$2"
     bzy_build "$target" || { echo "  $name: COMPILE FAILED"; fail=1; return; }
@@ -82,6 +91,18 @@ check inline_asm  tests/samples/pass/basics/inline_asm.bzy "5"
 check nest_cmt    tests/samples/pass/basics/nested_comments.bzy "7"
 check str_escapes tests/samples/pass/basics/string_escapes.bzy  "ABCDE"
 check_fail nul_escape tests/samples/fail/basics/nul_escape.bzy
+check_fail_msg final_elem_write    tests/samples/fail/basics/final_elem_write.bzy    "Cannot write to an element of final array T."
+check_fail_msg final_compound      tests/samples/fail/basics/final_compound.bzy      "Cannot write to an element of final array T."
+check_fail_msg final_reassign      tests/samples/fail/basics/final_reassign.bzy      "Cannot assign to final array T."
+check_fail_msg final_static_reassign tests/samples/fail/basics/final_static_reassign.bzy "Cannot assign to final array T."
+check_fail_msg final_pass          tests/samples/fail/basics/final_pass.bzy          "Final array T can only be indexed or read for its length."
+check_fail_msg final_foreach       tests/samples/fail/basics/final_foreach.bzy       "Final array T can only be indexed or read for its length."
+check_fail_msg final_capture       tests/samples/fail/basics/final_capture.bzy       "Final array T can only be indexed or read for its length."
+check_fail_msg final_scalar        tests/samples/fail/basics/final_scalar.bzy        "A final array needs an initializer of literal values, like { 1, 2, 3 }."
+check_fail_msg final_new           tests/samples/fail/basics/final_new.bzy           "A final array needs an initializer of literal values, like { 1, 2, 3 }."
+check_fail_msg final_fit           tests/samples/fail/basics/final_fit.bzy           "Value does not fit the final array's element type."
+check_fail_msg final_instance      tests/samples/fail/basics/final_instance.bzy      "Only local variables and static fields can be final."
+check_fail_msg arraylit_nonfinal   tests/samples/fail/basics/arraylit_nonfinal.bzy   "An array literal can only initialize a final array."
 check digit_sep   tests/samples/pass/basics/digit_separators.bzy $'1000000\n57005\n165\n1000.5'
 check_fail trailing_us tests/samples/fail/basics/trailing_underscore.bzy
 check simd_pack   tests/samples/pass/simd/pack_lanes.bzy    $'3.5\n7.25\n10.75'

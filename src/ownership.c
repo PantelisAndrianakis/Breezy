@@ -7,8 +7,9 @@ static void walk_stmt(Func *f, Stmt *s)
 	switch (s->kind)
 	{
 	case ST_VARDECL:
-		/* Record managed (object/string) locals; their slots need release at scope exit. */
-		if (ty_is_managed(s->decl_type.kind) && f->obj_local_count < 64)
+		/* Record managed (object/string) locals; their slots need release at scope
+		   exit. A final array points at a read-only table and owns nothing. */
+		if (ty_is_managed(s->decl_type.kind) && !s->is_final && f->obj_local_count < 64)
 		{
 			f->obj_local_offsets[f->obj_local_count++] = s->decl_offset;
 		}

@@ -1,0 +1,6 @@
+void main()
+{
+	final int[] T = { 1, 2 };
+	(int)->int g = x => T[x];
+	print(g(1));
+}

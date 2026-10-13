@@ -7,6 +7,7 @@ typedef struct
 	char name[64];
 	TypeRef type;
 	int offset;
+	int final_id;     /* Final array table id + 1, or 0. */
 } Symbol;
 typedef struct
 {

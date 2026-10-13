@@ -1,0 +1,8 @@
+void main()
+{
+	final int[] T = { 1, 2 };
+	foreach (int v in T)
+	{
+		print(v);
+	}
+}

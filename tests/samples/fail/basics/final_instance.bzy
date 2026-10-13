@@ -1,0 +1,8 @@
+class P
+{
+	final int[] T = { 1 };
+}
+
+void main()
+{
+}
