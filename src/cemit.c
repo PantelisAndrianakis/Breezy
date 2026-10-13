@@ -1,5 +1,6 @@
 #include "cemit.h"
 #include "lexer.h"   /* TokenType values for operators. */
+#include "resolve.h" /* final_table: final array values. */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +50,10 @@ static void cbuf_free(CBuf *b)
 static CBuf g_src;
 static int g_region_seq = 0;
 static int g_func_seq = 0;
+
+/* Which final tables the translation unit already defines (by table index). */
+static unsigned char *g_fin_done = NULL;
+static int g_fin_cap = 0;
 
 /* Written once, before the first unit. The division helpers keep the hardware
    trap on a zero divisor and on MIN / -1, which plain C division would turn
@@ -124,6 +129,8 @@ typedef struct
 	int         ok;                           /* Cleared on the first unsupported construct. */
 	int         region;                       /* 1: region unit (bounds failures report through fp). */
 	int         tmp;                          /* Counter for statement-expression temporaries. */
+	int         nfinal;
+	int         finals[64];                   /* Final tables the unit indexes (table index). */
 	const char *ret_wide;                     /* Whole function: C return type (NULL for void). */
 	const char *ret_narrow;                   /* Whole function: Breezy return type in C. */
 	int         nlocal;
@@ -230,12 +237,99 @@ static void c_expr(CUnit *u, const Expr *e);
    once, applies the bounds check unless BCE proved it, and yields the element
    pointer. A failing check reports through the enclosing Breezy frame: pc is one
    byte before the region call's return address, frame is fp. */
+/* Records that the unit reads final table idx. */
+static void note_final(CUnit *u, int idx)
+{
+	for (int i = 0; i < u->nfinal; i++)
+	{
+		if (u->finals[i] == idx)
+		{
+			return;
+		}
+	}
+
+	if (u->nfinal == 64)
+	{
+		u->ok = 0;
+		return;
+	}
+
+	u->finals[u->nfinal++] = idx;
+}
+
+/* Defines final table idx as a static const C array, once per translation unit. */
+static void c_emit_final(int idx)
+{
+	if (idx >= g_fin_cap)
+	{
+		int cap = g_fin_cap ? g_fin_cap : 16;
+		while (cap <= idx)
+		{
+			cap *= 2;
+		}
+
+		g_fin_done = realloc(g_fin_done, (size_t)cap);
+		memset(g_fin_done + g_fin_cap, 0, (size_t)(cap - g_fin_cap));
+		g_fin_cap = cap;
+	}
+
+	if (g_fin_done[idx])
+	{
+		return;
+	}
+
+	g_fin_done[idx] = 1;
+	const FinalTable *ft = final_table(idx);
+	const char *et = c_elem_type(ft->elem);
+	cbuf_printf(&g_src, "\nstatic const %s bzy_fin_%d[%d] = {", et, idx, ft->count > 0 ? ft->count : 1);
+	for (int k = 0; k < ft->count; k++)
+	{
+		if (ft->elem == TY_DOUBLE)
+		{
+			cbuf_printf(&g_src, "%s%.17g", k ? ", " : " ", ft->dvals[k]);
+		}
+		else
+		{
+			cbuf_printf(&g_src, "%s(%s)0x%llxULL", k ? ", " : " ", et, (unsigned long long)ft->ivals[k]);
+		}
+	}
+
+	cbuf_printf(&g_src, "%s };\n", ft->count > 0 ? "" : " 0");
+}
+
 static void c_index_lvalue(CUnit *u, const Expr *e)
 {
 	const char *et = c_elem_type(e->type.kind);
 	if (!et || e->lhs->type.kind != TY_ARRAY)
 	{
 		u->ok = 0;
+		return;
+	}
+
+	if (e->lhs->anno_final)
+	{
+		/* A final array: index its static const table directly; the count is a
+		   compile-time constant and the frame slot is never touched. */
+		int idx = e->lhs->anno_final - 1;
+		const FinalTable *ft = final_table(idx);
+		note_final(u, idx);
+		int k = u->tmp++;
+		cbuf_printf(&u->out, "(*({ int64_t i%d_ = (int64_t)", k);
+		c_expr(u, e->rhs);
+		cbuf_printf(&u->out, "; ");
+		if (!e->anno_index_safe)
+		{
+			if (!u->region)
+			{
+				u->ok = 0;
+				return;
+			}
+
+			cbuf_printf(&u->out, "if (__builtin_expect((uint64_t)i%d_ >= (uint64_t)%dULL, 0)) ", k, ft->count);
+			cbuf_printf(&u->out, "{ bzy_oob(i%d_, %d, (int64_t)((char *)__builtin_return_address(0) - 1), (int64_t)fp); } ", k, ft->count);
+		}
+
+		cbuf_printf(&u->out, "&bzy_fin_%d[i%d_]; }))", idx, k);
 		return;
 	}
 
@@ -501,6 +595,12 @@ static void c_expr(CUnit *u, const Expr *e)
 		cbuf_printf(&u->out, "((double)%.17g)", e->float_val);
 		break;
 	case EX_IDENT:
+		if (e->anno_final)
+		{
+			u->ok = 0;   /* A final array only appears as an index or .length base. */
+			return;
+		}
+
 		if (e->anno_capture || e->anno_int <= 0)
 		{
 			u->ok = 0;
@@ -516,6 +616,18 @@ static void c_expr(CUnit *u, const Expr *e)
 		cbuf_printf(&u->out, ")");
 		break;
 	case EX_FIELD:
+		if (e->anno_final)
+		{
+			u->ok = 0;   /* A final array only appears as an index or .length base. */
+			return;
+		}
+
+		if (e->lhs && e->lhs->anno_final && strcmp(e->name, "length") == 0)
+		{
+			cbuf_printf(&u->out, "((%s)%dLL)", t, final_table(e->lhs->anno_final - 1)->count);
+			break;
+		}
+
 		if (!e->lhs || e->lhs->type.kind != TY_ARRAY || strcmp(e->name, "length") != 0)
 		{
 			u->ok = 0;
@@ -857,6 +969,11 @@ int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs)
 
 	snprintf(sym, 64, "bzy_creg_%d", g_region_seq++);
 	c_prelude_once();
+	for (int i = 0; i < u.nfinal; i++)
+	{
+		c_emit_final(u.finals[i]);
+	}
+
 	cbuf_printf(&g_src, "\nvoid %s(char *fp)\n{\n", sym);
 	for (int i = 0; i < u.nlocal; i++)
 	{
@@ -943,6 +1060,11 @@ int cemit_func(const Func *f, const char *label)
 	const char *rt = u.ret_wide ? u.ret_wide : "void";
 	int n = g_func_seq++;
 	c_prelude_once();
+	for (int i = 0; i < u.nfinal; i++)
+	{
+		c_emit_final(u.finals[i]);
+	}
+
 	cbuf_printf(&g_src, "\n%s bzy_cfn_%d(%s) __asm__(\"%s\");\n", rt, n, plist, label);
 	cbuf_printf(&g_src, "%s bzy_cfn_%d(%s)\n{\n", rt, n, plist);
 	for (int i = 0; i < f->param_count; i++)
@@ -973,4 +1095,8 @@ const char *cemit_source(void)
 void cemit_reset(void)
 {
 	cbuf_free(&g_src);
+	if (g_fin_done)
+	{
+		memset(g_fin_done, 0, (size_t)g_fin_cap);
+	}
 }

@@ -1987,6 +1987,26 @@ static void test_final_array_tables(void)
 	ASSERT(strstr(g_asm, "section .rodata progbits alloc noexec nowrite align=16") != NULL);
 }
 
+static void test_c_route_final_tables(void)
+{
+	/* A C region indexes final arrays straight from static const C tables, so gcc
+	   sees their values; the static one is reachable only on the C route. */
+	c_route_on();
+	emit("static class Tab { static final int[] P = { 2, 3, 5, 7 }; }"
+		 " void main() {"
+		 " final int[] Q = { 1, -1 };"
+		 " long s; s = 0;"
+		 " for (int i = 0; i < 1000; i = i + 1) { s = s + (long)Tab.P[i % 4] * (long)Q[i % 2]; }"
+		 " print(s); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "call bzy_creg_") != NULL);
+	const char *c = cemit_source();
+	ASSERT(c != NULL);
+	ASSERT(strstr(c, "static const int32_t bzy_fin_0[4] = {") != NULL);
+	ASSERT(strstr(c, "static const int32_t bzy_fin_1[2] = {") != NULL);
+	ASSERT(strstr(c, "&bzy_fin_0[i") != NULL);
+	c_route_off();
+}
+
 static void test_c_route_off_by_default(void)
 {
 	/* With BZY_C unset, codegen is unchanged and no C is produced. */
@@ -2080,6 +2100,7 @@ int main(void)
 	RUN(test_c_route_leaves_vector_reduction_to_ir);
 	RUN(test_c_route_off_by_default);
 	RUN(test_final_array_tables);
+	RUN(test_c_route_final_tables);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_system_realtime_io_lowers);

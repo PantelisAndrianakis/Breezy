@@ -42,8 +42,9 @@ void ir_set_tt(TypeTable *tt)
    regions. Set only during the region eligibility scan. */
 static int elig_region_mode = 0;
 
-/* C route: an integer or bool `switch` is accepted on top of the region rules.
-   Set only inside ir_region_eligible_c; the IR lowering itself has no switch. */
+/* C route: an integer or bool `switch` and a static final array base are
+   accepted on top of the region rules. Set only inside ir_region_eligible_c;
+   the IR lowering itself handles neither. */
 static int elig_allow_switch = 0;
 
 /* An integer case label: a literal, a negated literal or a bool literal. */
@@ -96,6 +97,12 @@ static int elig_expr(const Expr *e)
 		return elig_arrayref(&e->lhs->type) && elig_elem_kind(e->type.kind)
 			   && elig_expr(e->lhs) && elig_expr(e->rhs);
 	case EX_FIELD:
+		/* A final array (C route only: cemit indexes its table directly). */
+		if (elig_allow_switch && e->anno_final)
+		{
+			return 1;
+		}
+
 		/* arr.length only (a load of the array header's length field). */
 		return e->lhs && e->lhs->type.kind == TY_ARRAY
 			   && strcmp(e->name, "length") == 0 && elig_expr(e->lhs);
