@@ -22,6 +22,23 @@ source.bzy → Breezy compiler → output.asm → NASM → output.o ─┐
 
 ---
 
+## The optional C route (`BZY_C=1`)
+
+Setting the environment variable `BZY_C=1` while compiling adds one step to the pipeline. The compiler picks out **pure numeric code** and hands it to GCC's optimizer instead of emitting assembly for it:
+
+- **hot loops** whose bodies use only integer, `bool` and `double` locals, arrays of those, [final arrays](../types/arrays.md#final-arrays), plain control flow and integer `switch`;
+- **leaf functions** of the same kind that call nothing and can never throw.
+
+That code is written to `out_c.c` next to `out.asm`, compiled with `gcc -O3` into `out_c.obj` and linked into the same binary. Everything else (objects, strings, calls, exceptions, breezes) stays on the assembly path, and the two halves share the same frames, bounds checks and exceptions, so a program prints exactly the same results either way. A loop the built-in path already vectorizes stays on that path.
+
+```sh
+BZY_C=1 breezy app.bzy app
+```
+
+The route is **off by default** while it is measured against the built-in code generator. Its cost is one extra GCC compile for any program that produces C, including programs whose only candidates are small standard-library helpers.
+
+---
+
 ## The runtime
 
 The compiled program links against a small **Breezy runtime** (`lib_breezy.a`) that provides the allocator, [ARC and the cycle collector](../memory/automatic-memory.md), the [breeze scheduler](../concurrency/breezes.md), [channels](../concurrency/channels.md), and the [async I/O facade](../io/native-io.md) - plus whatever native C libraries you linked via [FFI](../ffi/c-interop.md).

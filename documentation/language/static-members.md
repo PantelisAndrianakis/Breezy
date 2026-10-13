@@ -35,6 +35,8 @@ void main()
 
 Reach a static member through the **class name** (`Counter.total`), including from inside the class's own methods.
 
+A `static final` array is a shared read-only table: `static final int[] PRIMES = { 2, 3, 5, 7 };`. It has no slot and no initializer to run at startup, and it can only be indexed or read for its length; see [Final arrays](../types/arrays.md#final-arrays).
+
 ---
 
 ## Static methods

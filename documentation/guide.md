@@ -17,7 +17,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | [Generics](language/generics.md) | User-defined parametric classes, multiple type parameters, interface bounds, monomorphization. |
 | [Enums](language/enums.md) | Singleton constants, per-constant fields/constructors/bodies, `values`/`valueOf`/`name`/`ordinal`. |
 | [Match](language/match.md) | Exhaustive, fall-through-free selection over an enum; compile-time missing-case check, zero run-time cost over `switch`. |
-| [Static members & static classes](language/static-members.md) | `static` fields and methods, `static class`, field initializers, the singleton pattern. |
+| [Static members & static classes](language/static-members.md) | `static` fields and methods, `static class`, field initializers, `static final` tables, the singleton pattern. |
 | [Built-in vector types](language/vector-types.md) | The eight `Vector2/3 x i/l/f/d` types: `equals`, `calculateDistance`. |
 | [No primitive wrapper classes](language/no-wrapper-classes.md) | Raw machine integers, no boxing, `int` vs `long`. |
 | [Console I/O](language/console-io.md) | Built-in `print`, `input`, `inputInt` - no imports needed. |
@@ -33,7 +33,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 | --- | --- |
 | [Type system overview](types/overview.md) | Every built-in type at a glance, and the v1 rules. |
 | [Strings](types/strings.md) | Immutable UTF-8 strings, `StringBuilder`, the full string method set, parsing to numbers. |
-| [Arrays](types/arrays.md) | Fixed-length, bounds-checked heap arrays. |
+| [Arrays](types/arrays.md) | Fixed-length, bounds-checked heap arrays, and read-only `final` tables. |
 | [Maps](types/maps.md) | `map<K,V>` hash maps, views, and key/value iteration. |
 | [Generic collections](types/collections.md) | `List`/`Stack`/`Queue`/`Deque`/`Set`, monomorphized with no boxing. |
 | [First-class functions](types/functions.md) | `(P)->R` function types, `=>` lambdas, by-value capture, and the `map`/`filter`/`forEach`/`reduce` combinators. |
@@ -91,7 +91,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 
 | Page | What it covers |
 | --- | --- |
-| [Compilation pipeline](build/compilation.md) | How `.bzy` source becomes a native binary. |
+| [Compilation pipeline](build/compilation.md) | How `.bzy` source becomes a native binary, and the optional `BZY_C` route for hot numeric code. |
 | [Building the compiler](build/building.md) | Bootstrap scripts, the toolchain, and `--target` selection. |
 | [Language server](tooling/language-server.md) | `breezy --lsp` - live diagnostics, hover, go-to-definition, find-references, and completion in any LSP editor (Neovim, Helix, VS Code). |
 

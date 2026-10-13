@@ -84,6 +84,46 @@ Each *operation* is atomic; a sequence of operations can still interleave with o
 
 ---
 
+## Final arrays
+
+A **final array** is a table of fixed values: its length and every element are set once, in the source, and never change. Declare it with `final` and a brace list of literal values:
+
+```breezy
+final int[] SQUARES = { 0, 1, 4, 9, 16 };
+
+print(SQUARES[3]);        // 9
+print(SQUARES.length);    // 5
+```
+
+A shared table belongs in a class as a `static final` field, read through the class name:
+
+```breezy
+static class Dct
+{
+	static final int[] BASIS = { 2896, 4017, 3784, 3406 };
+}
+
+int c = Dct.BASIS[i];
+```
+
+- The element type is an integer type (`byte short int long` and the unsigned variants), `bool` or `double`. Each value must be a literal that fits the element type; an integer literal is fine in a `double[]`.
+- A final array can only be **indexed** or read for its **`.length`**. Writing an element, assigning the variable, passing it to a function, returning it, iterating it with `foreach` or capturing it in a lambda is a compile error.
+- Indexing still checks bounds, and because the length is known at compile time those checks disappear wherever the index range is provably inside.
+
+The compiler places each final array once in read-only memory: it is never allocated, never reference-counted and costs nothing at startup.
+
+| code | error |
+| --- | --- |
+| `SQUARES[0] = 1;` | Cannot write to an element of final array SQUARES. |
+| `SQUARES = other;` | Cannot assign to final array SQUARES. |
+| `f(SQUARES)` | Final array SQUARES can only be indexed or read for its length. |
+| `final int x = 3;` | A final array needs an initializer of literal values, like { 1, 2, 3 }. |
+| `final byte[] b = { 300 };` | Value does not fit the final array's element type. |
+| `final` on an instance field | Only local variables and static fields can be final. |
+| `int[] a = { 1, 2 };` | An array literal can only initialize a final array. |
+
+---
+
 ## Rules & gotchas
 
 - **Arrays are fixed-length** - the size is set at `new` and does not change. For a growable sequence, use [`List<T>`](collections.md).
@@ -91,6 +131,8 @@ Each *operation* is atomic; a sequence of operations can still interleave with o
 - **Out-of-range access throws `IndexOutOfBounds`** - it never reads stray memory.
 - **`.length` is a field**, not a method call.
 - **A new array is zero-filled** (numbers `0`, bools `false`, object references empty).
+- **A brace list `{ ... }` creates only a final array** - ordinary arrays come from `new`.
+- **`final` is a reserved word** and cannot name a variable.
 
 ---
 
