@@ -28,6 +28,10 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt);
    would skip refcounting; element stores remain fine). */
 int ir_region_eligible(const Stmt *s);
 
+/* Region eligibility for the C route: the same rules plus an integer or bool
+   `switch` with literal case labels. */
+int ir_region_eligible_c(const Stmt *s);
+
 /* Lower an eligible region to IR with no IR_RET: the final block is empty and
    emission falls off it into the region epilogue. NULL when ineligible. Caller
    owns the result and must ir_func_free it. */

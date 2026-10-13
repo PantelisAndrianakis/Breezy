@@ -1148,6 +1148,55 @@ static void test_lower_folds_unrolled_product(void)
 	ir_func_free(irf);
 }
 
+static void test_region_eligible_c_accepts_int_switch(void)
+{
+	/* An integer switch keeps a loop off the IR region path but is plain C. */
+	const Func *f = parse_one_func(
+						"long k(int n)\n"
+						"{\n"
+						"	long acc;\n"
+						"	acc = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		switch (i % 4)\n"
+						"		{\n"
+						"			case 0:\n"
+						"				acc = acc + 1;\n"
+						"				break;\n"
+						"			default:\n"
+						"				acc = acc + 2;\n"
+						"		}\n"
+						"	}\n"
+						"	return acc;\n"
+						"}\n");
+	const Stmt *loop = first_loop(f);
+	ASSERT(loop != 0);
+	ASSERT_INT(ir_region_eligible(loop), 0);
+	ASSERT_INT(ir_region_eligible_c(loop), 1);
+}
+
+static void test_region_eligible_c_rejects_string_switch(void)
+{
+	/* A string subject compares through the runtime, so it stays on the emitter. */
+	const Func *f = parse_one_func(
+						"long k(string s, int n)\n"
+						"{\n"
+						"	long acc;\n"
+						"	acc = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		switch (s)\n"
+						"		{\n"
+						"			case \"a\":\n"
+						"				acc = acc + 1;\n"
+						"				break;\n"
+						"		}\n"
+						"	}\n"
+						"	return acc;\n"
+						"}\n");
+	ASSERT_INT(ir_region_eligible_c(first_loop(f)), 0);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
@@ -1192,6 +1241,8 @@ int main(void)
 	RUN(test_region_fires_inside_plain_emitter_loop);
 	RUN(test_region_skipped_in_function_with_try);
 	RUN(test_lower_folds_unrolled_product);
+	RUN(test_region_eligible_c_accepts_int_switch);
+	RUN(test_region_eligible_c_rejects_string_switch);
 	SUMMARY();
 	return 0;
 }

@@ -42,6 +42,26 @@ void ir_set_tt(TypeTable *tt)
    regions. Set only during the region eligibility scan. */
 static int elig_region_mode = 0;
 
+/* C route: an integer or bool `switch` is accepted on top of the region rules.
+   Set only inside ir_region_eligible_c; the IR lowering itself has no switch. */
+static int elig_allow_switch = 0;
+
+/* An integer case label: a literal, a negated literal or a bool literal. */
+static int elig_case_label(const Expr *e)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	if (e->kind == EX_INT || e->kind == EX_BOOL)
+	{
+		return 1;
+	}
+
+	return e->kind == EX_UNARY && e->op == TOKEN_MINUS && e->lhs && e->lhs->kind == EX_INT;
+}
+
 /* The callee FuncInfo of a direct IR-lowerable call, or NULL. Defined after
    elig_expr (it validates each argument with it). */
 static FuncInfo *elig_call_target(const Expr *e);
@@ -180,8 +200,24 @@ static int elig_stmt(const Stmt *s)
 	case ST_BREAK:
 	case ST_CONTINUE:
 		return 1;
+	case ST_SWITCH:
+		if (!elig_allow_switch || s->is_match)
+		{
+			return 0;
+		}
+
+		if (!ty_is_int(s->cond->type.kind) && s->cond->type.kind != TY_BOOL)
+		{
+			return 0;
+		}
+
+		return elig_expr(s->cond) && elig_block(s->then_blk);
+	case ST_CASE:
+		return elig_allow_switch && elig_case_label(s->value);
+	case ST_DEFAULT:
+		return elig_allow_switch;
 	default:
-		/* ST_FOREACH, ST_SWITCH/CASE/DEFAULT, ST_THROW, ST_TRY/CATCH, ST_SPAWN. */
+		/* ST_FOREACH, ST_THROW, ST_TRY/CATCH, ST_SPAWN, and switches outside the C route. */
 		return 0;
 	}
 }
@@ -1645,6 +1681,14 @@ int ir_region_eligible(const Stmt *s)
 	elig_region_mode = 1;
 	int ok = elig_stmt(s);
 	elig_region_mode = 0;
+	return ok;
+}
+
+int ir_region_eligible_c(const Stmt *s)
+{
+	elig_allow_switch = 1;
+	int ok = ir_region_eligible(s);
+	elig_allow_switch = 0;
 	return ok;
 }
 
