@@ -10,6 +10,7 @@
 #include "types.h"
 #include "resolve.h"
 #include "codegen.h"
+#include "cemit.h"
 #include "prelude.h"
 #include "config.h"
 #include "grow.h"
@@ -345,6 +346,27 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	/* C route: compile the generated C units, if any, into out_c.obj. */
+	int has_c = cemit_source() != NULL;
+	if (has_c)
+	{
+		FILE *cf = fopen("out_c.c", "w");
+		if (!cf)
+		{
+			perror("out_c.c");
+			return 1;
+		}
+
+		fputs(cemit_source(), cf);
+		fclose(cf);
+		printf("Wrote out_c.c\n");
+		if (system("gcc -O2 -fwrapv -fno-strict-aliasing -ffp-contract=off -c out_c.c -o out_c.obj") != 0)
+		{
+			fprintf(stderr, "Compiling out_c.c failed.\n");
+			return 1;
+		}
+	}
+
 	/* On Windows: if [app] icon or metadata is set, generate a resource file and
 	   compile it with windres so the icon and VERSIONINFO are embedded in the exe. */
 	int has_rc = (target == TARGET_WINDOWS)
@@ -446,12 +468,13 @@ int main(int argc, char *argv[])
 	{
 		/* -L. finds a co-located lib_breezy.a (distribution); -Lbuild/linux finds
 		   the per-host build output when running from the project tree. */
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl -ldl");
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj%s -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl -ldl",
+					   has_c ? " out_c.obj" : "");
 	}
 	else
 	{
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
-					   has_rc ? " out_res.obj" : "");
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj%s%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
+					   has_c ? " out_c.obj" : "", has_rc ? " out_res.obj" : "");
 	}
 
 	for (int i = 0; i < cfg.nlib_paths; i++)
