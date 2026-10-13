@@ -1328,6 +1328,30 @@ static int starts_vardecl(Parser *p)
 	return 0;
 }
 
+/* A declaration initializer: an expression, or a `{ v, v, ... }` array literal
+   (the resolver accepts the literal only for a final array). */
+static Expr *parse_init(Parser *p)
+{
+	if (!check(p,TOKEN_LBRACE))
+	{
+		return parse_expr(p);
+	}
+
+	Expr *e=expr_new(EX_ARRAYLIT,p->cur.line);
+	advance(p);
+	if (!check(p,TOKEN_RBRACE))
+	{
+		do
+		{
+			expr_add_arg(e,parse_expr(p));
+		}
+		while (match(p,TOKEN_COMMA));
+	}
+
+	expect(p,TOKEN_RBRACE);
+	return e;
+}
+
 static Stmt *parse_vardecl(Parser *p)
 {
 	int line=p->cur.line;
@@ -1337,7 +1361,7 @@ static Stmt *parse_vardecl(Parser *p)
 	strcpy(s->decl_name,name.text);
 	if (match(p,TOKEN_ASSIGN))
 	{
-		s->decl_init=parse_expr(p);
+		s->decl_init=parse_init(p);
 	}
 
 	expect(p,TOKEN_SEMICOLON);
@@ -1910,6 +1934,14 @@ static Stmt *parse_try(Parser *p)
 
 static Stmt *parse_statement(Parser *p)
 {
+	if (check(p,TOKEN_FINAL))
+	{
+		advance(p);
+		Stmt *fs=parse_vardecl(p);
+		fs->is_final=1;
+		return fs;
+	}
+
 	if (starts_vardecl(p))
 	{
 		return parse_vardecl(p);
@@ -2244,6 +2276,7 @@ static ClassDecl *parse_class(Parser *p)
 	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 	{
 		int member_static = match(p,TOKEN_STATIC);   /* `static` field/method modifier. */
+		int member_final = match(p,TOKEN_FINAL);     /* `static final` read-only array field. */
 		/* Constructor: the class name immediately followed by '(' (no return type). */
 		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,c->name)==0 && p->peek.type==TOKEN_LPAREN)
 		{
@@ -2307,6 +2340,12 @@ static ClassDecl *parse_class(Parser *p)
 			expect(p,TOKEN_RPAREN);
 			f->body=parse_block(p);
 			f->is_static=member_static;
+			if (member_final)
+			{
+				fprintf(stderr,"line %d: Only local variables and static fields can be final.\n",mname.line);
+				exit(1);
+			}
+
 			class_add_method(c,f);
 		}
 		else
@@ -2314,7 +2353,7 @@ static ClassDecl *parse_class(Parser *p)
 			Expr *init=NULL;
 			if (match(p,TOKEN_ASSIGN))
 			{
-				init=parse_expr(p);
+				init=parse_init(p);
 			}
 
 			expect(p,TOKEN_SEMICOLON);
@@ -2324,6 +2363,7 @@ static ClassDecl *parse_class(Parser *p)
 			fl->name_line=mname.line;
 			fl->name_col=mname.col;
 			fl->is_static=member_static;
+			fl->is_final=member_final;
 			fl->init=init;
 		}
 	}

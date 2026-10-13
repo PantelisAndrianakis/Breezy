@@ -16,7 +16,7 @@ static const struct
 	{"switch",TOKEN_SWITCH},{"case",TOKEN_CASE},{"default",TOKEN_DEFAULT},{"match",TOKEN_MATCH},{"select",TOKEN_SELECT},{"asm",TOKEN_ASM},{"class",TOKEN_CLASS},
 	{"extends",TOKEN_EXTENDS},{"new",TOKEN_NEW},{"this",TOKEN_THIS},{"extern",TOKEN_EXTERN},{"blocking",TOKEN_BLOCKING},
 	{"record",TOKEN_RECORD},
-	{"interface",TOKEN_INTERFACE},{"implements",TOKEN_IMPLEMENTS},{"enum",TOKEN_ENUM},{"static",TOKEN_STATIC},
+	{"interface",TOKEN_INTERFACE},{"implements",TOKEN_IMPLEMENTS},{"enum",TOKEN_ENUM},{"static",TOKEN_STATIC},{"final",TOKEN_FINAL},
 	{"byte",TOKEN_BYTE},{"short",TOKEN_SHORT},{"long",TOKEN_LONG},
 	{"ubyte",TOKEN_UBYTE},{"ushort",TOKEN_USHORT},{"uint",TOKEN_UINT},
 	{"ulong",TOKEN_ULONG},{"bool",TOKEN_BOOL},
@@ -873,6 +873,8 @@ const char *token_type_name(TokenType t)
 		return "enum";
 	case TOKEN_STATIC:
 		return "static";
+	case TOKEN_FINAL:
+		return "final";
 	case TOKEN_EXTERN:
 		return "extern";
 	case TOKEN_BLOCKING:

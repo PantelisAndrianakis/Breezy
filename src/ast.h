@@ -214,7 +214,8 @@ typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
 	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL, EX_LAMBDA,
-	EX_TRYOP        /* `operand?`: unwrap Some/Ok, else early-return None/Err. Operand in lhs. */
+	EX_TRYOP,       /* `operand?`: unwrap Some/Ok, else early-return None/Err. Operand in lhs. */
+	EX_ARRAYLIT     /* `{ v, v, ... }`: a final array's literal values, in args. */
 } ExprKind;
 
 /* Lambda literal (EX_LAMBDA) side-data, kept off the Expr hot struct. A lambda
@@ -282,6 +283,7 @@ struct Expr
 	int      anno_indirect;   /* Resolver: EX_CALL through a function value (closure), not a named function. */
 	int      anno_capture;    /* Resolver: EX_IDENT that reads a captured var from the closure env (anno_int = env byte offset). */
 	LambdaInfo *lam;          /* EX_LAMBDA side-data. */
+	int      anno_final;      /* Resolver: final array table id + 1 for an EX_IDENT / static EX_FIELD naming a final array; 0 otherwise. */
 };
 
 typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN, ST_SELECT, ST_ASM } StmtKind;
@@ -328,6 +330,8 @@ struct Stmt
 	int      is_match;        /* ST_SWITCH built from `match`: exhaustiveness enforced, arms auto-break. */
 	int      is_narrow;       /* ST_VARDECL: a match-arm tag-narrowing (base enum -> variant subclass);
 	                            skip the downcast assignability check, the matched tag guarantees it. */
+	int      is_final;        /* ST_VARDECL: declared `final` (a read-only literal array). */
+	int      final_id;        /* Resolver: the final array's table id + 1; the initializer is dropped. */
 	char   (*case_binds)[64]; /* ST_CASE: positional payload bind names, e.g. Circle(r) -> {"r"}. */
 	int      case_bind_count;
 	SelectArm *sel_arms;      /* ST_SELECT: the send/receive arms. */
@@ -404,6 +408,7 @@ typedef struct
 	TypeRef type;
 	char name[64];
 	int   is_static;          /* Static field: one shared global slot, not in the object. */
+	int   is_final;           /* `static final`: a read-only literal array. */
 	Expr *init;               /* Static-field declaration initializer, or NULL. */
 	int   name_line, name_col;/* 1-based position of the field name (for the LSP symbol index; 0 = unset). */
 } Field;

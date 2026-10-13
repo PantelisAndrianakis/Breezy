@@ -695,6 +695,25 @@ static void test_parse_method_with_param(void)
 	ASSERT_STR(m->params[0].name, "a");
 }
 
+static void test_final_array_decl(void)
+{
+	/* A final local and a static final field both parse their brace list into
+	   an EX_ARRAYLIT and carry the is_final flag. */
+	static Parser p;
+	parser_init(&p, "void main() { final int[] T = { 1, -2, 3 }; }\n"
+					"static class D { static final double[] W = { 0.5, 2 }; }\n");
+	Unit *u = parse_unit(&p);
+	Stmt *s = u->funcs[0]->body->stmts[0];
+	ASSERT_INT(s->kind, ST_VARDECL);
+	ASSERT_INT(s->is_final, 1);
+	ASSERT_INT(s->decl_init->kind, EX_ARRAYLIT);
+	ASSERT_INT(s->decl_init->arg_count, 3);
+	ASSERT_INT(u->klasses[0]->fields[0].is_final, 1);
+	ASSERT_INT(u->klasses[0]->fields[0].is_static, 1);
+	ASSERT_INT(u->klasses[0]->fields[0].init->kind, EX_ARRAYLIT);
+	ASSERT_INT(u->klasses[0]->fields[0].init->arg_count, 2);
+}
+
 int main(void)
 {
 	printf("Parser (expr) tests\n");
@@ -762,6 +781,7 @@ int main(void)
 	RUN(test_parse_if_else);
 	RUN(test_parse_class_with_inheritance);
 	RUN(test_parse_method_with_param);
+	RUN(test_final_array_decl);
 	ast_free_all();
 	SUMMARY();
 	return 0;

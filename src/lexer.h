@@ -17,6 +17,7 @@ typedef enum
 	TOKEN_EXTERN,                                        /* `extern` C FFI declaration. */
 	TOKEN_BLOCKING,                                      /* `blocking` FFI dispatch modifier. */
 	TOKEN_STATIC,                                        /* `static` member / class modifier. */
+	TOKEN_FINAL,                                         /* `final`: a read-only literal array. */
 	TOKEN_BYTE, TOKEN_SHORT, TOKEN_LONG,                 /* Signed width keywords. */
 	TOKEN_UBYTE, TOKEN_USHORT, TOKEN_UINT, TOKEN_ULONG,  /* Unsigned width keywords. */
 	TOKEN_BOOL, TOKEN_TRUE, TOKEN_FALSE,                 /* Bool type + literals. */
