@@ -10,12 +10,14 @@
 static int g_ir_cached = -1;
 static int g_ir_regions_cached = -1;
 static int g_ir_calls_cached = -1;
+static int g_c_cached = -1;
 
 void bzy_config_reset_cache(void)
 {
 	g_ir_cached = -1;
 	g_ir_regions_cached = -1;
 	g_ir_calls_cached = -1;
+	g_c_cached = -1;
 }
 
 int bzy_ir_enabled(void)
@@ -58,6 +60,19 @@ int bzy_ir_calls_enabled(void)
 	}
 
 	return g_ir_calls_cached && bzy_ir_enabled();
+}
+
+int bzy_c_enabled(void)
+{
+	if (g_c_cached < 0)
+	{
+		/* Default OFF. BZY_C=1 hands eligible loops and throw-free leaf functions
+		   to gcc through out_c.c; anything the C route rejects keeps today's path. */
+		const char *v = getenv("BZY_C");
+		g_c_cached = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+	}
+
+	return g_c_cached && bzy_ir_enabled();
 }
 
 /* Append each double-quoted token in `val` to the grown string array `*arr`

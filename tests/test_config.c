@@ -53,6 +53,13 @@ static void test_ir_flag_defaults_on(void)
 	ASSERT_INT(bzy_ir_enabled(), 1);
 }
 
+static void test_c_flag_defaults_off(void)
+{
+	/* The C route is opt-in until it passes the integration suite and the
+	   benchmark gates on both platforms. */
+	ASSERT_INT(bzy_c_enabled(), 0);
+}
+
 int main(void)
 {
 	RUN(test_parse_libs);
@@ -60,6 +67,7 @@ int main(void)
 	RUN(test_ignores_other_sections_and_comments);
 	RUN(test_empty_is_noop);
 	RUN(test_ir_flag_defaults_on);
+	RUN(test_c_flag_defaults_off);
 	SUMMARY();
 	return 0;
 }

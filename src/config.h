@@ -54,6 +54,10 @@ int bzy_ir_regions_enabled(void);
    disabled. Develop-behind-flag for Lever 2 (IR call lowering). */
 int bzy_ir_calls_enabled(void);
 
+/* BZY_C=1 routes eligible loops and leaf functions through generated C compiled
+   by gcc. Default off; rides on the IR region scan, so BZY_IR=0 disables it. */
+int bzy_c_enabled(void);
+
 /* Discard the cached env flags so the next bzy_ir_*_enabled() call re-reads the
    environment. Used by tests to toggle BZY_IR around a single case. */
 void bzy_config_reset_cache(void);
