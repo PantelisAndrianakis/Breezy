@@ -297,6 +297,7 @@ check catch_multi tests/samples/pass/exceptions/proj_catch_multi   $'bee\n99'
 check catch_subclass tests/samples/pass/exceptions/proj_catch_subclass $'missing\n0'
 check rethrow     tests/samples/pass/exceptions/proj_rethrow       "bee"
 check catch_oob   tests/samples/pass/exceptions/catch_oob.bzy     $'Array index 5 out of bounds for length 3.\n99'
+check c_route     tests/samples/pass/basics/c_route.bzy        $'111\n-2147483646\n-3\n-101\n200\n2242\nArray index 4 out of bounds for length 4.\n99'
 check catch_param tests/samples/pass/exceptions/catch_param.bzy   $'7'
 check interface_poly tests/samples/pass/oop/proj_interface_poly $'woof\nmeow'
 check_fail generic_bound   tests/samples/fail/generics/proj_generic_bound

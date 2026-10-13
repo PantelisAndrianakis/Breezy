@@ -70,6 +70,8 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->region_irf=NULL;
 	cg->region_alloc=NULL;
 	cg->region_csym=NULL;
+	cg->region_coff=NULL;
+	cg->region_ncoff=NULL;
 	cg->region_base=0;
 	cg->target=TARGET_WINDOWS;   /* Driver overrides via --target. */
 }
@@ -12187,8 +12189,10 @@ static int cg_region_line_allowed(int line)
    the hoist accounting) and ST_SWITCH are never descended into. A hot-spill
    allocation (a value in the deepest loop would spill, which the emitter's
    tuned heuristics tend to handle better) keeps the loop on the emitter. */
-/* Appends one recorded region. irf/a are NULL for a C region; csym is "" for an IR region. */
-static void cg_region_record(Codegen *cg, const Stmt *s, IRFunc *irf, IRAlloc *a, const char *csym)
+/* Appends one recorded region. irf/a are NULL for a C region; csym is "" and
+   offs NULL for an IR region. offs (noffs entries) is copied. */
+static void cg_region_record(Codegen *cg, const Stmt *s, IRFunc *irf, IRAlloc *a, const char *csym,
+							 const int *offs, int noffs)
 {
 	if (cg->region_count == cg->region_cap)
 	{
@@ -12197,13 +12201,39 @@ static void cg_region_record(Codegen *cg, const Stmt *s, IRFunc *irf, IRAlloc *a
 		cg->region_irf   = realloc(cg->region_irf,   (size_t)cg->region_cap * sizeof(*cg->region_irf));
 		cg->region_alloc = realloc(cg->region_alloc, (size_t)cg->region_cap * sizeof(*cg->region_alloc));
 		cg->region_csym  = realloc(cg->region_csym,  (size_t)cg->region_cap * sizeof(*cg->region_csym));
+		cg->region_coff  = realloc(cg->region_coff,  (size_t)cg->region_cap * sizeof(*cg->region_coff));
+		cg->region_ncoff = realloc(cg->region_ncoff, (size_t)cg->region_cap * sizeof(*cg->region_ncoff));
 	}
 
-	cg->region_stmt[cg->region_count] = s;
-	cg->region_irf[cg->region_count] = irf;
-	cg->region_alloc[cg->region_count] = a;
-	snprintf(cg->region_csym[cg->region_count], sizeof(cg->region_csym[0]), "%s", csym);
+	int r = cg->region_count;
+	cg->region_stmt[r] = s;
+	cg->region_irf[r] = irf;
+	cg->region_alloc[r] = a;
+	snprintf(cg->region_csym[r], sizeof(cg->region_csym[0]), "%s", csym);
+	cg->region_coff[r] = NULL;
+	cg->region_ncoff[r] = 0;
+	if (offs && noffs > 0)
+	{
+		cg->region_coff[r] = malloc((size_t)noffs * sizeof(int));
+		memcpy(cg->region_coff[r], offs, (size_t)noffs * sizeof(int));
+		cg->region_ncoff[r] = noffs;
+	}
+
 	cg->region_count++;
+}
+
+/* 1 if C region r reads or writes the local at frame offset off. */
+static int cg_region_touches(Codegen *cg, int r, int off)
+{
+	for (int k = 0; k < cg->region_ncoff[r]; k++)
+	{
+		if (cg->region_coff[r][k] == off)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
@@ -12222,9 +12252,11 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 			if (bzy_c_enabled() && ir_region_eligible_c(s) && cg_region_line_allowed(s->line))
 			{
 				char sym[64];
-				if (cemit_region(s, sym))
+				int offs[256];
+				int noffs = 0;
+				if (cemit_region(s, sym, offs, 256, &noffs))
 				{
-					cg_region_record(cg, s, NULL, NULL, sym);
+					cg_region_record(cg, s, NULL, NULL, sym, offs, noffs);
 					if (cg_region_debug())
 					{
 						fprintf(stderr, "ir-region: %s line %d: C-REGION %s\n", f->name, s->line, sym);
@@ -12244,7 +12276,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 					int vec_override = a->hot_spill && ir_region_vectorizable(f, s, a);
 					if (!a->hot_spill || cg_region_hotspill_override() || vec_override)
 					{
-						cg_region_record(cg, s, irf, a, "");
+						cg_region_record(cg, s, irf, a, "", NULL, 0);
 						if (cg_region_debug())
 						{
 							fprintf(stderr, "ir-region: %s line %d: REGION (%d locals, %d spill bytes%s)\n",
@@ -12309,31 +12341,70 @@ static void cg_emit_region_stmt(Codegen *cg, Func *f, int r)
 	if (cg->region_csym[r][0])
 	{
 		/* The C body reads and writes locals only through their home slots, so
-		   every promoted local is flushed before the call and reloaded after it.
-		   r12-r15 survive the call (callee-saved), xmm2-5 do not; the reload
-		   covers both. The fixed-rsp frame already holds shadow space and 16-byte
-		   alignment for a bare call. */
+		   each promoted local the region touches is flushed before the call and
+		   reloaded after it. Locals sharing one register have disjoint live
+		   ranges, so at most one of them spans the region; touching only those
+		   keeps the others' slots and the register intact. r12-r15 survive the
+		   call (callee-saved). xmm2-5 do not, and float promotion only picked
+		   them because the loop looked call-free, so every one in use is saved
+		   to the region area around the call; the touched locals then reload
+		   from their slots on top. The fixed-rsp frame already holds shadow
+		   space and 16-byte alignment for a bare call. */
 		for (int i = 0; i < f->promo_count; i++)
 		{
-			cg_emit(cg, "    mov [rbp - %d], %s", f->promo_off[i], CG_PROMO_REGS[f->promo_reg[i]]);
+			if (cg_region_touches(cg, r, f->promo_off[i]))
+			{
+				cg_emit(cg, "    mov [rbp - %d], %s", f->promo_off[i], CG_PROMO_REGS[f->promo_reg[i]]);
+			}
 		}
 
 		for (int i = 0; i < f->fpromo_count; i++)
 		{
-			cg_emit(cg, "    movsd [rbp - %d], %s", f->fpromo_off[i], CG_FPROMO_REGS[f->fpromo_reg[i]]);
+			if (cg_region_touches(cg, r, f->fpromo_off[i]))
+			{
+				cg_emit(cg, "    movsd [rbp - %d], %s", f->fpromo_off[i], CG_FPROMO_REGS[f->fpromo_reg[i]]);
+			}
+		}
+
+		int fused[4] = { 0, 0, 0, 0 };
+		for (int i = 0; i < f->fpromo_count; i++)
+		{
+			fused[f->fpromo_reg[i]] = 1;
+		}
+
+		for (int k = 0; k < 4; k++)
+		{
+			if (fused[k])
+			{
+				cg_emit(cg, "    movsd [rbp - %d], %s", cg->region_base + k * 8, CG_FPROMO_REGS[k]);
+			}
 		}
 
 		cg_emit(cg, "extern %s", cg->region_csym[r]);
 		cg_emit(cg, "    mov %s, rbp", cg_iarg(cg, 0));
 		cg_emit(cg, "    call %s", cg->region_csym[r]);
+		for (int k = 0; k < 4; k++)
+		{
+			if (fused[k])
+			{
+				cg_emit(cg, "    movsd %s, [rbp - %d]", CG_FPROMO_REGS[k], cg->region_base + k * 8);
+			}
+		}
+
 		for (int i = 0; i < f->promo_count; i++)
 		{
-			cg_emit(cg, "    mov %s, [rbp - %d]", CG_PROMO_REGS[f->promo_reg[i]], f->promo_off[i]);
+			if (cg_region_touches(cg, r, f->promo_off[i]))
+			{
+				cg_emit(cg, "    mov %s, [rbp - %d]", CG_PROMO_REGS[f->promo_reg[i]], f->promo_off[i]);
+			}
 		}
 
 		for (int i = 0; i < f->fpromo_count; i++)
 		{
-			cg_emit(cg, "    movsd %s, [rbp - %d]", CG_FPROMO_REGS[f->fpromo_reg[i]], f->fpromo_off[i]);
+			if (cg_region_touches(cg, r, f->fpromo_off[i]))
+			{
+				cg_emit(cg, "    movsd %s, [rbp - %d]", CG_FPROMO_REGS[f->fpromo_reg[i]], f->fpromo_off[i]);
+			}
 		}
 
 		return;
@@ -12438,7 +12509,14 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 			IRAlloc *a = cg->region_alloc[i];
 			if (!a)
 			{
-				continue;   /* A C region uses no frame area. */
+				/* A C region saves the float-promotion registers (xmm2-5, caller-saved)
+				   here across its call. */
+				if (32 > region_area)
+				{
+					region_area = 32;
+				}
+
+				continue;
 			}
 
 			int ncs = 0;
@@ -12711,6 +12789,8 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 			ra_free(cg->region_alloc[i]);
 			ir_func_free(cg->region_irf[i]);
 		}
+
+		free(cg->region_coff[i]);
 	}
 
 	cg->region_count = 0;

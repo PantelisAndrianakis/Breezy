@@ -1216,7 +1216,10 @@ static void test_cemit_region_safe_index(void)
 						"	return s;\n"
 						"}\n");
 	char sym[64];
-	ASSERT_INT(cemit_region(first_loop(f), sym), 1);
+	int offs[64];
+	int noffs = 0;
+	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(noffs, 3);   /* a, s and i. */
 	ASSERT(strncmp(sym, "bzy_creg_", 9) == 0);
 	const char *c = cemit_source();
 	ASSERT(c != NULL);
@@ -1244,7 +1247,9 @@ static void test_cemit_region_checked_index(void)
 						"	return s;\n"
 						"}\n");
 	char sym[64];
-	ASSERT_INT(cemit_region(first_loop(f), sym), 1);
+	int offs[64];
+	int noffs = 0;
+	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 1);
 	ASSERT(strstr(cemit_source(), "bzy_oob(i0_") != NULL);
 	ASSERT(strstr(cemit_source(), "(int64_t)fp") != NULL);
 	cemit_reset();
@@ -1267,7 +1272,9 @@ static void test_cemit_rejects_call(void)
 						"}\n"
 						"long g(int i) { return (long)i; }\n");
 	char sym[64];
-	ASSERT_INT(cemit_region(first_loop(f), sym), 0);
+	int offs[64];
+	int noffs = 0;
+	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 0);
 	ASSERT(cemit_source() == NULL);
 }
 

@@ -379,12 +379,13 @@ static void c_binary(CUnit *u, const Expr *e, const char *t)
 		break;
 	case TOKEN_SHL:
 	case TOKEN_SHR:
-		/* x86 masks the count to the operand width; so does this. */
-		cbuf_printf(&u->out, "((%s)((%s)", t, t);
+		/* Breezy shifts at 64-bit width (sign-extended for signed types, zero-extended
+		   for unsigned) with the count masked to 63, then truncates to the type. */
+		cbuf_printf(&u->out, "((%s)((%s)", t, (ty_is_int(e->type.kind) && !ty_is_signed(e->type.kind)) ? "uint64_t" : "int64_t");
 		c_expr(u, e->lhs);
 		cbuf_printf(&u->out, " %s (int)((int64_t)", e->op == TOKEN_SHL ? "<<" : ">>");
 		c_expr(u, e->rhs);
-		cbuf_printf(&u->out, " & %d)))", ty_bits(e->type.kind) == 64 ? 63 : 31);
+		cbuf_printf(&u->out, " & 63)))");
 		break;
 	case TOKEN_EQ:
 		c_compare(u, e, "==");
@@ -824,18 +825,25 @@ static void c_store_slot(int off, TypeKind k)
 	}
 }
 
-int cemit_region(const Stmt *s, char *sym)
+int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs)
 {
 	CUnit u;
 	memset(&u, 0, sizeof(u));
 	u.ok = 1;
 	u.region = 1;
 	c_stmt(&u, s, 1);
-	if (!u.ok)
+	if (!u.ok || u.nlocal > cap)
 	{
 		cbuf_free(&u.out);
 		return 0;
 	}
+
+	for (int i = 0; i < u.nlocal; i++)
+	{
+		offs[i] = u.local_off[i];
+	}
+
+	*noffs = u.nlocal;
 
 	snprintf(sym, 64, "bzy_creg_%d", g_region_seq++);
 	c_prelude_once();

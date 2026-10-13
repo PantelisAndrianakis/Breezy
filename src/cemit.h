@@ -9,9 +9,11 @@
 
 /* Translates loop statement s into `void <sym>(char *fp)`, where fp is the
    enclosing function's rbp. Locals cross through their frame slots. Returns 1
-   and writes the symbol (at most 63 chars) into sym, or 0 when s uses a
-   construct the C route does not handle; a rejected unit leaves no text. */
-int cemit_region(const Stmt *s, char *sym);
+   and writes the symbol (at most 63 chars) into sym and the frame offsets of
+   the locals the unit touches into offs (*noffs of them, at most cap), or 0
+   when s uses a construct the C route does not handle or touches more than cap
+   locals; a rejected unit leaves no text. */
+int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs);
 
 /* Translates free function f, linked under the symbol `label`. Only functions
    that can never throw are accepted (every array index proven in bounds). */

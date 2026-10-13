@@ -1,0 +1,123 @@
+// Integer kernels that take the C route under BZY_C=1 and the emitter otherwise.
+// Both routes must print the same lines.
+
+// A throw-free leaf: becomes a whole C function.
+long steps(long n)
+{
+	long c;
+	c = 0;
+	while (n > 1)
+	{
+		if (n % 2 == 0)
+		{
+			n = n / 2;
+		}
+		else
+		{
+			n = 3 * n + 1;
+		}
+
+		c = c + 1;
+	}
+
+	return c;
+}
+
+// The print keeps this function off the whole-function routes, so its loop is a region.
+// It checks int wraparound, a shift count past the width and a narrow local read after the region.
+void wrapAndShift(int n)
+{
+	int x;
+	x = 2147483640;
+	int s;
+	s = 33;
+	long acc;
+	acc = 0;
+	for (int i = 0; i < n; i = i + 1)
+	{
+		x = x + 1;
+		acc = acc + (long)(x >> s);
+	}
+
+	print(x);
+	print(acc);
+}
+
+// Truncating division and remainder with negative operands, by a variable and by a constant.
+void divide(int[] a, int d)
+{
+	long byVar;
+	byVar = 0;
+	long byConst;
+	byConst = 0;
+	for (int i = 0; i < a.length; i = i + 1)
+	{
+		byVar = byVar + (long)(a[i] / d) + 100 * (long)(a[i] % d);
+		byConst = byConst + (long)(a[i] / 7) + 100 * (long)(a[i] % 7);
+	}
+
+	print(byVar);
+	print(byConst);
+}
+
+// Switch fallthrough with and without break.
+void dispatch(int n)
+{
+	long acc;
+	acc = 0;
+	for (int i = 0; i < n; i = i + 1)
+	{
+		switch (i % 4)
+		{
+			case 0:
+				acc = acc + 1;
+			case 1:
+				acc = acc + 10;
+				break;
+			case 2:
+				acc = acc + 100;
+				break;
+			default:
+				acc = acc + 1000;
+		}
+	}
+
+	print(acc);
+}
+
+// An unproven index inside a region; the caller's try catches the failure.
+void overrun(int[] a, int n)
+{
+	long acc;
+	acc = 0;
+	for (int i = 0; i < n; i = i + 1)
+	{
+		acc = acc + (long)a[i];
+	}
+
+	print(acc);
+}
+
+void main()
+{
+	print(steps(27));
+	wrapAndShift(10);
+	int[] a;
+	a = new int[4];
+	a[0] = 0 - 20;
+	a[1] = 20;
+	a[2] = 0 - 7;
+	a[3] = 9;
+	divide(a, 0 - 3);
+	dispatch(8);
+	try
+	{
+		overrun(a, 9);
+	}
+	catch (IndexOutOfBounds e)
+	{
+		print(e.message);
+	}
+
+	print(99);
+}

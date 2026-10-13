@@ -1907,6 +1907,43 @@ static void test_c_whole_function(void)
 	c_route_off();
 }
 
+static void test_c_region_reloads_each_register_once(void)
+{
+	/* Locals with disjoint live ranges share one promoted register. Around a C
+	   region call only the promoted locals the region touches are flushed and
+	   reloaded; reloading every sharer would leave the register holding the
+	   last sharer's slot instead of the live local. */
+	c_route_on();
+	emit("void main() {"
+		 " int i; i = 0;"
+		 " int s1; s1 = 0;"
+		 " for (i = 0; i < 100; i = i + 1) { s1 = s1 + 100000000; }"
+		 " print(s1);"
+		 " int s3; s3 = 0;"
+		 " for (i = 0; i < 3; i = i + 1) { s3 = s3 + 800000000; }"
+		 " print(s3);"
+		 " int s4; s4 = 5;"
+		 " for (i = 0; i < 3; i = i + 1) { s4 = s4 * 3; }"
+		 " print(s4); }", TARGET_WINDOWS);
+	const char *call = strstr(g_asm, "call bzy_creg_");
+	ASSERT(call != NULL);
+	const char *end = strstr(call + 4, "call ");   /* The reloads sit between the region call and the next call. */
+	ASSERT(end != NULL);
+	const char *regs[4] = { "mov r12, [", "mov r13, [", "mov r14, [", "mov r15, [" };
+	for (int r = 0; r < 4; r++)
+	{
+		int n = 0;
+		for (const char *p = strstr(call, regs[r]); p && p < end; p = strstr(p + 1, regs[r]))
+		{
+			n++;
+		}
+
+		ASSERT(n <= 1);
+	}
+
+	c_route_off();
+}
+
 static void test_c_route_off_by_default(void)
 {
 	/* With BZY_C unset, codegen is unchanged and no C is produced. */
@@ -1996,6 +2033,7 @@ int main(void)
 	RUN(test_c_region_call);
 	RUN(test_c_switch_region);
 	RUN(test_c_whole_function);
+	RUN(test_c_region_reloads_each_register_once);
 	RUN(test_c_route_off_by_default);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
