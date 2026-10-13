@@ -12236,6 +12236,29 @@ static int cg_region_touches(Codegen *cg, int r, int off)
 	return 0;
 }
 
+/* 1 if the IR region path would emit s as a vectorized reduction. The C route
+   keeps strict floating-point evaluation order, so it cannot match that and
+   leaves the loop to the IR. */
+static int cg_region_ir_vectorizes(Func *f, const Stmt *s)
+{
+	if (!ir_region_eligible(s))
+	{
+		return 0;
+	}
+
+	IRFunc *irf = ir_lower_region(f, s);
+	if (!irf)
+	{
+		return 0;
+	}
+
+	IRAlloc *a = ra_run(irf);
+	int vec = ir_region_vectorizable(f, s, a);
+	ra_free(a);
+	ir_func_free(irf);
+	return vec;
+}
+
 static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 {
 	if (!b)
@@ -12249,7 +12272,8 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
 			const char *verdict = "ineligible";
-			if (bzy_c_enabled() && ir_region_eligible_c(s) && cg_region_line_allowed(s->line))
+			if (bzy_c_enabled() && ir_region_eligible_c(s) && cg_region_line_allowed(s->line)
+					&& !cg_region_ir_vectorizes(f, s))
 			{
 				char sym[64];
 				int offs[256];

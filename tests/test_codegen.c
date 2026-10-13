@@ -1944,6 +1944,29 @@ static void test_c_region_reloads_each_register_once(void)
 	c_route_off();
 }
 
+static void test_c_route_leaves_vector_reduction_to_ir(void)
+{
+	/* A floating-point sum-of-products reduction is vectorized on the IR region
+	   path; C keeps strict evaluation order and could not match it, so the C
+	   route leaves this loop to the IR. */
+	c_route_on();
+	emit("void main() {"
+		 " int n; n = 4096;"
+		 " double[] xs; xs = new double[n];"
+		 " double[] ys; ys = new double[n];"
+		 " for (int i = 0; i < n; i = i + 1) { xs[i] = (double)i; ys[i] = (double)(i % 7); }"
+		 " double a; a = 1.5;"
+		 " double b; b = 2.5;"
+		 " double acc; acc = 0.0;"
+		 " for (int v = 0; v < n; v = v + 1) { acc = acc + a * xs[v] + b * ys[v]; }"
+		 " print(acc); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "mulpd") != NULL);   /* The reduction stayed on the vectorizing IR path. */
+	const char *first = strstr(g_asm, "call bzy_creg_");
+	ASSERT(first != NULL);                     /* The fill loop still takes the C route. */
+	ASSERT(strstr(first + 1, "call bzy_creg_") == NULL);
+	c_route_off();
+}
+
 static void test_c_route_off_by_default(void)
 {
 	/* With BZY_C unset, codegen is unchanged and no C is produced. */
@@ -2034,6 +2057,7 @@ int main(void)
 	RUN(test_c_switch_region);
 	RUN(test_c_whole_function);
 	RUN(test_c_region_reloads_each_register_once);
+	RUN(test_c_route_leaves_vector_reduction_to_ir);
 	RUN(test_c_route_off_by_default);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
