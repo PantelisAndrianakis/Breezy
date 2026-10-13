@@ -1,0 +1,69 @@
+// Final arrays: read-only literal tables, local and static, of several element kinds.
+static class Tables
+{
+	static final int[] PRIMES = { 2, 3, 5, 7, 11, 13 };
+	static final double[] W = { 0.5, -1.25, 2 };
+	static final bool[] ON = { true, false, true, true };
+}
+
+// No try here, so its loops can become regions on the C route.
+void run()
+{
+	final byte[] B = { -128, 127, 0, 5 };
+	final ushort[] U = { 0, 65535, 7 };
+	final long[] L = { 6364136223846793005L, -1, 3 };
+
+	print(Tables.PRIMES.length);
+	print(Tables.PRIMES[5]);
+	long s;
+	s = 0;
+	for (int r = 0; r < 1000; r = r + 1)
+	{
+		for (int i = 0; i < Tables.PRIMES.length; i = i + 1)
+		{
+			s = s + (long)Tables.PRIMES[i] * (long)B[i % 4];
+		}
+	}
+
+	print(s);
+	double d;
+	d = 0.0;
+	for (int i = 0; i < Tables.W.length; i = i + 1)
+	{
+		d = d + Tables.W[i] * 2.0;
+	}
+
+	print((long)(d * 100.0));
+	int on;
+	on = 0;
+	for (int i = 0; i < Tables.ON.length; i = i + 1)
+	{
+		if (Tables.ON[i])
+		{
+			on = on + 1;
+		}
+	}
+
+	print(on);
+	print((int)U[1] + (int)U[2]);
+	print(L[0] + L[1] + L[2]);
+	int k;
+	k = 3;
+	print(B[k]);
+	print(B.length);
+}
+
+void main()
+{
+	run();
+	int k;
+	k = 9;
+	try
+	{
+		print(Tables.PRIMES[k]);
+	}
+	catch (IndexOutOfBounds e)
+	{
+		print(e.message);
+	}
+}

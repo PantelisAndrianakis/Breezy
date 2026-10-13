@@ -8519,6 +8519,13 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		   (owned, stack-preserved like the enum load). anno_str = class. */
 		if (e->anno_int == -1)
 		{
+			if (e->anno_final)
+			{
+				/* A static final array: its read-only table; no slot load, no retain. */
+				cg_emit(cg,"    lea rax, [rel __bzy_final_%d]", e->anno_final - 1);
+				break;
+			}
+
 			char smem[192];
 			snprintf(smem,sizeof(smem),"[rel __static_%s_%s]", e->anno_str, e->name);
 			if (ty_is_float(e->type.kind))
@@ -11456,6 +11463,14 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 	switch (s->kind)
 	{
 	case ST_VARDECL:
+		if (s->final_id)
+		{
+			/* A final array: the local holds the address of its read-only table. */
+			cg_emit(cg,"    lea rax, [rel __bzy_final_%d]", s->final_id - 1);
+			cg_emit(cg,"    mov [rbp - %d], rax", s->decl_offset);
+			break;
+		}
+
 		if (s->decl_init)
 		{
 			long long dcv;
@@ -13335,6 +13350,64 @@ static void cg_emit_static_init(Codegen *cg, TypeTable *tt, Unit **units, int n)
 	cg_emit(cg,"    ret");
 }
 
+/* The data directive for one element of a final array's table. */
+static const char *cg_final_directive(TypeKind k)
+{
+	switch (cg_elem_stride(k))
+	{
+	case 1:
+		return "db";
+	case 2:
+		return "dw";
+	case 4:
+		return "dd";
+	default:
+		return "dq";
+	}
+}
+
+/* Each final array as a complete, unmanaged array object in read-only data:
+   vtable 0, refcount 0 (every retain/release path treats it as unmanaged and
+   never writes it), gcinfo 0, length, then the elements at their normal width. */
+static void cg_emit_final_tables(Codegen *cg)
+{
+	int n = final_table_count();
+	if (n == 0)
+	{
+		return;
+	}
+
+	if (cg->target == TARGET_LINUX)
+	{
+		cg_emit(cg,"section .rodata progbits alloc noexec nowrite align=16");
+	}
+	else
+	{
+		cg_emit(cg,"section .rdata rdata align=16");
+	}
+
+	for (int i = 0; i < n; i++)
+	{
+		const FinalTable *ft = final_table(i);
+		cg_emit(cg,"    align 16");
+		cg_emit(cg,"__bzy_final_%d:", i);
+		cg_emit(cg,"    dq 0, 0, 0, %d", ft->count);
+		for (int k = 0; k < ft->count; k++)
+		{
+			if (ft->elem == TY_DOUBLE)
+			{
+				unsigned long long bits = 0;
+				memcpy(&bits, &ft->dvals[k], sizeof(bits));
+				cg_emit(cg,"    dq 0x%016llx", bits);
+			}
+			else
+			{
+				cg_emit(cg,"    %s %lld", cg_final_directive(ft->elem), ft->ivals[k]);
+			}
+		}
+	}
+}
+
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 {
 	ir_set_tt(tt);   /* Resolve direct-call callees during IR call lowering (Lever 2). */
@@ -14005,4 +14078,5 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 
 	cg_emit_enum_data(cg);   /* Enum singleton slots + constant name strings. */
 	cg_emit_static_data(cg,units,unit_count);   /* Static-field global slots. */
+	cg_emit_final_tables(cg);   /* Final arrays: read-only tables, last section. */
 }

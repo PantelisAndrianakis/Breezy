@@ -1967,6 +1967,26 @@ static void test_c_route_leaves_vector_reduction_to_ir(void)
 	c_route_off();
 }
 
+static void test_final_array_tables(void)
+{
+	/* Each final array is one unmanaged object in read-only data; a final local
+	   and a static final read both materialize as a lea of that table. */
+	const char *src =
+		"static class Tab { static final int[] P = { 2, 3, 5 }; }"
+		" void main() { final byte[] B = { -1, 7 }; print(Tab.P[1] + (int)B[1]); }";
+	emit(src, TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "section .rdata rdata align=16") != NULL);
+	ASSERT(strstr(g_asm, "__bzy_final_0:") != NULL);
+	ASSERT(strstr(g_asm, "    dq 0, 0, 0, 3") != NULL);
+	ASSERT(strstr(g_asm, "    dd 5") != NULL);
+	ASSERT(strstr(g_asm, "    db -1") != NULL);
+	ASSERT(strstr(g_asm, "lea rax, [rel __bzy_final_0]") != NULL);
+	ASSERT(strstr(g_asm, "lea rax, [rel __bzy_final_1]") != NULL);
+	ASSERT(strstr(g_asm, "[rel __static_Tab_P]") == NULL);
+	emit(src, TARGET_LINUX);
+	ASSERT(strstr(g_asm, "section .rodata progbits alloc noexec nowrite align=16") != NULL);
+}
+
 static void test_c_route_off_by_default(void)
 {
 	/* With BZY_C unset, codegen is unchanged and no C is produced. */
@@ -2059,6 +2079,7 @@ int main(void)
 	RUN(test_c_region_reloads_each_register_once);
 	RUN(test_c_route_leaves_vector_reduction_to_ir);
 	RUN(test_c_route_off_by_default);
+	RUN(test_final_array_tables);
 	RUN(test_ffi_getenv_lowers);
 	RUN(test_ffi_await_shutdown_lowers);
 	RUN(test_system_realtime_io_lowers);

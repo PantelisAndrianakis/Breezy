@@ -1,6 +1,7 @@
 #include "bce.h"
 #include "lexer.h"
 #include "grow.h"
+#include "resolve.h"   /* final_table: constant lengths of final arrays. */
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>   /* strcmp for the .length field name. */
@@ -414,6 +415,14 @@ static Iv iv_expr(Expr *e, Env *env)
 		}
 
 		return IV_TOP;
+	case EX_FIELD:
+		/* The length of a final array is a compile-time constant. */
+		if (e->lhs && e->lhs->anno_final && strcmp(e->name, "length") == 0)
+		{
+			return iv_const(final_table(e->lhs->anno_final - 1)->count);
+		}
+
+		return IV_TOP;
 	case EX_CAST:
 		return iv_clamp(iv_expr(e->lhs, env), e->type.kind);
 	case EX_BINARY:
@@ -692,6 +701,22 @@ static void mark_indexes(Expr *e, Env *env)
 			}
 		}
 	}
+
+	if (e->kind == EX_INDEX && e->lhs->kind == EX_FIELD && e->lhs->anno_final)
+	{
+		/* A static final array: exact constant length, no local to track. */
+		long long n = final_table(e->lhs->anno_final - 1)->count;
+		if (n > 0)
+		{
+			e->anno_len_const = n;
+		}
+
+		Iv idx = iv_expr(e->rhs, env);
+		if (idx.known && idx.lo >= 0 && idx.hi < n)
+		{
+			e->anno_index_safe = 1;
+		}
+	}
 }
 
 static void bce_block(Block *b, Env *env);
@@ -910,7 +935,11 @@ static void bce_stmt(Stmt *st, Env *env)
 	{
 	case ST_VARDECL:
 		mark_indexes(st->decl_init, env);
-		if (st->decl_type.kind == TY_ARRAY)
+		if (st->final_id)
+		{
+			alen_set(env, st->decl_offset, iv_const(final_table(st->final_id - 1)->count));
+		}
+		else if (st->decl_type.kind == TY_ARRAY)
 		{
 			note_array_assign(env, st->decl_offset, st->decl_init);
 		}
