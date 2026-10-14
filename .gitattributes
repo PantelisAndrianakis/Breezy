@@ -1,0 +1,3 @@
+# Shell scripts must keep LF endings: bash rejects CRLF, and core.autocrlf=true
+# checkouts on Windows would otherwise smudge them to CRLF and break `make test`.
+*.sh text eol=lf

@@ -12,6 +12,7 @@
 #include "prelude.h"
 #include "cemit.h"
 #include <stdio.h>
+#include <stdlib.h>   /* putenv: keep the IR-region assertions off the default C route. */
 #include <string.h>
 
 /* Lex -> parse -> register -> resolve a snippet and return its first free
@@ -1342,6 +1343,9 @@ static void test_cemit_rejects_call(void)
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
+	/* The C route is on by default and would take the loops these tests expect as IR regions;
+	   the cemit tests call cemit_region directly, so they do not need it on. */
+	putenv("BZY_C=0");
 	RUN(test_ir_build_basic);
 	RUN(test_eligible_accepts_scalar_loop);
 	RUN(test_eligible_rejects_string);
