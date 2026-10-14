@@ -16,21 +16,21 @@
 extern char __vtable_XmlException[];
 extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
-/* XmlNode layout: vtable|rc|gcinfo|name@24|text@32|anames@40|avals@48|acount@56|children@64. */
+/* XmlNode layout: vtable|rc|gcinfo|name@24|text@32|attrs@40|acount@48|children@56.
+   attrs is one array of 2 * acount strings: name, value, name, value, ... */
 #define X_NAME   24
 #define X_TEXT   32
-#define X_ANAMES 40
-#define X_AVALS  48
-#define X_ACOUNT 56
-#define X_KIDS   64
-#define X_SIZE   72
+#define X_ATTRS  40
+#define X_ACOUNT 48
+#define X_KIDS   56
+#define X_SIZE   64
 
 #define NODE_SET(n, off, v) (*(void**)((char*)(n) + (off)) = (void*)(v))
 #define NODE_GET(n, off)    (*(void**)((char*)(n) + (off)))
 
-/* Managed-node typeinfo: {finalizer=0, child_count=5, name,text,anames,avals,kids}.
-   attr_count@56 is a plain int, not a managed child. */
-static int64_t g_xml_ti[7] = { 0, 5, X_NAME, X_TEXT, X_ANAMES, X_AVALS, X_KIDS };
+/* Managed-node typeinfo: {finalizer=0, child_count=4, name,text,attrs,kids}.
+   attr_count@48 is a plain int, not a managed child. */
+static int64_t g_xml_ti[6] = { 0, 4, X_NAME, X_TEXT, X_ATTRS, X_KIDS };
 static int64_t g_xml_vt[2];
 static int     g_xml_vt_built;
 
@@ -61,11 +61,15 @@ static void arr_set(void *arr, int64_t i, void *str)
 
 /* ---- scanner ---------------------------------------------------------------- */
 
+#define XML_NAMES 32
+
 typedef struct
 {
 	const char *p, *end;
 	int64_t line, col;
 	const char *err;
+	void *names[XML_NAMES];   /* Interned element and attribute names (one reference each). */
+	int nnames;
 } Scan;
 
 static void fail(Scan *s, const char *msg)
@@ -136,13 +140,14 @@ static int is_name_char(int c)
 }
 
 /* Read a tag/attribute name; returns an owned (+1) string, or NULL on error. */
-static void *parse_name(Scan *s)
+/* Scans a name and returns its length (its bytes start at the old s->p), or -1. */
+static int64_t scan_name(Scan *s)
 {
 	const char *start = s->p;
 	if (!is_name_start(peek(s)))
 	{
 		fail(s, "Expected a name.");
-		return NULL;
+		return -1;
 	}
 
 	while (!at_end(s) && is_name_char(peek(s)))
@@ -150,7 +155,41 @@ static void *parse_name(Scan *s)
 		advance(s);
 	}
 
-	return bzy_str_new(start, (int64_t)(s->p - start));
+	return (int64_t)(s->p - start);
+}
+
+/* An owned (+1) string for a name. Names repeat on every record of a document,
+   so each distinct one is allocated once per parse and shared; strings are
+   immutable, so sharing is invisible. ponytail: linear scan of XML_NAMES
+   entries, names past that are allocated per use; a hash table if documents
+   with many distinct names need it. */
+static void *intern_name(Scan *s, const char *p, int64_t len)
+{
+	for (int i = 0; i < s->nnames; i++)
+	{
+		void *n = s->names[i];
+		if (bzy_str_len(n) == len && memcmp(bzy_str_data(n), p, (size_t)len) == 0)
+		{
+			bzy_retain(n);
+			return n;
+		}
+	}
+
+	void *n = bzy_str_new(p, len);
+	if (s->nnames < XML_NAMES)
+	{
+		bzy_retain(n);   /* The table's own reference. */
+		s->names[s->nnames++] = n;
+	}
+
+	return n;
+}
+
+static void *parse_name(Scan *s)
+{
+	const char *start = s->p;
+	int64_t len = scan_name(s);
+	return len < 0 ? NULL : intern_name(s, start, len);
 }
 
 /* ---- a growable text buffer (one per element's direct character data) ------- */
@@ -476,16 +515,14 @@ static void parse_attrs(Scan *s, void *node)
 
 	if (!s->err && a.count > 0)
 	{
-		void *names = bzy_array_new(a.count, 1);
-		void *vals  = bzy_array_new(a.count, 1);
+		void *attrs = bzy_array_new(2 * a.count, 1);
 		for (int i = 0; i < a.count; i++)
 		{
-			arr_set(names, i, a.names[i]);   /* Transfer owned. */
-			arr_set(vals,  i, a.vals[i]);
+			arr_set(attrs, 2 * i, a.names[i]);   /* Transfer owned. */
+			arr_set(attrs, 2 * i + 1, a.vals[i]);
 		}
 
-		NODE_SET(node, X_ANAMES, names);
-		NODE_SET(node, X_AVALS, vals);
+		NODE_SET(node, X_ATTRS, attrs);
 		*(int64_t*)((char*)node + X_ACOUNT) = a.count;
 	}
 	else
@@ -577,7 +614,8 @@ static void *parse_element(Scan *s)
 			{
 				advance(s);                       /* '<'. */
 				advance(s);                       /* '/'. */
-				void *ename = parse_name(s);
+				const char *estart = s->p;
+				int64_t elen = scan_name(s);      /* Compared in place: no string for the end tag. */
 				if (s->err)
 				{
 					break;
@@ -587,19 +625,16 @@ static void *parse_element(Scan *s)
 				if (peek(s) != '>')
 				{
 					fail(s, "Expected '>' in end tag.");
-					bzy_release(ename);
 					break;
 				}
 
 				advance(s);
-				if (!bzy_str_eq(ename, name))
+				if (elen != bzy_str_len(name) || memcmp(estart, bzy_str_data(name), (size_t)elen) != 0)
 				{
 					fail(s, "Mismatched end tag.");
-					bzy_release(ename);
 					break;
 				}
 
-				bzy_release(ename);
 				break;
 			}
 
@@ -713,6 +748,7 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	s.line = 1;
 	s.col = 1;
 	s.err = NULL;
+	s.nnames = 0;
 
 	skip_misc(&s);   /* Leading whitespace, comments, <?xml?> declaration, PIs. */
 	if (!s.err && (peek(&s) != '<' || !is_name_start(peek2(&s))))
@@ -728,6 +764,11 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 		{
 			fail(&s, "trailing content after the root element");
 		}
+	}
+
+	for (int i = 0; i < s.nnames; i++)
+	{
+		bzy_release(s.names[i]);   /* The table's references; nodes keep their own. */
 	}
 
 	if (s.err)
@@ -751,14 +792,12 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 void *bzy_xml_attr(void *node, void *name)
 {
 	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);
-	void *names = NODE_GET(node, X_ANAMES);
-	void *vals  = NODE_GET(node, X_AVALS);
+	void **attrs = n ? (void**)((char*)NODE_GET(node, X_ATTRS) + 32) : NULL;
 	for (int64_t i = 0; i < n; i++)
 	{
-		void *an = ((void**)((char*)names + 32))[i];
-		if (bzy_str_eq(an, name))
+		if (bzy_str_eq(attrs[2 * i], name))
 		{
-			void *v = ((void**)((char*)vals + 32))[i];
+			void *v = attrs[2 * i + 1];
 			bzy_retain(v);
 			return v;
 		}
@@ -770,10 +809,10 @@ void *bzy_xml_attr(void *node, void *name)
 int64_t bzy_xml_has_attr(void *node, void *name)
 {
 	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);
-	void *names = NODE_GET(node, X_ANAMES);
+	void **attrs = n ? (void**)((char*)NODE_GET(node, X_ATTRS) + 32) : NULL;
 	for (int64_t i = 0; i < n; i++)
 	{
-		if (bzy_str_eq(((void**)((char*)names + 32))[i], name))
+		if (bzy_str_eq(attrs[2 * i], name))
 		{
 			return 1;
 		}
@@ -791,8 +830,7 @@ void *bzy_xml_attr_name_at(void *node, int64_t i)
 		bzy_oob_abort(i, n);   /* No return. */
 	}
 
-	void *names = NODE_GET(node, X_ANAMES);
-	void *nm = ((void**)((char*)names + 32))[i];
+	void *nm = ((void**)((char*)NODE_GET(node, X_ATTRS) + 32))[2 * i];
 	bzy_retain(nm);
 	return nm;
 }

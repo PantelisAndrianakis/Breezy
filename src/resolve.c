@@ -2722,11 +2722,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			else if (strcmp(e->name,"attrCount")==0)
 			{
 				e->type.kind=TY_INT;
-				e->anno_int=56;         /* attr_count@56. */
+				e->anno_int=48;         /* attr_count@48. */
 			}
 			else if (strcmp(e->name,"children")==0)
 			{
-				/* A List<XmlNode> stored on the node; a borrowed field read at 64,
+				/* A List<XmlNode> stored on the node; a borrowed field read at 56,
 				   traversed by the existing collection combinators. */
 				TypeRef el;
 				memset(&el,0,sizeof(el));
@@ -2734,7 +2734,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				e->type.kind=TY_GENERIC;
 				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
 				e->type.elem=typeref_box(el);
-				e->anno_int=64;         /* children@64. */
+				e->anno_int=56;         /* children@56. */
 			}
 			else
 			{

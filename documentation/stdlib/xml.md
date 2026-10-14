@@ -119,7 +119,9 @@ A document that is not well formed throws `XmlException`. So does a **DOCTYPE/DT
 
 A parsed tree is an ordinary managed value: it is reference-counted and reclaimed
 when its last reference goes away, and the cycle collector traces it like any
-object.
+object. Element and attribute names are stored once per document and shared by
+every node that uses them, so a document of repeated records costs little beyond
+its values.
 
 ---
 

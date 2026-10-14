@@ -1704,7 +1704,7 @@ static void test_xml_fields_lower(void)
 {
 	emit("void main(){ XmlNode r = Xml.parse(\"<a x='1'>hi</a>\"); print(r.name); print(r.text); print(r.attrCount); }", TARGET_LINUX);
 	ASSERT_INT(strstr(g_asm, "+ 24]") != NULL, 1);   /* name@24 read. */
-	ASSERT_INT(strstr(g_asm, "+ 56]") != NULL, 1);   /* attrCount@56 read. */
+	ASSERT_INT(strstr(g_asm, "+ 48]") != NULL, 1);   /* attrCount@48 read. */
 }
 
 static void test_combinator_lowers_to_loop(void)

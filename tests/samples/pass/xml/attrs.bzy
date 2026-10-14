@@ -10,4 +10,10 @@ void main()
 	print(r.hasAttr("w"));     // true.
 	print(r.hasAttr("z"));     // false.
 	print(r.attrNameAt(0));    // w.
+	print(r.attrNameAt(1));    // h.
+
+	// Siblings repeat element and attribute names; each keeps its own values.
+	XmlNode l = Xml.parse("<l><i k='1' v='a'/><i k='2' v='b'/></l>");
+	XmlNode second = l.children.get(1);
+	print(second.name + second.attr("k") + second.attr("v") + l.children.get(0).attr("v"));   // i2ba.
 }
