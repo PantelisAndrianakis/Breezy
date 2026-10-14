@@ -875,6 +875,111 @@ static void c_block(CUnit *u, const Block *b, int depth)
 }
 
 /* The `for` header: init as a statement before the loop, post as an expression. */
+/* Steps an affine recurrence is advanced by at once; see c_affine_jump. */
+#define C_AFFINE_STEPS 64
+
+/* 1 when e is the integer local at frame offset off (read directly, not captured). */
+static int c_is_local(const Expr *e, int off)
+{
+	return e && e->kind == EX_IDENT && !e->anno_capture && e->anno_int == off;
+}
+
+/**
+ * Recognizes `for (...; i < lim; i = i + 1) { x = x * A + B; }` with A and B integer constants, i and x distinct integer locals and lim a literal or another local, and emits ahead of the loop a loop that advances x by C_AFFINE_STEPS iterations at once.
+ * Wrapping arithmetic makes the composition exact: k steps of x -> A*x + B are x -> A^k*x + B*(A^(k-1) + ... + A + 1) modulo 2^width.
+ * The original loop then runs the remaining iterations, so x and i end with the values the plain loop gives them.
+ */
+static void c_affine_jump(CUnit *u, const Stmt *s, int depth)
+{
+	const Expr *cond = s->cond;
+	const Stmt *post = s->for_post;
+	if (!cond || !post || !s->then_blk || s->then_blk->count != 1 || cond->kind != EX_BINARY || cond->op != TOKEN_LT
+			|| cond->lhs->kind != EX_IDENT || post->kind != ST_ASSIGN)
+	{
+		return;
+	}
+
+	int i_off = cond->lhs->anno_int;
+	long long one = 0;
+	if (!ty_is_int(cond->lhs->type.kind) || !c_is_local(cond->lhs, i_off) || !c_is_local(post->target, i_off)
+			|| post->value->kind != EX_BINARY || post->value->op != TOKEN_PLUS || !c_is_local(post->value->lhs, i_off)
+			|| !c_const_value(u, post->value->rhs, &one) || one != 1)
+	{
+		return;
+	}
+
+	const Stmt *st = s->then_blk->stmts[0];
+	if (st->kind != ST_ASSIGN || st->target->kind != EX_IDENT || st->target->anno_capture || st->target->anno_int <= 0)
+	{
+		return;
+	}
+
+	int x_off = st->target->anno_int;
+	TypeKind xk = st->target->type.kind;
+	const Expr *v = st->value;
+	if (x_off == i_off || !ty_is_int(xk) || v->kind != EX_BINARY || v->op != TOKEN_PLUS || v->type.kind != xk)
+	{
+		return;
+	}
+
+	const Expr *mul = v->lhs;
+	const Expr *add = v->rhs;
+	if (mul->kind != EX_BINARY || mul->op != TOKEN_STAR)
+	{
+		mul = v->rhs;
+		add = v->lhs;
+	}
+
+	long long a = 0;
+	long long b = 0;
+	if (mul->kind != EX_BINARY || mul->op != TOKEN_STAR || mul->type.kind != xk || !c_const_value(u, add, &b))
+	{
+		return;
+	}
+
+	if (!(c_is_local(mul->lhs, x_off) && c_const_value(u, mul->rhs, &a)) && !(c_is_local(mul->rhs, x_off) && c_const_value(u, mul->lhs, &a)))
+	{
+		return;
+	}
+
+	const Expr *lim = cond->rhs;
+	if (lim->type.kind != cond->lhs->type.kind)
+	{
+		return;
+	}
+
+	if (lim->kind != EX_INT && !(lim->kind == EX_IDENT && !lim->anno_capture && lim->anno_int > 0 && lim->anno_int != x_off && lim->anno_int != i_off))
+	{
+		return;
+	}
+
+	// Compose the step C_AFFINE_STEPS times: (A1, B1) then (A2, B2) is x -> A1*A2*x + A2*B1 + B2.
+	unsigned long long ka = 1;
+	unsigned long long kb = 0;
+	for (int k = 0; k < C_AFFINE_STEPS; k++)
+	{
+		kb = (unsigned long long)a * kb + (unsigned long long)b;
+		ka = ka * (unsigned long long)a;
+	}
+
+	const char *xt = c_type(xk);
+	const char *it = c_type(cond->lhs->type.kind);
+	note_local(u, x_off, xk);
+	note_local(u, i_off, cond->lhs->type.kind);
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "for (; l%d < ", i_off);
+	c_expr(u, lim);
+	cbuf_printf(&u->out, " && (uint64_t)((int64_t)(");
+	c_expr(u, lim);
+	cbuf_printf(&u->out, ") - (int64_t)l%d) >= %d; l%d = (%s)(l%d + %d))\n", i_off, C_AFFINE_STEPS, i_off, it, i_off, C_AFFINE_STEPS);
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "{\n");
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "l%d = (%s)((%s)l%d * (%s)0x%llxULL + (%s)0x%llxULL);\n", x_off, xt, xt, x_off, xt, ka, xt, kb);
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "}\n");
+}
+
 static void c_for(CUnit *u, const Stmt *s, int depth)
 {
 	c_indent(u, depth);
@@ -883,6 +988,8 @@ static void c_for(CUnit *u, const Stmt *s, int depth)
 	{
 		c_stmt(u, s->for_init, depth + 1);
 	}
+
+	c_affine_jump(u, s, depth + 1);
 
 	c_indent(u, depth + 1);
 	cbuf_printf(&u->out, "for (; ");

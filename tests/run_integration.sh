@@ -319,6 +319,7 @@ check catch_subclass tests/samples/pass/exceptions/proj_catch_subclass $'missing
 check rethrow     tests/samples/pass/exceptions/proj_rethrow       "bee"
 check catch_oob   tests/samples/pass/exceptions/catch_oob.bzy     $'Array index 5 out of bounds for length 3.\n99'
 check c_route     tests/samples/pass/basics/c_route.bzy        $'111\n-2147483646\n-3\n-101\n200\n2242\nArray index 4 out of bounds for length 4.\n99'
+check c_affine    tests/samples/pass/basics/c_affine.bzy       $'1\n7853315990982803361\n7853315990982803361\n-2075277215\n-2075277215'
 check final_arrays tests/samples/pass/basics/final_arrays.bzy $'6\n13\n403000\n250\n3\n65542\n6364136223846793007\n5\n4\nArray index 9 out of bounds for length 6.'
 check catch_param tests/samples/pass/exceptions/catch_param.bzy   $'7'
 check interface_poly tests/samples/pass/oop/proj_interface_poly $'woof\nmeow'
