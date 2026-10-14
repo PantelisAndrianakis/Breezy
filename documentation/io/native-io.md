@@ -137,7 +137,7 @@ s.close();
 
 // Server: present a certificate + key (PEM).
 TlsListener l = Network.tlsListen(8443, "server-cert.pem", "server-key.pem");
-TlsSocket c = l.accept();             // Parks; runs the handshake.
+TlsSocket c = l.accept();             // Parks for the connection; the handshake runs on the first read or write.
 ```
 
 - `Network.tlsConnect(host, port) -> TlsSocket` - verify the peer against the
@@ -146,8 +146,10 @@ TlsSocket c = l.accept();             // Parks; runs the handshake.
   PEM CA bundle. **Required on Windows**, where OpenSSL does not read the OS
   certificate store.
 - `Network.tlsListen(port, certPath, keyPath) -> TlsListener` - server identity
-  from a PEM cert chain + private key; `accept()` runs the server handshake and
-  `port()` reports the bound port.
+  from a PEM cert chain + private key; `accept()` returns as soon as a client
+  connects, and the server handshake runs on that connection's first `read` or
+  `write`, in the breeze that serves it, so one accept loop never handshakes its
+  clients one after another. `port()` reports the bound port.
 - `TlsSocket.read(max)` / `write(byte[])` / `close()` - same semantics as
   `Socket`, encrypted.
 - `TlsSocket.read(max, timeoutMs)` - a **timed** read: returns the decrypted
@@ -160,7 +162,9 @@ TlsSocket c = l.accept();             // Parks; runs the handshake.
   retransmits may wait a little past `timeoutMs`; it never returns early.
 
 Verification is always on (no insecure mode); a handshake or certificate failure
-throws `IOException`.
+throws `IOException` (on the server, from that first `read` or `write`). A client
+loads each CA bundle (or the default trust store) once per process and reuses it
+for every later connection.
 
 ## DTLS (over UDP)
 

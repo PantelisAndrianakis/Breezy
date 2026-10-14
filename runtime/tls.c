@@ -7,6 +7,7 @@
  */
 #include "breezy.h"
 #include "network_internal.h"
+#include "platform.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -177,15 +178,16 @@ static int tls_load(void)
 }
 
 /**
- * ---- TlsSocket layout (object_size = 56):
+ * ---- TlsSocket layout (object_size = 64):
  * 0 vtable | 8 rc | 16 gcinfo | 24 transport(Socket*) | 32 SSL* | 40 SSL_CTX*
- * ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64).
+ * ctx_owned (NULL = shared: the listener or the client cache owns it) | 48 closed(int64) | 56 handshake pending (int64).
  * Leaf: the finalizer frees ssl + ctx_owned and releases the transport. ----
  */
 #define TLS_TRANSPORT(o) (*(void**)((char*)(o) + 24))
 #define TLS_SSL(o)       (*(void**)((char*)(o) + 32))
 #define TLS_CTXOWN(o)    (*(void**)((char*)(o) + 40))
 #define TLS_CLOSED(o)    (*(int64_t*)((char*)(o) + 48))
+#define TLS_PENDING(o)   (*(int64_t*)((char*)(o) + 56))   /* 1 while an accepted connection's handshake has not run. */
 
 /**
  * ---- TlsListener layout (object_size = 48):
@@ -335,6 +337,16 @@ static int tls_feed(void *s, int64_t timeout_ms)
  */
 static int tls_run(void *s, int op_kind, void *buf, int len, int64_t timeout_ms)
 {
+	if (op_kind != 0 && TLS_PENDING(s))
+	{
+		// An accepted connection handshakes on its first read or write, in the breeze that serves it.
+		TLS_PENDING(s) = 0;
+		if (tls_run(s, 0, NULL, 0, -1) != 1)
+		{
+			return -1;
+		}
+	}
+
 	for (;;)
 	{
 		int ret;
@@ -412,12 +424,13 @@ static int tls_run(void *s, int op_kind, void *buf, int len, int64_t timeout_ms)
 /* Allocate a TlsSocket over an owned transport Socket + a fresh SSL. ctx_own is the SSL_CTX to free on close (client) or NULL (server shares the listener's). */
 static void *tls_sock_wrap(void *transport, void *ssl, void *ctx_own)
 {
-	void *o = bzy_alloc(56);
+	void *o = bzy_alloc(64);
 	*(void**)o = tls_sock_vtable();
 	TLS_TRANSPORT(o) = transport;
 	TLS_SSL(o) = ssl;
 	TLS_CTXOWN(o) = ctx_own;
 	TLS_CLOSED(o) = 0;
+	TLS_PENDING(o) = 0;
 	bzy_share_crosscore(o);
 	return o;
 }
@@ -441,27 +454,84 @@ static int tls_attach_bios(void *ssl)
  * Returns a handshaken TlsSocket, or NULL on any failure -- with transport, ssl, and ctx all cleaned up and NO exception set, so the caller chooses which exception to raise (IOException for tlsConnect, DbException for the database drivers).
  * `host` drives hostname verification + SNI, and `caBundle` (a path, or NULL for the default trust store) the trust anchors, both skipped when `insecure` (self-signed / development servers only).
  */
+#define TLS_CLIENT_CTX_MAX 16
+
+/**
+ * Client contexts, one per (trust store, verify) pair, built once per process.
+ * Creating an SSL_CTX and loading its trust store costs about a millisecond, which every connection paid before; OpenSSL lets many threads create sessions from one context, so each is shared and never freed.
+ * ponytail: 16 pairs, a program using more builds a fresh context per connection for the rest.
+ */
+static struct
+{
+	char ca[512];
+	int has_ca;
+	int insecure;
+	void *ctx;
+} g_client_ctx[TLS_CLIENT_CTX_MAX];
+static int g_client_ctx_n;
+static bzy_mutex g_client_ctx_lock = BZY_MUTEX_INIT;
+
+/* The client context for this trust store and verify mode; *shared is 1 when it lives in the cache (the caller must not free it). NULL on failure. */
+static void *tls_client_ctx(const char *caBundle, int insecure, int *shared)
+{
+	*shared = 0;
+	bzy_mutex_lock(&g_client_ctx_lock);
+	for (int i = 0; i < g_client_ctx_n; i++)
+	{
+		if (g_client_ctx[i].insecure == insecure && g_client_ctx[i].has_ca == (caBundle != NULL)
+				&& (!caBundle || strcmp(g_client_ctx[i].ca, caBundle) == 0))
+		{
+			void *hit = g_client_ctx[i].ctx;
+			bzy_mutex_unlock(&g_client_ctx_lock);
+			*shared = 1;
+			return hit;
+		}
+	}
+
+	void *ctx = ossl.CTX_new(ossl.TLS_client_method());
+	if (ctx)
+	{
+		if (caBundle)
+		{
+			ossl.CTX_load_verify_locations(ctx, caBundle, NULL);
+		}
+		else
+		{
+			ossl.CTX_set_default_verify_paths(ctx);
+		}
+
+		if (!insecure)
+		{
+			ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
+		}
+
+		if (g_client_ctx_n < TLS_CLIENT_CTX_MAX && (!caBundle || strlen(caBundle) < sizeof(g_client_ctx[0].ca)))
+		{
+			int n = g_client_ctx_n++;
+			g_client_ctx[n].has_ca = caBundle != NULL;
+			g_client_ctx[n].insecure = insecure;
+			g_client_ctx[n].ctx = ctx;
+			if (caBundle)
+			{
+				strcpy(g_client_ctx[n].ca, caBundle);
+			}
+
+			*shared = 1;
+		}
+	}
+
+	bzy_mutex_unlock(&g_client_ctx_lock);
+	return ctx;
+}
+
 static void *tls_client_session(void *transport, const char *host, const char *caBundle, int insecure)
 {
-	void *ctx = ossl.CTX_new(ossl.TLS_client_method());
+	int shared = 0;
+	void *ctx = tls_client_ctx(caBundle, insecure, &shared);
 	if (!ctx)
 	{
 		bzy_release(transport);
 		return NULL;
-	}
-
-	if (caBundle)
-	{
-		ossl.CTX_load_verify_locations(ctx, caBundle, NULL);
-	}
-	else
-	{
-		ossl.CTX_set_default_verify_paths(ctx);
-	}
-
-	if (!insecure)
-	{
-		ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
 	}
 
 	void *ssl = ossl.SSL_new(ctx);
@@ -473,7 +543,11 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 		}
 
 		bzy_release(transport);
-		ossl.CTX_free(ctx);
+		if (!shared)
+		{
+			ossl.CTX_free(ctx);
+		}
+
 		return NULL;
 	}
 
@@ -485,7 +559,7 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 
 	ossl.SSL_set_connect_state(ssl);
 
-	void *s = tls_sock_wrap(transport, ssl, ctx); // The TlsSocket now owns transport + ssl + ctx.
+	void *s = tls_sock_wrap(transport, ssl, shared ? NULL : ctx); // The TlsSocket now owns transport + ssl (+ ctx when not cached).
 	if (tls_run(s, 0, NULL, 0, -1) != 1)
 	{
 		bzy_release(s); // rc 1 -> 0: the finalizer frees ssl/ctx and releases transport.
@@ -617,12 +691,9 @@ void *bzy_tls_accept(void *l)
 
 	ossl.SSL_set_accept_state(ssl);
 
+	// The handshake (with its private-key signature) runs on the connection's first read or write, so one accept loop serving many clients does not handshake them one after another.
 	void *s = tls_sock_wrap(transport, ssl, NULL); // Server conn shares the listener ctx.
-	if (tls_run(s, 0, NULL, 0, -1) != 1)
-	{
-		bzy_io_fail("TlsListener.accept: handshake failed."); // Finalizer cleans up.
-	}
-
+	TLS_PENDING(s) = 1;
 	return s;
 }
 
@@ -781,7 +852,7 @@ void bzy_tls_close(void *s)
 		return;
 	}
 
-	if (TLS_SSL(s))
+	if (TLS_SSL(s) && !TLS_PENDING(s))
 	{
 		ossl.SSL_shutdown(TLS_SSL(s));
 		tls_flush(s);
