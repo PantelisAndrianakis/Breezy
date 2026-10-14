@@ -486,6 +486,41 @@ static void test_vec_wraparound_mask(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void test_vec_managed_wraparound_grow(void)
+{
+	int64_t before = bzy_live_count();
+	void *v = bzy_vec_new(3);                     /* String elements: the vector owns a ref to each. */
+	void *s[100];
+	for (int i = 0; i < 100; i++)
+	{
+		char buf[16];
+		int len = sprintf(buf, "s%d", i);
+		s[i] = bzy_str_new(buf, len);
+	}
+
+	/* Wrap head around the ring before each grow, so growth moves two runs. */
+	for (int i = 0; i < 50; i++)
+	{
+		bzy_vec_push_back(v, (int64_t)s[50 + i]);
+		bzy_vec_push_front(v, (int64_t)s[49 - i]);
+	}
+
+	for (int i = 0; i < 100; i++)                 /* Logical order is s[0] .. s[99]. */
+	{
+		void *e = (void*)bzy_vec_get(v, i);
+		ASSERT(e == s[i]);
+		bzy_release(e);
+	}
+
+	for (int i = 0; i < 100; i++)
+	{
+		bzy_release(s[i]);                        /* Drop our own refs; the vector still holds each one. */
+	}
+
+	bzy_release(v);                               /* Frees every string exactly once. */
+	ASSERT_INT(bzy_live_count(), before);
+}
+
 static void test_rnd(void)
 {
 	for (int i=0; i<2000; i++)
@@ -1937,6 +1972,7 @@ int main(void)
 	RUN(test_vec_contains_string);
 	RUN(test_vec_lazy_backing);
 	RUN(test_vec_wraparound_mask);
+	RUN(test_vec_managed_wraparound_grow);
 	RUN(test_rnd);
 	RUN(test_clock);
 	RUN(test_builder_append_tostring);

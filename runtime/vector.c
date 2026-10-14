@@ -94,18 +94,21 @@ int64_t bzy_vec_len(void *v)
 	return *V_LEN(v);
 }
 
-static void vec_grow(void *v)
+/* Moves the elements into newdata (capacity newcap) in logical order at head 0
+   and releases the old backing array. The ring is at most two contiguous runs,
+   so it moves as two block copies. */
+static void vec_relocate(void *v, void *newdata, int64_t newcap)
 {
-	int64_t oldcap = *V_CAP(v), newcap = oldcap ? oldcap * 2 : 8, n = *V_LEN(v);
 	void *olddata = *V_DATA(v);
-	int64_t *os = (int64_t*)((char*)olddata + 32);
-	void *newdata = bzy_array_new(newcap, vec_managed(v) ? 1 : 0);
-	int64_t *ns = (int64_t*)((char*)newdata + 32);
-	for (int64_t i = 0; i < n; i++)        /* Re-normalize ring into logical order at head 0. */
+	if (olddata)
 	{
-		int64_t p = vec_phys(v, i);
-		ns[i] = os[p];
-		os[p] = 0;                          /* Transfer ownership; blank the old slot. */
+		int64_t n = *V_LEN(v), cap = *V_CAP(v), head = *V_HEAD(v) & (cap - 1);
+		int64_t *os = (int64_t*)((char*)olddata + 32);
+		int64_t *ns = (int64_t*)((char*)newdata + 32);
+		int64_t first = cap - head < n ? cap - head : n;   /* The run from head to the buffer end. */
+		memcpy(ns, os + head, (size_t)first * 8);
+		memcpy(ns + first, os, (size_t)(n - first) * 8);
+		*(int64_t*)((char*)olddata + 24) = 0;   /* Ownership moved: the old array releases no elements. */
 	}
 
 	/* A shared vector's fresh backing array inherits the SHARED bit: it is
@@ -119,7 +122,16 @@ static void vec_grow(void *v)
 	*V_DATA(v) = newdata;
 	*V_CAP(v) = newcap;
 	*V_HEAD(v) = 0;
-	bzy_release(olddata);                   /* Old slots blanked: frees the block only. */
+	if (olddata)
+	{
+		bzy_release(olddata);   /* Length zeroed: frees the block only. */
+	}
+}
+
+static void vec_grow(void *v)
+{
+	int64_t oldcap = *V_CAP(v), newcap = oldcap ? oldcap * 2 : 8;
+	vec_relocate(v, bzy_array_new(newcap, vec_managed(v) ? 1 : 0), newcap);
 }
 
 /* Grow the backing array once so the vector can hold at least `want` elements
@@ -142,33 +154,7 @@ void bzy_vec_reserve(void *v, int64_t want)
 			newcap *= 2;
 		}
 
-		int64_t n = *V_LEN(v);
-		void *olddata = *V_DATA(v);
-		void *newdata = bzy_array_new(newcap, vec_managed(v) ? 1 : 0);
-		if (olddata)
-		{
-			int64_t *os = (int64_t*)((char*)olddata + 32);
-			int64_t *ns = (int64_t*)((char*)newdata + 32);
-			for (int64_t i = 0; i < n; i++)
-			{
-				int64_t p = vec_phys(v, i);
-				ns[i] = os[p];
-				os[p] = 0;
-			}
-		}
-
-		if (vec_is_shared(v))
-		{
-			*(int64_t*)((char*)newdata + 16) |= (1ll << 3);
-		}
-
-		*V_DATA(v) = newdata;
-		*V_CAP(v) = newcap;
-		*V_HEAD(v) = 0;
-		if (olddata)
-		{
-			bzy_release(olddata);
-		}
+		vec_relocate(v, bzy_array_new(newcap, vec_managed(v) ? 1 : 0), newcap);
 	}
 
 	if (vec_is_shared(v))

@@ -108,6 +108,27 @@ static int bt_cmp(void *o, int64_t a, int64_t b)
 	return slot >= 0 ? bzy_obj_compare((void*)a, (void*)b, slot) : (*HCMP(o))(a, b);
 }
 
+/* 1 for int/long/bool keys, which order by a plain signed compare. */
+static int bt_int_keys(void *o)
+{
+	return *HKIND(o) == 0;
+}
+
+/* Index of the first key in x not less than k, for int/long/bool keys: a
+   branchless count of the smaller keys, with no comparator calls and no
+   hard-to-predict branches. It reads the keys in order, which beats a binary
+   search that jumps between the node's cache lines. */
+static int bt_lower_int(const BTNode *x, int64_t k)
+{
+	int c = 0;
+	for (int i = 0; i < x->n; i++)
+	{
+		c += x->key[i] < k;
+	}
+
+	return c;
+}
+
 /* ---- managed-node descriptors (lazy, one per (kman,vman) combo) ---- */
 #define TI_LEN (2 + (BT_MAX + 1) + 2 * BT_MAX)
 static int64_t g_node_ti[4][TI_LEN];
@@ -306,16 +327,31 @@ static int bt_insert_nonfull(void *o, BTNode *x, int64_t k, int64_t v)
 {
 	int has_values = (int)*HHV(o);
 	int kman = bt_kman(o);
-	int i = (int)x->n - 1;
-	while (i >= 0 && bt_cmp(o, k, x->key[i]) < 0)
+	int i;
+	if (bt_int_keys(o))
 	{
-		i--;
-	}
+		int lb = bt_lower_int(x, k);
+		if (lb < x->n && x->key[lb] == k)
+		{
+			bt_set_val(o, x, lb, v);
+			return 0;
+		}
 
-	if (i >= 0 && bt_cmp(o, k, x->key[i]) == 0)
+		i = lb - 1;   /* The last key below k, as the general scan leaves it. */
+	}
+	else
 	{
-		bt_set_val(o, x, i, v);
-		return 0;
+		i = (int)x->n - 1;
+		while (i >= 0 && bt_cmp(o, k, x->key[i]) < 0)
+		{
+			i--;
+		}
+
+		if (i >= 0 && bt_cmp(o, k, x->key[i]) == 0)
+		{
+			bt_set_val(o, x, i, v);
+			return 0;
+		}
 	}
 
 	if (x->leaf)
@@ -414,15 +450,23 @@ void bzy_btree_put(void *o, int64_t k, int64_t v)
 static BTNode *bt_find(void *o, int64_t k, int *idx)
 {
 	BTNode *x = bt_root(o);
+	int ints = bt_int_keys(o);
 	while (x)
 	{
 		int i = 0;
-		while (i < x->n && bt_cmp(o, k, x->key[i]) > 0)
+		if (ints)
 		{
-			i++;
+			i = bt_lower_int(x, k);
+		}
+		else
+		{
+			while (i < x->n && bt_cmp(o, k, x->key[i]) > 0)
+			{
+				i++;
+			}
 		}
 
-		if (i < x->n && bt_cmp(o, k, x->key[i]) == 0)
+		if (i < x->n && (ints ? x->key[i] == k : bt_cmp(o, k, x->key[i]) == 0))
 		{
 			*idx = i;
 			return x;

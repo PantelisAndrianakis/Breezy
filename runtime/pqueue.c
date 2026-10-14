@@ -20,6 +20,7 @@
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int64_t  *PQ_LEN(void *o)
 {
@@ -108,13 +109,8 @@ static void pq_grow(void *o)
 	void *newdata = bzy_array_new(newcap, pq_managed(o) ? 1 : 0);
 	if (n > 0)
 	{
-		int64_t *os = (int64_t*)((char*)olddata + 32);
-		int64_t *ns = (int64_t*)((char*)newdata + 32);
-		for (int64_t i = 0; i < n; i++)
-		{
-			ns[i] = os[i];
-			os[i] = 0;                          /* Transfer ownership; blank old slot. */
-		}
+		memcpy((char*)newdata + 32, (char*)olddata + 32, (size_t)n * 8);
+		*(int64_t*)((char*)olddata + 24) = 0;   /* Ownership moved: the old array releases no elements. */
 	}
 
 	if (pq_shared(o))
@@ -126,7 +122,7 @@ static void pq_grow(void *o)
 	*PQ_CAP(o) = newcap;
 	if (olddata)
 	{
-		bzy_release(olddata);                   /* Old slots blanked: frees the block only. */
+		bzy_release(olddata);                   /* Length zeroed: frees the block only. */
 	}
 }
 
@@ -145,11 +141,31 @@ static void pq_add_impl(void *o, int64_t v)
 	int prim = (*PQ_KIND(o) == 0);
 	int64_t *a = pq_slots(o);
 	int64_t i = (*PQ_LEN(o))++;
+	if (prim)
+	{
+		while (i > 0)                               /* Sift up: move parents down into the hole, place v once. */
+		{
+			int64_t p = (i - 1) >> 1;
+			if (v >= a[p])
+			{
+				break;
+			}
+
+			a[i] = a[p];
+			i = p;
+		}
+
+		a[i] = v;
+		return;
+	}
+
+	/* A user compareTo can throw, so the general path swaps: the heap holds every
+	   element exactly once after each step. */
 	a[i] = v;
-	while (i > 0)                                   /* Sift up. */
+	while (i > 0)
 	{
 		int64_t p = (i - 1) / 2;
-		if (!PQ_LESS(o, prim, a[i], a[p]))
+		if (!pq_less(o, a[i], a[p]))
 		{
 			break;
 		}
