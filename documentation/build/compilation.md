@@ -35,7 +35,7 @@ That code is written to `out_c.c` next to `out.asm`, compiled with `gcc -O3` int
 BZY_C=1 breezy app.bzy app
 ```
 
-The route is **off by default** while it is measured against the built-in code generator. Its cost is one extra GCC compile for any program that produces C, including programs whose only candidates are small standard-library helpers.
+The route is **off by default** while it is measured against the built-in code generator. Its cost is one extra GCC compile, only for programs whose own code has loops or functions the route takes; the standard library never does, so a program without such code builds exactly as before.
 
 ---
 

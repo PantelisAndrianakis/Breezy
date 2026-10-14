@@ -504,6 +504,7 @@ typedef struct
 	int            funcs_cap;
 	const char    *file;          /* Source path, for diagnostics. */
 	const char    *src;           /* Source buffer, for diagnostic line echo. */
+	int            is_prelude;    /* Built-in standard-library source, not the user's program. */
 } Unit;
 
 void   ast_free_all(void);

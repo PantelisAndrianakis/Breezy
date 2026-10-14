@@ -217,12 +217,14 @@ int main(int argc, char *argv[])
 	{
 		parser_init(&parsers[i],BZY_PRELUDE[i]);
 		units[i]=parse_unit(&parsers[i]);
+		units[i]->is_prelude=1;
 	}
 
 	for (int i=0; i<ndesk; i++)
 	{
 		parser_init(&parsers[np+i],BZY_DESKTOP_PRELUDE[i]);
 		units[np+i]=parse_unit(&parsers[np+i]);
+		units[np+i]->is_prelude=1;
 	}
 
 	for (int i=0; i<nfiles; i++)

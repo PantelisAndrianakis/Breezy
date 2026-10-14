@@ -31,6 +31,7 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 	{
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
 		units[i] = parse_unit(&parsers[i]);
+		units[i]->is_prelude = 1;   /* Mirror main.c. */
 	}
 
 	for (int j = 0; j < nsrc; j++)
@@ -107,6 +108,7 @@ static TypeTable *build_tt(const char **srcs, int nsrc)
 	{
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
 		units[i] = parse_unit(&parsers[i]);
+		units[i]->is_prelude = 1;   /* Mirror main.c. */
 	}
 
 	for (int j = 0; j < nsrc; j++)
@@ -184,6 +186,7 @@ static void emit_desktop(const char *src, Target target)
 	{
 		parser_init(&parsers[n], BZY_PRELUDE[i]);
 		units[n] = parse_unit(&parsers[n]);
+		units[n]->is_prelude = 1;   /* Mirror main.c. */
 		n++;
 	}
 
@@ -191,6 +194,7 @@ static void emit_desktop(const char *src, Target target)
 	{
 		parser_init(&parsers[n], BZY_DESKTOP_PRELUDE[i]);
 		units[n] = parse_unit(&parsers[n]);
+		units[n]->is_prelude = 1;   /* Mirror main.c. */
 		n++;
 	}
 
@@ -2007,6 +2011,16 @@ static void test_c_route_final_tables(void)
 	c_route_off();
 }
 
+static void test_c_route_skips_prelude(void)
+{
+	/* Standard-library helpers never take the C route, so a program with no
+	   eligible code of its own produces no C and needs no extra gcc run. */
+	c_route_on();
+	emit("void main() { print(1); }", TARGET_WINDOWS);
+	ASSERT(cemit_source() == NULL);
+	c_route_off();
+}
+
 static void test_c_route_off_by_default(void)
 {
 	/* With BZY_C unset, codegen is unchanged and no C is produced. */
@@ -2099,6 +2113,7 @@ int main(void)
 	RUN(test_c_region_reloads_each_register_once);
 	RUN(test_c_route_leaves_vector_reduction_to_ir);
 	RUN(test_c_route_off_by_default);
+	RUN(test_c_route_skips_prelude);
 	RUN(test_final_array_tables);
 	RUN(test_c_route_final_tables);
 	RUN(test_ffi_getenv_lowers);

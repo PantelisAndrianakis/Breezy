@@ -70,6 +70,7 @@ void cg_init(Codegen *cg, FILE *out)
 	cg->region_irf=NULL;
 	cg->region_alloc=NULL;
 	cg->region_csym=NULL;
+	cg->cur_unit_prelude=0;
 	cg->region_coff=NULL;
 	cg->region_ncoff=NULL;
 	cg->region_base=0;
@@ -12287,7 +12288,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
 			const char *verdict = "ineligible";
-			if (bzy_c_enabled() && ir_region_eligible_c(s) && cg_region_line_allowed(s->line)
+			if (bzy_c_enabled() && !cg->cur_unit_prelude && ir_region_eligible_c(s) && cg_region_line_allowed(s->line)
 					&& !cg_region_ir_vectorizes(f, s))
 			{
 				char sym[64];
@@ -12505,7 +12506,8 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	/* C route: a throw-free leaf function is defined in generated C under its
 	   label; the asm only declares it. It calls nothing, so no exception can
 	   unwind through its frame and it needs no exception record. */
-	if (bzy_c_enabled() && this_class == NULL && !f->is_lambda && ir_eligible(f) && cemit_func(f, label))
+	if (bzy_c_enabled() && !cg->cur_unit_prelude && this_class == NULL && !f->is_lambda && ir_eligible(f)
+			&& cemit_func(f, label))
 	{
 		cg_emit(cg, "extern %s", label);
 		return;
@@ -13836,6 +13838,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	{
 		Unit *u=units[i];
 		cg->cur_file = u->file;   /* Source path for this unit's stack-trace records. */
+		cg->cur_unit_prelude = u->is_prelude;   /* The C route skips standard-library units. */
 		for (int k=0; k<u->func_count; k++)
 		{
 			Func *f=u->funcs[k];
@@ -13874,6 +13877,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	{
 		Unit *u=units[i];
 		cg->cur_file = u->file;   /* Source path for this unit's stack-trace records. */
+		cg->cur_unit_prelude = u->is_prelude;   /* The C route skips standard-library units. */
 		for (int ci=0; ci<u->class_count; ci++)
 		{
 			ClassDecl *d=u->klasses[ci];

@@ -61,6 +61,7 @@ typedef struct
 	int cur_accum_sb_off;    /* P5: frame offset of the active lowering StringBuilder. */
 	int exception_fn_count;  /* Number of per-function exception records emitted so far. */
 	const char *cur_file;    /* Source path of the unit whose functions are being emitted (for stack-trace records; NULL for synthesized frames). */
+	int cur_unit_prelude;    /* 1 while emitting a standard-library unit: the C route skips it, so a program with no eligible code of its own needs no gcc run. */
 	int line_lbl_seq;        /* Monotonic file-unique counter for ..@line<n> stack-trace markers. */
 	int *cur_line;           /* Stack-trace markers in the current function: interleaved [label-id, source-line] pairs. Grown dynamically; reset per function. */
 	int cur_line_count;      /* Pair count. */
