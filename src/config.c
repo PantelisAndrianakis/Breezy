@@ -66,10 +66,11 @@ int bzy_c_enabled(void)
 {
 	if (g_c_cached < 0)
 	{
-		/* Default OFF. BZY_C=1 hands eligible loops and throw-free leaf functions
-		   to gcc through out_c.c; anything the C route rejects keeps today's path. */
+		/* Default ON: eligible loops and throw-free leaf functions go to gcc through
+		   out_c.c; anything the C route rejects keeps the assembly path. Set
+		   BZY_C=0 to emit everything as assembly. */
 		const char *v = getenv("BZY_C");
-		g_c_cached = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+		g_c_cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
 
 	return g_c_cached && bzy_ir_enabled();

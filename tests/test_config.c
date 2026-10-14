@@ -53,11 +53,10 @@ static void test_ir_flag_defaults_on(void)
 	ASSERT_INT(bzy_ir_enabled(), 1);
 }
 
-static void test_c_flag_defaults_off(void)
+static void test_c_flag_defaults_on(void)
 {
-	/* The C route is opt-in until it passes the integration suite and the
-	   benchmark gates on both platforms. */
-	ASSERT_INT(bzy_c_enabled(), 0);
+	/* With BZY_C unset (and the IR backend on), the C route is the default. */
+	ASSERT_INT(bzy_c_enabled(), 1);
 }
 
 int main(void)
@@ -67,7 +66,7 @@ int main(void)
 	RUN(test_ignores_other_sections_and_comments);
 	RUN(test_empty_is_noop);
 	RUN(test_ir_flag_defaults_on);
-	RUN(test_c_flag_defaults_off);
+	RUN(test_c_flag_defaults_on);
 	SUMMARY();
 	return 0;
 }

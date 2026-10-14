@@ -1,6 +1,7 @@
 #include "cemit.h"
 #include "lexer.h"   /* TokenType values for operators. */
 #include "resolve.h" /* final_table: final array values. */
+#include "irlower.h" /* ir_func_const_local: function-level constant locals. */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,6 +149,11 @@ typedef struct
 	int         finals[64];                   /* Final tables the unit indexes (table index). */
 	const char *ret_wide;                     /* Whole function: C return type (NULL for void). */
 	const char *ret_narrow;                   /* Whole function: Breezy return type in C. */
+	const Func *fn;                           /* The enclosing function, for its constant locals. */
+	int         nconst;
+	int         const_off[CEMIT_MAX_LOCALS];  /* Memo of locals already asked about. */
+	char        const_known[CEMIT_MAX_LOCALS];
+	long long   const_val[CEMIT_MAX_LOCALS];
 	int         nlocal;
 	int         local_off[CEMIT_MAX_LOCALS];  /* Frame offset of each referenced local. */
 	TypeKind    local_kind[CEMIT_MAX_LOCALS]; /* Its type. */
@@ -244,6 +250,51 @@ static int c_const_int(const Expr *e, long long *out)
 	}
 
 	return 0;
+}
+
+/* 1 and the value when the local at frame offset off is a function-level
+   constant (every assignment to it is the same integer literal), the same fact
+   the IR path folds. Answers are memoized per unit. */
+static int c_local_const(CUnit *u, int off, long long *out)
+{
+	if (!u->fn)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < u->nconst; i++)
+	{
+		if (u->const_off[i] == off)
+		{
+			*out = u->const_val[i];
+			return u->const_known[i];
+		}
+	}
+
+	long long v = 0;
+	int known = ir_func_const_local(u->fn, off, &v);
+	if (u->nconst < CEMIT_MAX_LOCALS)
+	{
+		u->const_off[u->nconst] = off;
+		u->const_known[u->nconst] = (char)known;
+		u->const_val[u->nconst] = v;
+		u->nconst++;
+	}
+
+	*out = v;
+	return known;
+}
+
+/* A literal integer, or a read of a constant local. */
+static int c_const_value(CUnit *u, const Expr *e, long long *out)
+{
+	if (c_const_int(e, out))
+	{
+		return 1;
+	}
+
+	return e->kind == EX_IDENT && !e->anno_capture && e->anno_int > 0 && ty_is_int(e->type.kind)
+		   && c_local_const(u, e->anno_int, out);
 }
 
 static void c_expr(CUnit *u, const Expr *e);
@@ -486,7 +537,7 @@ static void c_binary(CUnit *u, const Expr *e, const char *t)
 
 			c_arith(u, t, e->lhs, "/", e->rhs);
 		}
-		else if (c_const_int(e->rhs, &rc) && rc != 0 && rc != -1)
+		else if (c_const_value(u, e->rhs, &rc) && rc != 0 && rc != -1)
 		{
 			c_arith(u, t, e->lhs, e->op == TOKEN_SLASH ? "/" : "%", e->rhs);
 		}
@@ -620,6 +671,17 @@ static void c_expr(CUnit *u, const Expr *e)
 		{
 			u->ok = 0;
 			return;
+		}
+
+		if (ty_is_int(e->type.kind))
+		{
+			long long cv = 0;
+			if (c_local_const(u, e->anno_int, &cv))
+			{
+				/* A constant local reads as its literal, so gcc can fold it. */
+				cbuf_printf(&u->out, "((%s)0x%llxULL)", t, (unsigned long long)cv);
+				break;
+			}
 		}
 
 		note_local(u, e->anno_int, e->type.kind);
@@ -974,12 +1036,13 @@ static void c_region_dispatch(const char *sym)
 	cbuf_printf(&g_src, "\tif (bzy_c_has_v3())\n\t{\n\t\t%s_v3(fp, ra);\n\t}\n\telse\n\t{\n\t\t%s_base(fp, ra);\n\t}\n}\n", sym, sym);
 }
 
-int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs)
+int cemit_region(const Func *f, const Stmt *s, char *sym, int *offs, int cap, int *noffs)
 {
 	CUnit u;
 	memset(&u, 0, sizeof(u));
 	u.ok = 1;
 	u.region = 1;
+	u.fn = f;
 	c_stmt(&u, s, 1);
 	if (!u.ok || u.nlocal > cap)
 	{
@@ -1060,6 +1123,7 @@ int cemit_func(const Func *f, const char *label)
 	memset(&u, 0, sizeof(u));
 	u.ok = 1;
 	u.region = 0;
+	u.fn = f;
 	if (rk == TY_DOUBLE)
 	{
 		u.ret_wide = "double";

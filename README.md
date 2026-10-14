@@ -44,7 +44,7 @@ Most high-level languages buy their convenience with a heavier runtime: a JIT th
 
 | What you get                          | How Breezy delivers it                                                                                                                                             |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 🚀 **Native execution**               | Compiles directly to x86-64 machine code. No interpreter, no bytecode, no JIT warm-up.                                                                  |
+| 🚀 **Native execution**               | Compiles directly to x86-64 machine code, with hot numeric loops handed to GCC's optimizer. No interpreter, no bytecode, no JIT warm-up.               |
 | 🪶 **Low memory usage**               | Automatic Reference Counting (ARC) releases objects as soon as they are no longer referenced, keeping memory close to the application's live data.      |
 | ⚡ **Predictable latency**             | No stop-the-world heap scans. Reclamation happens incrementally, with a bounded cycle collector only for reference cycles.                              |
 | 🧵 **Scalable concurrency**           | Lightweight coroutines ("breezes") multiplex large numbers of concurrent tasks across a small number of operating-system threads.                       |

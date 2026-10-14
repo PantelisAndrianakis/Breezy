@@ -1218,7 +1218,7 @@ static void test_cemit_region_safe_index(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
 	ASSERT_INT(noffs, 3);   /* a, s and i. */
 	ASSERT(strncmp(sym, "bzy_creg_", 9) == 0);
 	const char *c = cemit_source();
@@ -1255,7 +1255,7 @@ static void test_cemit_region_checked_index(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
 	ASSERT(strstr(cemit_source(), "bzy_oob(i0_") != NULL);
 	ASSERT(strstr(cemit_source(), "(int64_t)fp") != NULL);
 	cemit_reset();
@@ -1283,8 +1283,36 @@ static void test_cemit_checks_against_constant_length(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
 	ASSERT(strstr(cemit_source(), "n0_ = (int64_t)64LL;") != NULL);
+	cemit_reset();
+}
+
+static void test_cemit_folds_constant_local_divisor(void)
+{
+	/* A local that is only ever assigned one literal is a constant to the C route
+	   too, so dividing by it is a plain constant division gcc can strength-reduce,
+	   not a call through the trapping idiv helper. */
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int[] a)\n"
+						"{\n"
+						"	int cell;\n"
+						"	cell = 64;\n"
+						"	long s;\n"
+						"	s = 0;\n"
+						"	for (int i = 0; i < a.length; i = i + 1)\n"
+						"	{\n"
+						"		s = s + (long)(a[i] / cell);\n"
+						"	}\n"
+						"	return s;\n"
+						"}\n");
+	char sym[64];
+	int offs[64];
+	int noffs = 0;
+	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT(strstr(cemit_source(), "bzy_c_sdiv32((") == NULL);
+	ASSERT(strstr(cemit_source(), "0x40ULL") != NULL);
 	cemit_reset();
 }
 
@@ -1307,7 +1335,7 @@ static void test_cemit_rejects_call(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(first_loop(f), sym, offs, 64, &noffs), 0);
+	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 0);
 	ASSERT(cemit_source() == NULL);
 }
 
@@ -1360,6 +1388,7 @@ int main(void)
 	RUN(test_cemit_region_safe_index);
 	RUN(test_cemit_region_checked_index);
 	RUN(test_cemit_checks_against_constant_length);
+	RUN(test_cemit_folds_constant_local_divisor);
 	RUN(test_cemit_rejects_call);
 	SUMMARY();
 	return 0;

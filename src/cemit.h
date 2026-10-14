@@ -13,7 +13,7 @@
    the locals the unit touches into offs (*noffs of them, at most cap), or 0
    when s uses a construct the C route does not handle or touches more than cap
    locals; a rejected unit leaves no text. */
-int cemit_region(const Stmt *s, char *sym, int *offs, int cap, int *noffs);
+int cemit_region(const Func *f, const Stmt *s, char *sym, int *offs, int cap, int *noffs);
 
 /* Translates free function f, linked under the symbol `label`. Only functions
    that can never throw are accepted (every array index proven in bounds). */

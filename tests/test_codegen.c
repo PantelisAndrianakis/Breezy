@@ -2021,10 +2021,11 @@ static void test_c_route_skips_prelude(void)
 	c_route_off();
 }
 
-static void test_c_route_off_by_default(void)
+static void test_c_route_off_with_zero(void)
 {
-	/* With BZY_C unset, codegen is unchanged and no C is produced. */
+	/* With BZY_C=0, codegen keeps every loop on the assembly path and produces no C. */
 	putenv("BZY_IR=1");
+	putenv("BZY_C=0");
 	bzy_config_reset_cache();
 	cemit_reset();
 	emit("void main() {"
@@ -2040,8 +2041,10 @@ static void test_c_route_off_by_default(void)
 int main(void)
 {
 	/* These assertions check the EMITTER's output specifically; force it on even
-	   now that the IR backend is the default for eligible functions. */
+	   now that the IR backend and the C route are the defaults. Tests that need
+	   either turn it on themselves. */
 	putenv("BZY_IR=0");
+	putenv("BZY_C=0");
 
 	RUN(test_inline_alloc_windows_pool_pop);
 	RUN(test_inline_arc_fast_paths);
@@ -2112,7 +2115,7 @@ int main(void)
 	RUN(test_c_whole_function);
 	RUN(test_c_region_reloads_each_register_once);
 	RUN(test_c_route_leaves_vector_reduction_to_ir);
-	RUN(test_c_route_off_by_default);
+	RUN(test_c_route_off_with_zero);
 	RUN(test_c_route_skips_prelude);
 	RUN(test_final_array_tables);
 	RUN(test_c_route_final_tables);

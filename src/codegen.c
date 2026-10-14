@@ -12294,7 +12294,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 				char sym[64];
 				int offs[256];
 				int noffs = 0;
-				if (cemit_region(s, sym, offs, 256, &noffs))
+				if (cemit_region(f, s, sym, offs, 256, &noffs))
 				{
 					cg_region_record(cg, s, NULL, NULL, sym, offs, noffs);
 					if (cg_region_debug())

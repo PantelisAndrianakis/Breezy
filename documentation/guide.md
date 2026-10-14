@@ -91,7 +91,7 @@ This guide teaches the whole language one feature at a time. Each page is self-c
 
 | Page | What it covers |
 | --- | --- |
-| [Compilation pipeline](build/compilation.md) | How `.bzy` source becomes a native binary, and the optional `BZY_C` route for hot numeric code. |
+| [Compilation pipeline](build/compilation.md) | How `.bzy` source becomes a native binary, and the C route that hands hot numeric code to GCC's optimizer. |
 | [Building the compiler](build/building.md) | Bootstrap scripts, the toolchain, and `--target` selection. |
 | [Language server](tooling/language-server.md) | `breezy --lsp` - live diagnostics, hover, go-to-definition, find-references, and completion in any LSP editor (Neovim, Helix, VS Code). |
 

@@ -16,15 +16,15 @@ source.bzy → Breezy compiler → output.asm → NASM → output.o ─┐
 
 1. The **Breezy compiler** (written in C99, no external dependencies) parses your source into a typed AST.
 2. It performs **escape and reference analysis** (the basis of [automatic memory](../memory/automatic-memory.md)).
-3. It **lowers to NASM x86-64 assembly**.
+3. It **lowers to NASM x86-64 assembly**, except pure numeric loops and leaf functions, which go to **GCC's optimizer** through the [C route](#the-c-route).
 4. **NASM** assembles that to an object file.
-5. **GCC** links the object file with the **Breezy runtime** and any native C libraries you declared, producing the final binary.
+5. **GCC** links the object file (and the C route's object, when there is one) with the **Breezy runtime** and any native C libraries you declared, producing the final binary.
 
 ---
 
-## The optional C route (`BZY_C=1`)
+## The C route
 
-Setting the environment variable `BZY_C=1` while compiling adds one step to the pipeline. The compiler picks out **pure numeric code** and hands it to GCC's optimizer instead of emitting assembly for it:
+One step sits between the compiler and the link. The compiler picks out **pure numeric code** and hands it to GCC's optimizer instead of emitting assembly for it:
 
 - **hot loops** whose bodies use only integer, `bool` and `double` locals, arrays of those, [final arrays](../types/arrays.md#final-arrays), plain control flow and integer `switch`;
 - **leaf functions** of the same kind that call nothing and can never throw.
@@ -32,10 +32,10 @@ Setting the environment variable `BZY_C=1` while compiling adds one step to the 
 That code is written to `out_c.c` next to `out.asm`, compiled with `gcc -O3` into `out_c.obj` and linked into the same binary. Each hot loop is compiled twice, once for the **x86-64-v3** feature level (AVX2, BMI1/2, FMA) and once for the baseline x86-64 that every 64-bit CPU runs; the first time the loop runs, the program checks the CPU and uses the v3 copy whenever it is supported, so the same binary runs everywhere. Everything else (objects, strings, calls, exceptions, breezes) stays on the assembly path, and the two halves share the same frames, bounds checks and exceptions, so a program prints exactly the same results either way. A loop the built-in path already vectorizes stays on that path.
 
 ```sh
-BZY_C=1 breezy app.bzy app
+BZY_C=0 breezy app.bzy app    # Emit everything as assembly instead.
 ```
 
-The route is **off by default** while it is measured against the built-in code generator. Its cost is one extra GCC compile, only for programs whose own code has loops or functions the route takes; the standard library never does, so a program without such code builds exactly as before.
+The route is **on by default**; set the environment variable `BZY_C=0` while compiling to keep every loop on the assembly path. Its cost is one extra GCC compile, only for programs whose own code has loops or functions the route takes; the standard library never does, so a program without such code builds exactly as it would without the route.
 
 ---
 
