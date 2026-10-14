@@ -67,6 +67,50 @@ static const char *C_PRELUDE =
 	"void bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame) __attribute__((noreturn));\n"
 	"int64_t bzy_clock_nanos(void);\n"
 	"int64_t bzy_clock_millis(void);\n"
+	"void bzy_vec_push_back(void *v, int64_t val);\n"
+	"void bzy_pq_add(void *q, int64_t val);\n"
+	"\n"
+	"/* List/Stack/Queue/Deque push of an integer: store into the ring when there is room and the vector is not shared across cores (gcinfo bit 3), else the runtime grows or locks. Layout: len@24 cap@32 head@40 data@48. */\n"
+	"static inline void bzy_c_vec_add(char *v, int64_t x)\n"
+	"{\n"
+	"\tint64_t len = *(int64_t *)(v + 24);\n"
+	"\tint64_t cap = *(int64_t *)(v + 32);\n"
+	"\tif (__builtin_expect(!(*(int64_t *)(v + 16) & 8) && len < cap, 1))\n"
+	"\t{\n"
+	"\t\t((int64_t *)(*(char **)(v + 48) + 32))[(*(int64_t *)(v + 40) + len) & (cap - 1)] = x;\n"
+	"\t\t*(int64_t *)(v + 24) = len + 1;\n"
+	"\t\treturn;\n"
+	"\t}\n"
+	"\n"
+	"\tbzy_vec_push_back(v, x);\n"
+	"}\n"
+	"\n"
+	"/* PriorityQueue.add of an integer: the runtime's hole sift-up inline when there is room and the heap is not shared, else the runtime. Layout: len@24 cap@32 data@40. */\n"
+	"static inline void bzy_c_pq_add(char *q, int64_t x)\n"
+	"{\n"
+	"\tint64_t i = *(int64_t *)(q + 24);\n"
+	"\tif (__builtin_expect(!(*(int64_t *)(q + 16) & 8) && i < *(int64_t *)(q + 32), 1))\n"
+	"\t{\n"
+	"\t\tint64_t *a = (int64_t *)(*(char **)(q + 40) + 32);\n"
+	"\t\t*(int64_t *)(q + 24) = i + 1;\n"
+	"\t\twhile (i > 0)\n"
+	"\t\t{\n"
+	"\t\t\tint64_t p = (i - 1) >> 1;\n"
+	"\t\t\tif (x >= a[p])\n"
+	"\t\t\t{\n"
+	"\t\t\t\tbreak;\n"
+	"\t\t\t}\n"
+	"\n"
+	"\t\t\ta[i] = a[p];\n"
+	"\t\t\ti = p;\n"
+	"\t\t}\n"
+	"\n"
+	"\t\ta[i] = x;\n"
+	"\t\treturn;\n"
+	"\t}\n"
+	"\n"
+	"\tbzy_pq_add(q, x);\n"
+	"}\n"
 	"\n"
 	"/* 1 when the running CPU has the x86-64-v3 feature level (AVX2, BMI1/2, FMA,\n"
 	"   MOVBE). Decided on first use; a racing first call stores the same value. */\n"
@@ -188,6 +232,7 @@ static const char *c_type(TypeKind k)
 	case TY_DOUBLE:
 		return "double";
 	case TY_ARRAY:
+	case TY_GENERIC:
 		return "char *";
 	default:
 		return NULL;
@@ -635,6 +680,23 @@ static void c_expr(CUnit *u, const Expr *e)
 		return;
 	}
 
+	if (e->kind == EX_METHOD_CALL)
+	{
+		// An integer push onto a local container: the inline helper, with the receiver read from its frame slot.
+		int push = ir_c_push(e);
+		if (!push)
+		{
+			u->ok = 0;
+			return;
+		}
+
+		note_local(u, e->lhs->anno_int, TY_GENERIC);
+		cbuf_printf(&u->out, "%s(l%d, (int64_t)(", push == 2 ? "bzy_c_pq_add" : "bzy_c_vec_add", e->lhs->anno_int);
+		c_expr(u, e->args[0]);
+		cbuf_printf(&u->out, "))");
+		return;
+	}
+
 	const char *t = c_type(e->type.kind);
 	if (!t)
 	{
@@ -1012,7 +1074,7 @@ static void c_load_slot(int off, TypeKind k)
 /* Stores a region local back into its full 8-byte slot, sign- or zero-extended the way the emitter keeps narrow locals. */
 static void c_store_slot(int off, TypeKind k)
 {
-	if (k == TY_ARRAY)
+	if (k == TY_ARRAY || k == TY_GENERIC)
 	{
 		return; // Regions never reassign a managed local.
 	}

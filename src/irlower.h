@@ -36,6 +36,12 @@ int ir_region_eligible_c(const Stmt *s);
 int ir_is_clock_read(const Expr *e);
 
 /**
+ * 1 for an integer or bool push onto a local List, Stack, Queue or Deque (add, push, enqueue, addLast), 2 for PriorityQueue.add, else 0.
+ * Generated C stores the value inline when there is room and calls the runtime otherwise.
+ */
+int ir_c_push(const Expr *e);
+
+/**
  * Lower an eligible region to IR with no IR_RET: the final block is empty and emission falls off it into the region epilogue.
  * NULL when ineligible.
  * Caller owns the result and must ir_func_free it.

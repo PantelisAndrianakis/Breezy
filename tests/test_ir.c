@@ -1325,6 +1325,48 @@ static void test_cemit_clock_read(void)
 	cemit_reset();
 }
 
+static void test_cemit_container_push(void)
+{
+	// An integer push onto a local List or PriorityQueue keeps the loop on the C route through the inline helpers; a string List push does not.
+	char sym[64];
+	int offs[64];
+	int noffs = 0;
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int n)\n"
+						"{\n"
+						"	List<long> l;\n"
+						"	l = new List<long>();\n"
+						"	PriorityQueue<int> q;\n"
+						"	q = new PriorityQueue<int>();\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		l.add((long)i * 3);\n"
+						"		q.add(i - 5);\n"
+						"	}\n"
+						"	return l.size;\n"
+						"}\n");
+	ASSERT_INT(ir_region_eligible_c(first_loop(f)), 1);
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
+	ASSERT_INT(cemit_region(f, first_loop(f), 1, sym, offs, 64, &noffs), 1);
+	ASSERT(strstr(cemit_source(), "bzy_c_vec_add(l") != NULL);
+	ASSERT(strstr(cemit_source(), "bzy_c_pq_add(l") != NULL);
+	cemit_reset();
+	f = parse_one_func(
+			"long k(int n)\n"
+			"{\n"
+			"	List<string> l;\n"
+			"	l = new List<string>();\n"
+			"	for (int i = 0; i < n; i = i + 1)\n"
+			"	{\n"
+			"		l.add(\"x\");\n"
+			"	}\n"
+			"	return l.size;\n"
+			"}\n");
+	ASSERT_INT(ir_region_eligible_c(first_loop(f)), 0);
+	cemit_reset();
+}
+
 static void test_cemit_folds_constant_local_divisor(void)
 {
 	// A local that is only ever assigned one literal is a constant to the C route too, so dividing by it is a plain constant division gcc can strength-reduce, not a call through the trapping idiv helper.
@@ -1427,6 +1469,7 @@ int main(void)
 	RUN(test_cemit_checks_against_constant_length);
 	RUN(test_cemit_outermost_skips_inner_locals);
 	RUN(test_cemit_clock_read);
+	RUN(test_cemit_container_push);
 	RUN(test_cemit_folds_constant_local_divisor);
 	RUN(test_cemit_rejects_call);
 	SUMMARY();

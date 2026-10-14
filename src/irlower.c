@@ -50,6 +50,36 @@ static int elig_region_mode = 0;
  */
 static int elig_allow_switch = 0;
 
+int ir_c_push(const Expr *e)
+{
+	if (e->kind != EX_METHOD_CALL || e->arg_count != 1 || !e->lhs || e->lhs->kind != EX_IDENT
+			|| e->lhs->anno_capture || e->lhs->anno_int <= 0 || e->lhs->type.kind != TY_GENERIC || !e->lhs->type.elem)
+	{
+		return 0;
+	}
+
+	TypeKind ek = e->lhs->type.elem->kind;
+	if (!ty_is_int(ek) && ek != TY_BOOL)
+	{
+		return 0;
+	}
+
+	const char *cls = e->lhs->type.class_name;
+	const char *m = e->name;
+	if (strcmp(cls, "PriorityQueue") == 0)
+	{
+		return strcmp(m, "add") == 0 ? 2 : 0;
+	}
+
+	if (strcmp(cls, "List") == 0 || strcmp(cls, "Stack") == 0 || strcmp(cls, "Queue") == 0
+			|| strcmp(cls, "Deque") == 0 || strcmp(cls, "ArrayDeque") == 0)
+	{
+		return (strcmp(m, "add") == 0 || strcmp(m, "push") == 0 || strcmp(m, "enqueue") == 0 || strcmp(m, "addLast") == 0) ? 1 : 0;
+	}
+
+	return 0;
+}
+
 int ir_is_clock_read(const Expr *e)
 {
 	return e->kind == EX_CALL && e->arg_count == 0
@@ -96,6 +126,9 @@ static int elig_expr(const Expr *e)
 		}
 
 		return elig_region_mode && elig_call_target(e) != NULL;
+	case EX_METHOD_CALL:
+		// C route only: an integer push onto a local List/Stack/Queue/Deque or PriorityQueue.
+		return elig_allow_switch && ir_c_push(e) && elig_expr(e->args[0]);
 	case EX_INT:
 	case EX_BOOL:
 	case EX_FLOAT:
