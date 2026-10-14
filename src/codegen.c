@@ -8457,6 +8457,13 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 			break;
 		}
 
+		// XmlNode.children is made on first use (a leaf stores none), so it lowers to a runtime call returning the borrowed list.
+		if (e->lhs->type.kind==TY_XMLNODE && strcmp(e->name,"children")==0)
+		{
+			cg_call_with_args(cg,tt,"bzy_xml_children",e->lhs,NULL,0,0,0,0,NULL,0,0);
+			break;
+		}
+
 		// JsonValue.size is kind-dependent (array length / object key count), so it lowers to a runtime call rather than a raw offset load.
 		if (e->lhs->type.kind==TY_JSONVALUE)
 		{
@@ -13513,6 +13520,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_json_items");
 	cg_emit(cg,"extern bzy_json_at");
 	cg_emit(cg,"extern bzy_json_size");
+	cg_emit(cg,"extern bzy_xml_children");
 	cg_emit(cg,"extern bzy_json_of_long");
 	cg_emit(cg,"extern bzy_json_of_double");
 	cg_emit(cg,"extern bzy_json_of_string");

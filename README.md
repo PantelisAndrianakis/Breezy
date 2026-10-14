@@ -4,7 +4,7 @@
 
 ## What is Breezy?
 
-Breezy is a statically-typed, object-oriented language with clean, familiar syntax that compiles **directly to native x86-64 machine code**. No virtual machine. No bytecode. No tracing heap garbage collector. Just your code, lowered to the metal - with memory and concurrency handled automatically by the language.
+Breezy is a statically-typed, object-oriented language with clean, easy syntax that compiles **directly to native x86-64 machine code**. No virtual machine. No bytecode. No tracing heap garbage collector. Just your code, lowered to the metal - with memory and concurrency handled automatically by the language.
 
 The promise is simple: **the ergonomics of a managed language, with the footprint and latency characteristics of hand-written native code.**
 

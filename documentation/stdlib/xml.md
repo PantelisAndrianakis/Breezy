@@ -121,7 +121,7 @@ A parsed tree is an ordinary managed value: it is reference-counted and reclaime
 when its last reference goes away, and the cycle collector traces it like any
 object. Element and attribute names are stored once per document and shared by
 every node that uses them, so a document of repeated records costs little beyond
-its values.
+its values, and a leaf element gets its `children` list only when a program reads it.
 
 ---
 

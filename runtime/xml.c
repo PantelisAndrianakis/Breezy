@@ -580,8 +580,7 @@ static void *parse_element(Scan *s)
 
 		advance(s);
 		NODE_SET(node, X_TEXT, bzy_str_new("", 0));
-		NODE_SET(node, X_KIDS, bzy_vec_new(4)); // An empty children list.
-		return node;
+		return node; // No children list until something asks for it (bzy_xml_children).
 	}
 
 	if (peek(s) != '>')
@@ -594,9 +593,9 @@ static void *parse_element(Scan *s)
 	advance(s);
 
 	// Content: direct text runs (into tb) interleaved with child elements.
-	// The children list is always present (empty for a leaf) so `node.children` is a plain borrowed field read -- no NULL case for the collection combinators.
+	// The children list is made on the first child: a leaf keeps the slot NULL, and bzy_xml_children makes an empty list only if a program asks for one.
 	TextBuf tb = { 0 };
-	void *kids = bzy_vec_new(4); // Object elements.
+	void *kids = NULL; // Object elements, created with the first child.
 
 	for (;;)
 	{
@@ -685,6 +684,11 @@ static void *parse_element(Scan *s)
 			if (s->err)
 			{
 				break;
+			}
+
+			if (!kids)
+			{
+				kids = bzy_vec_new(4);
 			}
 
 			bzy_vec_push_back(kids, (int64_t)child); // Retains.
@@ -788,6 +792,45 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 /* ---- attribute accessors ---------------------------------------------------- */
 
 /* The attribute value for `name` (owned +1), or an owned empty string if absent. */
+/**
+ * node.children: the node's child list, borrowed like a field read.
+ * A leaf has none until asked, which keeps a large parsed document from carrying an empty list per leaf; the list made here is the node's own, so changes to it stick.
+ * A node shared across cores makes it under the node's lock, so two readers cannot both make one.
+ */
+void *bzy_xml_children(void *node)
+{
+	void *kids = NODE_GET(node, X_KIDS);
+	if (kids)
+	{
+		return kids;
+	}
+
+	int shared = (*(int64_t*)((char*)node + 16) & BZY_GCINFO_SHARED) != 0;
+	if (shared)
+	{
+		bzy_shared_lock(node);
+		kids = NODE_GET(node, X_KIDS);
+	}
+
+	if (!kids)
+	{
+		kids = bzy_vec_new(4);
+		if (shared)
+		{
+			*(int64_t*)((char*)kids + 16) |= BZY_GCINFO_SHARED; // Newborn and unpublished: a plain OR is race-free.
+		}
+
+		NODE_SET(node, X_KIDS, kids); // The node owns it.
+	}
+
+	if (shared)
+	{
+		bzy_shared_unlock(node);
+	}
+
+	return kids;
+}
+
 void *bzy_xml_attr(void *node, void *name)
 {
 	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);

@@ -8,4 +8,11 @@ void main()
 	root.children.forEach(c => print(c.text));       // a / b / c.
 	List<XmlNode> items = root.children.filter(c => c.name.equals("item"));
 	print(items.size);                               // 3.
+
+	// A leaf has an empty list, and it is the node's own: an element added to it stays.
+	XmlNode leaf = root.children.get(0);
+	print(leaf.children.size);                       // 0.
+	leaf.children.add(Xml.parse("<sub/>"));
+	print(leaf.children.size);                       // 1.
+	print(leaf.children.get(0).name);                // sub.
 }

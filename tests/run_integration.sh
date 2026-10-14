@@ -205,7 +205,7 @@ check closures_escape tests/samples/pass/closures/escape_and_store.bzy $'15\n105
 check closures_combinators tests/samples/pass/closures/combinators.bzy $'11\n2\n15'
 check closures_noncapturing tests/samples/pass/closures/noncapturing.bzy $'42\n42\n42'
 check closures_capture_managed tests/samples/pass/closures/capture_managed.bzy $'2\n9\nok'
-check xml_children tests/samples/pass/xml/children.bzy $'3\na\nb\nc\n3'
+check xml_children tests/samples/pass/xml/children.bzy $'3\na\nb\nc\n3\n0\n1\nsub'
 check xml_attrs tests/samples/pass/xml/attrs.bzy $'10\n20\n\ntrue\nfalse\nw\nh\ni2ba'
 check xml_entities tests/samples/pass/xml/entities.bzy $'x < y Az<raw>!\na & b\nr'
 check xml_descendants tests/samples/pass/xml/descendants.bzy $'3\n3'

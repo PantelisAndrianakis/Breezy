@@ -2698,7 +2698,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 			else if (strcmp(e->name,"children")==0)
 			{
-				// A List<XmlNode> stored on the node; a borrowed field read at 56, traversed by the existing collection combinators.
+				// A List<XmlNode> stored on the node at 56, read through bzy_xml_children (a leaf's list is made on first use); borrowed, traversed by the existing collection combinators.
 				TypeRef el;
 				memset(&el,0,sizeof(el));
 				el.kind=TY_XMLNODE;
