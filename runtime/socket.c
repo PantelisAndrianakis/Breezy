@@ -145,7 +145,24 @@ int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
 	hints.ai_socktype = SOCK_STREAM;
 	char portstr[16];
 	snprintf(portstr, sizeof(portstr), "%d", port);
-	if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res)
+	// The first lookup in a process initializes the system resolver; when many breezes start connecting at once, concurrent first calls contend and one can stall for ~100 ms.
+	// Running that first lookup alone (later ones stay concurrent) removes the stall.
+	static int warm;
+	static SRWLOCK warm_lock = SRWLOCK_INIT;
+	int rc;
+	if (!__atomic_load_n(&warm, __ATOMIC_ACQUIRE))
+	{
+		AcquireSRWLockExclusive(&warm_lock);
+		rc = getaddrinfo(host, portstr, &hints, &res);
+		__atomic_store_n(&warm, 1, __ATOMIC_RELEASE);
+		ReleaseSRWLockExclusive(&warm_lock);
+	}
+	else
+	{
+		rc = getaddrinfo(host, portstr, &hints, &res);
+	}
+
+	if (rc != 0 || !res)
 	{
 		return -1;
 	}

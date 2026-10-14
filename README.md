@@ -1,7 +1,6 @@
 <p align="center"> <img src="https://github.com/PantelisAndrianakis/Breezy/blob/main/logo.png"/></p>
 
-<p align="center"><b>Easy to write. Native to run.</b><br/>
-Automatic memory and thread safety, no garbage-collection pauses.</p>
+<p align="center"><b>Easy to write. Native to run.</b></p>
 
 ## What is Breezy?
 
