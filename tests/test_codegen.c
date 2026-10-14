@@ -1971,6 +1971,18 @@ static void test_c_route_leaves_vector_reduction_to_ir(void)
 	c_route_off();
 }
 
+static void test_pq_int_add_inlines_sift(void)
+{
+	/* An integer-keyed PriorityQueue.add sifts up inline with the runtime call
+	   kept for a full heap; a string key always calls. */
+	emit("void main() { PriorityQueue<long> q; q = new PriorityQueue<long>(); q.add(5L); print(q.size()); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "shr r9, 1") != NULL);
+	ASSERT(strstr(g_asm, "call bzy_pq_add") != NULL);
+	emit("void main() { PriorityQueue<string> q; q = new PriorityQueue<string>(); q.add(\"a\"); print(q.size()); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "shr r9, 1") == NULL);
+	ASSERT(strstr(g_asm, "call bzy_pq_add") != NULL);
+}
+
 static void test_c_route_leaves_outer_of_vector_loop(void)
 {
 	/* A timed outer loop around a vectorizable reduction stays off the C route,
@@ -2140,6 +2152,7 @@ int main(void)
 	RUN(test_c_region_reloads_each_register_once);
 	RUN(test_c_route_leaves_vector_reduction_to_ir);
 	RUN(test_c_route_leaves_outer_of_vector_loop);
+	RUN(test_pq_int_add_inlines_sift);
 	RUN(test_c_route_off_with_zero);
 	RUN(test_c_route_skips_prelude);
 	RUN(test_final_array_tables);

@@ -4853,7 +4853,50 @@ static void cg_pqueue_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    mov [rbp - %d], rax", b - 8);      /* Owned-temp slot. */
 		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1));
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b);
-		cg_aligned_call(cg,"bzy_pq_add");
+		if (!fp && cg_elem_kind(tk) == 0)
+		{
+			/* Integer and bool keys (runtime kind 0, a signed compare): when the
+			   heap has room, sift up inline by moving parents down into the hole
+			   and placing the value once, the runtime's own algorithm. A full or
+			   cross-core heap takes the call. Clobbers only rax and r8-r11, never
+			   the two argument registers the slow path's call needs. Layout: len
+			   @24, cap @32, data array @40 (elements at +32). */
+			int slow = cg_label(cg), up = cg_label(cg), place = cg_label(cg), done = cg_label(cg);
+			const char *recv = cg_iarg(cg, 0), *val = cg_iarg(cg, 1);
+			if (types_typeref_maybe_shared(tt,&e->lhs->type))
+			{
+				cg_emit(cg,"    test qword [%s + 16], 8", recv);   /* BZY_GCINFO_SHARED. */
+				cg_emit(cg,"    jnz .L%d", slow);
+			}
+
+			cg_emit(cg,"    mov rax, [%s + 24]", recv);        /* i = len */
+			cg_emit(cg,"    cmp rax, [%s + 32]", recv);        /* vs cap */
+			cg_emit(cg,"    jge .L%d", slow);                  /* full -> grow via call */
+			cg_emit(cg,"    lea r8, [rax + 1]");
+			cg_emit(cg,"    mov [%s + 24], r8", recv);         /* len++ */
+			cg_emit(cg,"    mov r8, [%s + 40]", recv);         /* data array */
+			cg_emit(cg,".L%d:", up);
+			cg_emit(cg,"    test rax, rax");
+			cg_emit(cg,"    jz .L%d", place);
+			cg_emit(cg,"    lea r9, [rax - 1]");
+			cg_emit(cg,"    shr r9, 1");                       /* parent */
+			cg_emit(cg,"    mov r10, [r8 + r9*8 + 32]");
+			cg_emit(cg,"    cmp %s, r10", val);
+			cg_emit(cg,"    jge .L%d", place);                 /* v >= parent: stop */
+			cg_emit(cg,"    mov [r8 + rax*8 + 32], r10");      /* parent moves down */
+			cg_emit(cg,"    mov rax, r9");
+			cg_emit(cg,"    jmp .L%d", up);
+			cg_emit(cg,".L%d:", place);
+			cg_emit(cg,"    mov [r8 + rax*8 + 32], %s", val);
+			cg_emit(cg,"    jmp .L%d", done);
+			cg_emit(cg,".L%d:", slow);
+			cg_aligned_call(cg,"bzy_pq_add");
+			cg_emit(cg,".L%d:", done);
+		}
+		else
+		{
+			cg_aligned_call(cg,"bzy_pq_add");
+		}
 		if (!fp && ty_is_managed(tk) && expr_is_owned(e->args[0]))
 		{
 			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), b - 8);

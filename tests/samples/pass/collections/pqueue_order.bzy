@@ -42,4 +42,37 @@ void main()
 	Job top;
 	top = jobs.poll();
 	print(top.prio);     // 2
+
+	// Many pushes (negatives and repeats included) through several heap growths;
+	// polling must return them in order.
+	PriorityQueue<long> big;
+	big = new PriorityQueue<long>();
+	long st;
+	st = 7;
+	for (int i = 0; i < 1000; i = i + 1)
+	{
+		st = st * 6364136223846793005L + 1442695040888963407L;
+		big.add(st >> 54);
+	}
+
+	long prev;
+	prev = big.poll();
+	int sorted;
+	sorted = 1;
+	int count;
+	count = 1;
+	while (!big.isEmpty())
+	{
+		long x;
+		x = big.poll();
+		if (x < prev)
+		{
+			sorted = 0;
+		}
+
+		prev = x;
+		count = count + 1;
+	}
+
+	print(count + " " + sorted);   // 1000 1
 }
