@@ -9,8 +9,7 @@
 
 #define MAX_U 64
 
-/* Parse the prelude + one source string, run the full resolve pipeline (which
-   invokes promote_annotate), and return the top-level Func named `fname`. */
+/* Parse the prelude + one source string, run the full resolve pipeline (which invokes promote_annotate), and return the top-level Func named `fname`. */
 static Func *resolve_one(const char *src, const char *fname)
 {
 	static Parser parsers[MAX_U];
@@ -29,7 +28,7 @@ static Func *resolve_one(const char *src, const char *fname)
 	int total = np + 1;
 
 	{
-		Unit **gu = units;    /* Drop uninstantiated templates (Pool<T>), like main.c. */
+		Unit **gu = units; // Drop uninstantiated templates (Pool<T>), like main.c.
 		int gc = MAX_U;
 		generics_expand(&gu, &total, &gc);
 	}
@@ -82,7 +81,7 @@ static void test_promotes_loop_scalars(void)
 	Func *f = resolve_one(src, "collatzSteps");
 	ASSERT(f != NULL);
 	ASSERT_INT(f->promo_count, 2);
-	/* Distinct registers, drawn from index range 0..3. */
+	// Distinct registers, drawn from index range 0..3.
 	ASSERT(f->promo_reg[0] != f->promo_reg[1]);
 	ASSERT(f->promo_reg[0] >= 0 && f->promo_reg[0] <= 3);
 	ASSERT(f->promo_reg[1] >= 0 && f->promo_reg[1] <= 3);

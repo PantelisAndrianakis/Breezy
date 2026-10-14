@@ -1,10 +1,11 @@
-/* runtime/json.c -- JSON read + serialize (RFC 8259). Own TU: a program that
-   never names Json links none of this. The parser builds a tree of managed
-   JsonValue nodes; arrays are List<JsonValue>, objects map<string,JsonValue>.
-
-   This file is Task 2 of the Phase E.4 plan: the node descriptor + the
-   recursive-descent parser. The Breezy entry, accessors, lifters, and the
-   serializer land in Tasks 3-8. */
+/**
+ * runtime/json.c -- JSON read + serialize (RFC 8259).
+ * Own TU: a program that never names Json links none of this.
+ * The parser builds a tree of managed JsonValue nodes; arrays are List<JsonValue>, objects map<string,JsonValue>.
+ *
+ * This file is Task 2 of the Phase E.4 plan: the node descriptor + the recursive-descent parser.
+ * The Breezy entry, accessors, lifters, and the serializer land in Tasks 3-8.
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -12,17 +13,15 @@
 #include <string.h>
 #include <math.h>
 
-/* Emitted per-program by codegen; bzy_json_check stamps a thrown JsonException
-   with it (the bzy_number_check pattern). */
+/* Emitted per-program by codegen; bzy_json_check stamps a thrown JsonException with it (the bzy_number_check pattern). */
 extern char __vtable_JsonException[];
 extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
-/* JsonValue layout: vtable|rc|gcinfo|kind@24|payload_managed@32|payload_scalar@40.
-   For an object node @32 is the keys string[] and @40 the parallel values
-   JsonValue[] (a second managed slot, traced by the object typeinfo); for every
-   other kind @40 is a plain scalar word. Objects use parallel arrays + a linear
-   key scan rather than a hash map -- for the small objects JSON documents are
-   built from, that is fewer allocations and no per-key hashing. */
+/**
+ * JsonValue layout: vtable|rc|gcinfo|kind@24|payload_managed@32|payload_scalar@40.
+ * For an object node @32 is the keys string[] and @40 the parallel values JsonValue[] (a second managed slot, traced by the object typeinfo); for every other kind @40 is a plain scalar word.
+ * Objects use parallel arrays + a linear key scan rather than a hash map -- for the small objects JSON documents are built from, that is fewer allocations and no per-key hashing.
+ */
 #define J_KIND 24
 #define J_MAN  32
 #define J_SCA  40
@@ -36,15 +35,15 @@ enum { JK_NULL = 0, JK_BOOL = 1, JK_INT = 2, JK_DBL = 3, JK_STR = 4, JK_ARR = 5,
 #define JKIND(v)       (*(int64_t*)((char*)(v) + J_KIND))
 #define JSCA(v)        (*(int64_t*)((char*)(v) + J_SCA))
 
-/* Managed-node typeinfo: {finalizer=0, child_count=1, managed payload @32}. The
-   scalar slot is a plain word, not a managed child, so ARC + the cycle collector
-   trace only the one payload reference (NULL-safely). */
+/**
+ * Managed-node typeinfo: {finalizer=0, child_count=1, managed payload @32}.
+ * The scalar slot is a plain word, not a managed child, so ARC + the cycle collector trace only the one payload reference (NULL-safely).
+ */
 static int64_t g_json_ti[3] = { 0, 1, J_MAN };
 static int64_t g_json_vt[2];
 static int     g_json_vt_built;
 
-/* Object-node typeinfo: {finalizer=0, child_count=2, keys @32, values @40} -- the
-   one node kind with two managed children. */
+/* Object-node typeinfo: {finalizer=0, child_count=2, keys @32, values @40} -- the one node kind with two managed children. */
 static int64_t g_json_obj_ti[4] = { 0, 2, J_MAN, J_VALS };
 static int64_t g_json_obj_vt[2];
 static int     g_json_obj_vt_built;
@@ -57,7 +56,7 @@ static void *json_vtable(void)
 		g_json_vt_built = 1;
 	}
 
-	return &g_json_vt[1];   /* The object stores this; [stored-8] == &g_json_ti[0]. */
+	return &g_json_vt[1]; // The object stores this; [stored-8] == &g_json_ti[0].
 }
 
 static void *json_obj_vtable(void)
@@ -73,7 +72,7 @@ static void *json_obj_vtable(void)
 
 static void *jv_new(int kind)
 {
-	void *v = bzy_alloc(J_SIZE);            /* Zeroed; rc=1; gcinfo set by alloc. */
+	void *v = bzy_alloc(J_SIZE); // Zeroed; rc=1; gcinfo set by alloc.
 	*(void**)v = json_vtable();
 	JKIND(v) = kind;
 	return v;
@@ -88,8 +87,7 @@ static void *jv_new_obj(void)
 	return v;
 }
 
-/* Store an owned (+1) pointer into a managed array slot (data begins at +32),
-   transferring ownership to the array (its SPAN typeinfo releases the slot). */
+/* Store an owned (+1) pointer into a managed array slot (data begins at +32), transferring ownership to the array (its SPAN typeinfo releases the slot). */
 static void arr_set(void *arr, int64_t i, void *p)
 {
 	((void**)((char*)arr + 32))[i] = p;
@@ -262,9 +260,11 @@ static int parse_hex4(Scan *s)
 
 static void *parse_value(Scan *s);   /* Forward. */
 
-/* Parse a JSON string at the opening '"'. Returns an owned (+1) Breezy string,
-   or NULL with the error set. Decodes the JSON escapes incl. \uXXXX surrogate
-   pairs into UTF-8. */
+/**
+ * Parse a JSON string at the opening '"'.
+ * Returns an owned (+1) Breezy string, or NULL with the error set.
+ * Decodes the JSON escapes incl. \uXXXX surrogate pairs into UTF-8.
+ */
 static void *parse_string(Scan *s)
 {
 	if (peek(s) != '"')
@@ -273,7 +273,7 @@ static void *parse_string(Scan *s)
 		return NULL;
 	}
 
-	advance(s);   /* '"'. */
+	advance(s); // '"'.
 
 	TextBuf tb = { 0 };
 	for (;;)
@@ -325,7 +325,7 @@ static void *parse_string(Scan *s)
 				break;
 			case 'u':
 			{
-				advance(s);   /* 'u'. */
+				advance(s); // 'u'.
 				int u = parse_hex4(s);
 				if (u < 0)
 				{
@@ -335,7 +335,7 @@ static void *parse_string(Scan *s)
 				}
 
 				long cp = u;
-				if (u >= 0xD800 && u <= 0xDBFF)   /* High surrogate: expect a low one. */
+				if (u >= 0xD800 && u <= 0xDBFF) // High surrogate: expect a low one.
 				{
 					if (peek(s) != '\\')
 					{
@@ -365,7 +365,7 @@ static void *parse_string(Scan *s)
 				}
 
 				append_utf8(&tb, cp);
-				continue;   /* The escape consumed its own bytes. */
+				continue; // The escape consumed its own bytes.
 			}
 			default:
 				free(tb.data);
@@ -374,7 +374,7 @@ static void *parse_string(Scan *s)
 			}
 
 			tb_push(&tb, &rep, 1);
-			advance(s);   /* The escaped char. */
+			advance(s); // The escaped char.
 		}
 		else if ((unsigned char)c < 0x20)
 		{
@@ -398,8 +398,10 @@ static void *parse_string(Scan *s)
 	return str;
 }
 
-/* Parse a JSON number: a JK_INT node when there is no '.'/'e'/'E', else JK_DBL.
-   Returns an owned (+1) node, or NULL with the error set. */
+/**
+ * Parse a JSON number: a JK_INT node when there is no '.'/'e'/'E', else JK_DBL.
+ * Returns an owned (+1) node, or NULL with the error set.
+ */
 static void *parse_number(Scan *s)
 {
 	const char *start = s->p;
@@ -473,12 +475,11 @@ static void *parse_number(Scan *s)
 	return v;
 }
 
-/* Parse a JSON array at '['. Returns an owned (+1) JK_ARR node whose payload is
-   a List<JsonValue> (object-kind vector), or NULL with the error set. */
+/* Parse a JSON array at '['. Returns an owned (+1) JK_ARR node whose payload is a List<JsonValue> (object-kind vector), or NULL with the error set. */
 static void *parse_array(Scan *s)
 {
-	advance(s);   /* '['. */
-	void *items = bzy_vec_new(4);   /* Object elements. */
+	advance(s); // '['.
+	void *items = bzy_vec_new(4); // Object elements.
 	skip_ws(s);
 	if (peek(s) == ']')
 	{
@@ -497,8 +498,8 @@ static void *parse_array(Scan *s)
 			return NULL;
 		}
 
-		bzy_vec_push_back(items, (int64_t)el);   /* Retains. */
-		bzy_release(el);                          /* Drop our +1; the vector owns it. */
+		bzy_vec_push_back(items, (int64_t)el); // Retains.
+		bzy_release(el); // Drop our +1; the vector owns it.
 		skip_ws(s);
 		int c = peek(s);
 		if (c == ',')
@@ -524,8 +525,7 @@ static void *parse_array(Scan *s)
 	return v;
 }
 
-/* A growable temp list of owned key/value pointers for one object, with
-   last-wins dedup on insert (objects are tiny, so the linear scan is cheap). */
+/* A growable temp list of owned key/value pointers for one object, with last-wins dedup on insert (objects are tiny, so the linear scan is cheap). */
 typedef struct
 {
 	void **keys;
@@ -537,9 +537,9 @@ static void obj_push(ObjTmp *o, void *key, void *val)
 {
 	for (int i = 0; i < o->count; i++)
 	{
-		if (bzy_str_eq(o->keys[i], key))     /* Duplicate key: last value wins. */
+		if (bzy_str_eq(o->keys[i], key)) // Duplicate key: last value wins.
 		{
-			bzy_release(o->keys[i]);          /* Drop the new key copy and the old value. */
+			bzy_release(o->keys[i]); // Drop the new key copy and the old value.
 			bzy_release(o->vals[i]);
 			o->keys[i] = key;
 			o->vals[i] = val;
@@ -571,11 +571,10 @@ static void obj_free(ObjTmp *o)
 	free(o->vals);
 }
 
-/* Parse a JSON object at '{'. Returns an owned (+1) JK_OBJ node holding parallel
-   keys/values arrays, or NULL with the error set. Duplicate keys: last wins. */
+/* Parse a JSON object at '{'. Returns an owned (+1) JK_OBJ node holding parallel keys/values arrays, or NULL with the error set. Duplicate keys: last wins. */
 static void *parse_object(Scan *s)
 {
-	advance(s);   /* '{'. */
+	advance(s); // '{'.
 	ObjTmp o = { 0 };
 	skip_ws(s);
 	if (peek(s) == '}')
@@ -619,7 +618,7 @@ static void *parse_object(Scan *s)
 			return NULL;
 		}
 
-		obj_push(&o, key, val);   /* Transfers the owned key + value. */
+		obj_push(&o, key, val); // Transfers the owned key + value.
 		skip_ws(s);
 		int c = peek(s);
 		if (c == ',')
@@ -646,7 +645,7 @@ static void *parse_object(Scan *s)
 		void *vals  = bzy_array_new(o.count, 1);
 		for (int i = 0; i < o.count; i++)
 		{
-			arr_set(names, i, o.keys[i]);   /* Transfer owned into the arrays. */
+			arr_set(names, i, o.keys[i]); // Transfer owned into the arrays.
 			arr_set(vals,  i, o.vals[i]);
 		}
 
@@ -654,13 +653,15 @@ static void *parse_object(Scan *s)
 		*(void**)((char*)node + J_VALS) = vals;
 	}
 
-	free(o.keys);   /* The slots' ownership moved to the arrays; free only the temp spines. */
+	free(o.keys); // The slots' ownership moved to the arrays; free only the temp spines.
 	free(o.vals);
 	return node;
 }
 
-/* Parse one JSON value: dispatch on the first non-whitespace byte. Returns an
-   owned (+1) node, or NULL with the error set. */
+/**
+ * Parse one JSON value: dispatch on the first non-whitespace byte.
+ * Returns an owned (+1) node, or NULL with the error set.
+ */
 static void *parse_value(Scan *s)
 {
 	skip_ws(s);
@@ -743,9 +744,10 @@ static void *parse_value(Scan *s)
 	}
 }
 
-/* Parse a whole document: optional leading whitespace, a single top-level value,
-   trailing whitespace only. Returns the owned (+1) root, or NULL with the error
-   message + line + column written through the out-params. */
+/**
+ * Parse a whole document: optional leading whitespace, a single top-level value, trailing whitespace only.
+ * Returns the owned (+1) root, or NULL with the error message + line + column written through the out-params.
+ */
 void *bzy_json_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t *col)
 {
 	Scan s;
@@ -784,8 +786,7 @@ void *bzy_json_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t
 
 static __thread const char *g_json_error;   /* Set by the runtime; consumed by bzy_json_check. */
 
-/* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error
-   message buffered for the codegen-emitted bzy_json_check at the call site. */
+/* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error message buffered for the codegen-emitted bzy_json_check at the call site. */
 void *bzy_json_parse(void *src)
 {
 	const char *err = NULL;
@@ -814,12 +815,11 @@ void bzy_json_check(int64_t pc, int64_t frame)
 	g_json_error = NULL;
 	void *exc = bzy_alloc(32);
 	*(void**)exc = (void*)__vtable_JsonException;
-	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
-	bzy_throw(exc, pc, frame);                  /* Never returns. */
+	*(void**)((char*)exc + 24) = msg; // Exception.message.
+	bzy_throw(exc, pc, frame); // Never returns.
 }
 
-/* Buffer a strict-extraction type-mismatch message for the next bzy_json_check
-   (shared with the parse path's error slot). */
+/* Buffer a strict-extraction type-mismatch message for the next bzy_json_check (shared with the parse path's error slot). */
 static void json_type_fail(const char *msg)
 {
 	if (!g_json_error)
@@ -967,14 +967,12 @@ int64_t bzy_json_as_bool(void *v)
 
 /* ---- forgiving object navigation -------------------------------------------- */
 
-/* A process-lifetime shared JK_NULL node. get() on a missing key / non-object
-   returns it (+1) so navigation chains never crash. */
+/* A process-lifetime shared JK_NULL node. get() on a missing key / non-object returns it (+1) so navigation chains never crash. */
 static void *g_json_null;
 
 static void *json_null_retained(void)
 {
-	/* ponytail: single-init race on first use is benign -- a duplicate singleton
-	   is just another valid JK_NULL node; both live forever by design. */
+	// ponytail: single-init race on first use is benign -- a duplicate singleton is just another valid JK_NULL node; both live forever by design.
 	if (!g_json_null)
 	{
 		g_json_null = jv_new(JK_NULL);
@@ -993,7 +991,7 @@ static int64_t obj_index(void *v, void *key)
 		return -1;
 	}
 
-	int64_t n = *(int64_t*)((char*)names + 24);   /* length@24. */
+	int64_t n = *(int64_t*)((char*)names + 24); // length@24.
 	void **slots = (void**)((char*)names + 32);
 	for (int64_t i = 0; i < n; i++)
 	{
@@ -1006,8 +1004,7 @@ static int64_t obj_index(void *v, void *key)
 	return -1;
 }
 
-/* The value at `key` (owned +1) for an object; a shared null value for a missing
-   key or a non-object receiver. */
+/* The value at `key` (owned +1) for an object; a shared null value for a missing key or a non-object receiver. */
 void *bzy_json_get(void *v, void *key)
 {
 	if (JKIND(v) == JK_OBJ)
@@ -1024,8 +1021,7 @@ void *bzy_json_get(void *v, void *key)
 	return json_null_retained();
 }
 
-/* 1 if the receiver is an object with `key` present (distinguishes an absent key
-   from a present null), else 0. */
+/* 1 if the receiver is an object with `key` present (distinguishes an absent key from a present null), else 0. */
 int64_t bzy_json_has(void *v, void *key)
 {
 	if (JKIND(v) == JK_OBJ)
@@ -1039,7 +1035,7 @@ int64_t bzy_json_has(void *v, void *key)
 /* An owned (+1) List<string> of the object's keys; an empty list for a non-object. */
 void *bzy_json_keys(void *v)
 {
-	void *list = bzy_vec_new(3);   /* String elements. */
+	void *list = bzy_vec_new(3); // String elements.
 	if (JKIND(v) == JK_OBJ)
 	{
 		void *names = JGET_MAN(v);
@@ -1047,7 +1043,7 @@ void *bzy_json_keys(void *v)
 		void **slots = names ? (void**)((char*)names + 32) : NULL;
 		for (int64_t i = 0; i < n; i++)
 		{
-			bzy_vec_push_back(list, (int64_t)slots[i]);   /* Borrowed key; push retains. */
+			bzy_vec_push_back(list, (int64_t)slots[i]); // Borrowed key; push retains.
 		}
 	}
 
@@ -1056,8 +1052,7 @@ void *bzy_json_keys(void *v)
 
 /* ---- array navigation ------------------------------------------------------- */
 
-/* The array's elements as an owned (+1) List<JsonValue>; an empty list for a
-   non-array (so .items().forEach is always safe). */
+/* The array's elements as an owned (+1) List<JsonValue>; an empty list for a non-array (so .items().forEach is always safe). */
 void *bzy_json_items(void *v)
 {
 	if (JKIND(v) == JK_ARR)
@@ -1067,21 +1062,20 @@ void *bzy_json_items(void *v)
 		return l;
 	}
 
-	return bzy_vec_new(4);   /* Object elements. */
+	return bzy_vec_new(4); // Object elements.
 }
 
-/* The element at index i (owned +1); OOB or a non-array sets the error for the
-   post-call bzy_json_check (returns a null value as the unused placeholder). */
+/* The element at index i (owned +1); OOB or a non-array sets the error for the post-call bzy_json_check (returns a null value as the unused placeholder). */
 void *bzy_json_at(void *v, int64_t i)
 {
 	if (JKIND(v) == JK_ARR)
 	{
 		void *l = JGET_MAN(v);
-		int64_t n = *(int64_t*)((char*)l + 24);   /* length@24. */
-		void *data = *(void**)((char*)l + 48);    /* data array@48. */
+		int64_t n = *(int64_t*)((char*)l + 24); // length@24.
+		void *data = *(void**)((char*)l + 48); // data array@48.
 		if (i >= 0 && i < n && data)
 		{
-			void *el = ((void**)((char*)data + 32))[i];   /* Borrowed slot. */
+			void *el = ((void**)((char*)data + 32))[i]; // Borrowed slot.
 			bzy_retain(el);
 			return el;
 		}
@@ -1168,7 +1162,7 @@ void *bzy_json_of_object(void *map)
 		int64_t i = 0;
 		for (int64_t s = bzy_map_iter(map, 0); s >= 0 && i < cnt; s = bzy_map_iter(map, s + 1))
 		{
-			void *k = (void*)bzy_map_key_at(map, s);   /* Borrowed. */
+			void *k = (void*)bzy_map_key_at(map, s); // Borrowed.
 			void *vv = (void*)bzy_map_val_at(map, s);
 			bzy_retain(k);
 			bzy_retain(vv);
@@ -1186,8 +1180,7 @@ void *bzy_json_of_object(void *map)
 
 /* ---- serializer (compact RFC 8259) ------------------------------------------ */
 
-/* Emit a JSON string literal: quotes + the escapes "" \\ \n \t \r \b \f, other
-   control bytes as \uXXXX, raw UTF-8 otherwise. */
+/* Emit a JSON string literal: quotes + the escapes "" \\ \n \t \r \b \f, other control bytes as \uXXXX, raw UTF-8 otherwise. */
 static void json_escape_string(TextBuf *t, void *s)
 {
 	const char *p = bzy_str_data(s);
@@ -1236,8 +1229,10 @@ static void json_escape_string(TextBuf *t, void *s)
 	tb_push(t, "\"", 1);
 }
 
-/* Walk v into the buffer. A non-finite double sets the error (the post-call
-   bzy_json_check then throws); once set, the walk unwinds without appending. */
+/**
+ * Walk v into the buffer.
+ * A non-finite double sets the error (the post-call bzy_json_check then throws); once set, the walk unwinds without appending.
+ */
 static void serialize_value(TextBuf *t, void *v)
 {
 	if (g_json_error)
@@ -1281,7 +1276,7 @@ static void serialize_value(TextBuf *t, void *v)
 			return;
 		}
 
-		void *s = bzy_str_from_f64(u.d);   /* Breezy's canonical double text (matches print). */
+		void *s = bzy_str_from_f64(u.d); // Breezy's canonical double text (matches print).
 		tb_push(t, bzy_str_data(s), (size_t)bzy_str_len(s));
 		bzy_release(s);
 		break;
@@ -1312,7 +1307,7 @@ static void serialize_value(TextBuf *t, void *v)
 		tb_push(t, "]", 1);
 		break;
 	}
-	default:   /* JK_OBJ. */
+	default: // JK_OBJ.
 	{
 		void *names = JGET_MAN(v);
 		void *vals = JGET_VALS(v);

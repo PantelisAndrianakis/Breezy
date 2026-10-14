@@ -2,11 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The LSP symbol index. The resolver has already stamped every expression with its
-   result type and every named node with a column; this walks the
-   resolved units and prints, for each named occurrence, its span + kind + type. The
-   language server (src/lsp.c) loads this and answers hover from it. Definitions and
-   the use->def link arrive in a later task; v1 is occurrence + type. */
+/**
+ * The LSP symbol index.
+ * The resolver has already stamped every expression with its result type and every named node with a column; this walks the resolved units and prints, for each named occurrence, its span + kind + type.
+ * The language server (src/lsp.c) loads this and answers hover from it.
+ * Definitions and the use->def link arrive in a later task; v1 is occurrence + type.
+ */
 
 /* ---- type rendering: a TypeRef -> a short display string ---- */
 
@@ -125,8 +126,7 @@ static void type_to_str(const TypeRef *t, char *out, int cap)
 		}
 		break;
 	default:
-		/* The built-in managed handle kinds (Socket, PgConnection, XmlNode, ...) and
-		   any kind without a bespoke spelling: fall back to the class name if set. */
+		// The built-in managed handle kinds (Socket, PgConnection, XmlNode, ...) and any kind without a bespoke spelling: fall back to the class name if set.
 		append(out, cap, t->class_name[0] ? t->class_name : "?");
 		break;
 	}
@@ -199,9 +199,11 @@ static int is_user_unit(const Unit *u)
 	return u->file && u->file[0] && strcmp(u->file, "<source>") != 0;
 }
 
-/* Find a user class / free function by name and report the file it lives in. The
-   declaration carries its name position (parser), so the caller has the def location.
-   Linear scans -- fine at project scale, like the database drivers' column lookups. */
+/**
+ * Find a user class / free function by name and report the file it lives in.
+ * The declaration carries its name position (parser), so the caller has the def location.
+ * Linear scans -- fine at project scale, like the database drivers' column lookups.
+ */
 static ClassDecl *find_class(const char *name, const char **file)
 {
 	for (int i = 0; i < g_nunits; i++)
@@ -246,16 +248,17 @@ static Func *find_func(const char *name, const char **file)
 	return NULL;
 }
 
-/* Resolve the named occurrence to its declaration site (file + 1-based line/col), so
-   the editor can jump there. Returns 1 when found. Locals/params are not resolved (no
-   scope info here -- a later follow-up); cross-file classes, methods, fields, free
-   functions, and constructors are. */
+/**
+ * Resolve the named occurrence to its declaration site (file + 1-based line/col), so the editor can jump there.
+ * Returns 1 when found.
+ * Locals/params are not resolved (no scope info here -- a later follow-up); cross-file classes, methods, fields, free functions, and constructors are.
+ */
 static int resolve_def(const Expr *e, const char **deffile, int *defline, int *defcol)
 {
 	const char *f = NULL;
 	if (e->kind == EX_NEW || e->kind == EX_IDENT)
 	{
-		ClassDecl *c = find_class(e->name, &f);   /* `new Foo` / a bare class name. */
+		ClassDecl *c = find_class(e->name, &f); // `new Foo` / a bare class name.
 		if (c && c->name_line)
 		{
 			*deffile = f;
@@ -266,7 +269,7 @@ static int resolve_def(const Expr *e, const char **deffile, int *defline, int *d
 	}
 	else if (e->kind == EX_CALL && !strchr(e->name, '.'))
 	{
-		Func *fn = find_func(e->name, &f);        /* A free function (not a namespace call). */
+		Func *fn = find_func(e->name, &f); // A free function (not a namespace call).
 		if (fn && fn->name_line)
 		{
 			*deffile = f;
@@ -313,7 +316,7 @@ static void emit_occurrence(const Expr *e)
 	ty[0] = '\0';
 	type_to_str(&e->type, ty, (int)sizeof(ty));
 
-	int endcol = e->col + (int)strlen(e->name);   /* 1-based span [col, endCol). */
+	int endcol = e->col + (int)strlen(e->name); // 1-based span [col, endCol).
 
 	if (!g_first)
 	{
@@ -417,9 +420,7 @@ void symbols_emit(Unit **units, int unit_count)
 	for (int i = 0; i < unit_count; i++)
 	{
 		Unit *u = units[i];
-		/* Skip the prelude / desktop-prelude units: they have no real source path
-		   (the lexer's "<source>" default), and their symbols are not in the user's
-		   files, so they would only pollute the editor's index. */
+		// Skip the prelude / desktop-prelude units: they have no real source path (the lexer's "<source>" default), and their symbols are not in the user's files, so they would only pollute the editor's index.
 		if (!u->file || u->file[0] == '\0' || strcmp(u->file, "<source>") == 0)
 		{
 			continue;
@@ -443,8 +444,7 @@ void symbols_emit(Unit **units, int unit_count)
 		}
 	}
 
-	/* The `classes` section: each user class with its own members, so completion can
-	   list `receiver.<members>` from the receiver's type. */
+	// The `classes` section: each user class with its own members, so completion can list `receiver.<members>` from the receiver's type.
 	fputs("],\"classes\":[", stdout);
 	int cfirst = 1;
 	for (int i = 0; i < unit_count; i++)
@@ -502,7 +502,7 @@ void symbols_emit(Unit **units, int unit_count)
 		}
 	}
 
-	/* The `functions` section: top-level function names, for name completion. */
+	// The `functions` section: top-level function names, for name completion.
 	fputs("],\"functions\":[", stdout);
 	int ffirst = 1;
 	for (int i = 0; i < unit_count; i++)

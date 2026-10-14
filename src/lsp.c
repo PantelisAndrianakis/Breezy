@@ -1,14 +1,12 @@
-/* src/lsp.c -- the `breezy --lsp` language server.
-
-   A stdio JSON-RPC 2.0 loop. It reads Content-Length-framed LSP messages from
-   stdin, dispatches by method, and publishes the compiler's own diagnostics to
-   the editor on document open/save (Task 2). Diagnostics are obtained by
-   re-invoking this same binary as `breezy --check <project-root>` -- a fresh
-   child per check, so the compiler's first-error `exit(1)` is harmless and the
-   server holds no compiler state between checks (spec Phase G, §2).
-
-   This file is frontend tooling: it links into the compiler only, never into a
-   user program, so it is exempt from the no-bloat and performance invariants. */
+/**
+ * src/lsp.c -- the `breezy --lsp` language server.
+ *
+ * A stdio JSON-RPC 2.0 loop.
+ * It reads Content-Length-framed LSP messages from stdin, dispatches by method, and publishes the compiler's own diagnostics to the editor on document open/save (Task 2).
+ * Diagnostics are obtained by re-invoking this same binary as `breezy --check <project-root>` -- a fresh child per check, so the compiler's first-error `exit(1)` is harmless and the server holds no compiler state between checks (spec Phase G, §2).
+ *
+ * This file is frontend tooling: it links into the compiler only, never into a user program, so it is exempt from the no-bloat and performance invariants.
+ */
 
 #include "lsp.h"
 #include <stdio.h>
@@ -71,14 +69,13 @@ static void sb_putc(Sb *s, char c)
 	s->p[s->len] = '\0';
 }
 
-/* ---- minimal JSON reader ----
-
-   A structural recursive-descent parser into a small tagged tree. It is
-   structural, NOT substring search, because a didOpen payload carries the
-   document's full text -- which may itself contain `"uri":` and friends, so the
-   wanted field must be found by path, not by scanning. Each value also records
-   its raw source span, which lets a request `id` (a number OR a string) be
-   echoed back verbatim with no reconstruction. */
+/**
+ * ---- minimal JSON reader ----
+ *
+ * A structural recursive-descent parser into a small tagged tree.
+ * It is structural, NOT substring search, because a didOpen payload carries the document's full text -- which may itself contain `"uri":` and friends, so the wanted field must be found by path, not by scanning.
+ * Each value also records its raw source span, which lets a request `id` (a number OR a string) be echoed back verbatim with no reconstruction.
+ */
 
 typedef enum { J_NULL, J_BOOL, J_NUM, J_STR, J_ARR, J_OBJ } JType;
 
@@ -144,11 +141,10 @@ static unsigned hex4(const char *p)
 	return v;
 }
 
-/* Parse a JSON string starting at the opening quote; return the unescaped
-   value (malloc'd), advancing past the closing quote. */
+/* Parse a JSON string starting at the opening quote; return the unescaped value (malloc'd), advancing past the closing quote. */
 static char *jparse_string_raw(JParser *jp)
 {
-	jp->p++;   /* Opening quote. */
+	jp->p++; // Opening quote.
 	Sb sb = {0};
 	while (*jp->p && *jp->p != '"')
 	{
@@ -184,8 +180,8 @@ static char *jparse_string_raw(JParser *jp)
 				break;
 			case 'u':
 			{
-				/* \uXXXX -> UTF-8. BMP only: editor file:// URIs are
-				   percent-encoded ASCII, so \u above the BMP never appears. */
+				// \uXXXX -> UTF-8.
+				// BMP only: editor file:// URIs are percent-encoded ASCII, so \u above the BMP never appears.
 				unsigned cp = hex4(jp->p + 1);
 				jp->p += 4;
 				if (cp < 0x80)
@@ -398,8 +394,10 @@ static JVal *jobj_get(JVal *o, const char *key)
 
 /* ---- framing ---- */
 
-/* Read one header line into buf (CR stripped, NUL-terminated). Returns the
-   length, 0 for a blank line, or -1 at EOF before any newline. */
+/**
+ * Read one header line into buf (CR stripped, NUL-terminated).
+ * Returns the length, 0 for a blank line, or -1 at EOF before any newline.
+ */
 static int read_line(char *buf, int max)
 {
 	int i = 0, c;
@@ -425,9 +423,10 @@ static int read_line(char *buf, int max)
 	return -1;
 }
 
-/* Read one LSP message body (the JSON after the Content-Length header block).
-   Returns a malloc'd NUL-terminated buffer, or NULL at EOF / on a malformed
-   header block. */
+/**
+ * Read one LSP message body (the JSON after the Content-Length header block).
+ * Returns a malloc'd NUL-terminated buffer, or NULL at EOF / on a malformed header block.
+ */
 static char *read_message(void)
 {
 	int content_length = -1;
@@ -437,19 +436,19 @@ static char *read_message(void)
 		int n = read_line(line, sizeof(line));
 		if (n < 0)
 		{
-			return NULL;   /* EOF. */
+			return NULL; // EOF.
 		}
 
 		if (n == 0)
 		{
-			break;         /* Blank line: end of headers. */
+			break; // Blank line: end of headers.
 		}
 
 		if (strncmp(line, "Content-Length:", 15) == 0)
 		{
 			content_length = atoi(line + 15);
 		}
-		/* Any other header (e.g. Content-Type) is tolerated and ignored. */
+		// Any other header (e.g. Content-Type) is tolerated and ignored.
 	}
 
 	if (content_length < 0 || content_length > (1 << 28))
@@ -479,8 +478,7 @@ static void send_framed(const char *body, size_t len)
 	fflush(stdout);
 }
 
-/* Append a request id (echoed verbatim from its raw span, so a number or a
-   string id both round-trip), or `null` when there is none. */
+/* Append a request id (echoed verbatim from its raw span, so a number or a string id both round-trip), or `null` when there is none. */
 static void sb_put_id(Sb *sb, JVal *id)
 {
 	if (id)
@@ -599,10 +597,10 @@ static void sb_put_json_escaped(Sb *sb, const char *s)
 	}
 }
 
-/* The open-document store: exact editor URIs + their decoded filesystem paths.
-   v1 needs the open set so a clean check clears every open doc, and an error in
-   one file leaves the others clear. (No didClose handling yet: the set only
-   grows for the session -- negligible.) */
+/**
+ * The open-document store: exact editor URIs + their decoded filesystem paths. v1 needs the open set so a clean check clears every open doc, and an error in one file leaves the others clear.
+ * (No didClose handling yet: the set only grows for the session -- negligible.)
+ */
 static char **g_uris;
 static char **g_paths;
 static char **g_texts;   /* The latest (possibly unsaved) buffer per doc, or NULL. */
@@ -670,7 +668,7 @@ static char *uri_to_path(const char *uri)
 	if (strncmp(p, "file://", 7) == 0)
 	{
 		p += 7;
-		/* Skip an authority (file://host/path) if one is present. */
+		// Skip an authority (file://host/path) if one is present.
 		if (*p && *p != '/')
 		{
 			const char *slash = strchr(p, '/');
@@ -680,7 +678,7 @@ static char *uri_to_path(const char *uri)
 
 	const char *q = p;
 #ifdef _WIN32
-	/* file:///c:/... -> drop the slash before the drive letter. */
+	// file:///c:/... -> drop the slash before the drive letter.
 	if (q[0] == '/' && isalpha((unsigned char)q[1]) && q[2] == ':')
 	{
 		q++;
@@ -716,7 +714,7 @@ static char *path_to_uri(const char *p)
 #ifdef _WIN32
 	if (isalpha((unsigned char)p[0]) && p[1] == ':')
 	{
-		sb_putc(&sb, '/');   /* file:///C:/... */
+		sb_putc(&sb, '/'); // file:///C:/...
 	}
 
 #endif
@@ -777,8 +775,7 @@ static int has_breezy_toml(const char *dir)
 	return 0;
 }
 
-/* The project root for a file: the nearest ancestor holding a breezy.toml, else
-   the file's own directory (matches how `breezy <dir>` scopes a project). */
+/* The project root for a file: the nearest ancestor holding a breezy.toml, else the file's own directory (matches how `breezy <dir>` scopes a project). */
 static char *project_root(const char *path)
 {
 	char *dir = file_dir(path);
@@ -848,8 +845,7 @@ static int same_file(const char *a, const char *b)
 	}
 }
 
-/* Best-effort 1-based line scrape from a plain-text compiler error (the parser
-   paths that print "line N: ..." to stderr instead of the JSON diagnostic). */
+/* Best-effort 1-based line scrape from a plain-text compiler error (the parser paths that print "line N: ..." to stderr instead of the JSON diagnostic). */
 static int scrape_line(const char *t)
 {
 	const char *m = strstr(t, "line ");
@@ -891,9 +887,7 @@ static char *first_line(const char *t)
 	return r;
 }
 
-/* Publish diagnostics for one URI. msg==NULL clears (empty array); otherwise a
-   single Error diagnostic. line0/char0/endchar0 are already 0-based (LSP positions);
-   the squiggle spans [char0, endchar0) -- the offending token. */
+/* Publish diagnostics for one URI. msg==NULL clears (empty array); otherwise a single Error diagnostic. line0/char0/endchar0 are already 0-based (LSP positions); the squiggle spans [char0, endchar0) -- the offending token. */
 static void send_diagnostics(const char *uri, int line0, int char0, int endchar0, const char *msg)
 {
 	if (line0 < 0)
@@ -908,7 +902,7 @@ static void send_diagnostics(const char *uri, int line0, int char0, int endchar0
 
 	if (endchar0 <= char0)
 	{
-		endchar0 = char0 + 1;   /* Always at least one character wide. */
+		endchar0 = char0 + 1; // Always at least one character wide.
 	}
 
 	Sb sb = {0};
@@ -933,19 +927,17 @@ static void send_diagnostics(const char *uri, int line0, int char0, int endchar0
 	free(sb.p);
 }
 
-/* Run `breezy --check <root>` for the document's project, translate the single
-   diagnostic (or the clean result), and publish to every open document. */
-/* Run `<self> <flag> "<root>" 2>&1` and return its captured stdout (malloc'd, caller
-   frees; NULL if there was none). The shared subprocess driver for --check (publish)
-   and --symbols (hover/definition). */
+/* Run `breezy --check <root>` for the document's project, translate the single diagnostic (or the clean result), and publish to every open document. */
+/**
+ * Run `<self> <flag> "<root>" 2>&1` and return its captured stdout (malloc'd, caller frees; NULL if there was none).
+ * The shared subprocess driver for --check (publish) and --symbols (hover/definition).
+ */
 static char *run_self_capture(const char *flag, const char *root)
 {
 	Sb cmd = {0};
 #ifdef _WIN32
-	/* _popen runs `cmd /c <command>`; when <command> begins with a quote, cmd
-	   strips the first and last quote, which would break the inner quoting of a
-	   spaced path. Wrap the whole command in an extra quote pair so cmd strips
-	   that outer layer and leaves the inner quotes intact. */
+	// _popen runs `cmd /c <command>`; when <command> begins with a quote, cmd strips the first and last quote, which would break the inner quoting of a spaced path.
+	// Wrap the whole command in an extra quote pair so cmd strips that outer layer and leaves the inner quotes intact.
 	sb_putc(&cmd, '"');
 #endif
 	sb_putc(&cmd, '"');
@@ -954,7 +946,7 @@ static char *run_self_capture(const char *flag, const char *root)
 	sb_puts(&cmd, flag);
 	sb_puts(&cmd, " \"");
 	sb_puts(&cmd, root);
-	sb_puts(&cmd, "\" 2>&1");   /* Capture stderr too: not every compiler error is JSON. */
+	sb_puts(&cmd, "\" 2>&1"); // Capture stderr too: not every compiler error is JSON.
 #ifdef _WIN32
 	sb_putc(&cmd, '"');
 #endif
@@ -1037,8 +1029,7 @@ static unsigned fnv1a(const char *s)
 	return h;
 }
 
-/* Mirror one project file into the temp dir: the open dirty buffer if there is one,
-   else a copy of the file on disk. */
+/* Mirror one project file into the temp dir: the open dirty buffer if there is one, else a copy of the file on disk. */
 static void overlay_one(const char *real_root, const char *tmp, const char *name)
 {
 	Sb rf = {0};
@@ -1064,10 +1055,11 @@ static void overlay_one(const char *real_root, const char *tmp, const char *name
 	free(df.p);
 }
 
-/* Build a temp mirror of real_root's .bzy files with any open dirty buffer
-   substituted, and return the temp dir path (caller frees). One stable temp dir per
-   project (FNV of the root), reused and overwritten. Breezy is whole-program, so the
-   whole project is mirrored, not just the edited file. */
+/**
+ * Build a temp mirror of real_root's .bzy files with any open dirty buffer substituted, and return the temp dir path (caller frees).
+ * One stable temp dir per project (FNV of the root), reused and overwritten.
+ * Breezy is whole-program, so the whole project is mirrored, not just the edited file.
+ */
 static char *overlay_build(const char *real_root)
 {
 #ifdef _WIN32
@@ -1127,10 +1119,10 @@ static char *overlay_build(const char *real_root)
 	return tmp;
 }
 
-/* Map a path the index reports (which is under the overlay temp dir when live, or the
-   real project otherwise) to the real project path: real_root + the file's basename.
-   Basenames are unique in a flat one-class-per-file project, so this round-trips a temp
-   path to its real twin and leaves a real path effectively unchanged. */
+/**
+ * Map a path the index reports (which is under the overlay temp dir when live, or the real project otherwise) to the real project path: real_root + the file's basename.
+ * Basenames are unique in a flat one-class-per-file project, so this round-trips a temp path to its real twin and leaves a real path effectively unchanged.
+ */
 static char *index_to_real(const char *real_root, const char *file)
 {
 	const char *bn = file + strlen(file);
@@ -1154,10 +1146,10 @@ static int occ_in_file(const char *real_root, const char *index_file, const char
 	return ok;
 }
 
-/* Run `--symbols` for the trigger document's project, through the dirty-buffer overlay
-   when the document has unsaved text, so hover / definition / references reflect edits
-   that are not yet on disk. Returns the output (caller frees) and sets *real_root (the
-   real project dir, for index_to_real); the check root is internal. */
+/**
+ * Run `--symbols` for the trigger document's project, through the dirty-buffer overlay when the document has unsaved text, so hover / definition / references reflect edits that are not yet on disk.
+ * Returns the output (caller frees) and sets *real_root (the real project dir, for index_to_real); the check root is internal.
+ */
 static char *symbols_for_doc(const char *real_path, char **real_root_out)
 {
 	char *real_root = project_root(real_path);
@@ -1169,10 +1161,11 @@ static char *symbols_for_doc(const char *real_path, char **real_root_out)
 	return out;
 }
 
-/* Publish diagnostics for the trigger document's project. When `live`, the project is
-   mirrored to a temp dir with the unsaved buffers substituted and checked there, so the
-   squiggles reflect edits that are not yet on disk; the reported temp paths are remapped
-   back to the real project. Otherwise disk is checked (open/save). */
+/**
+ * Publish diagnostics for the trigger document's project.
+ * When `live`, the project is mirrored to a temp dir with the unsaved buffers substituted and checked there, so the squiggles reflect edits that are not yet on disk; the reported temp paths are remapped back to the real project.
+ * Otherwise disk is checked (open/save).
+ */
 static void check_and_publish(const char *trigger_uri, int live)
 {
 	char *path = uri_to_path(trigger_uri);
@@ -1181,11 +1174,11 @@ static void check_and_publish(const char *trigger_uri, int live)
 
 	char *out = run_self_capture("--check", check_root);
 
-	/* Decide: clean, a precise JSON diagnostic, or a scraped plain-text error. */
+	// Decide: clean, a precise JSON diagnostic, or a scraped plain-text error.
 	int clean = 0, have_diag = 0;
 	char *err_file = NULL;
 	char *err_msg = NULL;
-	int err_line = 0, err_col = 0, err_endcol = 0;   /* 1-based as the compiler reports. */
+	int err_line = 0, err_col = 0, err_endcol = 0; // 1-based as the compiler reports.
 
 	const char *text = out ? out : "";
 	const char *brace = strchr(text, '{');
@@ -1217,23 +1210,22 @@ static void check_and_publish(const char *trigger_uri, int live)
 
 	if (!clean && !have_diag)
 	{
-		/* Non-JSON output: surface it so the error is never silently invisible. */
+		// Non-JSON output: surface it so the error is never silently invisible.
 		if (has_nonspace(text))
 		{
 			have_diag = 1;
-			err_file = dupstr(path);   /* Best guess: the triggering file. */
+			err_file = dupstr(path); // Best guess: the triggering file.
 			err_msg = first_line(text);
 			err_line = scrape_line(text);
 			err_col = 0;
 		}
 		else
 		{
-			clean = 1;   /* No output, no error: treat as clean. */
+			clean = 1; // No output, no error: treat as clean.
 		}
 	}
 
-	/* The overlay check reports temp-dir paths; map them back to the real project so
-	   the diagnostic publishes under the file's real URI. */
+	// The overlay check reports temp-dir paths; map them back to the real project so the diagnostic publishes under the file's real URI.
 	if (live && err_file && strncmp(err_file, check_root, strlen(check_root)) == 0)
 	{
 		Sb rm = {0};
@@ -1243,15 +1235,13 @@ static void check_and_publish(const char *trigger_uri, int live)
 		err_file = rm.p;
 	}
 
-	/* 1-based (compiler) -> 0-based (LSP). col 0 (resolve errors) maps to 0. */
+	// 1-based (compiler) -> 0-based (LSP). col 0 (resolve errors) maps to 0.
 	int l0 = err_line > 0 ? err_line - 1 : 0;
 	int c0 = err_col > 0 ? err_col - 1 : 0;
-	int ec0 = err_endcol > 0 ? err_endcol - 1 : c0 + 1;   /* Token span end; default 1 char. */
+	int ec0 = err_endcol > 0 ? err_endcol - 1 : c0 + 1; // Token span end; default 1 char.
 
-	/* Publish to every open document IN THIS PROJECT: the error's file gets the
-	   diagnostic, the project's other open files are cleared. Documents in other
-	   projects are left untouched (a clean check here must not wipe their
-	   squiggles). */
+	// Publish to every open document IN THIS PROJECT: the error's file gets the diagnostic, the project's other open files are cleared.
+	// Documents in other projects are left untouched (a clean check here must not wipe their squiggles).
 	int matched = 0;
 	for (int i = 0; i < g_ndocs; i++)
 	{
@@ -1273,7 +1263,7 @@ static void check_and_publish(const char *trigger_uri, int live)
 			send_diagnostics(g_uris[i], 0, 0, 0, NULL);
 		}
 	}
-	/* Error in a file that is not currently open: publish under a derived URI. */
+	// Error in a file that is not currently open: publish under a derived URI.
 	if (have_diag && !matched)
 	{
 		char *euri = path_to_uri(err_file);
@@ -1289,9 +1279,10 @@ static void check_and_publish(const char *trigger_uri, int live)
 	free(path);
 }
 
-/* textDocument/hover: find the named occurrence whose span contains the cursor in the
-   --symbols index for the file's project, and reply its "name : type". Replies null
-   when the cursor is not on a known symbol. */
+/**
+ * textDocument/hover: find the named occurrence whose span contains the cursor in the --symbols index for the file's project, and reply its "name : type".
+ * Replies null when the cursor is not on a known symbol.
+ */
 static void handle_hover(JVal *id, JVal *params)
 {
 	JVal *td  = jobj_get(params, "textDocument");
@@ -1305,7 +1296,7 @@ static void handle_hover(JVal *id, JVal *params)
 		return;
 	}
 
-	int line1 = (int)jl->num + 1;   /* LSP 0-based -> the compiler's 1-based. */
+	int line1 = (int)jl->num + 1; // LSP 0-based -> the compiler's 1-based.
 	int char1 = (int)jc->num + 1;
 	char *path = uri_to_path(uri->str);
 	char *real_root = NULL;
@@ -1313,7 +1304,7 @@ static void handle_hover(JVal *id, JVal *params)
 
 	const char *text  = out ? out : "";
 	const char *brace = strchr(text, '{');
-	char *hovertext = NULL;   /* "name : type" of the occurrence under the cursor. */
+	char *hovertext = NULL; // "name : type" of the occurrence under the cursor.
 	if (brace)
 	{
 		JVal *j = json_parse(brace);
@@ -1376,9 +1367,7 @@ static void handle_hover(JVal *id, JVal *params)
 	free(path);
 }
 
-/* textDocument/definition: find the occurrence under the cursor in the --symbols
-   index and reply the Location of its declaration (defFile/defLine/defCol), or null
-   when the occurrence has no resolvable definition (a local, a built-in, ...). */
+/* textDocument/definition: find the occurrence under the cursor in the --symbols index and reply the Location of its declaration (defFile/defLine/defCol), or null when the occurrence has no resolvable definition (a local, a built-in, ...). */
 static void handle_definition(JVal *id, JVal *params)
 {
 	JVal *td  = jobj_get(params, "textDocument");
@@ -1433,7 +1422,7 @@ static void handle_definition(JVal *id, JVal *params)
 				JVal *dc = jobj_get(s, "defCol");
 				if (df && df->type == J_STR && dl && dl->type == J_NUM && dc && dc->type == J_NUM)
 				{
-					char *dr = index_to_real(real_root, df->str);   /* Overlay temp -> real. */
+					char *dr = index_to_real(real_root, df->str); // Overlay temp -> real.
 					defuri = path_to_uri(dr);
 					free(dr);
 					defl = (int)dl->num;
@@ -1449,7 +1438,7 @@ static void handle_definition(JVal *id, JVal *params)
 
 	if (defuri)
 	{
-		int l0 = defl > 0 ? defl - 1 : 0;   /* 1-based (index) -> 0-based (LSP). */
+		int l0 = defl > 0 ? defl - 1 : 0; // 1-based (index) -> 0-based (LSP).
 		int c0 = defc > 0 ? defc - 1 : 0;
 		Sb r = {0};
 		sb_puts(&r, "{\"uri\":\"");
@@ -1474,8 +1463,7 @@ static void handle_definition(JVal *id, JVal *params)
 	free(path);
 }
 
-/* Append one LSP Location {uri, range} (1-based span -> 0-based) to the array builder,
-   comma-separated via *first. */
+/* Append one LSP Location {uri, range} (1-based span -> 0-based) to the array builder, comma-separated via *first. */
 static void append_location(Sb *r, int *first, const char *real_root, const char *file, int line1, int col1, int endcol1)
 {
 	int l0 = line1 > 0 ? line1 - 1 : 0;
@@ -1492,7 +1480,7 @@ static void append_location(Sb *r, int *first, const char *real_root, const char
 	}
 	*first = 0;
 
-	char *real = index_to_real(real_root, file);   /* Overlay temp path -> the real file. */
+	char *real = index_to_real(real_root, file); // Overlay temp path -> the real file.
 	char *uri = path_to_uri(real);
 	sb_puts(r, "{\"uri\":\"");
 	sb_put_json_escaped(r, uri);
@@ -1506,10 +1494,10 @@ static void append_location(Sb *r, int *first, const char *real_root, const char
 	free(real);
 }
 
-/* textDocument/references: the occurrence under the cursor names a declaration (its
-   def triple in the --symbols index); reply every occurrence sharing that declaration
-   -- the symbol's uses -- plus the declaration itself when the client asks. A symbol
-   with no def link (a local, a built-in) has no references to report. */
+/**
+ * textDocument/references: the occurrence under the cursor names a declaration (its def triple in the --symbols index); reply every occurrence sharing that declaration -- the symbol's uses -- plus the declaration itself when the client asks.
+ * A symbol with no def link (a local, a built-in) has no references to report.
+ */
 static void handle_references(JVal *id, JVal *params)
 {
 	JVal *td  = jobj_get(params, "textDocument");
@@ -1545,7 +1533,7 @@ static void handle_references(JVal *id, JVal *params)
 		int dl = 0, dc = 0;
 		if (syms && syms->type == J_ARR)
 		{
-			/* Pass 1: the occurrence under the cursor and its declaration triple. */
+			// Pass 1: the occurrence under the cursor and its declaration triple.
 			for (int i = 0; i < syms->nitems; i++)
 			{
 				JVal *s  = syms->items[i];
@@ -1580,7 +1568,7 @@ static void handle_references(JVal *id, JVal *params)
 				break;
 			}
 
-			/* Pass 2: every occurrence sharing that declaration, + the declaration. */
+			// Pass 2: every occurrence sharing that declaration, + the declaration.
 			if (dfile)
 			{
 				if (include_decl)
@@ -1683,9 +1671,10 @@ static void add_item(Sb *r, int *first, const char *label, int kind, const char 
 	sb_putc(r, '}');
 }
 
-/* textDocument/completion: from the dirty line up to the cursor, either complete the
-   members of `receiver.` (the receiver's type -> that class's members) or, on a bare
-   word, the project's class and function names. Prefix-filtered. */
+/**
+ * textDocument/completion: from the dirty line up to the cursor, either complete the members of `receiver.` (the receiver's type -> that class's members) or, on a bare word, the project's class and function names.
+ * Prefix-filtered.
+ */
 static void handle_completion(JVal *id, JVal *params)
 {
 	JVal *td  = jobj_get(params, "textDocument");
@@ -1702,11 +1691,10 @@ static void handle_completion(JVal *id, JVal *params)
 	int line0 = (int)jl->num;
 	int char0 = (int)jc->num;
 	char *path = uri_to_path(uri->str);
-	char *buf = docs_text_for(path);   /* Borrowed: the unsaved buffer, or NULL. */
+	char *buf = docs_text_for(path); // Borrowed: the unsaved buffer, or NULL.
 	char *prefix = buf ? line_prefix(buf, line0, char0) : dupstr("");
 
-	/* The trailing word is the partial being typed; a `.` before it means member
-	   completion, with the identifier before the dot as the receiver. */
+	// The trailing word is the partial being typed; a `.` before it means member completion, with the identifier before the dot as the receiver.
 	int n = (int)strlen(prefix);
 	int pe = n;
 	while (pe > 0 && ident_char(prefix[pe - 1]))
@@ -1746,8 +1734,7 @@ static void handle_completion(JVal *id, JVal *params)
 	char *out = symbols_for_doc(path, &real_root);
 	if (!out || !strstr(out, "\"classes\""))
 	{
-		/* The dirty buffer did not parse (mid-edit, e.g. `obj.`); fall back to the
-		   last-saved version on disk so completion still has the project's types. */
+		// The dirty buffer did not parse (mid-edit, e.g. `obj.`); fall back to the last-saved version on disk so completion still has the project's types.
 		free(out);
 		out = run_self_capture("--symbols", real_root);
 	}
@@ -1761,7 +1748,7 @@ static void handle_completion(JVal *id, JVal *params)
 		JVal *j = json_parse(brace);
 		if (member && receiver[0])
 		{
-			/* Resolve the receiver's class from an occurrence of its name. */
+			// Resolve the receiver's class from an occurrence of its name.
 			const char *rtype = NULL;
 			JVal *syms = jobj_get(j, "symbols");
 			if (syms && syms->type == J_ARR)
@@ -1806,7 +1793,7 @@ static void handle_completion(JVal *id, JVal *params)
 		}
 		else
 		{
-			/* Bare word: class names + free-function names. */
+			// Bare word: class names + free-function names.
 			JVal *cls = jobj_get(j, "classes");
 			for (int i = 0; cls && cls->type == J_ARR && i < cls->nitems; i++)
 			{
@@ -1845,11 +1832,11 @@ int lsp_main(const char *self_exe)
 {
 	g_self_exe = self_exe;
 #ifdef _WIN32
-	/* Binary stdio so the \r\n framing bytes survive unmangled. */
+	// Binary stdio so the \r\n framing bytes survive unmangled.
 	_setmode(_fileno(stdin), _O_BINARY);
 	_setmode(_fileno(stdout), _O_BINARY);
 #endif
-	int draining = 0;   /* Set once `shutdown` is seen; `exit` then returns 0. */
+	int draining = 0; // Set once `shutdown` is seen; `exit` then returns 0.
 	char *msg;
 	while ((msg = read_message()) != NULL)
 	{
@@ -1864,7 +1851,7 @@ int lsp_main(const char *self_exe)
 		}
 		else if (strcmp(m, "initialized") == 0)
 		{
-			/* Notification, no-op. */
+			// Notification, no-op.
 		}
 		else if (strcmp(m, "textDocument/didOpen") == 0
 				 || strcmp(m, "textDocument/didSave") == 0)
@@ -1876,18 +1863,18 @@ int lsp_main(const char *self_exe)
 				char *path = uri_to_path(uri->str);
 				docs_add(uri->str, path);
 				free(path);
-				JVal *txt = jobj_get(td, "text");   /* didOpen carries the buffer. */
+				JVal *txt = jobj_get(td, "text"); // didOpen carries the buffer.
 				if (txt && txt->type == J_STR)
 				{
 					docs_set_text(uri->str, txt->str);
 				}
-				check_and_publish(uri->str, 0);   /* Disk is authoritative on open/save. */
+				check_and_publish(uri->str, 0); // Disk is authoritative on open/save.
 			}
 		}
 		else if (strcmp(m, "textDocument/didChange") == 0)
 		{
-			/* Full sync: contentChanges[0].text is the whole new buffer. Check it live
-			   through the overlay so the squiggles track unsaved edits. */
+			// Full sync: contentChanges[0].text is the whole new buffer.
+			// Check it live through the overlay so the squiggles track unsaved edits.
 			JVal *params = jobj_get(root, "params");
 			JVal *td = jobj_get(params, "textDocument");
 			JVal *uri = jobj_get(td, "uri");
@@ -1905,7 +1892,7 @@ int lsp_main(const char *self_exe)
 						docs_set_text(uri->str, txt->str);
 					}
 				}
-				check_and_publish(uri->str, 1);   /* Live: the dirty-buffer overlay. */
+				check_and_publish(uri->str, 1); // Live: the dirty-buffer overlay.
 			}
 		}
 		else if (strcmp(m, "textDocument/hover") == 0)
@@ -1937,8 +1924,8 @@ int lsp_main(const char *self_exe)
 		}
 		else if (id && method)
 		{
-			/* An unknown request (has an id): answer so the client is not left
-			   waiting. A notification (no id) is simply ignored. */
+			// An unknown request (has an id): answer so the client is not left waiting.
+			// A notification (no id) is simply ignored.
 			reply_method_not_found(id);
 		}
 

@@ -25,42 +25,55 @@ typedef struct
 	char project_dir[CFG_PATH_LEN]; /* Resolved dir; used to expand icon to absolute path. */
 } AppConfig;
 
-/* Parse the [link] section of a breezy.toml-style document held in `text`,
-   appending any libs/lib_paths to `cfg`. A tolerant mini-reader, not full TOML. */
+/**
+ * Parse the [link] section of a breezy.toml-style document held in `text`, appending any libs/lib_paths to `cfg`.
+ * A tolerant mini-reader, not full TOML.
+ */
 void config_parse_links(const char *text, LinkConfig *cfg);
 
-/* Parse the [app] section of a breezy.toml-style document held in `text`,
-   filling `app` with name/version/description/author/icon. */
+/* Parse the [app] section of a breezy.toml-style document held in `text`, filling `app` with name/version/description/author/icon. */
 void config_parse_app(const char *text, AppConfig *app);
 
-/* Load <project>/breezy.toml (derived from `src_arg`: the directory itself if it
-   is one, else the source file's parent) and parse its sections.
-   Either pointer may be NULL to skip that section. A missing file is a silent no-op. */
+/**
+ * Load <project>/breezy.toml (derived from `src_arg`: the directory itself if it is one, else the source file's parent) and parse its sections.
+ * Either pointer may be NULL to skip that section.
+ * A missing file is a silent no-op.
+ */
 void config_load(const char *src_arg, LinkConfig *link, AppConfig *app);
 
-/* 1 if the IR + register-allocator backend is enabled. Read once from the
-   environment and cached. Default ON for eligible functions; set BZY_IR=0 to
-   force the emitter everywhere. */
+/**
+ * 1 if the IR + register-allocator backend is enabled.
+ * Read once from the environment and cached.
+ * Default ON for eligible functions; set BZY_IR=0 to force the emitter everywhere.
+ */
 int bzy_ir_enabled(void);
 
-/* 1 if IR loop regions are enabled (Plan 4): eligible loop nests inside emitter
-   functions are emitted from IR. Default ON; set BZY_IR_REGIONS=0 to keep loops
-   on the emitter while leaving whole-function IR active. Always 0 when the IR
-   backend itself is disabled. */
+/**
+ * 1 if IR loop regions are enabled (Plan 4): eligible loop nests inside emitter functions are emitted from IR.
+ * Default ON; set BZY_IR_REGIONS=0 to keep loops on the emitter while leaving whole-function IR active.
+ * Always 0 when the IR backend itself is disabled.
+ */
 int bzy_ir_regions_enabled(void);
 
-/* 1 if an IR region may contain a direct function call (IR_CALL). Default OFF
-   (experimental); set BZY_IR_CALLS=1 to enable. Always 0 when the IR backend is
-   disabled. Develop-behind-flag for Lever 2 (IR call lowering). */
+/**
+ * 1 if an IR region may contain a direct function call (IR_CALL).
+ * Default OFF (experimental); set BZY_IR_CALLS=1 to enable.
+ * Always 0 when the IR backend is disabled.
+ * Develop-behind-flag for Lever 2 (IR call lowering).
+ */
 int bzy_ir_calls_enabled(void);
 
-/* 1 if eligible loops and leaf functions go through generated C compiled by gcc.
-   Default on; BZY_C=0 disables it. Rides on the IR region scan, so BZY_IR=0
-   disables it too. */
+/**
+ * 1 if eligible loops and leaf functions go through generated C compiled by gcc.
+ * Default on; BZY_C=0 disables it.
+ * Rides on the IR region scan, so BZY_IR=0 disables it too.
+ */
 int bzy_c_enabled(void);
 
-/* Discard the cached env flags so the next bzy_ir_*_enabled() call re-reads the
-   environment. Used by tests to toggle BZY_IR around a single case. */
+/**
+ * Discard the cached env flags so the next bzy_ir_*_enabled() call re-reads the environment.
+ * Used by tests to toggle BZY_IR around a single case.
+ */
 void bzy_config_reset_cache(void);
 
 #endif

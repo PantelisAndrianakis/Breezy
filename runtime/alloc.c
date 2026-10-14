@@ -52,8 +52,7 @@ static void set_crc(void *o, int64_t v)
 	*GI(o) = (*GI(o) & 0xFF) | (v << 8);
 }
 
-/* The type descriptor sits one word before the vtable; it is NULL only for
-   objects whose vtable has not been set (some hand-built test fixtures). */
+/* The type descriptor sits one word before the vtable; it is NULL only for objects whose vtable has not been set (some hand-built test fixtures). */
 static int64_t *descriptor_of(void *o)
 {
 	void **vtable = *(void***)o;
@@ -75,24 +74,27 @@ static int has_object_children(void *o)
 
 	if (ti[1] == -1)
 	{
-		return *(int64_t*)((char*)o + 24) > 0;   /* Array span: any elements. */
+		return *(int64_t*)((char*)o + 24) > 0; // Array span: any elements.
 	}
 
 	return ti[1] > 0;
 }
 
-/* The class finalizer (descriptor word 0, at vtable - 16), or NULL when the
-   class declares none. Runs before the object's memory is freed. */
+/**
+ * The class finalizer (descriptor word 0, at vtable - 16), or NULL when the class declares none.
+ * Runs before the object's memory is freed.
+ */
 static void (*finalizer_of(void *o))(void *)
 {
 	int64_t *d = descriptor_of(o);
 	return d ? (void(*)(void*))d[0] : NULL;
 }
 
-/* Visit each managed child pointer of obj. Handles both the fixed offset list
-   (desc[1] = count, offsets at desc[2+i]) and the array span (desc[1] = -1,
-   first-element offset desc[2], stride desc[3], count = obj length @ offset 24).
-   Children with refcount 0 (unmanaged/stack) are skipped. */
+/**
+ * Visit each managed child pointer of obj.
+ * Handles both the fixed offset list (desc[1] = count, offsets at desc[2+i]) and the array span (desc[1] = -1, first-element offset desc[2], stride desc[3], count = obj length @ offset 24).
+ * Children with refcount 0 (unmanaged/stack) are skipped.
+ */
 #define FOR_EACH_CHILD(obj, child, body)                                       \
 	do {                                                                       \
 		int64_t *_ti = descriptor_of(obj);                                     \
@@ -112,19 +114,18 @@ static void (*finalizer_of(void *o))(void *)
 		}                                                                      \
 	} while (0)
 
-/* Cycle candidates: objects whose refcount was decremented to a positive value
-   and which could therefore root a dead cycle. Buffered PER WORKER -- a confined
-   object buffers onto its owning worker (bzy_current_wid()), and only that worker
-   reads or collects its buffer, so no lock is needed. Per-worker collection also
-   removes the old cross-thread race between a collection pass and
-   bzy_share_crosscore over the shared gcinfo word: both now run only on the owning
-   worker, sequentially. Workers are hard-capped well under this bound, so a fixed
-   array avoids any concurrent realloc of the array itself (each worker still grows
-   its own roots vector single-threaded). */
+/**
+ * Cycle candidates: objects whose refcount was decremented to a positive value and which could therefore root a dead cycle.
+ * Buffered PER WORKER -- a confined object buffers onto its owning worker (bzy_current_wid()), and only that worker reads or collects its buffer, so no lock is needed.
+ * Per-worker collection also removes the old cross-thread race between a collection pass and bzy_share_crosscore over the shared gcinfo word: both now run only on the owning worker, sequentially.
+ * Workers are hard-capped well under this bound, so a fixed array avoids any concurrent realloc of the array itself (each worker still grows its own roots vector single-threaded).
+ */
 #define BZY_CYC_MAX_WORKERS 256
-/* Collect a worker's buffer once it reaches this many candidates. Kept small so a
-   collection is a short bounded slice (pause ~ this many candidate closures), not
-   the old 10k-candidate stop-the-world pass. Also drained at scheduler safepoints. */
+/**
+ * Collect a worker's buffer once it reaches this many candidates.
+ * Kept small so a collection is a short bounded slice (pause ~ this many candidate closures), not the old 10k-candidate stop-the-world pass.
+ * Also drained at scheduler safepoints.
+ */
 #define CYCLE_SLICE_THRESHOLD 256
 typedef struct
 {
@@ -135,9 +136,10 @@ static CycBuf g_cyc[BZY_CYC_MAX_WORKERS];   /* Zero-initialized (BSS). */
 
 static void collect_worker(int wid, int budget);
 
-/* Measurement only (I2c.1): when BZY_CYCLE_TIMING is set, each collection prints
-   its wall-clock duration. The env check is cached, so the off-path cost is one
-   integer test and behaviour is unchanged. */
+/**
+ * Measurement only (I2c.1): when BZY_CYCLE_TIMING is set, each collection prints its wall-clock duration.
+ * The env check is cached, so the off-path cost is one integer test and behaviour is unchanged.
+ */
 static int cycle_timing_on(void)
 {
 	static int t = -1;
@@ -149,9 +151,10 @@ static int cycle_timing_on(void)
 	return t;
 }
 
-/* Tripwire (I2c.2b): a confined object must buffer as a cycle candidate only on a
-   worker thread, since the planned per-worker buffers have a single writer each.
-   This must never fire; it is a no-op unless BZY_CYCLE_DEBUG is set. */
+/**
+ * Tripwire (I2c.2b): a confined object must buffer as a cycle candidate only on a worker thread, since the planned per-worker buffers have a single writer each.
+ * This must never fire; it is a no-op unless BZY_CYCLE_DEBUG is set.
+ */
 static void assert_on_worker(void)
 {
 	static int dbg = -1;
@@ -175,7 +178,7 @@ static void roots_push_wid(int wid, void *o)
 		void **nb = realloc(cb->roots, (size_t)ncap * sizeof(void*));
 		if (!nb)
 		{
-			return;   /* Out of memory: drop this candidate rather than abort. */
+			return; // Out of memory: drop this candidate rather than abort.
 		}
 
 		cb->roots = nb;
@@ -185,25 +188,18 @@ static void roots_push_wid(int wid, void *o)
 	cb->roots[cb->n++] = o;
 }
 
-/* ---- Small-object size-class free lists (per worker thread) -----------------
-   Every Breezy object is its own heap block; under churn the calloc/free
-   round-trip dominates allocation cost. Each thread keeps one free list per size
-   class and recycles blocks locally: a free pushes onto the running thread's list
-   and an allocation pops from it, so no list is ever shared between threads. This
-   is lock-free and correct even as breezes migrate across workers - a block
-   simply moves from one thread's pool to another's, and each list is only ever
-   touched by its owner.
-
-   The size class (1..POOL_NCLASS-1; 0 means "too big to pool") is recorded in
-   gcinfo bits 4-7, which the color/buffered/shared/crc machinery never touches.
-   Recycled blocks are re-zeroed to preserve calloc semantics, and per-class depth
-   is capped so a producer/consumer split cannot grow a pool without bound. Pooled
-   blocks are returned to the OS only implicitly at process exit.
-
-   Both arrays live in ONE __thread struct so the hot path pays a single TLS
-   resolution per call - on the MinGW target __thread is emulated (a call to
-   __emutls_get_address), so minimizing distinct TLS accesses is what makes the
-   pool a net win rather than a loss. */
+/**
+ * ---- Small-object size-class free lists (per worker thread) -----------------
+ * Every Breezy object is its own heap block; under churn the calloc/free round-trip dominates allocation cost.
+ * Each thread keeps one free list per size class and recycles blocks locally: a free pushes onto the running thread's list and an allocation pops from it, so no list is ever shared between threads.
+ * This is lock-free and correct even as breezes migrate across workers - a block simply moves from one thread's pool to another's, and each list is only ever touched by its owner.
+ *
+ * The size class (1..POOL_NCLASS-1; 0 means "too big to pool") is recorded in gcinfo bits 4-7, which the color/buffered/shared/crc machinery never touches.
+ * Recycled blocks are re-zeroed to preserve calloc semantics, and per-class depth is capped so a producer/consumer split cannot grow a pool without bound.
+ * Pooled blocks are returned to the OS only implicitly at process exit.
+ *
+ * Both arrays live in ONE __thread struct so the hot path pays a single TLS resolution per call - on the MinGW target __thread is emulated (a call to __emutls_get_address), so minimizing distinct TLS accesses is what makes the pool a net win rather than a loss.
+ */
 
 #define POOL_MAX_SIZE 256
 #define POOL_NCLASS   11        /* Index 0 = unpooled; 1..10 are real classes. */
@@ -214,15 +210,12 @@ static const int g_class_size[POOL_NCLASS] =
 	0, 32, 48, 64, 80, 96, 128, 160, 192, 224, 256
 };
 
-/* Per-thread allocator state. `live` is this thread's share of the global
-   live-object count: bzy_alloc increments the running thread's `live` and a free
-   decrements the freeing thread's `live`, so the hot path never writes a shared
-   cache line (the old single global g_live counter serialized every concurrent
-   alloc/free - its line ping-ponged across cores). The true count is the sum of
-   every thread's shard, computed only when bzy_live_count() is called; a block
-   allocated on one thread and freed on another leaves the two shards unbalanced
-   but their sum exact. Folding `live` into PoolTLS means the whole hot path still
-   costs a single TLS resolution. */
+/**
+ * Per-thread allocator state.
+ * `live` is this thread's share of the global live-object count: bzy_alloc increments the running thread's `live` and a free decrements the freeing thread's `live`, so the hot path never writes a shared cache line (the old single global g_live counter serialized every concurrent alloc/free - its line ping-ponged across cores).
+ * The true count is the sum of every thread's shard, computed only when bzy_live_count() is called; a block allocated on one thread and freed on another leaves the two shards unbalanced but their sum exact.
+ * Folding `live` into PoolTLS means the whole hot path still costs a single TLS resolution.
+ */
 typedef struct
 {
 	void    *head[POOL_NCLASS];   /* Free-list head per class (next link @ block offset 0). */
@@ -234,21 +227,20 @@ typedef struct
 } PoolTLS;
 
 #ifndef _WIN32
-/* Exported (no `static`) so the compiler can inline the allocation fast path. The
-   per-thread struct lives directly in initial-exec TLS, so its address is the
-   thread pointer plus a fixed offset that is identical on every thread; the
-   runtime records that offset once in bzy_tpool_off, and an inlined Linux `new`
-   reads the free list at fs:[bzy_tpool_off + ...] with no TLS relocation in the
-   emitted asm. bzy_tpool_off_ready guards the window before the offset is known. */
+/**
+ * Exported (no `static`) so the compiler can inline the allocation fast path.
+ * The per-thread struct lives directly in initial-exec TLS, so its address is the thread pointer plus a fixed offset that is identical on every thread; the runtime records that offset once in bzy_tpool_off, and an inlined Linux `new` reads the free list at fs:[bzy_tpool_off + ...] with no TLS relocation in the emitted asm. bzy_tpool_off_ready guards the window before the offset is known.
+ */
 __thread PoolTLS t_pool;          /* Linux/ELF: native fs:-relative TLS - one mov per resolution. */
 int64_t      bzy_tpool_off;       /* (char*)&t_pool - thread pointer; constant across threads. */
 volatile int bzy_tpool_off_ready; /* 1 once bzy_tpool_off has been computed. */
 #endif
 
-/* Registry of every thread's shard, so bzy_live_count can sum them. A thread
-   registers its shard once, on its first alloc or free, via a lock-free append.
-   MAX_SHARDS comfortably exceeds the 64-worker cap plus the main/offload/IOCP
-   threads; a thread beyond it simply is not summed (its objects are rare). */
+/**
+ * Registry of every thread's shard, so bzy_live_count can sum them.
+ * A thread registers its shard once, on its first alloc or free, via a lock-free append.
+ * MAX_SHARDS comfortably exceeds the 64-worker cap plus the main/offload/IOCP threads; a thread beyond it simply is not summed (its objects are rare).
+ */
 #define MAX_SHARDS 256
 static PoolTLS *g_shards[MAX_SHARDS];
 static int      g_nshards;   /* Appended via __atomic; read back to bound the sum. */
@@ -264,9 +256,7 @@ static void register_shard(PoolTLS *p)
 	}
 }
 
-/* The compiler's inline allocator (src/codegen.c) bakes in this PoolTLS layout on
-   both targets; pin it so any change here fails the build loudly instead of
-   silently miscompiling every `new`. */
+/* The compiler's inline allocator (src/codegen.c) bakes in this PoolTLS layout on both targets; pin it so any change here fails the build loudly instead of silently miscompiling every `new`. */
 _Static_assert(offsetof(PoolTLS, head) == 0,   "inline alloc: PoolTLS.head offset moved");
 _Static_assert(offsetof(PoolTLS, n)    == 88,  "inline alloc: PoolTLS.n offset moved");
 _Static_assert(offsetof(PoolTLS, live) == 136, "inline alloc: PoolTLS.live offset moved");
@@ -274,24 +264,20 @@ _Static_assert(POOL_NCLASS == 11,              "inline alloc: POOL_NCLASS change
 _Static_assert(POOL_CAP == 256,                "inline free: POOL_CAP changed");
 
 #ifdef _WIN32
-/* The MinGW target emulates `__thread` as a call to __emutls_get_address on every
-   resolution - and pool_tls() is on the hottest path in the runtime. Instead, hold
-   the per-thread shard pointer in a reserved TEB TLS slot and read it with a single
-   gs:-relative load (no call), the same shape as the native fs:-relative access the
-   ELF build gets for free. TlsAlloc is taken once, on the first allocation (very
-   early, so the index lands inside the inline TlsSlots[64] array); a TlsGetValue
-   fallback covers the unlikely overflow case. */
+/**
+ * The MinGW target emulates `__thread` as a call to __emutls_get_address on every resolution - and pool_tls() is on the hottest path in the runtime.
+ * Instead, hold the per-thread shard pointer in a reserved TEB TLS slot and read it with a single gs:-relative load (no call), the same shape as the native fs:-relative access the ELF build gets for free.
+ * TlsAlloc is taken once, on the first allocation (very early, so the index lands inside the inline TlsSlots[64] array); a TlsGetValue fallback covers the unlikely overflow case.
+ */
 #define TEB_TLS_SLOTS 0x1480   /* Offset of TlsSlots[64] in the x64 TEB. */
 
 static volatile LONG g_slot_claim;   /* CAS gate: elects one thread to run TlsAlloc. */
 
-/* Exported (no `static`) so the compiler can inline the allocation fast path: a
-   Windows `new` reads bzy_pool_slot_ready, then the per-thread pool pointer from
-   gs:[TEB_TLS_SLOTS + bzy_pool_slot*8], then pops the size-class free list - the
-   same sequence pool_tls()/bzy_alloc run, emitted at the call site. The inline
-   path falls back to bzy_alloc whenever the slot is not yet ready, the slot index
-   is >= 64 (out of the inline TEB array), the thread has no pool yet, or the free
-   list is empty. The offsets it bakes in are pinned by the _Static_asserts below. */
+/**
+ * Exported (no `static`) so the compiler can inline the allocation fast path: a Windows `new` reads bzy_pool_slot_ready, then the per-thread pool pointer from gs:[TEB_TLS_SLOTS + bzy_pool_slot*8], then pops the size-class free list - the same sequence pool_tls()/bzy_alloc run, emitted at the call site.
+ * The inline path falls back to bzy_alloc whenever the slot is not yet ready, the slot index is >= 64 (out of the inline TEB array), the thread has no pool yet, or the free list is empty.
+ * The offsets it bakes in are pinned by the _Static_asserts below.
+ */
 volatile LONG bzy_pool_slot_ready;   /* 1 once bzy_pool_slot is valid. */
 DWORD         bzy_pool_slot;
 
@@ -308,7 +294,7 @@ static PoolTLS *pool_tls(void)
 		}
 		else
 		{
-			while (!bzy_pool_slot_ready)   /* Another thread is mid-TlsAlloc; brief startup-only spin. */
+			while (!bzy_pool_slot_ready) // Another thread is mid-TlsAlloc; brief startup-only spin.
 			{
 				YieldProcessor();
 			}
@@ -330,7 +316,7 @@ static PoolTLS *pool_tls(void)
 	}
 	else
 	{
-		p = (PoolTLS*)TlsGetValue(slot);   /* Index beyond the inline array: correct, slower path. */
+		p = (PoolTLS*)TlsGetValue(slot); // Index beyond the inline array: correct, slower path.
 		if (!p)
 		{
 			p = (PoolTLS*)calloc(1, sizeof(PoolTLS));
@@ -344,15 +330,13 @@ static PoolTLS *pool_tls(void)
 #else
 static PoolTLS *pool_tls(void)
 {
-	PoolTLS *p = &t_pool;   /* One fs:-relative resolution per call. */
+	PoolTLS *p = &t_pool; // One fs:-relative resolution per call.
 	if (!p->registered)
 	{
 		register_shard(p);
 
-		/* Record the constant thread-pointer -> t_pool offset once, so the inlined
-		   allocator can reach the free list as fs:[bzy_tpool_off + ...]. The offset
-		   is identical on every thread (initial-exec TLS), so computing it from any
-		   thread and publishing it for all is correct; the ready flag is set last. */
+		// Record the constant thread-pointer -> t_pool offset once, so the inlined allocator can reach the free list as fs:[bzy_tpool_off + ...].
+		// The offset is identical on every thread (initial-exec TLS), so computing it from any thread and publishing it for all is correct; the ready flag is set last.
 		if (!bzy_tpool_off_ready)
 		{
 			bzy_tpool_off = (int64_t)((char*)&t_pool - (char*)__builtin_thread_pointer());
@@ -383,26 +367,22 @@ static int class_index(int64_t size)
 	return 0;
 }
 
-/* Account one freed object against the running thread's live shard, then return
-   its block to that thread's size-class pool - or to the system allocator when it
-   is too big to pool or the pool is full. The caller has already run the
-   finalizer / released children. */
+/**
+ * Account one freed object against the running thread's live shard, then return its block to that thread's size-class pool - or to the system allocator when it is too big to pool or the pool is full.
+ * The caller has already run the finalizer / released children.
+ */
 static void pool_free(void *o)
 {
-	PoolTLS *p = pool_tls();   /* One TLS resolution for the decrement and the push. */
+	PoolTLS *p = pool_tls(); // One TLS resolution for the decrement and the push.
 	p->live--;
 
 	int c = (int)((*GI(o) >> 4) & 0xF);
 	if (c && c < POOL_NCLASS)
 	{
-		/* Pooled blocks are carved from a process-lifetime slab (slab_carve) and can
-		   never be handed back to free() individually, so they always recycle onto the
-		   free list. The old per-class POOL_CAP that returned excess blocks to the OS
-		   no longer applies: slab memory is retained until exit regardless, and list
-		   depth is bounded by the live high-water mark. Only unpooled (c == 0) blocks,
-		   which still come from calloc, reach free(). The inline release fast path in
-		   src/codegen.c keeps recycling its first POOL_CAP blocks itself and defers the
-		   rest here, so the cap still governs that path. */
+		// Pooled blocks are carved from a process-lifetime slab (slab_carve) and can never be handed back to free() individually, so they always recycle onto the free list.
+		// The old per-class POOL_CAP that returned excess blocks to the OS no longer applies: slab memory is retained until exit regardless, and list depth is bounded by the live high-water mark.
+		// Only unpooled (c == 0) blocks, which still come from calloc, reach free().
+		// The inline release fast path in src/codegen.c keeps recycling its first POOL_CAP blocks itself and defers the rest here, so the cap still governs that path.
 		*(void**)o = p->head[c];
 		p->head[c] = o;
 		p->n[c]++;
@@ -412,19 +392,14 @@ static void pool_free(void *o)
 	free(o);
 }
 
-/* Net-new backing store for pooled blocks. One malloc() per object - a header-
-   padded, cache-cold path - dominated the build phase of allocation-heavy programs
-   (it is reached for every object until the free lists fill, so a growing live set
-   never recycles). Instead, carve fresh blocks by bumping a pointer within a large
-   per-thread slab; freed blocks still recycle through the per-class free lists, so
-   the slab only supplies never-before-allocated blocks. Slabs are never returned
-   per-block and live for the whole process: blocks migrate across threads (a block
-   carved on one thread may be recycled on another), so releasing a slab at thread
-   exit could strand a pointer in another thread's free list. Worker threads are
-   hard-capped and long-lived, so holding slab memory until exit matches the pool's
-   existing "returned to the OS only at process exit" contract. Every g_class_size
-   value is a multiple of 16 and malloc returns 16-aligned storage, so bumping by
-   the class size keeps each block 16-byte aligned. */
+/**
+ * Net-new backing store for pooled blocks.
+ * One malloc() per object - a header-padded, cache-cold path - dominated the build phase of allocation-heavy programs (it is reached for every object until the free lists fill, so a growing live set never recycles).
+ * Instead, carve fresh blocks by bumping a pointer within a large per-thread slab; freed blocks still recycle through the per-class free lists, so the slab only supplies never-before-allocated blocks.
+ * Slabs are never returned per-block and live for the whole process: blocks migrate across threads (a block carved on one thread may be recycled on another), so releasing a slab at thread exit could strand a pointer in another thread's free list.
+ * Worker threads are hard-capped and long-lived, so holding slab memory until exit matches the pool's existing "returned to the OS only at process exit" contract.
+ * Every g_class_size value is a multiple of 16 and malloc returns 16-aligned storage, so bumping by the class size keeps each block 16-byte aligned.
+ */
 #define SLAB_SIZE (1u << 20)   /* 1 MiB per slab; pooled blocks are <= 256 B, so one always fits. */
 
 static void *slab_carve(PoolTLS *p, int64_t size)
@@ -434,7 +409,7 @@ static void *slab_carve(PoolTLS *p, int64_t size)
 		char *slab = (char*)malloc(SLAB_SIZE);
 		if (!slab)
 		{
-			return NULL;   /* bzy_alloc aborts on NULL, exactly as it did for malloc. */
+			return NULL; // bzy_alloc aborts on NULL, exactly as it did for malloc.
 		}
 
 		p->slab_cur = slab;
@@ -448,7 +423,7 @@ static void *slab_carve(PoolTLS *p, int64_t size)
 
 void *bzy_alloc(int64_t size)
 {
-	PoolTLS *p = pool_tls();   /* One TLS resolution for the count and the pop. */
+	PoolTLS *p = pool_tls(); // One TLS resolution for the count and the pop.
 	p->live++;
 
 	int c = class_index(size);
@@ -470,7 +445,7 @@ void *bzy_alloc(int64_t size)
 			}
 		}
 
-		memset(o, 0, (size_t)g_class_size[c]);   /* Match calloc's zero-fill, on reuse and on fresh blocks. */
+		memset(o, 0, (size_t)g_class_size[c]); // Match calloc's zero-fill, on reuse and on fresh blocks.
 	}
 	else
 	{
@@ -481,25 +456,18 @@ void *bzy_alloc(int64_t size)
 		}
 	}
 
-	*RC(o) = 1;                 /* The refcount starts at one. */
-	*GI(o) = (int64_t)c << 4;   /* Class nibble in bits 4-7; color BLACK, not buffered, not shared, crc zero. */
+	*RC(o) = 1; // The refcount starts at one.
+	*GI(o) = (int64_t)c << 4; // Class nibble in bits 4-7; color BLACK, not buffered, not shared, crc zero.
 	return o;
 }
 
-/* Cross-core publication: an object handed to another worker thread (a channel
-   value, a spawn argument, a static-field store) needs an atomic refcount, or
-   its non-atomic count races across cores and is freed early (use-after-free).
-   share_walk ORs the SHARED bit into EVERY object reachable from the handed-off
-   root: at the first cross-core handoff the whole graph is still confined to
-   this thread (an unshared object is single-core by invariant), so this thread
-   is its only mutator. Per-worker collection guarantees no other thread writes the
-   gcinfo color/crc bits of these confined nodes while we OR bit 3: only the owning
-   worker collects them, and that is this thread. An already-SHARED node terminates
-   recursion (its
-   reachable set is already fully shared), so re-sharing a graph is O(1) at the
-   root. The collector drops SHARED candidates untouched, so a previously
-   buffered node is simply skipped at the next collection. Idempotent and
-   NULL/unmanaged-safe. */
+/**
+ * Cross-core publication: an object handed to another worker thread (a channel value, a spawn argument, a static-field store) needs an atomic refcount, or its non-atomic count races across cores and is freed early (use-after-free). share_walk ORs the SHARED bit into EVERY object reachable from the handed-off root: at the first cross-core handoff the whole graph is still confined to this thread (an unshared object is single-core by invariant), so this thread is its only mutator.
+ * Per-worker collection guarantees no other thread writes the gcinfo color/crc bits of these confined nodes while we OR bit 3: only the owning worker collects them, and that is this thread.
+ * An already-SHARED node terminates recursion (its reachable set is already fully shared), so re-sharing a graph is O(1) at the root.
+ * The collector drops SHARED candidates untouched, so a previously buffered node is simply skipped at the next collection.
+ * Idempotent and NULL/unmanaged-safe.
+ */
 static void share_walk(void *o)
 {
 	if (*GI(o) & BZY_GCINFO_SHARED)
@@ -518,16 +486,15 @@ void bzy_share_crosscore(void *o)
 {
 	if (!o || *RC(o) == 0)
 	{
-		return;   /* NULL or an unmanaged (stack) value: nothing to share. */
+		return; // NULL or an unmanaged (stack) value: nothing to share.
 	}
 
 	if (*GI(o) & BZY_GCINFO_SHARED)
 	{
-		return;   /* Already shared (idempotent, lock-free fast path). */
+		return; // Already shared (idempotent, lock-free fast path).
 	}
 
-	/* Lock-free: under per-worker collection, only this (owning) thread mutates this
-	   confined graph's gcinfo, so no collection pass can race the SHARED OR. */
+	// Lock-free: under per-worker collection, only this (owning) thread mutates this confined graph's gcinfo, so no collection pass can race the SHARED OR.
 	share_walk(o);
 }
 
@@ -540,8 +507,7 @@ void bzy_retain(void *obj)
 
 	if (*GI(obj) & BZY_GCINFO_SHARED)
 	{
-		/* Cross-core object: atomic increment, and no cycle color (shared objects
-		   are not cycle-buffered; the bit is fixed at allocation, never racing). */
+		// Cross-core object: atomic increment, and no cycle color (shared objects are not cycle-buffered; the bit is fixed at allocation, never racing).
 		__atomic_add_fetch(RC(obj), 1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -549,15 +515,17 @@ void bzy_retain(void *obj)
 	int64_t *rc = RC(obj);
 	if (*rc == 0)
 	{
-		return;       /* Unmanaged (stack) object: the refcount stays zero. */
+		return; // Unmanaged (stack) object: the refcount stays zero.
 	}
 
 	(*rc)++;
 	set_color(obj, BLACK);
 }
 
-/* Release the object's owned fields and free its memory. Called when an object
-   is known to be acyclic garbage (refcount reached zero). */
+/**
+ * Release the object's owned fields and free its memory.
+ * Called when an object is known to be acyclic garbage (refcount reached zero).
+ */
 static void free_object(void *obj)
 {
 	void (*fin)(void*) = finalizer_of(obj);
@@ -573,13 +541,12 @@ static void free_object(void *obj)
 	set_color(obj, BLACK);
 	if (buffered(obj))
 	{
-		/* The roots buffer still points at this node, so freeing its memory now
-		   would leave a dangling candidate for the cycle collector to dereference.
-		   Leave it BLACK with a zero refcount; bzy_collect_cycles reclaims it. */
+		// The roots buffer still points at this node, so freeing its memory now would leave a dangling candidate for the cycle collector to dereference.
+		// Leave it BLACK with a zero refcount; bzy_collect_cycles reclaims it.
 		return;
 	}
 
-	pool_free(obj);   /* Decrements the freeing thread's live shard. */
+	pool_free(obj); // Decrements the freeing thread's live shard.
 }
 
 void bzy_release(void *obj)
@@ -591,9 +558,8 @@ void bzy_release(void *obj)
 
 	if (*GI(obj) & BZY_GCINFO_SHARED)
 	{
-		/* Cross-core object: atomic decrement. At zero no other breeze can hold a
-		   reference, so the ordinary free path is safe; shared objects are never
-		   cycle-buffered, so their children (also shared) just recurse here. */
+		// Cross-core object: atomic decrement.
+		// At zero no other breeze can hold a reference, so the ordinary free path is safe; shared objects are never cycle-buffered, so their children (also shared) just recurse here.
 		if (__atomic_sub_fetch(RC(obj), 1, __ATOMIC_ACQ_REL) == 0)
 		{
 			free_object(obj);
@@ -605,7 +571,7 @@ void bzy_release(void *obj)
 	int64_t *rc = RC(obj);
 	if (*rc == 0)
 	{
-		return;       /* Unmanaged (stack) object: never freed. */
+		return; // Unmanaged (stack) object: never freed.
 	}
 
 	(*rc)--;
@@ -615,26 +581,24 @@ void bzy_release(void *obj)
 		return;
 	}
 
-	/* The object survives this release. If it can reference other objects it may
-	   be the root of a dead cycle, so buffer it as a candidate. */
+	// The object survives this release.
+	// If it can reference other objects it may be the root of a dead cycle, so buffer it as a candidate.
 	if (has_object_children(obj))
 	{
 		if (buffered(obj))
 		{
-			set_color(obj, PURPLE);   /* Already a candidate: just re-purple. */
+			set_color(obj, PURPLE); // Already a candidate: just re-purple.
 			return;
 		}
 
-		/* Single-writer per worker: a confined object is released only on its
-		   owning worker, so buffering onto that worker's own buffer needs no lock. */
+		// Single-writer per worker: a confined object is released only on its owning worker, so buffering onto that worker's own buffer needs no lock.
 		int wid = bzy_current_wid();
 		assert_on_worker();
 		set_color(obj, PURPLE);
 		set_buffered(obj, 1);
 		roots_push_wid(wid, obj);
 
-		/* Reclaim in a bounded slice once the buffer reaches the threshold, so the
-		   pause stays small even for sequential code that never hits a safepoint. */
+		// Reclaim in a bounded slice once the buffer reaches the threshold, so the pause stays small even for sequential code that never hits a safepoint.
 		if (g_cyc[wid].n >= CYCLE_SLICE_THRESHOLD)
 		{
 			int64_t t0 = cycle_timing_on() ? bzy_clock_nanos() : 0;
@@ -649,10 +613,8 @@ void bzy_release(void *obj)
 
 int64_t bzy_live_count(void)
 {
-	/* Sum every registered thread's shard. Per-shard reads are unsynchronized -
-	   a concurrent alloc/free may make the total off by a few in flight - but each
-	   aligned int64 read is tear-free, and with a single mutator (the usual leak
-	   check at a quiescent point) it is exact. */
+	// Sum every registered thread's shard.
+	// Per-shard reads are unsynchronized - a concurrent alloc/free may make the total off by a few in flight - but each aligned int64 read is tear-free, and with a single mutator (the usual leak check at a quiescent point) it is exact.
 	int64_t n = 0;
 	int k = __atomic_load_n(&g_nshards, __ATOMIC_SEQ_CST);
 	if (k > MAX_SHARDS)
@@ -673,28 +635,22 @@ int64_t bzy_roots_buffered(void)
 	int64_t n = 0;
 	for (int i = 0; i < BZY_CYC_MAX_WORKERS; i++)
 	{
-		n += g_cyc[i].n;    /* Diagnostic; racy read is fine. */
+		n += g_cyc[i].n; // Diagnostic; racy read is fine.
 	}
 
 	return n;
 }
 
-/* Trial deletion (Bacon-Rajan), operating on the per-object crc scratch so the
-   real refcount is never disturbed: a heap object always keeps refcount >= 1
-   while reachable, so a child with refcount 0 is unambiguously unmanaged (a
-   stack object) and is skipped everywhere. Each candidate subgraph is grayed
-   while trial-decrementing crc across internal edges; a node whose crc stays
-   positive is reachable from outside the set, so scan_black recolors it and its
-   subgraph BLACK; the rest are WHITE garbage. White nodes are gathered into a
-   list and freed only after the whole walk, so no traversal ever dereferences
-   freed memory. */
+/**
+ * Trial deletion (Bacon-Rajan), operating on the per-object crc scratch so the real refcount is never disturbed: a heap object always keeps refcount >= 1 while reachable, so a child with refcount 0 is unambiguously unmanaged (a stack object) and is skipped everywhere.
+ * Each candidate subgraph is grayed while trial-decrementing crc across internal edges; a node whose crc stays positive is reachable from outside the set, so scan_black recolors it and its subgraph BLACK; the rest are WHITE garbage.
+ * White nodes are gathered into a list and freed only after the whole walk, so no traversal ever dereferences freed memory.
+ */
 
-/* SHARED objects are traversal BOUNDARIES for trial deletion: their liveness is
-   governed by their atomic refcount alone, they are never part of a collectable
-   cycle, and another core may be using them concurrently - so no pass may gray
-   them, trial-decrement their crc, or recolor them (all of which write the same
-   gcinfo word the SHARED bit lives in). An edge from a dying confined subgraph
-   into a shared object is settled later by free_object's child release. */
+/**
+ * SHARED objects are traversal BOUNDARIES for trial deletion: their liveness is governed by their atomic refcount alone, they are never part of a collectable cycle, and another core may be using them concurrently - so no pass may gray them, trial-decrement their crc, or recolor them (all of which write the same gcinfo word the SHARED bit lives in).
+ * An edge from a dying confined subgraph into a shared object is settled later by free_object's child release.
+ */
 static int is_shared_obj(void *o)
 {
 	return (*GI(o) & BZY_GCINFO_SHARED) != 0;
@@ -758,11 +714,11 @@ static void scan(void *s)
 	});
 }
 
-/* Gather the white subgraph into g_white without freeing, recoloring to BLACK so
-   each node is collected exactly once and cycles terminate. Freeing is deferred
-   to bzy_collect_cycles so no walk dereferences a freed node. */
-/* Thread-local: each worker collects on its own thread, so concurrent per-worker
-   collections never share this gather buffer. */
+/**
+ * Gather the white subgraph into g_white without freeing, recoloring to BLACK so each node is collected exactly once and cycles terminate.
+ * Freeing is deferred to bzy_collect_cycles so no walk dereferences a freed node.
+ */
+/* Thread-local: each worker collects on its own thread, so concurrent per-worker collections never share this gather buffer. */
 static __thread void   **g_white = NULL;
 static __thread int64_t g_white_n = 0;
 static __thread int64_t g_white_cap = 0;
@@ -775,7 +731,7 @@ static void white_push(void *s)
 		void **nb = realloc(g_white, (size_t)ncap * sizeof(void*));
 		if (!nb)
 		{
-			return;   /* Out of memory: drop this node from the gather pass. */
+			return; // Out of memory: drop this node from the gather pass.
 		}
 
 		g_white = nb;
@@ -805,21 +761,18 @@ static void gather_white(void *s)
 
 static void collect_worker(int wid, int budget)
 {
-	(void)budget;   /* Budget enforced in Task 3; Task 2 collects the whole buffer. */
+	(void)budget; // Budget enforced in Task 3; Task 2 collects the whole buffer.
 	CycBuf *cb = &g_cyc[wid];
 
-	/* Mark: gray every still-PURPLE candidate; drop the stale ones. */
+	// Mark: gray every still-PURPLE candidate; drop the stale ones.
 	int64_t kept = 0;
 	for (int64_t i = 0; i < cb->n; i++)
 	{
 		void *s = cb->roots[i];
 		if (is_shared_obj(s))
 		{
-			/* Promoted to cross-core after being buffered: shared objects are
-			   exempt from cycle collection (a fully shared cycle leaks; this is
-			   documented). Unbuffer and drop the candidate; like the stale branch
-			   below, a node freed while still buffered (deferred by free_object)
-			   is reclaimed now that it leaves the roots buffer. */
+			// Promoted to cross-core after being buffered: shared objects are exempt from cycle collection (a fully shared cycle leaks; this is documented).
+			// Unbuffer and drop the candidate; like the stale branch below, a node freed while still buffered (deferred by free_object) is reclaimed now that it leaves the roots buffer.
 			set_buffered(s, 0);
 			if (*RC(s) == 0)
 			{
@@ -839,22 +792,21 @@ static void collect_worker(int wid, int budget)
 			set_buffered(s, 0);
 			if (*RC(s) == 0)
 			{
-				/* A node freed while still buffered (deferred by free_object):
-				   reclaim its memory now that it leaves the roots buffer. */
-				pool_free(s);   /* Decrements this thread's live shard. */
+				// A node freed while still buffered (deferred by free_object): reclaim its memory now that it leaves the roots buffer.
+				pool_free(s); // Decrements this thread's live shard.
 			}
 		}
 	}
 
 	cb->n = kept;
 
-	/* Scan: restore externally-reachable subgraphs, whiten the dead ones. */
+	// Scan: restore externally-reachable subgraphs, whiten the dead ones.
 	for (int64_t i = 0; i < cb->n; i++)
 	{
 		scan(cb->roots[i]);
 	}
 
-	/* Clear buffered flags so the white subgraph can be gathered, then gather. */
+	// Clear buffered flags so the white subgraph can be gathered, then gather.
 	for (int64_t i = 0; i < cb->n; i++)
 	{
 		set_buffered(cb->roots[i], 0);
@@ -868,8 +820,8 @@ static void collect_worker(int wid, int budget)
 
 	cb->n = 0;
 
-	/* Free the gathered garbage in a flat pass: no traversal touches it now.
-	   Each node's finalizer runs just before its memory is reclaimed. */
+	// Free the gathered garbage in a flat pass: no traversal touches it now.
+	// Each node's finalizer runs just before its memory is reclaimed.
 	for (int64_t i = 0; i < g_white_n; i++)
 	{
 		void (*fin)(void*) = finalizer_of(g_white[i]);
@@ -878,7 +830,7 @@ static void collect_worker(int wid, int budget)
 			fin(g_white[i]);
 		}
 
-		pool_free(g_white[i]);   /* Decrements this thread's live shard. */
+		pool_free(g_white[i]); // Decrements this thread's live shard.
 	}
 
 	g_white_n = 0;
@@ -895,10 +847,11 @@ void bzy_collect_cycles(void)
 	}
 }
 
-/* Safepoint drain: the scheduler calls this for the running worker when it has no
-   breeze to run, so pending candidates are reclaimed off the allocation path. Safe
-   only from the owning worker at a safepoint (no breeze of this worker is mid-
-   mutation). Bounded: the buffer is kept small by CYCLE_SLICE_THRESHOLD. */
+/**
+ * Safepoint drain: the scheduler calls this for the running worker when it has no breeze to run, so pending candidates are reclaimed off the allocation path.
+ * Safe only from the owning worker at a safepoint (no breeze of this worker is mid-mutation).
+ * Bounded: the buffer is kept small by CYCLE_SLICE_THRESHOLD.
+ */
 void bzy_cycle_slice(int wid)
 {
 	if (wid < 0 || wid >= BZY_CYC_MAX_WORKERS || g_cyc[wid].n == 0)

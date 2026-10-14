@@ -11,15 +11,16 @@
 #define RA_XMM0    RA_MAXREGS              /* First xmm index in the combined register-index space. */
 #define RA_NALL    (RA_MAXREGS + RA_NXMM)  /* Combined index space: GP 0..RA_MAXREGS-1, xmm RA_XMM0..RA_NALL-1. */
 
-/* A value's register class: integer/pointer values live in GP registers, double/
-   float values in xmm registers. Derived from the result kind of a value's
-   defining instruction. */
+/**
+ * A value's register class: integer/pointer values live in GP registers, double/ float values in xmm registers.
+ * Derived from the result kind of a value's defining instruction.
+ */
 typedef enum { RC_GP = 0, RC_XMM = 1 } RegClass;
 
-/* An allocation over "values": the real virtual registers (ids [0, vreg_count))
-   plus one pseudo-value per distinct frame local (ids [vreg_count, nval)), so a
-   hot local can hold a register across its whole live range. The fields are
-   public for the emitter and tests; prefer the accessors below. */
+/**
+ * An allocation over "values": the real virtual registers (ids [0, vreg_count)) plus one pseudo-value per distinct frame local (ids [vreg_count, nval)), so a hot local can hold a register across its whole live range.
+ * The fields are public for the emitter and tests; prefer the accessors below.
+ */
 typedef struct
 {
 	int      *val_reg;       /* [nval] physical register index, or RA_SPILLED. */
@@ -35,18 +36,16 @@ typedef struct
 	int      *iend;          /* [nval] live-interval end position. */
 	int       hot_spill;       /* 1 if a temporary used in the deepest loop had to spill. */
 	int       hot_spill_count; /* How many distinct such temporaries spilled. */
-	long long *val_remat;    /* [nval] home-slot disp to rematerialize a spilled value
-	                            from (-1 = none): the value is the single-def load of
-	                            a local nothing stores, so reading the local's slot at
-	                            each use replaces the spill slot and the def's store. */
+	long long *val_remat;    /* [nval] home-slot disp to rematerialize a spilled value from (-1 = none): the value is the single-def load of a local nothing stores, so reading the local's slot at each use replaces the spill slot and the def's store. */
 } IRAlloc;
 
 IRAlloc *ra_run(IRFunc *f);
 void     ra_free(IRAlloc *a);
 
-/* Safety gate: 1 if allocating f spills a value used in its deepest loop (a hot
-   spill the emitter's tuned heuristics would likely handle better) - the dispatch
-   then keeps f on the emitter. Runs an allocation and frees it. */
+/**
+ * Safety gate: 1 if allocating f spills a value used in its deepest loop (a hot spill the emitter's tuned heuristics would likely handle better) - the dispatch then keeps f on the emitter.
+ * Runs an allocation and frees it.
+ */
 int      ra_hot_spill(IRFunc *f);
 
 const char *ra_reg_name(int i);

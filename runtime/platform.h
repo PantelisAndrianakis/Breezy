@@ -1,8 +1,8 @@
-/* Platform sync seam: a thin wrapper over the host's mutex / counting semaphore /
-   thread primitives so the scheduler, channel, and timer code is written once.
-   The Windows side wraps exactly today's primitives (SRWLOCK + a counting HANDLE
-   semaphore), so the Windows build stays behavior-identical; the POSIX side uses
-   pthreads + a POSIX semaphore. Consumed by scheduler.c / channel.c (Part 8-2). */
+/**
+ * Platform sync seam: a thin wrapper over the host's mutex / counting semaphore / thread primitives so the scheduler, channel, and timer code is written once.
+ * The Windows side wraps exactly today's primitives (SRWLOCK + a counting HANDLE semaphore), so the Windows build stays behavior-identical; the POSIX side uses pthreads + a POSIX semaphore.
+ * Consumed by scheduler.c / channel.c (Part 8-2).
+ */
 #ifndef BZY_PLATFORM_H
 #define BZY_PLATFORM_H
 #include <stdint.h>

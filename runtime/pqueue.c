@@ -1,22 +1,17 @@
-/* PriorityQueue<T>: a binary min-heap. Storage is a managed BzyArray child (the
-   heap's one child, declared in the type descriptor), so ARC and the cycle
-   collector reach elements through the array span exactly as the vector does --
-   an object cycle held only through a PriorityQueue is reclaimed. The heap is a
-   flat 0..len-1 array (no ring); the sift walks the array slots directly, so the
-   common case stays a bare load/compare/store with no per-access call. Own TU:
-   a program using no PriorityQueue drops this object.
-
-   Ordering: bzy_order_cmp_for by elem_kind for primitives; an injected vtable
-   thunk (obj_cmp) for objects. Managed elements are retained on add; poll
-   transfers the add-time reference out (blanking the slot); peek hands back a
-   fresh owned reference -- so both return an owned managed value (like
-   bzy_map_get). No explicit finalizer: freeing the heap releases the child
-   array, which releases its managed slots.
-
-   Handle layout (object_size = 72): 0 vtable | 8 rc | 16 gcinfo | 24 len |
-   32 cap | 40 data (managed array child) | 48 elem_kind | 56 cmp | 64 obj_slot.
-   obj_slot >= 0 is the Comparable.compareTo vtable slot for object keys; -1 for
-   primitives (which use cmp). */
+/**
+ * PriorityQueue<T>: a binary min-heap.
+ * Storage is a managed BzyArray child (the heap's one child, declared in the type descriptor), so ARC and the cycle collector reach elements through the array span exactly as the vector does -- an object cycle held only through a PriorityQueue is reclaimed.
+ * The heap is a flat 0..len-1 array (no ring); the sift walks the array slots directly, so the common case stays a bare load/compare/store with no per-access call.
+ * Own TU: a program using no PriorityQueue drops this object.
+ *
+ * Ordering: bzy_order_cmp_for by elem_kind for primitives; an injected vtable thunk (obj_cmp) for objects.
+ * Managed elements are retained on add; poll transfers the add-time reference out (blanking the slot); peek hands back a fresh owned reference -- so both return an owned managed value (like bzy_map_get).
+ * No explicit finalizer: freeing the heap releases the child array, which releases its managed slots.
+ *
+ * Handle layout (object_size = 72): 0 vtable | 8 rc | 16 gcinfo | 24 len |
+ * 32 cap | 40 data (managed array child) | 48 elem_kind | 56 cmp | 64 obj_slot.
+ * obj_slot >= 0 is the Comparable.compareTo vtable slot for object keys; -1 for primitives (which use cmp).
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -54,7 +49,7 @@ static int64_t    *PQ_OBJSLOT(void *o)
 
 static int64_t *pq_slots(void *o)
 {
-	return (int64_t*)((char*)(*PQ_DATA(o)) + 32);   /* BzyArray data at +32. */
+	return (int64_t*)((char*)(*PQ_DATA(o)) + 32); // BzyArray data at +32.
 }
 
 /* Descriptor: no finalizer, one managed child at offset 40 (the data array). */
@@ -84,11 +79,11 @@ static int pq_less(void *o, int64_t x, int64_t y)
 	return c < 0;
 }
 
-/* The hot case -- an int/long/bool heap (elem_kind 0) -- orders by a plain signed
-   compare, identical to the cmp_i64 the comparator would return. The sift loops
-   hoist this once (prim) so each comparison is an inline < instead of an indirect
-   comparator call; float/string/object keys keep the general pq_less path. The
-   branch is loop-invariant, so it predicts away. */
+/**
+ * The hot case -- an int/long/bool heap (elem_kind 0) -- orders by a plain signed compare, identical to the cmp_i64 the comparator would return.
+ * The sift loops hoist this once (prim) so each comparison is an inline < instead of an indirect comparator call; float/string/object keys keep the general pq_less path.
+ * The branch is loop-invariant, so it predicts away.
+ */
 #define PQ_LESS(o, prim, x, y) ((prim) ? (x) < (y) : pq_less((o), (x), (y)))
 
 void *bzy_pq_new(int64_t elem_kind, int64_t obj_slot)
@@ -98,7 +93,7 @@ void *bzy_pq_new(int64_t elem_kind, int64_t obj_slot)
 	*PQ_KIND(o) = elem_kind;
 	*PQ_OBJSLOT(o) = obj_slot;
 	*PQ_CMP(o) = obj_slot >= 0 ? (bzy_cmp_fn)0 : bzy_order_cmp_for(elem_kind);
-	/* len, cap, data left zero by bzy_alloc; the array is allocated on first add. */
+	// len, cap, data left zero by bzy_alloc; the array is allocated on first add.
 	return o;
 }
 
@@ -110,19 +105,19 @@ static void pq_grow(void *o)
 	if (n > 0)
 	{
 		memcpy((char*)newdata + 32, (char*)olddata + 32, (size_t)n * 8);
-		*(int64_t*)((char*)olddata + 24) = 0;   /* Ownership moved: the old array releases no elements. */
+		*(int64_t*)((char*)olddata + 24) = 0; // Ownership moved: the old array releases no elements.
 	}
 
 	if (pq_shared(o))
 	{
-		*(int64_t*)((char*)newdata + 16) |= (1ll << 3);   /* Newborn array inherits SHARED. */
+		*(int64_t*)((char*)newdata + 16) |= (1ll << 3); // Newborn array inherits SHARED.
 	}
 
 	*PQ_DATA(o) = newdata;
 	*PQ_CAP(o) = newcap;
 	if (olddata)
 	{
-		bzy_release(olddata);                   /* Length zeroed: frees the block only. */
+		bzy_release(olddata); // Length zeroed: frees the block only.
 	}
 }
 
@@ -143,7 +138,7 @@ static void pq_add_impl(void *o, int64_t v)
 	int64_t i = (*PQ_LEN(o))++;
 	if (prim)
 	{
-		while (i > 0)                               /* Sift up: move parents down into the hole, place v once. */
+		while (i > 0) // Sift up: move parents down into the hole, place v once.
 		{
 			int64_t p = (i - 1) >> 1;
 			if (v >= a[p])
@@ -159,8 +154,7 @@ static void pq_add_impl(void *o, int64_t v)
 		return;
 	}
 
-	/* A user compareTo can throw, so the general path swaps: the heap holds every
-	   element exactly once after each step. */
+	// A user compareTo can throw, so the general path swaps: the heap holds every element exactly once after each step.
 	a[i] = v;
 	while (i > 0)
 	{
@@ -182,18 +176,18 @@ static int64_t pq_poll_impl(void *o)
 	int64_t n = *PQ_LEN(o);
 	if (n == 0)
 	{
-		return 0;                                   /* No-throw sentinel. */
+		return 0; // No-throw sentinel.
 	}
 
 	int64_t *a = pq_slots(o);
-	int64_t top = a[0];                             /* Transfer the add-time reference out. */
+	int64_t top = a[0]; // Transfer the add-time reference out.
 	n--;
 	a[0] = a[n];
-	a[n] = 0;                                       /* Blank the vacated slot (no double-release). */
+	a[n] = 0; // Blank the vacated slot (no double-release).
 	*PQ_LEN(o) = n;
 	int prim = (*PQ_KIND(o) == 0);
 	int64_t i = 0;
-	while (1)                                        /* Sift down. */
+	while (1) // Sift down.
 	{
 		int64_t l = 2 * i + 1, r = 2 * i + 2, m = i;
 		if (l < n && PQ_LESS(o, prim, a[l], a[m]))
@@ -230,7 +224,7 @@ static int64_t pq_peek_impl(void *o)
 	int64_t r = pq_slots(o)[0];
 	if (pq_managed(o))
 	{
-		bzy_retain((void*)r);                       /* Borrow -> owned, like map.get. */
+		bzy_retain((void*)r); // Borrow -> owned, like map.get.
 	}
 
 	return r;
@@ -242,7 +236,7 @@ void bzy_pq_add(void *o, int64_t v)
 	{
 		if (pq_managed(o))
 		{
-			bzy_share_crosscore((void*)v);          /* Insert barrier, before the stripe. */
+			bzy_share_crosscore((void*)v); // Insert barrier, before the stripe.
 		}
 
 		bzy_shared_lock(o);

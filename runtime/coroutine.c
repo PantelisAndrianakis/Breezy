@@ -1,15 +1,13 @@
-/* Userspace coroutine backend: a hand-written, register-only context switch over
-   pooled stacks. Replaces the Windows-fiber and POSIX-ucontext backends behind the
-   coroutine.h seam. No syscall on the hot path - vs CreateFiber/DeleteFiber (~6.8 us
-   measured) and swapcontext's hidden sigprocmask. A finished coroutine's stack is
-   recycled by re-initializing it from the top (bzy_coroutine_create), so reuse is
-   correct-by-construction - no OS fiber lifecycle, no trampoline-return tricks.
-
-   The switch saves the ABI's callee-saved registers, swaps rsp, and returns. A new
-   coroutine's stack is laid out so the switch's `ret` lands in bzy_co_start, which
-   calls bzy_co_run -> fn(arg). On Win64 it also saves xmm6..15 and updates the TEB
-   StackBase/StackLimit (gs:[8]/gs:[0x10]) so __chkstk and large frames work on the
-   coroutine stack. */
+/**
+ * Userspace coroutine backend: a hand-written, register-only context switch over pooled stacks.
+ * Replaces the Windows-fiber and POSIX-ucontext backends behind the coroutine.h seam.
+ * No syscall on the hot path - vs CreateFiber/DeleteFiber (~6.8 us measured) and swapcontext's hidden sigprocmask.
+ * A finished coroutine's stack is recycled by re-initializing it from the top (bzy_coroutine_create), so reuse is correct-by-construction - no OS fiber lifecycle, no trampoline-return tricks.
+ *
+ * The switch saves the ABI's callee-saved registers, swaps rsp, and returns.
+ * A new coroutine's stack is laid out so the switch's `ret` lands in bzy_co_start, which calls bzy_co_run -> fn(arg).
+ * On Win64 it also saves xmm6..15 and updates the TEB StackBase/StackLimit (gs:[8]/gs:[0x10]) so __chkstk and large frames work on the coroutine stack.
+ */
 #include "coroutine.h"
 #include "platform.h"
 #include <stdlib.h>
@@ -21,8 +19,11 @@
 #include <pthread.h>   /* pthread_getattr_np: real thread-stack bounds for ASan fiber tracking. */
 #endif
 
-#define BZY_CO_STACK (256 * 1024)   /* Per-coroutine stack (reserved; committed on touch). Reused
-                                        via the pool, so its size costs footprint, not spawn speed. */
+/**
+ * Per-coroutine stack (reserved; committed on touch).
+ * Reused via the pool, so its size costs footprint, not spawn speed.
+ */
+#define BZY_CO_STACK (256 * 1024)
 
 struct BzyCoroutine
 {
@@ -41,9 +42,10 @@ struct BzyCoroutine
 };
 
 #if defined(__SANITIZE_ADDRESS__)
-/* AddressSanitizer cannot follow a hand-rolled stack switch on its own; these
-   annotations tell it which fiber stack is becoming live across each switch.
-   Compiled in ONLY under -fsanitize=address, so ordinary builds are unaffected. */
+/**
+ * AddressSanitizer cannot follow a hand-rolled stack switch on its own; these annotations tell it which fiber stack is becoming live across each switch.
+ * Compiled in ONLY under -fsanitize=address, so ordinary builds are unaffected.
+ */
 void __sanitizer_start_switch_fiber(void **fake_save, const void *bottom, size_t size);
 void __sanitizer_finish_switch_fiber(void *fake_save, const void **old_bottom, size_t *old_size);
 #endif
@@ -51,9 +53,10 @@ void __sanitizer_finish_switch_fiber(void *fake_save, const void **old_bottom, s
 static __thread BzyCoroutine *t_current;
 static __thread BzyCoroutine  t_main;
 
-/* The context switch and the new-coroutine entry stub, in their own asm. The entry
-   stub is reached via the switch's `ret`; it is entered 16-aligned, so its `call`
-   re-establishes the ABI's (rsp % 16 == 8) before bzy_co_run runs. */
+/**
+ * The context switch and the new-coroutine entry stub, in their own asm.
+ * The entry stub is reached via the switch's `ret`; it is entered 16-aligned, so its `call` re-establishes the ABI's (rsp % 16 == 8) before bzy_co_run runs.
+ */
 extern void bzy_ctx_switch(void **save_sp, void *to_sp, void *to_hi, void *to_lo);
 extern void bzy_co_start(void);
 void        bzy_co_run(void);   /* Referenced from bzy_co_start. */
@@ -109,42 +112,36 @@ __asm__(
 void bzy_co_run(void)
 {
 #if defined(__SANITIZE_ADDRESS__)
-	__sanitizer_finish_switch_fiber(NULL, NULL, NULL);   /* Fresh fiber: no prior fake stack. */
+	__sanitizer_finish_switch_fiber(NULL, NULL, NULL); // Fresh fiber: no prior fake stack.
 #endif
 	BzyCoroutine *c = t_current;
 	c->fn(c->arg);
-	/* A breeze body switches to the scheduler before returning, so control never
-	   reaches here. If it ever does, it is a runtime bug. */
+	// A breeze body switches to the scheduler before returning, so control never reaches here.
+	// If it ever does, it is a runtime bug.
 	abort();
 }
 
-/* Lay out (or relay out) the stack so the next switch-to runs bzy_co_start. The
-   return-address slot sits at (16-aligned top - 8) so the slot is %16==8: the
-   switch's `ret` then enters bzy_co_start with rsp %16==0, and its `call` restores
-   the %16==8 the C ABI expects. */
+/**
+ * Lay out (or relay out) the stack so the next switch-to runs bzy_co_start.
+ * The return-address slot sits at (16-aligned top - 8) so the slot is %16==8: the switch's `ret` then enters bzy_co_start with rsp %16==0, and its `call` restores the %16==8 the C ABI expects.
+ */
 static void co_setup(BzyCoroutine *c)
 {
 	uintptr_t top = ((uintptr_t)c->stack_hi) & ~(uintptr_t)15;
 	uintptr_t ret = top - 8;
 	*(void**)ret = (void*)bzy_co_start;
 	uintptr_t sp = ret - BZY_CO_FRAME;
-	/* The saved-register slots are intentionally left uninitialized: the first
-	   switch-in restores them into callee-saved registers (rbp/rbx/r12-15, and
-	   xmm6-15 on Win64) that bzy_co_start -> bzy_co_run overwrites in its own
-	   prologue before any read, so their incoming values are dead. Skipping the
-	   ~BZY_CO_FRAME-byte zeroing here measurably speeds up each spawn (it is on the
-	   single-threaded spawn loop's critical path). */
+	// The saved-register slots are intentionally left uninitialized: the first switch-in restores them into callee-saved registers (rbp/rbx/r12-15, and xmm6-15 on Win64) that bzy_co_start -> bzy_co_run overwrites in its own prologue before any read, so their incoming values are dead.
+	// Skipping the ~BZY_CO_FRAME-byte zeroing here measurably speeds up each spawn (it is on the single-threaded spawn loop's critical path).
 	c->sp = (void*)sp;
 }
 
-/* Free list of finished coroutines (with their stacks) for reuse. A coroutine is
-   created on the spawning worker and may be deleted on another (work-stealing), so
-   the pool is shared. The critical section is two pointer writes, so it is guarded
-   by a test-and-set SPIN lock rather than an OS mutex: under the fan-out spawn loop
-   the producer (popping) and the completing workers (pushing) collide constantly,
-   and a blocking mutex turned every collision into a futex syscall pair - on Linux
-   that was thousands of voluntary context switches and the dominant cost. Spinning
-   on a sub-microsecond critical section never sleeps, so there is no syscall. */
+/**
+ * Free list of finished coroutines (with their stacks) for reuse.
+ * A coroutine is created on the spawning worker and may be deleted on another (work-stealing), so the pool is shared.
+ * The critical section is two pointer writes, so it is guarded by a test-and-set SPIN lock rather than an OS mutex: under the fan-out spawn loop the producer (popping) and the completing workers (pushing) collide constantly, and a blocking mutex turned every collision into a futex syscall pair - on Linux that was thousands of voluntary context switches and the dominant cost.
+ * Spinning on a sub-microsecond critical section never sleeps, so there is no syscall.
+ */
 static BzyCoroutine *g_pool;
 static volatile int  g_pool_lk;
 
@@ -152,7 +149,7 @@ static void pool_lock(void)
 {
 	while (__atomic_exchange_n(&g_pool_lk, 1, __ATOMIC_ACQUIRE))
 	{
-		while (__atomic_load_n(&g_pool_lk, __ATOMIC_RELAXED))   /* Spin read-only until it looks free. */
+		while (__atomic_load_n(&g_pool_lk, __ATOMIC_RELAXED)) // Spin read-only until it looks free.
 		{
 #if defined(__x86_64__) || defined(__i386__)
 			__builtin_ia32_pause();
@@ -198,11 +195,10 @@ BzyCoroutine *bzy_coroutine_thread_enter(void)
 	{
 		t_main.is_thread = 1;
 #if defined(_WIN32)
-		t_main.stack_hi = (void*)__readgsqword(0x08);   /* This OS thread's real stack bounds. */
+		t_main.stack_hi = (void*)__readgsqword(0x08); // This OS thread's real stack bounds.
 		t_main.stack_lo = (void*)__readgsqword(0x10);
 #elif defined(__SANITIZE_ADDRESS__)
-		/* ASan needs this worker thread's real stack bounds to track switches back
-		   to it; unused in ordinary (non-ASan) Linux builds. */
+		// ASan needs this worker thread's real stack bounds to track switches back to it; unused in ordinary (non-ASan) Linux builds.
 		{
 			pthread_attr_t a;
 			if (pthread_getattr_np(pthread_self(), &a) == 0)
@@ -236,7 +232,7 @@ BzyCoroutine *bzy_coroutine_create(BzyCoroutineFn fn, void *arg)
 	c->fn = fn;
 	c->arg = arg;
 	c->is_thread = 0;
-	co_setup(c);                /* Fresh entry frame at the top of the (possibly reused) stack. */
+	co_setup(c); // Fresh entry frame at the top of the (possibly reused) stack.
 	return c;
 }
 
@@ -255,7 +251,7 @@ void bzy_coroutine_switch(BzyCoroutine *to)
 #endif
 	bzy_ctx_switch(&from->sp, to->sp, to->stack_hi, to->stack_lo);
 #if defined(__SANITIZE_ADDRESS__)
-	__sanitizer_finish_switch_fiber(from->asan_fake, NULL, NULL);   /* `from` just resumed. */
+	__sanitizer_finish_switch_fiber(from->asan_fake, NULL, NULL); // `from` just resumed.
 #endif
 }
 
@@ -278,8 +274,8 @@ void bzy_coroutine_delete(BzyCoroutine *c)
 {
 	if (!c || c->is_thread)
 	{
-		return;                 /* Never recycle/free a promoted OS thread. */
+		return; // Never recycle/free a promoted OS thread.
 	}
 
-	pool_push(c);               /* Recycle the stack instead of freeing it. */
+	pool_push(c); // Recycle the stack instead of freeing it.
 }

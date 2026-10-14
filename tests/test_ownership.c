@@ -26,7 +26,7 @@ static Func *build(const char *s)
 
 static void test_collects_object_locals(void)
 {
-	/* Two object locals (a and b) are collected; the int local n is ignored. */
+	// Two object locals (a and b) are collected; the int local n is ignored.
 	Func *f = build("void main() { int n; Animal a; Animal b; n = 1; }");
 	ASSERT_INT(f->obj_local_count, 2);
 }

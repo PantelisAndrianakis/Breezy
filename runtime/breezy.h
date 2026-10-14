@@ -2,16 +2,16 @@
 #define BREEZY_H
 #include <stdint.h>
 
-/* Object header: [vtable @0][refcount @8][gcinfo @16][fields @24..].
-   The type descriptor sits at vtable - 8 and holds:
-   [num_obj_fields @0][offset0 @8][offset1 @16]....
-   gcinfo packs the cycle-collector state: bits 0-1 color, bit 2 buffered,
-   bits 8+ the cyclic refcount (crc) scratch used during trial deletion. */
+/**
+ * Object header: [vtable @0][refcount @8][gcinfo @16][fields @24..].
+ * The type descriptor sits at vtable - 8 and holds: [num_obj_fields @0][offset0 @8][offset1 @16].... gcinfo packs the cycle-collector state: bits 0-1 color, bit 2 buffered, bits 8+ the cyclic refcount (crc) scratch used during trial deletion.
+ */
 
-/* Set in gcinfo (bit 3) at allocation for classes whose instances may cross a
-   core boundary; bzy_retain/bzy_release then use atomic refcount ops. Bits 0-2
-   hold color/buffered and bits 8+ hold the crc, so bit 3 is free and survives
-   every existing gcinfo update. Codegen emits this literal at `new` (cg_new). */
+/**
+ * Set in gcinfo (bit 3) at allocation for classes whose instances may cross a core boundary; bzy_retain/bzy_release then use atomic refcount ops.
+ * Bits 0-2 hold color/buffered and bits 8+ hold the crc, so bit 3 is free and survives every existing gcinfo update.
+ * Codegen emits this literal at `new` (cg_new).
+ */
 #define BZY_GCINFO_SHARED (1ll << 3)
 
 void   *bzy_alloc(int64_t size);   /* Allocate, zero, set refcount to 1, bump live count; caller sets the vtable. */
@@ -80,10 +80,11 @@ int64_t bzy_str_last_index_of(void *s, void *needle);  /* Last byte index of nee
 void   *bzy_str_repeat(void *s, int64_t n);            /* s repeated n times (n<=0 -> ""); owned. */
 void   *bzy_str_split(void *s, void *sep);             /* Split on sep -> owned string[] (empty sep -> [s]). */
 
-/* String -> number parsing. On malformed input (empty, trailing garbage, or out of
-   range) each sets a thread-local error; the codegen-emitted bzy_number_check then
-   throws NumberFormatException. Leading whitespace is tolerated. toBool accepts
-   "true"/"false" case-insensitively. */
+/**
+ * String -> number parsing.
+ * On malformed input (empty, trailing garbage, or out of range) each sets a thread-local error; the codegen-emitted bzy_number_check then throws NumberFormatException.
+ * Leading whitespace is tolerated. toBool accepts "true"/"false" case-insensitively.
+ */
 int64_t bzy_str_to_int(void *s);
 int64_t bzy_str_to_long(void *s);
 int64_t bzy_str_to_byte(void *s);
@@ -132,18 +133,14 @@ typedef int (*bzy_cmp_fn)(int64_t, int64_t);
 bzy_cmp_fn bzy_order_cmp_for(int64_t elem_kind);   /* Primitive comparator by elem_kind; NULL for objects (4). */
 int64_t    bzy_obj_compare(void *a, void *b, int64_t slot); /* Order object keys via Comparable.compareTo at a vtable slot. */
 
-/* PriorityQueue<T>: binary min-heap (own TU runtime/pqueue.c). poll/peek return
-   an owned managed value (like bzy_map_get). obj_slot = Comparable.compareTo
-   vtable slot for object keys, -1 for primitives. */
+/* PriorityQueue<T>: binary min-heap (own TU runtime/pqueue.c). poll/peek return an owned managed value (like bzy_map_get). obj_slot = Comparable.compareTo vtable slot for object keys, -1 for primitives. */
 void   *bzy_pq_new(int64_t elem_kind, int64_t obj_slot);
 void    bzy_pq_add(void *o, int64_t v);
 int64_t bzy_pq_poll(void *o);
 int64_t bzy_pq_peek(void *o);
 int64_t bzy_pq_size(void *o);
 
-/* TreeMap<K,V> / TreeSet<T>: a B-tree (own TU runtime/btree.c). has_values=0 is a
-   TreeSet. get/first/last/floor/ceiling return owned managed keys/values; keys/
-   values/entries return owned arrays. obj_slot = compareTo vtable slot, -1 else. */
+/* TreeMap<K,V> / TreeSet<T>: a B-tree (own TU runtime/btree.c). has_values=0 is a TreeSet. get/first/last/floor/ceiling return owned managed keys/values; keys/ values/entries return owned arrays. obj_slot = compareTo vtable slot, -1 else. */
 void   *bzy_btree_new(int64_t kkind, int64_t has_values, int64_t vman, int64_t obj_slot);
 void    bzy_btree_put(void *o, int64_t k, int64_t v);
 int64_t bzy_btree_get(void *o, int64_t k);
@@ -204,11 +201,10 @@ void    bzy_rnd_bytes(void *arr);                       /* Fill each byte[] elem
 void    bzy_throw(void *exc, int64_t pc, int64_t frame); /* Unwind the rbp chain; never returns. */
 void    bzy_io_check(int64_t pc, int64_t frame);         /* Throw IOException if the last File op failed. */
 
-/* Crash-safe breezes (6a-4): on an uncaught exception inside a breeze, bzy_throw
-   prints the trace then calls bzy_sched_breeze_uncaught, which ends the breeze and
-   switches back to the scheduler (a fiber switch, NOT setjmp/longjmp — the dead
-   breeze's NASM frames carry no SEH unwind info, so longjmp across them crashes).
-   Outside a breeze (unit tests / pre-scheduler) bzy_throw aborts as before. */
+/**
+ * Crash-safe breezes (6a-4): on an uncaught exception inside a breeze, bzy_throw prints the trace then calls bzy_sched_breeze_uncaught, which ends the breeze and switches back to the scheduler (a fiber switch, NOT setjmp/longjmp - the dead breeze's NASM frames carry no SEH unwind info, so longjmp across them crashes).
+ * Outside a breeze (unit tests / pre-scheduler) bzy_throw aborts as before.
+ */
 void    bzy_sched_breeze_uncaught(void);   /* End the running breeze; resume the scheduler (no return). */
 int64_t bzy_uncaught_count(void);          /* Count of uncaught exceptions the scheduler survived. */
 
@@ -247,17 +243,17 @@ void    bzy_sched_park(void);              /* Suspend the running breeze (off th
 void    bzy_sched_park_unlock(void *srwlock); /* Park; the scheduler releases the SRWLOCK after the switch. */
 void    bzy_sched_wake(void *breeze);      /* Re-enqueue a parked breeze. */
 
-/* Offload pool (6b-1): run a blocking task on a real OS-thread pool while the
-   calling breeze parks. fn(ctx) runs on a worker; ctx is the caller's stack node
-   (stable while parked); the worker only reads the caller's buffers. */
+/* Offload pool (6b-1): run a blocking task on a real OS-thread pool while the calling breeze parks. fn(ctx) runs on a worker; ctx is the caller's stack node (stable while parked); the worker only reads the caller's buffers. */
 void    bzy_offload_run(void (*fn)(void*), void *ctx);   /* Submit + park; returns when fn has run. */
 int64_t bzy_offload_inflight(void);   /* Breezes currently parked on an offload task. */
 void    bzy_offload_shutdown(void);   /* Drain/join the pool (no-op if never started). */
 void    bzy_sched_wake_external(void *breeze);   /* Wake a breeze from a non-scheduler thread. */
 
-/* IOCP core (6b-2). IocpOp is opaque here; its full definition (with the embedded
-   OVERLAPPED) lives in runtime/iocp.c. Callers allocate it on their stack via the
-   BZY_IOCP_OP_SIZE byte blob and treat it through these functions. */
+/**
+ * IOCP core (6b-2).
+ * IocpOp is opaque here; its full definition (with the embedded OVERLAPPED) lives in runtime/iocp.c.
+ * Callers allocate it on their stack via the BZY_IOCP_OP_SIZE byte blob and treat it through these functions.
+ */
 typedef struct IocpOp IocpOp;
 #define BZY_IOCP_OP_SIZE 64      /* sizeof(struct IocpOp); static_assert'd in iocp.c. */
 
@@ -270,14 +266,11 @@ unsigned long bzy_iocp_op_bytes(IocpOp *op);  /* Bytes transferred (valid after 
 int   bzy_iocp_op_err(IocpOp *op);            /* 0 on success else a Winsock error (valid after resume). */
 int64_t bzy_iocp_inflight(void);         /* Breezes parked on a network op (Windows: iocp.c; Linux: reactor_epoll.c). */
 void  bzy_iocp_shutdown(void);           /* Stop the completion thread + close the port (no-op if unused). */
-/* Linux epoll reactor (the IOCP counterpart): readiness-park primitives for sockets
-   live in pollstate.h (bzy_poll_wait / bzy_reactor_deregister); the lifecycle hooks
-   stay here so non-socket runtime code can drive shutdown. */
+/* Linux epoll reactor (the IOCP counterpart): readiness-park primitives for sockets live in pollstate.h (bzy_poll_wait / bzy_reactor_deregister); the lifecycle hooks stay here so non-socket runtime code can drive shutdown. */
 void  bzy_reactor_ensure(void);          /* Lazily create the epoll instance + reactor threads. */
 void  bzy_reactor_shutdown(void);        /* Stop the reactor threads (no-op if unused). */
 
-/* TCP sockets (6b-2): managed leaf objects holding a SOCKET fd; the finalizer
-   closesocket()s. accept/connect/read park the calling breeze on the IOCP. */
+/* TCP sockets (6b-2): managed leaf objects holding a SOCKET fd; the finalizer closesocket()s. accept/connect/read park the calling breeze on the IOCP. */
 void   *bzy_listener_new(int64_t port);       /* Bind+listen on 0.0.0.0:port (0 = ephemeral); owned (+1). */
 void   *bzy_listener_accept(void *l);         /* Parks; returns an owned Socket for the next connection. */
 void   *bzy_listener_accept_timeout(void *l, int64_t ms);  /* Parks up to ms; NULL on timeout. */
@@ -328,8 +321,7 @@ int64_t bzy_socket_write(void *s, void *data);         /* byte[]; writes all; re
 int64_t bzy_socket_write_text(void *s, void *str);     /* string; writes all bytes; returns count. */
 void    bzy_socket_close(void *s);
 
-/* UDP sockets (6b-2): connectionless datagrams. receive() parks and returns a
-   Datagram carrying the payload + the sender's address (so a server can reply). */
+/* UDP sockets (6b-2): connectionless datagrams. receive() parks and returns a Datagram carrying the payload + the sender's address (so a server can reply). */
 void   *bzy_udp_new(int64_t port);                           /* Bind 0.0.0.0:port (0 = ephemeral); owned. */
 void   *bzy_udp_broadcast_new(int64_t port);                 /* AF_INET + SO_BROADCAST + SO_REUSEADDR; for 255.255.255.255 discovery. */
 int64_t bzy_udp_port(void *u);                               /* Bound port. */
@@ -340,18 +332,20 @@ void   *bzy_udp_receive_timeout(void *u, int64_t ms);        /* Parks up to ms; 
 void   *bzy_udp_try_receive(void *u);                        /* NULL if no datagram ready; never parks. */
 void    bzy_udp_close(void *u);
 
-/* Datagram: a received payload + its sender. object_size = 48,
-   0 vtable | 8 rc | 16 gcinfo | 24 data(byte[]) | 32 host(string) | 40 port(int64).
-   num_obj_fields = 2 (offsets 24, 32) -- data + host are managed children. */
+/**
+ * Datagram: a received payload + its sender. object_size = 48,
+ * 0 vtable | 8 rc | 16 gcinfo | 24 data(byte[]) | 32 host(string) | 40 port(int64).
+ * num_obj_fields = 2 (offsets 24, 32) -- data + host are managed children.
+ */
 void   *bzy_dgram_data(void *d);   /* Owned byte[] (+1). */
 void   *bzy_dgram_text(void *d);   /* Owned string (+1) of the payload bytes. */
 void   *bzy_dgram_host(void *d);   /* Owned string (+1) sender IP. */
 int64_t bzy_dgram_port(void *d);   /* Sender port. */
 
-/* Random-access file channel (6b-5): a managed handle over an overlapped Win32
-   file HANDLE on the IOCP port. readAt/writeAt are async positioned I/O (park on
-   the completion port, no offload hand-off); sync() forces durability via the
-   offload pool; size/truncate are inline. The finalizer CloseHandle()s. */
+/**
+ * Random-access file channel (6b-5): a managed handle over an overlapped Win32 file HANDLE on the IOCP port. readAt/writeAt are async positioned I/O (park on the completion port, no offload hand-off); sync() forces durability via the offload pool; size/truncate are inline.
+ * The finalizer CloseHandle()s.
+ */
 void  bzy_io_fail(const char *msg);   /* Set the thread-local io-error (defined in file.c). */
 void *bzy_filechannel_open(void *path);                       /* Owned (+1); read+write, OPEN_ALWAYS. */
 void *bzy_filechannel_read_at(void *ch, int64_t offset, int64_t maxbytes);  /* Owned byte[] (len 0 = EOF). */
@@ -377,10 +371,7 @@ void    bzy_mmap_copy_from(void *m, void *src, int64_t dstOff, int64_t n);
 void    bzy_mmap_flush(void *m);             /* msync/FlushViewOfFile+FlushFileBuffers; parks; throws on error. */
 void    bzy_mmap_close(void *m);             /* Unmap + close mapping; idempotent. */
 
-/* Buffered file writer (6b-3): a managed handle over an open FILE* + a userspace
-   buffer. write/writeLine/writeBytes memcpy into the buffer (no syscall); the buffer
-   flushes to disk when it fills, on flush(), or on close() -- each real flush runs on
-   the offload pool so the breeze parks. open is inline; the finalizer flushes+closes. */
+/* Buffered file writer (6b-3): a managed handle over an open FILE* + a userspace buffer. write/writeLine/writeBytes memcpy into the buffer (no syscall); the buffer flushes to disk when it fills, on flush(), or on close() -- each real flush runs on the offload pool so the breeze parks. open is inline; the finalizer flushes+closes. */
 void *bzy_filewriter_open(void *path, int64_t append, int64_t buf_bytes);  /* Owned (+1); 0 buf_bytes = 64 KiB. */
 void  bzy_filewriter_write(void *w, void *str);        /* Buffer the string's bytes. */
 void  bzy_filewriter_write_line(void *w, void *str);   /* Buffer the string + '\n'. */
@@ -388,17 +379,12 @@ void  bzy_filewriter_write_bytes(void *w, void *data); /* Buffer a byte[]'s byte
 void  bzy_filewriter_flush(void *w);                   /* Flush buffered bytes to disk (offloaded). */
 void  bzy_filewriter_close(void *w);                   /* Flush + close (offloaded). */
 
-/* Channel-fed logger (6b-4): bundles a bounded channel<string>, a FileWriter, and a
-   dedicated logger breeze that drains the channel and writes each line. log() moves a
-   string into the channel (parks only if the logger is far behind); close() sends a
-   sentinel, then parks until the breeze has drained+flushed+closed and signalled. */
+/* Channel-fed logger (6b-4): bundles a bounded channel<string>, a FileWriter, and a dedicated logger breeze that drains the channel and writes each line. log() moves a string into the channel (parks only if the logger is far behind); close() sends a sentinel, then parks until the breeze has drained+flushed+closed and signalled. */
 void *bzy_logger_open(void *path);            /* Owned (+1); opens path in append mode, spawns the breeze. */
 void  bzy_logger_log(void *logger, void *str);/* Move the string into the channel (ownership transfers). */
 void  bzy_logger_close(void *logger);         /* Drain, flush, close the file, join the logger breeze. */
 
-/* System.shell: run "cmd /c <command>". wait==0 -> launch
-   async, return the process id (0 on failure). wait!=0 -> block until exit and
-   return the exit code; that blocking path offloads so the breeze parks. */
+/* System.shell: run "cmd /c <command>". wait==0 -> launch async, return the process id (0 on failure). wait!=0 -> block until exit and return the exit code; that blocking path offloads so the breeze parks. */
 int64_t bzy_system_shell(void *command, int64_t wait);
 
 void   *bzy_channel_new(int64_t cap, int64_t elem_managed); /* Owned (+1) bounded channel. */
@@ -407,8 +393,10 @@ int64_t bzy_channel_recv(void *ch);              /* Parks if empty; returns an o
 int64_t bzy_channel_try_send(void *ch, int64_t v);       /* Non-blocking; 1 if sent, 0 if full. */
 int64_t bzy_channel_try_recv(void *ch, int64_t *out);    /* Non-blocking; 1 with *out, 0 if empty. */
 
-/* Timers (6a-4): a shared min-heap of Timer objects keyed by absolute deadline.
-   Timer is a managed leaf object (same layout idiom as channel). */
+/**
+ * Timers (6a-4): a shared min-heap of Timer objects keyed by absolute deadline.
+ * Timer is a managed leaf object (same layout idiom as channel).
+ */
 void   *bzy_timer_schedule(void (*entry)(void), int64_t first_deadline, int64_t period); /* Owned (+1). */
 void   *bzy_timer_after(void (*entry)(void), int64_t delay_ms);                          /* Owned (+1). */
 void   *bzy_timer_every(void (*entry)(void), int64_t delay_ms, int64_t period_ms);       /* Owned (+1). */

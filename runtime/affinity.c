@@ -1,8 +1,8 @@
-/* System.cpuCount / System.affinity: a thin, honest wrapper over the OS thread
-   affinity calls. Pins the CURRENT OS (worker) thread, not the breeze — a breeze
-   migrates across workers, so deterministic pinning needs a dedicated worker.
-   Lives in its own translation unit so a program that calls neither links none
-   of this (the no-bloat invariant). */
+/**
+ * System.cpuCount / System.affinity: a thin, honest wrapper over the OS thread affinity calls.
+ * Pins the CURRENT OS (worker) thread, not the breeze - a breeze migrates across workers, so deterministic pinning needs a dedicated worker.
+ * Lives in its own translation unit so a program that calls neither links none of this (the no-bloat invariant).
+ */
 #ifndef _WIN32
 #define _GNU_SOURCE
 #endif
@@ -33,7 +33,7 @@ int64_t bzy_sys_affinity(int64_t mask)
 {
 	if (mask == 0)
 	{
-		return 0;   /* Empty mask: nothing to pin to. */
+		return 0; // Empty mask: nothing to pin to.
 	}
 
 #ifdef _WIN32

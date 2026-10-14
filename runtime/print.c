@@ -2,8 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Scalar print helpers, dispatched by the compiler on the argument's static type:
-   signed integers print as %lld, unsigned as %llu, bools as true/false. */
+/* Scalar print helpers, dispatched by the compiler on the argument's static type: signed integers print as %lld, unsigned as %llu, bools as true/false. */
 
 void bzy_print_i64(int64_t v)
 {
@@ -25,13 +24,14 @@ void bzy_print_f64(double v)
 	printf("%.17g\n", v);
 }
 
-/* input(): read one line from standard input and return it as an owned string,
-   with the trailing newline (and a preceding CR, for CRLF endings) removed. At
-   end of input with nothing read, returns an empty string. Blocking by design -
-   it is for interactive console programs. */
+/**
+ * input(): read one line from standard input and return it as an owned string, with the trailing newline (and a preceding CR, for CRLF endings) removed.
+ * At end of input with nothing read, returns an empty string.
+ * Blocking by design - it is for interactive console programs.
+ */
 void *bzy_input_line(void)
 {
-	fflush(stdout);   /* Flush any prompt printed first so it is visible before we block. */
+	fflush(stdout); // Flush any prompt printed first so it is visible before we block.
 
 	size_t cap = 128;
 	size_t len = 0;
@@ -60,7 +60,7 @@ void *bzy_input_line(void)
 		buf[len++] = (char)c;
 	}
 
-	if (len > 0 && buf[len - 1] == '\r')   /* Strip the CR of a CRLF line ending. */
+	if (len > 0 && buf[len - 1] == '\r') // Strip the CR of a CRLF line ending.
 	{
 		len--;
 	}

@@ -1,16 +1,11 @@
-/* DTLS over UDP via dynamically-loaded OpenSSL with memory BIOs pumped through the
-   reactor. Own TU: a program that calls no Network.dtls* links none of this, and
-   OpenSSL is dlopen'd lazily so there is no link-time dependency.
-
-   This mirrors tls.c almost verbatim -- the SSL state machine is identical; the
-   transport is a connected UDP socket (send/recv to one peer) instead of a TCP
-   Socket, and three things are genuinely new: (1) a fixed link MTU, because a
-   memory BIO cannot answer a path-MTU query; (2) a handshake retransmission branch
-   in the pump, because UDP does not guarantee delivery; (3) per-peer demultiplexing
-   in the server, because one UDP socket carries every peer's datagrams.
-
-   The ossl table + loader are duplicated from tls.c on purpose: own-TU no-bloat
-   requires that a DTLS-only program not drag in the TLS TU. */
+/**
+ * DTLS over UDP via dynamically-loaded OpenSSL with memory BIOs pumped through the reactor.
+ * Own TU: a program that calls no Network.dtls* links none of this, and OpenSSL is dlopen'd lazily so there is no link-time dependency.
+ *
+ * This mirrors tls.c almost verbatim -- the SSL state machine is identical; the transport is a connected UDP socket (send/recv to one peer) instead of a TCP Socket, and three things are genuinely new: (1) a fixed link MTU, because a memory BIO cannot answer a path-MTU query; (2) a handshake retransmission branch in the pump, because UDP does not guarantee delivery; (3) per-peer demultiplexing in the server, because one UDP socket carries every peer's datagrams.
+ *
+ * The ossl table + loader are duplicated from tls.c on purpose: own-TU no-bloat requires that a DTLS-only program not drag in the TLS TU.
+ */
 #include "breezy.h"
 #include "network_internal.h"
 #include <string.h>
@@ -121,8 +116,10 @@ static void *dl_sym(void *h, const char *n)
 
 #endif
 
-/* Resolve libssl (+ libcrypto transitively) once. Returns 1 on success, 0 on
-   failure (sets the io-error). */
+/**
+ * Resolve libssl (+ libcrypto transitively) once.
+ * Returns 1 on success, 0 on failure (sets the io-error).
+ */
 static int dtls_load(void)
 {
 	if (ossl.loaded == 1)
@@ -152,7 +149,7 @@ static int dtls_load(void)
 		return 0;
 	}
 
-	/* SSL_* / SSL_CTX_* / DTLS_*_method live in libssl; BIO_* live in libcrypto. */
+	// SSL_* / SSL_CTX_* / DTLS_*_method live in libssl; BIO_* live in libcrypto.
 #define SYM(field, name) do { \
 		*(void**)(&ossl.field) = dl_sym(h, name); \
 		if (!ossl.field) { ossl.loaded = -1; bzy_io_fail("DTLS unavailable: OpenSSL symbol missing."); return 0; } \
@@ -201,12 +198,12 @@ static int dtls_load(void)
 	return 1;
 }
 
-/* ---- DtlsSocket layout (object_size = 64), mirrors TlsSocket + one extra slot:
-   0 vtable | 8 rc | 16 gcinfo | 24 transport(Socket*) | 32 SSL* | 40 SSL_CTX*
-   ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64) |
-   56 demuxout. demuxout is NULL except for a Windows design-B server peer, where it
-   points to a DtlsDemuxOut (ciphertext egress = sendto on the shared listen fd to
-   this peer's address, since the peer has no connected fd of its own). ---- */
+/**
+ * ---- DtlsSocket layout (object_size = 64), mirrors TlsSocket + one extra slot:
+ * 0 vtable | 8 rc | 16 gcinfo | 24 transport(Socket*) | 32 SSL* | 40 SSL_CTX*
+ * ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64) | 56 demuxout. demuxout is NULL except for a Windows design-B server peer, where it points to a DtlsDemuxOut (ciphertext egress = sendto on the shared listen fd to
+ * this peer's address, since the peer has no connected fd of its own). ----
+ */
 #define DTS_TRANSPORT(o) (*(void**)((char*)(o) + 24))
 #define DTS_SSL(o)       (*(void**)((char*)(o) + 32))
 #define DTS_CTXOWN(o)    (*(void**)((char*)(o) + 40))
@@ -214,9 +211,7 @@ static int dtls_load(void)
 #define DTS_DEMUXOUT(o)  (*(void**)((char*)(o) + 56))
 
 #ifdef _WIN32
-/* Windows design-B server peer egress (see the server block below): ciphertext is
-   sent on the listener's shared fd to this peer's real address; `dead` lets the demux
-   thread stop forwarding once the peer closes. */
+/* Windows design-B server peer egress (see the server block below): ciphertext is sent on the listener's shared fd to this peer's real address; `dead` lets the demux thread stop forwarding once the peer closes. */
 typedef struct DtlsDemux DtlsDemux;
 typedef struct
 {
@@ -282,7 +277,7 @@ static void *dtls_sock_vtable(void)
 /* Owned byte[] of n bytes copied from buf (mirrors socket.c bytes_to_array). */
 static void *dtls_bytes_to_array(const char *buf, int n)
 {
-	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0); // Packed byte[].
 	if (n > 0)
 	{
 		memcpy((char*)arr + 32, buf, (size_t)n);
@@ -302,8 +297,7 @@ static int dtls_flush(void *s)
 	DtlsDemuxOut *dx = DTS_DEMUXOUT(s);
 	if (dx)
 	{
-		/* Design-B server peer: no connected fd; send on the shared listen fd to the
-		   peer's real address (source port stays the listen port the client expects). */
+		// Design-B server peer: no connected fd; send on the shared listen fd to the peer's real address (source port stays the listen port the client expects).
 		for (;;)
 		{
 			int n = ossl.BIO_read(wbio, buf, (int)sizeof(buf));
@@ -325,7 +319,7 @@ static int dtls_flush(void *s)
 		int n = ossl.BIO_read(wbio, buf, (int)sizeof(buf));
 		if (n <= 0)
 		{
-			return 0;    /* Nothing pending (mem BIO). */
+			return 0; // Nothing pending (mem BIO).
 		}
 
 		if (bzy_sock_send_all(DTS_TRANSPORT(s), buf, n) < 0)
@@ -335,9 +329,10 @@ static int dtls_flush(void *s)
 	}
 }
 
-/* Read one ciphertext datagram from the network into the SSL's rbio. timeout_ms
-   bounds the wait (the DTLS retransmit deadline during a handshake; -1 otherwise).
-   Returns: 1 ok, 0 EOF, -1 error, -2 timeout. */
+/**
+ * Read one ciphertext datagram from the network into the SSL's rbio. timeout_ms bounds the wait (the DTLS retransmit deadline during a handshake; -1 otherwise).
+ * Returns: 1 ok, 0 EOF, -1 error, -2 timeout.
+ */
 static int dtls_feed(void *s, int64_t timeout_ms)
 {
 	void *rbio = ossl.SSL_get_rbio(DTS_SSL(s));
@@ -379,12 +374,12 @@ static int64_t dtls_timeout_ms(void *ssl)
 	return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 }
 
-/* Run an SSL op to completion, pumping ciphertext both ways and retrying after each
-   round. op_kind: 0 = handshake, 1 = read, 2 = write. For read/write buf/len are the
-   plaintext buffer. Returns: handshake -> 1 ok / -1 fail; read -> bytes (0 EOF, -1
-   err); write -> bytes written (-1 err). Unlike the TLS pump, a read-park during the
-   handshake is bounded by the DTLS retransmit deadline: on expiry the lost flight is
-   re-queued and re-sent, NOT treated as EOF. */
+/**
+ * Run an SSL op to completion, pumping ciphertext both ways and retrying after each round. op_kind: 0 = handshake, 1 = read, 2 = write.
+ * For read/write buf/len are the plaintext buffer.
+ * Returns: handshake -> 1 ok / -1 fail; read -> bytes (0 EOF, -1 err); write -> bytes written (-1 err).
+ * Unlike the TLS pump, a read-park during the handshake is bounded by the DTLS retransmit deadline: on expiry the lost flight is re-queued and re-sent, NOT treated as EOF.
+ */
 static int dtls_run(void *s, int op_kind, void *buf, int len)
 {
 	void *ssl = DTS_SSL(s);
@@ -434,15 +429,15 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 		{
 			if (op_kind == 1 && ret == 0)
 			{
-				return 0;    /* Clean EOF on read. */
+				return 0; // Clean EOF on read.
 			}
 
-			return -1;                                    /* Fatal. */
+			return -1; // Fatal.
 		}
 
 		if (dtls_flush(s) < 0)
 		{
-			return -1;    /* Always push pending bytes first. */
+			return -1; // Always push pending bytes first.
 		}
 
 		if (err == BZ_SSL_ERROR_WANT_READ)
@@ -451,7 +446,7 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 			int f = dtls_feed(s, to);
 			if (f == -2)
 			{
-				/* Retransmit deadline expired: re-queue the lost flight and re-send. */
+				// Retransmit deadline expired: re-queue the lost flight and re-send.
 				ossl.SSL_ctrl(ssl, BZ_DTLS_CTRL_HANDLE_TIMEOUT, 0, NULL);
 				if (dtls_flush(s) < 0)
 				{
@@ -462,15 +457,14 @@ static int dtls_run(void *s, int op_kind, void *buf, int len)
 
 			if (f <= 0)
 			{
-				return -1;    /* Peer closed mid-op. */
+				return -1; // Peer closed mid-op.
 			}
 		}
-		/* Loop: retry the SSL op. */
+		// Loop: retry the SSL op.
 	}
 }
 
-/* Allocate a DtlsSocket over an owned transport Socket + a fresh SSL. ctx_own is the
-   SSL_CTX to free on close (client) or NULL (server shares the listener's). */
+/* Allocate a DtlsSocket over an owned transport Socket + a fresh SSL. ctx_own is the SSL_CTX to free on close (client) or NULL (server shares the listener's). */
 static void *dtls_sock_wrap(void *transport, void *ssl, void *ctx_own)
 {
 	void *o = bzy_alloc(64);
@@ -479,7 +473,7 @@ static void *dtls_sock_wrap(void *transport, void *ssl, void *ctx_own)
 	DTS_SSL(o) = ssl;
 	DTS_CTXOWN(o) = ctx_own;
 	DTS_CLOSED(o) = 0;
-	DTS_DEMUXOUT(o) = NULL;   /* Set only for a Windows design-B server peer. */
+	DTS_DEMUXOUT(o) = NULL; // Set only for a Windows design-B server peer.
 	bzy_share_crosscore(o);
 	return o;
 }
@@ -498,22 +492,21 @@ static int dtls_attach_bios(void *ssl)
 	return 0;
 }
 
-/* A memory BIO cannot answer a path-MTU query, so suppress the query and pin a
-   fixed conservative link MTU. Without this OpenSSL faults or emits oversized
-   records. */
+/**
+ * A memory BIO cannot answer a path-MTU query, so suppress the query and pin a fixed conservative link MTU.
+ * Without this OpenSSL faults or emits oversized records.
+ */
 static void dtls_set_mtu(void *ssl)
 {
 	ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_OPTIONS, BZ_SSL_OP_NO_QUERY_MTU, NULL);
 	ossl.SSL_ctrl(ssl, BZ_DTLS_CTRL_SET_LINK_MTU, BZ_DTLS_LINK_MTU, NULL);
 }
 
-/* ---- DTLS HelloVerifyRequest cookie: stateless amplification protection. The
-   server replies to the first ClientHello with a cookie = keyed hash of the peer's
-   address + a per-process random secret; only a client that actually receives that
-   reply (i.e. owns the source address) can echo it back, so a spoofed-source flood
-   cannot make the server run the expensive handshake. The cookie callbacks read the
-   peer address the accept path stashed on the SSL via ex_data (index 0); a memory BIO
-   cannot answer BIO_dgram_get_peer, so passing the address ourselves is required. ---- */
+/**
+ * ---- DTLS HelloVerifyRequest cookie: stateless amplification protection.
+ * The server replies to the first ClientHello with a cookie = keyed hash of the peer's address + a per-process random secret; only a client that actually receives that reply (i.e. owns the source address) can echo it back, so a spoofed-source flood cannot make the server run the expensive handshake.
+ * The cookie callbacks read the peer address the accept path stashed on the SSL via ex_data (index 0); a memory BIO cannot answer BIO_dgram_get_peer, so passing the address ourselves is required. ----
+ */
 static unsigned char g_cookie_secret[16];
 static int g_cookie_secret_ready = 0;
 
@@ -526,21 +519,21 @@ static void dtls_cookie_secret_init(void)
 
 	if (ossl.RAND_bytes(g_cookie_secret, (int)sizeof(g_cookie_secret)) != 1)
 	{
-		/* Degrade safe: a fixed secret still gives return-routability (an off-path
-		   spoofer never receives the cookie), just not unpredictability. */
+		// Degrade safe: a fixed secret still gives return-routability (an off-path spoofer never receives the cookie), just not unpredictability.
 		memset(g_cookie_secret, 0x5a, sizeof(g_cookie_secret));
 	}
 
 	g_cookie_secret_ready = 1;
 }
 
-/* 16-byte cookie = two FNV-1a folds over (secret || peer address bytes). The same
-   ex_data storage is hashed at generate and verify time, so the bytes (incl. padding)
-   are identical and the comparison is stable. */
+/**
+ * 16-byte cookie = two FNV-1a folds over (secret || peer address bytes).
+ * The same ex_data storage is hashed at generate and verify time, so the bytes (incl. padding) are identical and the comparison is stable.
+ */
 static void dtls_make_cookie(const struct sockaddr_storage *ss, unsigned char *out, unsigned int *len)
 {
 	const unsigned char *a = (const unsigned char*)ss;
-	size_t alen = sizeof(struct sockaddr_in6);   /* Covers AF_INET6 + AF_INET. */
+	size_t alen = sizeof(struct sockaddr_in6); // Covers AF_INET6 + AF_INET.
 	uint64_t h1 = 1469598103934665603ULL;
 	uint64_t h2 = 1469598103934665603ULL ^ 0x9e3779b97f4a7c15ULL;
 	for (size_t i = 0; i < sizeof(g_cookie_secret); i++)
@@ -594,8 +587,10 @@ static void dtls_ctx_enable_cookie(void *ctx)
 	ossl.CTX_set_cookie_verify_cb(ctx, dtls_cookie_verify);
 }
 
-/* Arm cookie exchange on one accepted server SSL: require the cookie + stash the peer
-   address the callbacks hash. `peer` must stay valid through the handshake. */
+/**
+ * Arm cookie exchange on one accepted server SSL: require the cookie + stash the peer address the callbacks hash.
+ * `peer` must stay valid through the handshake.
+ */
 static void dtls_ssl_arm_cookie(void *ssl, struct sockaddr_storage *peer)
 {
 	ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_OPTIONS, BZ_SSL_OP_COOKIE_EXCHANGE, NULL);
@@ -630,7 +625,7 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 		ossl.CTX_set_verify(ctx, BZ_SSL_VERIFY_PEER, NULL);
 	}
 
-	void *transport = bzy_udp_connect(host, port);   /* Owned, connected UDP Socket. */
+	void *transport = bzy_udp_connect(host, port); // Owned, connected UDP Socket.
 	if (!transport)
 	{
 		ossl.CTX_free(ctx);
@@ -655,8 +650,8 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 	dtls_set_mtu(ssl);
 	if (!insecure)
 	{
-		ossl.SSL_set1_host(ssl, bzy_str_data(host));                                                 /* Verify hostname. */
-		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)bzy_str_data(host)); /* SNI. */
+		ossl.SSL_set1_host(ssl, bzy_str_data(host)); // Verify hostname.
+		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)bzy_str_data(host)); // SNI.
 	}
 
 	ossl.SSL_set_connect_state(ssl);
@@ -664,7 +659,7 @@ static void *dtls_connect_impl(void *host, int64_t port, void *caBundle, int ins
 	void *s = dtls_sock_wrap(transport, ssl, ctx);
 	if (dtls_run(s, 0, NULL, 0) != 1)
 	{
-		bzy_io_fail("Network.dtlsConnect: handshake failed.");   /* Finalizer cleans up; io_check throws. */
+		bzy_io_fail("Network.dtlsConnect: handshake failed."); // Finalizer cleans up; io_check throws.
 		return s;
 	}
 
@@ -700,8 +695,7 @@ void *bzy_dtls_read(void *s, int64_t maxbytes)
 	}
 
 	int max = (int)(maxbytes > 0 ? maxbytes : 1);
-	/* Stage the plaintext on the stack for the common record; only a rare oversized
-	   read touches the heap. */
+	// Stage the plaintext on the stack for the common record; only a rare oversized read touches the heap.
 	char stackbuf[16384];
 	char *buf = (max <= (int)sizeof(stackbuf)) ? stackbuf : (char*)malloc((size_t)max);
 	if (!buf)
@@ -722,7 +716,7 @@ void *bzy_dtls_read(void *s, int64_t maxbytes)
 		return NULL;
 	}
 
-	void *arr = dtls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean shutdown). */
+	void *arr = dtls_bytes_to_array(buf, n); // n == 0 -> empty byte[] (clean shutdown).
 	if (buf != stackbuf)
 	{
 		free(buf);
@@ -740,7 +734,7 @@ int64_t bzy_dtls_write(void *s, void *data)
 	}
 
 	int len = (int)bzy_array_len(data);
-	const char *bytes = (const char*)data + 32;   /* Packed byte[] payload. */
+	const char *bytes = (const char*)data + 32; // Packed byte[] payload.
 	if (len == 0)
 	{
 		return 0;
@@ -775,10 +769,12 @@ void bzy_dtls_close(void *s)
 #ifndef _WIN32
 /* ===== POSIX server: connected-socket-per-peer demultiplexing. ===== */
 
-/* ---- DtlsListener layout (object_size = 48 + PollDesc):
-   0 vtable | 8 rc | 16 gcinfo | 24 discovery fd(int64) | 32 SSL_CTX* | 40 closed |
-   48 PollDesc. The discovery fd is a wildcard-bound UDP socket used only to learn a
-   new peer's address; each accepted peer then gets its own connected socket. ---- */
+/**
+ * ---- DtlsListener layout (object_size = 48 + PollDesc):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 discovery fd(int64) | 32 SSL_CTX* | 40 closed |
+ * 48 PollDesc.
+ * The discovery fd is a wildcard-bound UDP socket used only to learn a new peer's address; each accepted peer then gets its own connected socket. ----
+ */
 #define DTL_FD(o)      (*(int64_t*)((char*)(o) + 24))
 #define DTL_CTX(o)     (*(void**)((char*)(o) + 32))
 #define DTL_CLOSED(o)  (*(int64_t*)((char*)(o) + 40))
@@ -845,7 +841,7 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		return NULL;
 	}
 
-	dtls_ctx_enable_cookie(ctx);   /* HelloVerifyRequest amplification protection. */
+	dtls_ctx_enable_cookie(ctx); // HelloVerifyRequest amplification protection.
 
 	bzy_reactor_ensure();
 	int fd = socket(AF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0);
@@ -856,12 +852,12 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		return NULL;
 	}
 
-	int v6only = 0;   /* Dual-stack: discover IPv6 and IPv4 (v4-mapped) peers. */
+	int v6only = 0; // Dual-stack: discover IPv6 and IPv4 (v4-mapped) peers.
 	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
 	int yes = 1;
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 #ifdef SO_REUSEPORT
-	setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));   /* Per-peer sockets re-bind this port. */
+	setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes)); // Per-peer sockets re-bind this port.
 #endif
 
 	struct sockaddr_in6 addr;
@@ -892,8 +888,7 @@ void *bzy_dtls_accept(void *l)
 	int fd = (int)DTL_FD(l);
 	PollDesc *pd = DTL_POLL(l);
 
-	/* 1. Discover the next peer: peek one datagram (the ClientHello) on the wildcard
-	   fd, learning the peer sockaddr. */
+	// 1. Discover the next peer: peek one datagram (the ClientHello) on the wildcard fd, learning the peer sockaddr.
 	char hello[16384];
 	struct sockaddr_storage peer;
 	socklen_t plen;
@@ -922,9 +917,7 @@ void *bzy_dtls_accept(void *l)
 		}
 	}
 
-	/* 2. Open a per-peer socket bound to the same local port and connected to the
-	   peer; the more-specific 4-tuple wins over the wildcard, so this peer's later
-	   datagrams route here. */
+	// 2. Open a per-peer socket bound to the same local port and connected to the peer; the more-specific 4-tuple wins over the wildcard, so this peer's later datagrams route here.
 	struct sockaddr_storage local;
 	socklen_t llen = sizeof(local);
 	getsockname(fd, (struct sockaddr*)&local, &llen);
@@ -954,7 +947,7 @@ void *bzy_dtls_accept(void *l)
 		return NULL;
 	}
 
-	void *transport = bzy_sock_wrap(cfd);   /* Owned, reactor-registered on first park. */
+	void *transport = bzy_sock_wrap(cfd); // Owned, reactor-registered on first park.
 	void *ssl = ossl.SSL_new(DTL_CTX(l));
 	if (!ssl || dtls_attach_bios(ssl) != 0)
 	{
@@ -970,19 +963,18 @@ void *bzy_dtls_accept(void *l)
 
 	dtls_set_mtu(ssl);
 	ossl.SSL_set_accept_state(ssl);
-	dtls_ssl_arm_cookie(ssl, &peer);   /* `peer` stays valid through dtls_run in this frame. */
+	dtls_ssl_arm_cookie(ssl, &peer); // `peer` stays valid through dtls_run in this frame.
 
-	/* 3. Feed the peeked ClientHello into the rbio, then run the server handshake on
-	   the connected transport via the retransmitting pump. */
+	// 3. Feed the peeked ClientHello into the rbio, then run the server handshake on the connected transport via the retransmitting pump.
 	if (n > 0)
 	{
 		ossl.BIO_write(ossl.SSL_get_rbio(ssl), hello, n);
 	}
 
-	void *s = dtls_sock_wrap(transport, ssl, NULL);   /* Server conn shares the listener ctx. */
+	void *s = dtls_sock_wrap(transport, ssl, NULL); // Server conn shares the listener ctx.
 	if (dtls_run(s, 0, NULL, 0) != 1)
 	{
-		bzy_io_fail("DtlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
+		bzy_io_fail("DtlsListener.accept: handshake failed."); // Finalizer cleans up.
 	}
 
 	return s;
@@ -1006,24 +998,16 @@ void bzy_dtls_close_listener(void *l)
 }
 
 #else
-/* ===== Windows server: design-B single-fd demultiplexing. =====
-   Connected-socket-per-peer does NOT route on Windows (a wildcard-bound socket steals
-   the peer's datagrams from a same-port connected socket — verified by spike), so the
-   POSIX model can't be reused. Instead ONE demux thread owns the shared listen fd,
-   blocking-recvfrom's every datagram, and forwards it (by address, via fwd_fd) to a
-   per-peer loopback "inbox" UDP socket; an unknown peer also pokes the accept-notify
-   socket. Each accepted peer's DtlsSocket then reads its inbox through the ordinary
-   IOCP-parked bzy_sock_recv (full reuse of the existing read path) and writes
-   ciphertext via DtlsDemuxOut (sendto on the shared fd to the peer's real address).
-   The demux thread never touches an SSL or a breeze — only sockets — so there is no
-   cross-thread SSL race and no scheduler surgery.
-
-   v1 lifetime note: closing the listener stops the thread + closes its sockets, but
-   the bookkeeping table (DtlsDemux + per-peer entries) is intentionally NOT freed,
-   because a live peer DtlsSocket may still reference it; it is process-lifetime, like
-   the listener typically is. A long-lived listener's table grows with total accepted
-   peers (each closed peer's entry is marked dead, not reclaimed) — a refinement, not a
-   correctness bug. */
+/**
+ * ===== Windows server: design-B single-fd demultiplexing. =====
+ * Connected-socket-per-peer does NOT route on Windows (a wildcard-bound socket steals the peer's datagrams from a same-port connected socket - verified by spike), so the POSIX model can't be reused.
+ * Instead ONE demux thread owns the shared listen fd, blocking-recvfrom's every datagram, and forwards it (by address, via fwd_fd) to a per-peer loopback "inbox" UDP socket; an unknown peer also pokes the accept-notify socket.
+ * Each accepted peer's DtlsSocket then reads its inbox through the ordinary IOCP-parked bzy_sock_recv (full reuse of the existing read path) and writes ciphertext via DtlsDemuxOut (sendto on the shared fd to the peer's real address).
+ * The demux thread never touches an SSL or a breeze - only sockets - so there is no cross-thread SSL race and no scheduler surgery.
+ *
+ * v1 lifetime note: closing the listener stops the thread + closes its sockets, but the bookkeeping table (DtlsDemux + per-peer entries) is intentionally NOT freed, because a live peer DtlsSocket may still reference it; it is process-lifetime, like the listener typically is.
+ * A long-lived listener's table grows with total accepted peers (each closed peer's entry is marked dead, not reclaimed) - a refinement, not a correctness bug.
+ */
 
 typedef struct
 {
@@ -1057,8 +1041,10 @@ struct DtlsDemux
 static int64_t g_dtls_list_typeinfo[2] = { 0, 0 };
 static int64_t g_dtls_list_vtable[2];
 
-/* Marked dead so the demux thread stops forwarding to a closed peer's (now closed)
-   inbox. Called from dtls_sock_finalize; dx + entry are process-lifetime (see note). */
+/**
+ * Marked dead so the demux thread stops forwarding to a closed peer's (now closed) inbox.
+ * Called from dtls_sock_finalize; dx + entry are process-lifetime (see note).
+ */
 static void dtls_demux_peer_closed(void *demuxout)
 {
 	DtlsDemuxOut *o = (DtlsDemuxOut*)demuxout;
@@ -1130,7 +1116,7 @@ static DWORD WINAPI dtls_demux_thread(LPVOID arg)
 		{
 			if (!dx->running)
 			{
-				break;    /* Listener close closed the fd. */
+				break; // Listener close closed the fd.
 			}
 			continue;
 		}
@@ -1152,7 +1138,7 @@ static DWORD WINAPI dtls_demux_thread(LPVOID arg)
 		}
 		else
 		{
-			/* New peer: create its inbox, register, forward the ClientHello, wake accept. */
+			// New peer: create its inbox, register, forward the ClientHello, wake accept.
 			DemuxPeer *np = (DemuxPeer*)calloc(1, sizeof(*np));
 			if (np)
 			{
@@ -1237,7 +1223,7 @@ static void dtls_list_finalize(void *o)
 			ossl.CTX_free(dx->ctx);
 			dx->ctx = NULL;
 		}
-		/* dx + entries intentionally NOT freed (live peers may reference them). */
+		// dx + entries intentionally NOT freed (live peers may reference them).
 	}
 
 	DTL2_CLOSED(o) = 1;
@@ -1278,12 +1264,12 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 		return NULL;
 	}
 
-	dtls_ctx_enable_cookie(ctx);   /* HelloVerifyRequest amplification protection. */
+	dtls_ctx_enable_cookie(ctx); // HelloVerifyRequest amplification protection.
 
 	bzy_iocp_ensure();
 
-	/* Shared listen socket: dual-stack AF_INET6 so it discovers IPv6 + v4-mapped peers.
-	   Blocking (the demux thread owns it). */
+	// Shared listen socket: dual-stack AF_INET6 so it discovers IPv6 + v4-mapped peers.
+	// Blocking (the demux thread owns it).
 	SOCKET shared = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	if (shared == INVALID_SOCKET)
 	{
@@ -1331,7 +1317,7 @@ void *bzy_dtls_listen(int64_t port, void *certPath, void *keyPath)
 	u_long nb = 1;
 	ioctlsocket(dx->accept_fd, FIONBIO, &nb);
 	bzy_iocp_associate((void*)dx->accept_fd);
-	dx->accept_sock = bzy_sock_wrap(dx->accept_fd);   /* accept() parks on this. */
+	dx->accept_sock = bzy_sock_wrap(dx->accept_fd); // accept() parks on this.
 	InitializeCriticalSection(&dx->lock);
 	dx->running = 1;
 	dx->thread = CreateThread(NULL, 0, dtls_demux_thread, dx, 0, NULL);
@@ -1361,7 +1347,7 @@ void *bzy_dtls_accept(void *l)
 	DtlsDemux *dx = (DtlsDemux*)DTL2_DX(l);
 	for (;;)
 	{
-		/* Park until the demux thread pokes accept_fd for a new peer. */
+		// Park until the demux thread pokes accept_fd for a new peer.
 		char nb[8];
 		if (bzy_sock_recv(dx->accept_sock, nb, (int)sizeof(nb), -1) < 0)
 		{
@@ -1384,13 +1370,13 @@ void *bzy_dtls_accept(void *l)
 		LeaveCriticalSection(&dx->lock);
 		if (!p)
 		{
-			continue;    /* Spurious wake / already claimed: wait again. */
+			continue; // Spurious wake / already claimed: wait again.
 		}
 
 		u_long nbio = 1;
 		ioctlsocket(p->inbox_fd, FIONBIO, &nbio);
 		bzy_iocp_associate((void*)p->inbox_fd);
-		void *transport = bzy_sock_wrap(p->inbox_fd);   /* Peer reads its inbox via bzy_sock_recv. */
+		void *transport = bzy_sock_wrap(p->inbox_fd); // Peer reads its inbox via bzy_sock_recv.
 
 		void *ssl = ossl.SSL_new(dx->ctx);
 		if (!ssl || dtls_attach_bios(ssl) != 0)
@@ -1407,7 +1393,7 @@ void *bzy_dtls_accept(void *l)
 
 		dtls_set_mtu(ssl);
 		ossl.SSL_set_accept_state(ssl);
-		dtls_ssl_arm_cookie(ssl, &p->peer);   /* p is a heap DemuxPeer, stable through the handshake. */
+		dtls_ssl_arm_cookie(ssl, &p->peer); // p is a heap DemuxPeer, stable through the handshake.
 
 		DtlsDemuxOut *out = (DtlsDemuxOut*)calloc(1, sizeof(*out));
 		out->fd = dx->shared_fd;
@@ -1416,13 +1402,12 @@ void *bzy_dtls_accept(void *l)
 		out->dx = dx;
 		out->entry = p;
 
-		void *s = dtls_sock_wrap(transport, ssl, NULL);   /* Server conn shares the listener ctx. */
+		void *s = dtls_sock_wrap(transport, ssl, NULL); // Server conn shares the listener ctx.
 		DTS_DEMUXOUT(s) = out;
-		/* The ClientHello is already buffered in the inbox (forwarded by the demux
-		   thread), so dtls_run's first feed reads it; no manual BIO_write needed. */
+		// The ClientHello is already buffered in the inbox (forwarded by the demux thread), so dtls_run's first feed reads it; no manual BIO_write needed.
 		if (dtls_run(s, 0, NULL, 0) != 1)
 		{
-			bzy_io_fail("DtlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
+			bzy_io_fail("DtlsListener.accept: handshake failed."); // Finalizer cleans up.
 		}
 
 		return s;

@@ -3,10 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Grow to `ncap` and zero the newly-added region [old_cap, ncap). The fixed
-   arrays these helpers replace lived in BSS and were zero-initialised, and much
-   of the compiler relies on that (e.g. a freshly-grown struct slot having NULL
-   pointers); realloc leaves new memory uninitialised, so we must zero it. */
+/**
+ * Grow to `ncap` and zero the newly-added region [old_cap, ncap).
+ * The fixed arrays these helpers replace lived in BSS and were zero-initialised, and much of the compiler relies on that (e.g. a freshly-grown struct slot having NULL pointers); realloc leaves new memory uninitialised, so we must zero it.
+ */
 static void *grow_to(void *arr, int old_cap, int ncap, int *cap, size_t elem_size)
 {
 	void *n = realloc(arr, (size_t)ncap * elem_size);

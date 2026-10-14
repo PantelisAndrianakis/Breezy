@@ -61,9 +61,7 @@ typedef struct
 	int      block_count;
 	int      block_cap;
 	int      vreg_count;     /* Next vreg id to hand out. */
-	int      is_region;      /* Loop region (Plan 4): every frame local is potentially
-	                            read after the region, so the allocator keeps all
-	                            locals live through the region exit. */
+	int      is_region;      /* Loop region (Plan 4): every frame local is potentially read after the region, so the allocator keeps all locals live through the region exit. */
 	const Func *src;         /* The AST function this was lowered from. */
 } IRFunc;
 
@@ -75,8 +73,7 @@ void    ir_func_free(IRFunc *f);
 int     ir_block_new(IRFunc *f);
 IRReg   ir_reg(IRFunc *f);
 
-/* Append an instruction to block `blk`; returns a pointer valid until the next
-   append to the same block (do not retain across appends to that block). */
+/* Append an instruction to block `blk`; returns a pointer valid until the next append to the same block (do not retain across appends to that block). */
 IRInstr *ir_emit(IRFunc *f, int blk, IROp op, TypeKind type);
 
 #endif

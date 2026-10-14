@@ -5,11 +5,11 @@
 #include <winsock2.h>
 #include <windows.h>
 
-/* Full definition of the op declared opaque in breezy.h. OVERLAPPED MUST be first
-   so CONTAINING_RECORD(ov, struct IocpOp, ov) recovers the op in the completion
-   thread. The op lives on the issuing breeze's coroutine stack (stable while
-   parked); the completion thread fills bytes/err, then wakes the breeze and never
-   touches the op again. */
+/**
+ * Full definition of the op declared opaque in breezy.h.
+ * OVERLAPPED MUST be first so CONTAINING_RECORD(ov, struct IocpOp, ov) recovers the op in the completion thread.
+ * The op lives on the issuing breeze's coroutine stack (stable while parked); the completion thread fills bytes/err, then wakes the breeze and never touches the op again.
+ */
 struct IocpOp
 {
 	OVERLAPPED ov;
@@ -46,20 +46,19 @@ static DWORD WINAPI completion_thread(void *unused)
 
 		if (!ov && key == 0xFFFFFFFFull)
 		{
-			break;                    /* Shutdown sentinel (posted by bzy_iocp_shutdown). */
+			break; // Shutdown sentinel (posted by bzy_iocp_shutdown).
 		}
 
 		if (!ov)
 		{
-			continue;                 /* Spurious / timeout (we use INFINITE, so unlikely). */
+			continue; // Spurious / timeout (we use INFINITE, so unlikely).
 		}
 
 		struct IocpOp *op = CONTAINING_RECORD(ov, struct IocpOp, ov);
 		op->bytes = bytes;
-		op->err = ok ? 0 : (int)GetLastError();   /* Failed op: the error rode the completion. */
+		op->err = ok ? 0 : (int)GetLastError(); // Failed op: the error rode the completion.
 
-		/* Wait until the breeze is fully parked (it holds op->lock; the scheduler
-		   releases it after the parking switch -- bzy_iocp_park uses park_unlock). */
+		// Wait until the breeze is fully parked (it holds op->lock; the scheduler releases it after the parking switch -- bzy_iocp_park uses park_unlock).
 		AcquireSRWLockExclusive(&op->lock);
 		void *breeze = op->breeze;
 		ReleaseSRWLockExclusive(&op->lock);
@@ -112,7 +111,7 @@ void bzy_iocp_ensure(void)
 
 void bzy_iocp_associate(void *handle)
 {
-	CreateIoCompletionPort((HANDLE)handle, g_port, 0, 0);   /* Key unused: we recover the op from ov. */
+	CreateIoCompletionPort((HANDLE)handle, g_port, 0, 0); // Key unused: we recover the op from ov.
 }
 
 void bzy_iocp_op_reset(IocpOp *op)
@@ -123,11 +122,9 @@ void bzy_iocp_op_reset(IocpOp *op)
 	o->breeze = bzy_sched_current();
 	o->bytes = 0;
 	o->err = 0;
-	/* Hold the handshake lock BEFORE the caller posts the overlapped op, not after
-	   (in bzy_iocp_park). IOCP queues a completion even on immediate success, and a
-	   completion thread blocks on this lock to wait for the park; taking it first
-	   guarantees it cannot wake a not-yet-parked breeze and resume the coroutine on
-	   two threads. (The Linux reactor had the mirror-image bug.) */
+	// Hold the handshake lock BEFORE the caller posts the overlapped op, not after (in bzy_iocp_park).
+	// IOCP queues a completion even on immediate success, and a completion thread blocks on this lock to wait for the park; taking it first guarantees it cannot wake a not-yet-parked breeze and resume the coroutine on two threads.
+	// (The Linux reactor had the mirror-image bug.)
 	AcquireSRWLockExclusive(&o->lock);
 }
 
@@ -140,10 +137,9 @@ void bzy_iocp_park(IocpOp *op)
 {
 	struct IocpOp *o = (struct IocpOp*)op;
 	InterlockedIncrement(&g_inflight);
-	/* o->lock is already held (taken in bzy_iocp_op_reset, before the overlapped
-	   post); the scheduler releases it after the parking switch. */
+	// o->lock is already held (taken in bzy_iocp_op_reset, before the overlapped post); the scheduler releases it after the parking switch.
 	bzy_sched_park_unlock(&o->lock);
-	/* Resumed: the completion thread filled bytes/err and woke us. */
+	// Resumed: the completion thread filled bytes/err and woke us.
 }
 
 unsigned long bzy_iocp_op_bytes(IocpOp *op)
@@ -168,7 +164,7 @@ void bzy_iocp_shutdown(void)
 	{
 		for (int i = 0; i < g_nthreads; i++)
 		{
-			PostQueuedCompletionStatus(g_port, 0, 0xFFFFFFFFull, NULL);   /* Sentinel per thread. */
+			PostQueuedCompletionStatus(g_port, 0, 0xFFFFFFFFull, NULL); // Sentinel per thread.
 		}
 
 		WaitForMultipleObjects((DWORD)g_nthreads, g_threads, TRUE, INFINITE);

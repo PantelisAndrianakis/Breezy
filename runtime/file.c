@@ -20,18 +20,19 @@ static __thread const char *g_io_error;   /* Per-thread: an offload worker sets 
 
 static void io_fail(const char *msg)
 {
-	g_io_error = msg;                 /* Static strings only (stable lifetime). */
+	g_io_error = msg; // Static strings only (stable lifetime).
 }
 
-/* Public wrapper so other runtime TUs (filechannel.c) can set the same thread-local
-   io-error that bzy_io_check consumes. */
+/* Public wrapper so other runtime TUs (filechannel.c) can set the same thread-local io-error that bzy_io_check consumes. */
 void bzy_io_fail(const char *msg)
 {
 	io_fail(msg);
 }
 
-/* Called by codegen after each fallible File op. Throws IOException if the last
-   op failed; pc/frame locate the Breezy call site (the bzy_oob pattern). */
+/**
+ * Called by codegen after each fallible File op.
+ * Throws IOException if the last op failed; pc/frame locate the Breezy call site (the bzy_oob pattern).
+ */
 void bzy_io_check(int64_t pc, int64_t frame)
 {
 	if (!g_io_error)
@@ -44,7 +45,7 @@ void bzy_io_check(int64_t pc, int64_t frame)
 	void *exc = bzy_alloc(32);
 	*(void**)exc = (void*)__vtable_IOException;
 	*(void**)((char*)exc + 24) = msg;
-	bzy_throw(exc, pc, frame);        /* Never returns. */
+	bzy_throw(exc, pc, frame); // Never returns.
 }
 
 /* Returns 1 if path exists; sets *isdir (if non-NULL) to 1 for a directory. */
@@ -263,8 +264,11 @@ void bzy_file_delete_recursive(void *path)
 	}
 }
 
-/* Read the whole file into a malloc'd buffer; *out_len gets the byte count.
-   Returns NULL (and sets io_fail) on error. The buffer is NUL-terminated. */
+/**
+ * Read the whole file into a malloc'd buffer; *out_len gets the byte count.
+ * Returns NULL (and sets io_fail) on error.
+ * The buffer is NUL-terminated.
+ */
 static char *read_all(const char *path, int64_t *out_len, const char *who)
 {
 	FILE *f = fopen(path, "rb");
@@ -326,7 +330,7 @@ static void *real_read_lines(void *path)
 
 	if (n > 0 && buf[n - 1] != '\n')
 	{
-		lines++;   /* Final segment with no trailing newline. */
+		lines++; // Final segment with no trailing newline.
 	}
 
 	void *arr = bzy_array_new(lines, 1);
@@ -338,16 +342,16 @@ static void *real_read_lines(void *path)
 		{
 			if (i == n && start == i)
 			{
-				break;   /* No dangling empty line after a trailing newline. */
+				break; // No dangling empty line after a trailing newline.
 			}
 
 			int64_t end = i;
 			if (end > start && buf[end - 1] == '\r')
 			{
-				end--;   /* Strip CR for CRLF line endings. */
+				end--; // Strip CR for CRLF line endings.
 			}
 
-			elems[idx++] = bzy_str_new(buf + start, end - start);   /* Owned; transferred. */
+			elems[idx++] = bzy_str_new(buf + start, end - start); // Owned; transferred.
 			start = i + 1;
 		}
 	}
@@ -393,7 +397,7 @@ static void *real_read_bytes(void *path)
 		return NULL;
 	}
 
-	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0); // Packed byte[].
 	if (n > 0)
 	{
 		memcpy((char*)arr + 32, buf, (size_t)n);
@@ -415,7 +419,7 @@ static void real_write_bytes(void *path, void *data)
 	int64_t n = bzy_array_len(data);
 	if (n > 0)
 	{
-		fwrite((const char*)data + 32, 1, (size_t)n, f);   /* Packed bytes, no copy. */
+		fwrite((const char*)data + 32, 1, (size_t)n, f); // Packed bytes, no copy.
 	}
 
 	fclose(f);
@@ -446,7 +450,7 @@ static int glob_match(const char *p, const char *s)
 				}
 			}
 
-			return glob_match(p, s);   /* s at end. */
+			return glob_match(p, s); // s at end.
 		}
 
 		if (*p == '?')
@@ -487,8 +491,7 @@ static void pl_push(PathList *pl, void *s)
 	pl->items[pl->count++] = s;
 }
 
-/* Enumerate folder; push full paths whose name matches pattern (NULL = all);
-   recurse into subdirectories when recursive. */
+/* Enumerate folder; push full paths whose name matches pattern (NULL = all); recurse into subdirectories when recursive. */
 static void walk_dir(const char *folder, const char *pattern, int recursive, PathList *pl)
 {
 #ifdef _WIN32
@@ -577,7 +580,7 @@ static void *build_search(void *folder, const char *pattern, int recursive, cons
 	void **elems = (void**)((char*)arr + 32);
 	for (int64_t i = 0; i < pl.count; i++)
 	{
-		elems[i] = pl.items[i];   /* Owned; transferred to the array. */
+		elems[i] = pl.items[i]; // Owned; transferred to the array.
 	}
 
 	free(pl.items);
@@ -600,9 +603,10 @@ void *bzy_file_search_recursive(void *folder, void *pattern)
 }
 
 #ifndef _WIN32
-/* HIDDEN/SYSTEM/ARCHIVE have no native Linux equivalent, so persist them as
-   user.* extended attributes. Unlike a dotfile rename, an xattr keeps the path
-   stable, so the same path can both set and query the flag. */
+/**
+ * HIDDEN/SYSTEM/ARCHIVE have no native Linux equivalent, so persist them as user.* extended attributes.
+ * Unlike a dotfile rename, an xattr keeps the path stable, so the same path can both set and query the flag.
+ */
 static void file_set_xattr(const char *p, const char *name, int64_t on)
 {
 	int r;
@@ -613,7 +617,7 @@ static void file_set_xattr(const char *p, const char *name, int64_t on)
 	else
 	{
 		r = removexattr(p, name);
-		if (r != 0 && errno == ENODATA)   /* Clearing a flag that is not set is not an error. */
+		if (r != 0 && errno == ENODATA) // Clearing a flag that is not set is not an error.
 		{
 			r = 0;
 		}
@@ -631,8 +635,7 @@ static int64_t file_has_xattr(const char *p, const char *name)
 }
 #endif
 
-/* Attribute bits match the Windows FILE_ATTRIBUTE_* constants:
-   READONLY=1, HIDDEN=2, SYSTEM=4, ARCHIVE=32. */
+/* Attribute bits match the Windows FILE_ATTRIBUTE_* constants: READONLY=1, HIDDEN=2, SYSTEM=4, ARCHIVE=32. */
 void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 {
 	const char *p = bzy_str_data(path);
@@ -665,7 +668,7 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 		return;
 	}
 
-	if (attr & 1)   /* READONLY maps to the write permission bits. */
+	if (attr & 1) // READONLY maps to the write permission bits.
 	{
 		mode_t m = on ? (st.st_mode & ~(mode_t)0222) : (st.st_mode | 0200);
 		if (chmod(p, m) != 0)
@@ -674,17 +677,17 @@ void bzy_file_set_attribute(void *path, int64_t attr, int64_t on)
 		}
 	}
 
-	if (attr & 2)   /* HIDDEN.  */
+	if (attr & 2) // HIDDEN.
 	{
 		file_set_xattr(p, "user.bzy.hidden",  on);
 	}
 
-	if (attr & 4)   /* SYSTEM.  */
+	if (attr & 4) // SYSTEM.
 	{
 		file_set_xattr(p, "user.bzy.system",  on);
 	}
 
-	if (attr & 32)  /* ARCHIVE. */
+	if (attr & 32) // ARCHIVE.
 	{
 		file_set_xattr(p, "user.bzy.archive", on);
 	}
@@ -711,32 +714,33 @@ int64_t bzy_file_has_attribute(void *path, int64_t attr)
 
 	if (attr & 1)
 	{
-		return (st.st_mode & 0222) ? 0 : 1;   /* READONLY = no write bits. */
+		return (st.st_mode & 0222) ? 0 : 1; // READONLY = no write bits.
 	}
 
 	if (attr & 2)
 	{
-		return file_has_xattr(p, "user.bzy.hidden");     /* HIDDEN.  */
+		return file_has_xattr(p, "user.bzy.hidden"); // HIDDEN.
 	}
 
 	if (attr & 4)
 	{
-		return file_has_xattr(p, "user.bzy.system");     /* SYSTEM.  */
+		return file_has_xattr(p, "user.bzy.system"); // SYSTEM.
 	}
 
 	if (attr & 32)
 	{
-		return file_has_xattr(p, "user.bzy.archive");    /* ARCHIVE. */
+		return file_has_xattr(p, "user.bzy.archive"); // ARCHIVE.
 	}
 
 	return 0;
 #endif
 }
 
-/* Offload helpers: run a blocking file op on the pool while the breeze parks, then
-   transfer the worker's io-error into this (breeze) thread so the codegen-emitted
-   bzy_io_check sees it. Outside a breeze (bzy_sched_current()==NULL) run inline.
-   The caller owns path/data/result across the park; the worker only reads them. */
+/**
+ * Offload helpers: run a blocking file op on the pool while the breeze parks, then transfer the worker's io-error into this (breeze) thread so the codegen-emitted bzy_io_check sees it.
+ * Outside a breeze (bzy_sched_current()==NULL) run inline.
+ * The caller owns path/data/result across the park; the worker only reads them.
+ */
 
 typedef struct
 {
@@ -749,20 +753,20 @@ static void off1_run(void *p)
 {
 	Off1 *c = (Off1*)p;
 	c->result = c->fn(c->a0);
-	c->err = g_io_error;     /* Capture on the worker thread; */
-	g_io_error = NULL;       /* leave the worker thread's flag clean. */
+	c->err = g_io_error; // Capture on the worker thread;
+	g_io_error = NULL; // leave the worker thread's flag clean.
 }
 
 static void *offload1(void *(*fn)(void*), void *a0)
 {
 	if (!bzy_sched_current())
 	{
-		return fn(a0);                 /* No breeze: run inline. */
+		return fn(a0); // No breeze: run inline.
 	}
 
 	Off1 c = { fn, a0, NULL, NULL };
 	bzy_offload_run(off1_run, &c);
-	g_io_error = c.err;                /* Transfer onto the breeze thread for bzy_io_check. */
+	g_io_error = c.err; // Transfer onto the breeze thread for bzy_io_check.
 	return c.result;
 }
 
@@ -812,13 +816,13 @@ static void offload1v(void (*fn)(void*), void *a0)
 {
 	if (!bzy_sched_current())
 	{
-		fn(a0);                /* No breeze: run inline. */
+		fn(a0); // No breeze: run inline.
 		return;
 	}
 
 	Off1v c = { fn, a0, NULL };
 	bzy_offload_run(off1v_run, &c);
-	g_io_error = c.err;        /* Transfer onto the breeze thread for bzy_io_check. */
+	g_io_error = c.err; // Transfer onto the breeze thread for bzy_io_check.
 }
 
 void *bzy_file_read_text(void *path)
@@ -851,10 +855,12 @@ void  bzy_file_write_bytes(void *path, void *d)
 	offload2v(real_write_bytes, path, d);
 }
 
-/* FileWriter (6b-3): a managed leaf handle (object_size = 64):
-   0 vtable | 8 rc | 16 gcinfo | 24 FILE* | 32 buf | 40 cap | 48 len | 56 closed.
-   write* memcpy into buf on the breeze thread; flush/close run the fwrite on the
-   offload pool. The finalizer flushes+closes inline (it cannot park) and frees buf. */
+/**
+ * FileWriter (6b-3): a managed leaf handle (object_size = 64):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 FILE* | 32 buf | 40 cap | 48 len | 56 closed.
+ * write* memcpy into buf on the breeze thread; flush/close run the fwrite on the offload pool.
+ * The finalizer flushes+closes inline (it cannot park) and frees buf.
+ */
 #define FW_FILE(o)   (*(FILE**)((char*)(o) + 24))
 #define FW_BUF(o)    (*(char**)((char*)(o) + 32))
 #define FW_CAP(o)    (*(int64_t*)((char*)(o) + 40))
@@ -867,7 +873,7 @@ static void fw_finalize(void *w)
 	{
 		if (FW_LEN(w) > 0)
 		{
-			fwrite(FW_BUF(w), 1, (size_t)FW_LEN(w), FW_FILE(w));   /* Best-effort: a finalizer cannot park. */
+			fwrite(FW_BUF(w), 1, (size_t)FW_LEN(w), FW_FILE(w)); // Best-effort: a finalizer cannot park.
 		}
 
 		fclose(FW_FILE(w));
@@ -895,7 +901,7 @@ void *bzy_filewriter_open(void *path, int64_t append, int64_t buf_bytes)
 	if (!f)
 	{
 		io_fail(append ? "File.openAppend: could not open file." : "File.openWrite: could not open file.");
-		return NULL;   /* The codegen-emitted bzy_io_check throws before this is used. */
+		return NULL; // The codegen-emitted bzy_io_check throws before this is used.
 	}
 
 	int64_t cap = buf_bytes > 0 ? buf_bytes : 65536;
@@ -909,9 +915,10 @@ void *bzy_filewriter_open(void *path, int64_t append, int64_t buf_bytes)
 	return w;
 }
 
-/* Worker-side: write the buffered bytes out and reset the fill. Runs on the offload
-   pool (the breeze is parked) so a failed write sets g_io_error on the worker thread;
-   offload1v transfers it back. */
+/**
+ * Worker-side: write the buffered bytes out and reset the fill.
+ * Runs on the offload pool (the breeze is parked) so a failed write sets g_io_error on the worker thread; offload1v transfers it back.
+ */
 static void real_flush(void *w)
 {
 	if (FW_LEN(w) > 0)
@@ -936,8 +943,10 @@ static void real_close(void *w)
 	}
 }
 
-/* Append n bytes into the buffer on the breeze thread, flushing (offloaded) whenever
-   it fills. A chunk larger than the buffer drains in capacity-sized flushes. */
+/**
+ * Append n bytes into the buffer on the breeze thread, flushing (offloaded) whenever it fills.
+ * A chunk larger than the buffer drains in capacity-sized flushes.
+ */
 static void fw_append(void *w, const char *data, int64_t n)
 {
 	int64_t off = 0;
@@ -950,10 +959,10 @@ static void fw_append(void *w, const char *data, int64_t n)
 		off += take;
 		if (FW_LEN(w) == FW_CAP(w))
 		{
-			offload1v(real_flush, w);   /* Buffer full: flush (parks the breeze). */
+			offload1v(real_flush, w); // Buffer full: flush (parks the breeze).
 			if (g_io_error)
 			{
-				return;                 /* A failed flush: stop; bzy_io_check will throw. */
+				return; // A failed flush: stop; bzy_io_check will throw.
 			}
 		}
 	}
@@ -994,7 +1003,7 @@ void bzy_filewriter_write_bytes(void *w, void *data)
 	}
 
 	int64_t n = bzy_array_len(data);
-	fw_append(w, (const char*)data + 32, n);   /* Packed bytes, no copy. */
+	fw_append(w, (const char*)data + 32, n); // Packed bytes, no copy.
 }
 
 void bzy_filewriter_flush(void *w)
@@ -1012,9 +1021,9 @@ void bzy_filewriter_close(void *w)
 {
 	if (FW_CLOSED(w))
 	{
-		return;   /* Idempotent. */
+		return; // Idempotent.
 	}
 
 	offload1v(real_close, w);
-	FW_CLOSED(w) = 1;   /* Closed even if the final flush failed; bzy_io_check will throw. */
+	FW_CLOSED(w) = 1; // Closed even if the final flush failed; bzy_io_check will throw.
 }

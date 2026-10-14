@@ -48,14 +48,13 @@ static void test_empty_is_noop(void)
 
 static void test_ir_flag_defaults_on(void)
 {
-	/* With BZY_IR unset, the IR backend is the default for eligible functions
-	   (the hot-spill safety gate keeps losing functions on the emitter). */
+	// With BZY_IR unset, the IR backend is the default for eligible functions (the hot-spill safety gate keeps losing functions on the emitter).
 	ASSERT_INT(bzy_ir_enabled(), 1);
 }
 
 static void test_c_flag_defaults_on(void)
 {
-	/* With BZY_C unset (and the IR backend on), the C route is the default. */
+	// With BZY_C unset (and the IR backend on), the C route is the default.
 	ASSERT_INT(bzy_c_enabled(), 1);
 }
 

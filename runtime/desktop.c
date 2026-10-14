@@ -1,7 +1,8 @@
-/* Desktop GUI runtime. GTK3 is resolved at runtime (no compile/link-time GTK
-   dependency), so a program that never touches the Desktop API pulls this
-   object only if its prelude references __desktop_* — and even then needs no
-   GTK to link. All GTK work happens on one dedicated thread (see Task 3). */
+/**
+ * Desktop GUI runtime.
+ * GTK3 is resolved at runtime (no compile/link-time GTK dependency), so a program that never touches the Desktop API pulls this object only if its prelude references __desktop_* - and even then needs no GTK to link.
+ * All GTK work happens on one dedicated thread (see Task 3).
+ */
 #include "desktop.h"
 
 #include <stddef.h>
@@ -51,8 +52,7 @@ static void *dl_sym(void *h, const char *name)
 }
 #endif
 
-/* The subset of GTK3/GLib used by Phase 1, as function pointers. void* stands in
-   for every GTK pointer type so this file needs no GTK headers. */
+/* The subset of GTK3/GLib used by Phase 1, as function pointers. void* stands in for every GTK pointer type so this file needs no GTK headers. */
 typedef int  (*fn_init_check)(int *argc, char ***argv);
 typedef void (*fn_main)(void);
 typedef void (*fn_main_quit)(void);
@@ -109,8 +109,11 @@ struct gtk_api
 
 static struct gtk_api G;
 
-/* Resolve the GTK/GLib symbol set once. Returns 1 on success, 0 on failure.
-   Idempotent and cheap on repeat calls. */
+/**
+ * Resolve the GTK/GLib symbol set once.
+ * Returns 1 on success, 0 on failure.
+ * Idempotent and cheap on repeat calls.
+ */
 static int desktop_load(void)
 {
 	if (G.loaded != 0)
@@ -175,10 +178,11 @@ static int desktop_load(void)
 	return 1;
 }
 
-/* A display exists if GTK is loadable and (on X11/Wayland) a server is named.
-   On Windows an interactive session always has a desktop. We deliberately do
-   NOT call gtk_init_check here (it would touch the display from a worker
-   thread); the environment probe is sufficient and side-effect-free. */
+/**
+ * A display exists if GTK is loadable and (on X11/Wayland) a server is named.
+ * On Windows an interactive session always has a desktop.
+ * We deliberately do NOT call gtk_init_check here (it would touch the display from a worker thread); the environment probe is sufficient and side-effect-free.
+ */
 int bzy_desktop_is_enabled(void)
 {
 	if (!desktop_load())
@@ -221,9 +225,11 @@ typedef pthread_cond_t  cnd_t_compat;
 #define CND_SIGNAL(c) pthread_cond_signal(c)
 #endif
 
-/* A single command marshalled onto the GTK thread. The op code selects the
-   action; a/b/c are integer/pointer args; s is an optional string; `result`
-   receives a returned handle. Completion is signalled via done. */
+/**
+ * A single command marshalled onto the GTK thread.
+ * The op code selects the action; a/b/c are integer/pointer args; s is an optional string; `result` receives a returned handle.
+ * Completion is signalled via done.
+ */
 enum { OP_FRAME_NEW = 1, OP_FRAME_TITLE, OP_PANEL_NEW,
 	   OP_BUTTON_NEW, OP_BUTTON_TEXT, OP_LABEL_NEW, OP_LABEL_TEXT,
 	   OP_CONTAINER_ADD, OP_BORDER_ADD, OP_SET_VISIBLE, OP_SET_ENABLED,
@@ -246,11 +252,11 @@ static int gtk_thread_started = 0;
 static mtx_t_compat start_mtx;
 static int start_mtx_init = 0;
 
-/* Border container layout: a vertical box holding [north, center-row, south]
-   where the center-row is a horizontal box [west, center(expand), east]. The
-   table is keyed by the WINDOW handle (which Breezy also uses as the content
-   handle, since Frame.content == Frame.handle), so border adds resolve from the
-   frame handle directly. Phase 1 supports a bounded number of frames. */
+/**
+ * Border container layout: a vertical box holding [north, center-row, south] where the center-row is a horizontal box [west, center(expand), east].
+ * The table is keyed by the WINDOW handle (which Breezy also uses as the content handle, since Frame.content == Frame.handle), so border adds resolve from the frame handle directly.
+ * Phase 1 supports a bounded number of frames.
+ */
 struct border
 {
 	void *window;       /* The GtkWindow handle == Breezy frame/content handle. */
@@ -278,17 +284,20 @@ static struct border *border_find(void *window)
 static int open_windows = 0;
 static void *event_queue = NULL;   /* GAsyncQueue*, created lazily. */
 
-/* One queued UI event. kind: 0=action, 1=window-close. reg_index identifies the
-   Breezy widget object (its slot in Desktop._reg). The sentinel record with
-   reg_index -1 tells the run-loop to stop. */
+/**
+ * One queued UI event. kind: 0=action, 1=window-close. reg_index identifies the Breezy widget object (its slot in Desktop._reg).
+ * The sentinel record with reg_index -1 tells the run-loop to stop.
+ */
 struct ui_event
 {
 	int64_t reg_index;
 	int64_t kind;
 };
 
-/* The current event reported by the last next_event(), so event_kind() can read
-   its kind. Single-consumer (the one Desktop.run loop), so a static is safe. */
+/**
+ * The current event reported by the last next_event(), so event_kind() can read its kind.
+ * Single-consumer (the one Desktop.run loop), so a static is safe.
+ */
 static int64_t cur_event_kind = 0;
 
 static void ensure_event_queue(void)
@@ -313,9 +322,11 @@ static void push_event(int64_t reg_index, int64_t kind)
 	G.async_queue_push(event_queue, ev);
 }
 
-/* GTK signal trampolines. They run on the GTK thread and only enqueue; they
-   never touch Breezy state, so no callback ever crosses into Breezy. The user
-   data carries the Breezy registration index. */
+/**
+ * GTK signal trampolines.
+ * They run on the GTK thread and only enqueue; they never touch Breezy state, so no callback ever crosses into Breezy.
+ * The user data carries the Breezy registration index.
+ */
 static void on_action(void *widget, void *user_data)
 {
 	(void)widget;
@@ -333,7 +344,7 @@ static void on_window_close(void *widget, void *user_data)
 
 	if (open_windows == 0)
 	{
-		push_event(-1, 0);    /* Sentinel: stop the run-loop. */
+		push_event(-1, 0); // Sentinel: stop the run-loop.
 	}
 }
 
@@ -349,7 +360,7 @@ static int gtk_dispatch_idle(void *data)
 	c->done = 1;
 	CND_SIGNAL(&c->cv);
 	MTX_UNLOCK(&c->m);
-	return 0;   /* G_SOURCE_REMOVE. */
+	return 0; // G_SOURCE_REMOVE.
 }
 
 #if defined(_WIN32)
@@ -361,8 +372,8 @@ static void *gtk_thread_main(void *arg)
 	(void)arg;
 	int argc = 0;
 	char **argv = NULL;
-	G.init_check(&argc, &argv);   /* Safe to fail; isEnabled already gated entry. */
-	G.main();                     /* Runs until gtk_main_quit. */
+	G.init_check(&argc, &argv); // Safe to fail; isEnabled already gated entry.
+	G.main(); // Runs until gtk_main_quit.
 #if defined(_WIN32)
 	return 0;
 #else
@@ -379,7 +390,7 @@ static void ensure_gtk_thread(void)
 	}
 
 	MTX_LOCK(&start_mtx);
-	ensure_event_queue();   /* Create once under the lock: no creation race. */
+	ensure_event_queue(); // Create once under the lock: no creation race.
 	if (!gtk_thread_started)
 	{
 		gtk_thread_started = 1;
@@ -395,8 +406,10 @@ static void ensure_gtk_thread(void)
 	MTX_UNLOCK(&start_mtx);
 }
 
-/* Run one command on the GTK thread and block until it completes. Returns the
-   command's result handle. */
+/**
+ * Run one command on the GTK thread and block until it completes.
+ * Returns the command's result handle.
+ */
 static int64_t gtk_call(int op, int64_t a, int64_t b, int64_t c, const char *s)
 {
 	if (!desktop_load())
@@ -444,7 +457,7 @@ static void cmd_execute(struct cmd *c)
 		void *vbox = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
 		void *crow = G.box_new(GTK_ORIENTATION_HORIZONTAL, 0);
 		void *center = G.box_new(GTK_ORIENTATION_VERTICAL, 0);
-		/* center-row: west | center(expand) | east, packed as widgets add. */
+		// center-row: west | center(expand) | east, packed as widgets add.
 		G.box_pack_start(crow, center, 1, 1, 0);
 		G.box_pack_start(vbox, crow, 1, 1, 0);
 		G.container_add(win, vbox);
@@ -456,8 +469,7 @@ static void cmd_execute(struct cmd *c)
 			borders[border_count].center = center;
 			border_count++;
 		}
-		/* Frame handle == content handle == the window; border adds resolve
-		   the slot boxes via the borders table keyed by this window. */
+		// Frame handle == content handle == the window; border adds resolve the slot boxes via the borders table keyed by this window.
 		c->result = (int64_t)(intptr_t)win;
 		break;
 	}
@@ -495,19 +507,19 @@ static void cmd_execute(struct cmd *c)
 		{
 		case 0:
 			G.box_pack_start(bd->vbox, child, 0, 0, 0);
-			break;         /* North. */
+			break; // North.
 		case 1:
 			G.box_pack_start(bd->vbox, child, 0, 0, 0);
-			break;         /* South (Phase 1: appended). */
+			break; // South (Phase 1: appended).
 		case 2:
 			G.box_pack_start(bd->center_row, child, 0, 0, 0);
-			break;   /* West. */
+			break; // West.
 		case 3:
 			G.box_pack_start(bd->center_row, child, 0, 0, 0);
-			break;   /* East. */
+			break; // East.
 		default:
 			G.box_pack_start(bd->center, child, 1, 1, 0);
-			break;      /* Center. */
+			break; // Center.
 		}
 		break;
 	}
@@ -641,7 +653,7 @@ int bzy_desktop_next_event(void)
 		return -1;
 	}
 
-	struct ui_event *ev = (struct ui_event *)G.async_queue_pop(event_queue);   /* Blocks. */
+	struct ui_event *ev = (struct ui_event *)G.async_queue_pop(event_queue); // Blocks.
 	int idx = (int)ev->reg_index;
 	cur_event_kind = ev->kind;
 	free(ev);

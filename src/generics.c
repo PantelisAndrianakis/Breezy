@@ -5,15 +5,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Runaway-recursion backstop (NOT a capacity wall): a well-formed program has a
-   finite, statically-knowable set of instantiations, but an ill-formed
-   self-nesting generic (e.g. Loop<Loop<T>>) would instantiate forever. Abort
-   well before exhausting memory. The instance table itself grows dynamically. */
+/**
+ * Runaway-recursion backstop (NOT a capacity wall): a well-formed program has a finite, statically-knowable set of instantiations, but an ill-formed self-nesting generic (e.g. Loop<Loop<T>>) would instantiate forever.
+ * Abort well before exhausting memory.
+ * The instance table itself grows dynamically.
+ */
 #define GENERIC_INSTANCE_LIMIT 100000000
 
-/* The built-in template names (Box/List/... from Parts 4e/4f) are handled by
-   inline specialization, not lowering. A user generic may not shadow them. This
-   mirrors parser.c's is_generic_template; keep the two in sync. */
+/**
+ * The built-in template names (Box/List/... from Parts 4e/4f) are handled by inline specialization, not lowering.
+ * A user generic may not shadow them.
+ * This mirrors parser.c's is_generic_template; keep the two in sync.
+ */
 static int is_builtin_template(const char *name)
 {
 	return strcmp(name,"Box")==0 || strcmp(name,"List")==0 || strcmp(name,"Stack")==0
@@ -132,14 +135,13 @@ static void mangle_type(const TypeRef *t, char *buf)
 		strcat(buf,"_");
 		mangle_type(t->elem2,buf);
 		break;
-	case TY_GENERIC:   /* A built-in template arg, e.g. List<int>. */
+	case TY_GENERIC: // A built-in template arg, e.g. List<int>.
 		strcat(buf,t->class_name);
 		strcat(buf,"$");
 		mangle_type(t->elem,buf);
 		break;
-	/* Built-in managed handle types as type arguments — so a generic can hold them,
-	   e.g. Pool<PgConnection> / Pool<Socket>. They are 8-byte managed pointers like
-	   any object (channels already carry them), so they need only a stable name. */
+	// Built-in managed handle types as type arguments - so a generic can hold them, e.g. Pool<PgConnection> / Pool<Socket>.
+	// They are 8-byte managed pointers like any object (channels already carry them), so they need only a stable name.
 	case TY_SOCKET:
 		strcat(buf,"Socket");
 		break;
@@ -212,7 +214,7 @@ static void subst_typeref(TypeRef *t, const ClassDecl *tpl, struct TypeRef *cons
 		{
 			if (strcmp(t->class_name,tpl->type_params[i])==0)
 			{
-				*t=typeref_deepcopy(args[i]);   /* T -> concrete (may be a generic app). */
+				*t=typeref_deepcopy(args[i]); // T -> concrete (may be a generic app).
 				return;
 			}
 		}
@@ -244,8 +246,7 @@ static void subst_expr(Expr *e, const ClassDecl *tpl, struct TypeRef *const args
 	}
 
 	subst_typeref(&e->type,tpl,args);
-	/* `new T(...)`: if the constructed name is a type parameter, substitute the
-	   arg's object class name (v1 requires the arg to be an object type). */
+	// `new T(...)`: if the constructed name is a type parameter, substitute the arg's object class name (v1 requires the arg to be an object type).
 	if (e->kind==EX_NEW)
 	{
 		for (int i=0; i<tpl->type_param_count; i++)
@@ -324,7 +325,7 @@ static void check_bound(const ClassDecl *tpl, int pi, const TypeRef *arg, int li
 	const char *bound=tpl->type_param_bounds[pi];
 	if (bound[0]=='\0')
 	{
-		return;   /* Unbounded. */
+		return; // Unbounded.
 	}
 
 	if (arg->kind!=TY_OBJECT)
@@ -390,7 +391,7 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 		exit(1);
 	}
 
-	/* Clone + substitute. */
+	// Clone + substitute.
 	ClassDecl *c=classdecl_clone(t);
 	strcpy(c->name,out);
 	c->type_param_count=0;
@@ -409,10 +410,8 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 		subst_func(c->ctors[i],t,targs);
 	}
 
-	/* Parametric inheritance (extends Base<T>): substitute the parent's type args
-	   with this instance's concrete args, instantiate that concrete parent, and
-	   point at it. The parent instance is registered the same way, so the usual
-	   parent-first registration fixpoint orders the layouts. */
+	// Parametric inheritance (extends Base<T>): substitute the parent's type args with this instance's concrete args, instantiate that concrete parent, and point at it.
+	// The parent instance is registered the same way, so the usual parent-first registration fixpoint orders the layouts.
 	if (t->has_parent && t->parent_targ_count > 0)
 	{
 		TypeRef storage[8];
@@ -439,23 +438,20 @@ static void ensure_instance(const char *tmpl, struct TypeRef *const targs[], int
 	g_instance_count++;
 	*g_units = grow_ensure(*g_units, *g_total, g_cap, sizeof(**g_units));
 	(*g_units)[(*g_total)++]=u;
-	g_changed=1;   /* New unit must be walked for further applications. */
+	g_changed=1; // New unit must be walked for further applications.
 
-	/* If this is a generic enum's base, co-instantiate its payload variants with
-	   the same type arguments. A construction site (Enum.Variant(...)) names no
-	   type directly, so the variant instance would otherwise never be created;
-	   binding it to the base's instantiation makes Enum$Variant$args exist
-	   wherever Enum$args does. */
+	// If this is a generic enum's base, co-instantiate its payload variants with the same type arguments.
+	// A construction site (Enum.Variant(...)) names no type directly, so the variant instance would otherwise never be created; binding it to the base's instantiation makes Enum$Variant$args exist wherever Enum$args does.
 	if (enum_is(tmpl))
 	{
-		enum_register_instance(out, tmpl, out + strlen(tmpl));   /* Make Wrap$int a recognized enum. */
+		enum_register_instance(out, tmpl, out + strlen(tmpl)); // Make Wrap$int a recognized enum.
 		int nc = enum_count_of(tmpl);
 		for (int vi=0; vi<nc; vi++)
 		{
 			const char *cn = enum_const_name(tmpl, vi);
 			if (cn && enum_const_is_payload(tmpl, cn))
 			{
-				const char *vt = enum_variant_class(tmpl, cn);   /* "Enum$Variant" template. */
+				const char *vt = enum_variant_class(tmpl, cn); // "Enum$Variant" template.
 				char vout[128];
 				ensure_instance(vt, targs, n, line, vout);
 			}
@@ -472,13 +468,13 @@ static void rewrite_typeref(TypeRef *t)
 		{
 			if (t->elem)
 			{
-				rewrite_typeref(t->elem);   /* e.g. List<Pair<int,int>>. */
+				rewrite_typeref(t->elem); // e.g. List<Pair<int,int>>.
 			}
 
 			return;
 		}
 
-		/* User generic application: lower args first, then this node. */
+		// User generic application: lower args first, then this node.
 		for (int i=0; i<t->targ_count; i++)
 		{
 			rewrite_typeref(t->targs[i]);
@@ -604,7 +600,7 @@ static void rewrite_unit(Unit *u)
 	for (int ci=0; ci<u->class_count; ci++)
 	{
 		ClassDecl *c=u->klasses[ci];
-		if (c->type_param_count!=0)   /* Skip templates; walk concrete classes. */
+		if (c->type_param_count!=0) // Skip templates; walk concrete classes.
 		{
 			continue;
 		}
@@ -666,12 +662,11 @@ void generics_expand(Unit ***units, int *total, int *cap)
 		}
 	}
 
-	/* Fixpoint: rewrite all units (including instances appended mid-walk) until
-	   no new instantiation appears. ensure_instance sets g_changed and appends. */
+	// Fixpoint: rewrite all units (including instances appended mid-walk) until no new instantiation appears. ensure_instance sets g_changed and appends.
 	do
 	{
 		g_changed=0;
-		int n=*total;   /* Snapshot; newly appended units are picked up next round. */
+		int n=*total; // Snapshot; newly appended units are picked up next round.
 		for (int i=0; i<n; i++)
 		{
 			rewrite_unit((*units)[i]);
@@ -679,7 +674,7 @@ void generics_expand(Unit ***units, int *total, int *cap)
 	}
 	while (g_changed);
 
-	/* Exclude templates from registration/codegen by removing them from their units. */
+	// Exclude templates from registration/codegen by removing them from their units.
 	for (int i=0; i<g_template_count; i++)
 	{
 		for (int u=0; u<*total; u++)
@@ -695,7 +690,7 @@ void generics_expand(Unit ***units, int *total, int *cap)
 					}
 
 					un->class_count--;
-					ci--;   /* Re-check the slot now holding the shifted element. */
+					ci--; // Re-check the slot now holding the shifted element.
 				}
 			}
 		}

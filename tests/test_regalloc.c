@@ -30,23 +30,23 @@ static void test_reg_tables(void)
 {
 	ASSERT_STR(ra_reg_name(0), "rbx");
 	ASSERT_STR(ra_reg_name(RA_NREGS - 1), "r15");
-	ASSERT_INT(ra_is_callee_saved(0, 0), 1);       /* rbx, Win64. */
-	ASSERT_INT(ra_is_callee_saved(1, 0), 1);       /* rsi, Win64 -> callee-saved. */
-	ASSERT_INT(ra_is_callee_saved(1, 1), 0);       /* rsi, System V -> caller-saved. */
+	ASSERT_INT(ra_is_callee_saved(0, 0), 1); // rbx, Win64.
+	ASSERT_INT(ra_is_callee_saved(1, 0), 1); // rsi, Win64 -> callee-saved.
+	ASSERT_INT(ra_is_callee_saved(1, 1), 0); // rsi, System V -> caller-saved.
 }
 
 static void test_xmm_reg_tables(void)
 {
-	/* xmm pool is appended after the GP pool in the combined index space. */
-	ASSERT_INT(ra_reg_is_xmm(0), 0);              /* rbx is GP. */
-	ASSERT_INT(ra_reg_is_xmm(RA_MAXREGS - 1), 0); /* rdx is GP. */
-	ASSERT_INT(ra_reg_is_xmm(RA_XMM0), 1);        /* first xmm index. */
-	ASSERT_INT(ra_reg_is_xmm(RA_NALL - 1), 1);    /* last xmm index. */
+	// xmm pool is appended after the GP pool in the combined index space.
+	ASSERT_INT(ra_reg_is_xmm(0), 0); // rbx is GP.
+	ASSERT_INT(ra_reg_is_xmm(RA_MAXREGS - 1), 0); // rdx is GP.
+	ASSERT_INT(ra_reg_is_xmm(RA_XMM0), 1); // first xmm index.
+	ASSERT_INT(ra_reg_is_xmm(RA_NALL - 1), 1); // last xmm index.
 	ASSERT_STR(ra_reg_name(RA_XMM0), "xmm2");
 	ASSERT_STR(ra_reg_name(RA_NALL - 1), "xmm5");
-	/* xmm2..xmm5 are caller-saved on BOTH ABIs - never reported callee-saved. */
-	ASSERT_INT(ra_is_callee_saved(RA_XMM0, 0), 0);   /* Win64. */
-	ASSERT_INT(ra_is_callee_saved(RA_XMM0, 1), 0);   /* System V. */
+	// xmm2..xmm5 are caller-saved on BOTH ABIs - never reported callee-saved.
+	ASSERT_INT(ra_is_callee_saved(RA_XMM0, 0), 0); // Win64.
+	ASSERT_INT(ra_is_callee_saved(RA_XMM0, 1), 0); // System V.
 }
 
 static void test_alloc_trivial_in_register(void)
@@ -90,8 +90,7 @@ static void test_loop_value_interval_spans_loop(void)
 	IRAlloc *fa = ra_run(fi);
 	int flat_span = ra_debug_max_interval(fa);
 
-	/* The accumulator s is live across the whole loop, so its interval is far
-	   longer than anything in a straight-line function. */
+	// The accumulator s is live across the whole loop, so its interval is far longer than anything in a straight-line function.
 	ASSERT(loop_span > flat_span);
 	ASSERT(loop_span > 5);
 
@@ -113,7 +112,7 @@ static void test_small_function_no_spill(void)
 						"}\n");
 	IRFunc *ir = ir_lower_func(f, 0);
 	IRAlloc *a = ra_run(ir);
-	/* A handful of live values fit in 11 registers - nothing spills. */
+	// A handful of live values fit in 11 registers - nothing spills.
 	ASSERT_INT(a->spill_bytes, 0);
 	ra_free(a);
 	ir_func_free(ir);
@@ -121,8 +120,7 @@ static void test_small_function_no_spill(void)
 
 static void test_many_locals_force_spill(void)
 {
-	/* Eighteen longs all live at the final sum exceed even the expanded pool
-	   (11 base + rcx + rdx = 13, claimable here because there is no shift/div). */
+	// Eighteen longs all live at the final sum exceed even the expanded pool (11 base + rcx + rdx = 13, claimable here because there is no shift/div).
 	const Func *f = parse_one_func(
 						"long many(long a)\n"
 						"{\n"
@@ -143,7 +141,7 @@ static void test_many_locals_force_spill(void)
 
 static void test_no_hot_spill_small_loop(void)
 {
-	/* A handful of inner-loop values fit in registers - no hot spill. */
+	// A handful of inner-loop values fit in registers - no hot spill.
 	const Func *f = parse_one_func(
 						"long sum(int n)\n"
 						"{\n"
@@ -156,11 +154,11 @@ static void test_no_hot_spill_small_loop(void)
 	ir_func_free(ir);
 }
 
-/* A single deepest (depth-1) block with `n` temporaries all simultaneously live at
-   a left-leaning summation chain: at the first add, every later temp is still live,
-   so all n overflow the register file at once. None is rematerializable (each is an
-   ADD result, not a read-only frame load), so they count toward the hot-spill gate.
-   Used to drive the count past the gate's tolerance (128). */
+/**
+ * A single deepest (depth-1) block with `n` temporaries all simultaneously live at a left-leaning summation chain: at the first add, every later temp is still live, so all n overflow the register file at once.
+ * None is rematerializable (each is an ADD result, not a read-only frame load), so they count toward the hot-spill gate.
+ * Used to drive the count past the gate's tolerance (128).
+ */
 static IRFunc *build_hot_spill_func(int n)
 {
 	static Func dummy;
@@ -168,9 +166,9 @@ static IRFunc *build_hot_spill_func(int n)
 	memset(&dummy, 0, sizeof(dummy));
 	IRFunc *f = ir_func_new(&dummy);
 	int b0 = ir_block_new(f);
-	f->blocks[b0].depth = 1;   /* Deepest block: the hot-spill gate watches it. */
+	f->blocks[b0].depth = 1; // Deepest block: the hot-spill gate watches it.
 
-	/* Base value i, loaded once from a frame local. */
+	// Base value i, loaded once from a frame local.
 	IRReg i = ir_reg(f);
 	IRInstr *li = ir_emit(f, b0, IR_LOAD, TY_LONG);
 	li->dst = i;
@@ -179,7 +177,7 @@ static IRFunc *build_hot_spill_func(int n)
 	li->is_frame = 1;
 	li->disp = 8;
 
-	/* n temporaries, each t_k = i + i; they live until the sum below consumes them. */
+	// n temporaries, each t_k = i + i; they live until the sum below consumes them.
 	for (int k = 0; k < n; k++)
 	{
 		t[k] = ir_reg(f);
@@ -189,7 +187,7 @@ static IRFunc *build_hot_spill_func(int n)
 		ad->b = i;
 	}
 
-	/* Left-leaning sum: at the first add, t[2..n-1] are all still live. */
+	// Left-leaning sum: at the first add, t[2..n-1] are all still live.
 	IRReg acc = ir_reg(f);
 	IRInstr *a0 = ir_emit(f, b0, IR_ADD, TY_LONG);
 	a0->dst = acc;
@@ -205,7 +203,7 @@ static IRFunc *build_hot_spill_func(int n)
 		acc = na;
 	}
 
-	/* Store the result so nothing is dead. */
+	// Store the result so nothing is dead.
 	IRInstr *st = ir_emit(f, b0, IR_STORE, TY_LONG);
 	st->a = IR_NO_REG;
 	st->b = IR_NO_REG;
@@ -220,16 +218,16 @@ static IRFunc *build_hot_spill_func(int n)
 
 static void test_hot_spill_detected(void)
 {
-	/* 160 deep temporaries all live at the summation chain overflow the register
-	   file, producing far more than the gate's tolerance (128) non-rematerializable
-	   deep spills - the safety gate must fire. */
+	// 160 deep temporaries all live at the summation chain overflow the register file, producing far more than the gate's tolerance (128) non-rematerializable deep spills - the safety gate must fire.
 	IRFunc *f = build_hot_spill_func(160);
 	ASSERT_INT(ra_hot_spill(f), 1);
 	ir_func_free(f);
 }
 
-/* Two double frame loads added into a double, stored back; plus one int load.
-   Exercises class derivation: the FP values must be RC_XMM, the int RC_GP. */
+/**
+ * Two double frame loads added into a double, stored back; plus one int load.
+ * Exercises class derivation: the FP values must be RC_XMM, the int RC_GP.
+ */
 static IRFunc *build_fp_func(IRReg *dadd, IRReg *iload)
 {
 	static Func dummy;
@@ -290,17 +288,15 @@ static void test_value_class_from_type(void)
 	IRReg dadd, iload;
 	IRFunc *f = build_fp_func(&dadd, &iload);
 	IRAlloc *a = ra_run(f);
-	ASSERT_INT(ra_vreg_class(a, dadd), RC_XMM);   /* double add result. */
-	ASSERT_INT(ra_vreg_class(a, iload), RC_GP);   /* long load result. */
+	ASSERT_INT(ra_vreg_class(a, dadd), RC_XMM); // double add result.
+	ASSERT_INT(ra_vreg_class(a, iload), RC_GP); // long load result.
 	ra_free(a);
 	ir_func_free(f);
 }
 
 static void test_fp_value_gets_xmm_register(void)
 {
-	/* The double accumulator must be coloured from the xmm pool and the int from
-	   the GP pool; both are simultaneously live and both get a register (disjoint
-	   pools, so no cross-class interference). */
+	// The double accumulator must be coloured from the xmm pool and the int from the GP pool; both are simultaneously live and both get a register (disjoint pools, so no cross-class interference).
 	IRReg dadd, iload;
 	IRFunc *f = build_fp_func(&dadd, &iload);
 	IRAlloc *a = ra_run(f);
@@ -308,24 +304,23 @@ static void test_fp_value_gets_xmm_register(void)
 	int ir = ra_vreg_reg(a, iload);
 	ASSERT(dr != RA_SPILLED);
 	ASSERT(ir != RA_SPILLED);
-	ASSERT_INT(ra_reg_is_xmm(dr), 1);   /* double -> xmm. */
-	ASSERT_INT(ra_reg_is_xmm(ir), 0);   /* long -> GP. */
+	ASSERT_INT(ra_reg_is_xmm(dr), 1); // double -> xmm.
+	ASSERT_INT(ra_reg_is_xmm(ir), 0); // long -> GP.
 	ra_free(a);
 	ir_func_free(f);
 }
 
-/* Build the remat scenario: 14 loads of distinct never-stored locals, all
-   simultaneously live (loads first, consuming stores after), overflowing the
-   register pool so several classes spill - and every spilled class is a load
-   of a read-only local. `store_back` rewrites every source local between the
-   loads and their uses, disqualifying them all for the negative test. */
+/**
+ * Build the remat scenario: 14 loads of distinct never-stored locals, all simultaneously live (loads first, consuming stores after), overflowing the register pool so several classes spill - and every spilled class is a load of a read-only local.
+ * `store_back` rewrites every source local between the loads and their uses, disqualifying them all for the negative test.
+ */
 static IRFunc *build_remat_func(IRReg *loads, int store_back)
 {
 	static Func dummy;
 	memset(&dummy, 0, sizeof(dummy));
 	IRFunc *f = ir_func_new(&dummy);
 	int b0 = ir_block_new(f);
-	f->blocks[b0].depth = 1;   /* Deepest block: the hot-spill gate watches it. */
+	f->blocks[b0].depth = 1; // Deepest block: the hot-spill gate watches it.
 
 	for (int i = 0; i < 14; i++)
 	{
@@ -338,9 +333,8 @@ static IRFunc *build_remat_func(IRReg *loads, int store_back)
 		ld->disp = 8 + i * 8;
 	}
 
-	/* Disqualifying stores sit BETWEEN the defs and their last uses: a reload
-	   after one of these would observe the new value, so remat must not fire.
-	   (Stores after the last use would be harmless and do not disqualify.) */
+	// Disqualifying stores sit BETWEEN the defs and their last uses: a reload after one of these would observe the new value, so remat must not fire.
+	// (Stores after the last use would be harmless and do not disqualify.)
 	if (store_back)
 	{
 		for (int i = 0; i < 14; i++)
@@ -354,9 +348,7 @@ static IRFunc *build_remat_func(IRReg *loads, int store_back)
 		}
 	}
 
-	/* Consume each load as the value of an unindexed array-element store
-	   through one read-only base: no chain temporaries and no extra frame
-	   locals, so nothing but the loads themselves can ever spill. */
+	// Consume each load as the value of an unindexed array-element store through one read-only base: no chain temporaries and no extra frame locals, so nothing but the loads themselves can ever spill.
 	IRReg base = ir_reg(f);
 	IRInstr *bl = ir_emit(f, b0, IR_LOAD, TY_LONG);
 	bl->dst = base;
@@ -384,9 +376,7 @@ static IRFunc *build_remat_func(IRReg *loads, int store_back)
 
 static void test_remat_readonly_frame_load(void)
 {
-	/* 14 mutually-live classes overflow the pool: some spill, and every spill
-	   is the load of a never-stored local - each must carry its local's disp
-	   for rematerialization, and none may count as a hot spill. */
+	// 14 mutually-live classes overflow the pool: some spill, and every spill is the load of a never-stored local - each must carry its local's disp for rematerialization, and none may count as a hot spill.
 	IRReg loads[14];
 	IRFunc *f = build_remat_func(loads, 0);
 	IRAlloc *a = ra_run(f);
@@ -405,19 +395,17 @@ static void test_remat_readonly_frame_load(void)
 		}
 	}
 
-	ASSERT(spilled > 0);            /* Precondition: the pool overflowed. */
+	ASSERT(spilled > 0); // Precondition: the pool overflowed.
 
-	ASSERT_INT(remat_ok, 1);        /* Every spilled load rematerializes. */
-	ASSERT_INT(a->hot_spill, 0);    /* Remat spills are exempt from the gate. */
+	ASSERT_INT(remat_ok, 1); // Every spilled load rematerializes.
+	ASSERT_INT(a->hot_spill, 0); // Remat spills are exempt from the gate.
 	ra_free(a);
 	ir_func_free(f);
 }
 
 static void test_remat_skipped_when_local_stored(void)
 {
-	/* Same shape, but every source local is stored at the end: a stale
-	   rematerialized read would observe the new value, so remat must not fire
-	   anywhere and the spills count as hot again. */
+	// Same shape, but every source local is stored at the end: a stale rematerialized read would observe the new value, so remat must not fire anywhere and the spills count as hot again.
 	IRReg loads[14];
 	IRFunc *f = build_remat_func(loads, 1);
 	IRAlloc *a = ra_run(f);
@@ -433,7 +421,7 @@ static void test_remat_skipped_when_local_stored(void)
 	}
 
 	ASSERT(spilled > 0);
-	ASSERT(a->hot_spill_count > 0);   /* Counted (non-remat), even if under the gate's tolerance. */
+	ASSERT(a->hot_spill_count > 0); // Counted (non-remat), even if under the gate's tolerance.
 	ra_free(a);
 	ir_func_free(f);
 }

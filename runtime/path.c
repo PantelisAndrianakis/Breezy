@@ -4,9 +4,10 @@
 #include <string.h>
 #include <unistd.h>   /* getcwd (MinGW and POSIX both provide it). */
 
-/* Pure path-string helpers (the Path namespace). Both '/' and '\' count as
-   separators on input so Windows-style paths parse unchanged; output uses '/',
-   which every File operation accepts on both platforms. */
+/**
+ * Pure path-string helpers (the Path namespace).
+ * Both '/' and '\' count as separators on input so Windows-style paths parse unchanged; output uses '/', which every File operation accepts on both platforms.
+ */
 
 static int is_sep(char c)
 {
@@ -52,10 +53,10 @@ void *bzy_path_join(void *a, void *b)
 
 	if (an == 0 || is_rooted(bs, bn))
 	{
-		return bzy_str_new(bs, bn);   /* Second part wins. */
+		return bzy_str_new(bs, bn); // Second part wins.
 	}
 
-	while (an > 0 && is_sep(as[an - 1]))   /* Drop a trailing separator on a. */
+	while (an > 0 && is_sep(as[an - 1])) // Drop a trailing separator on a.
 	{
 		an--;
 	}
@@ -84,10 +85,10 @@ void *bzy_path_dir_name(void *p)
 	int64_t at = after_last_sep(s, n);
 	if (at == 0)
 	{
-		return bzy_str_new("", 0);   /* No directory component. */
+		return bzy_str_new("", 0); // No directory component.
 	}
 
-	return bzy_str_new(s, at - 1);   /* Exclude the separator. */
+	return bzy_str_new(s, at - 1); // Exclude the separator.
 }
 
 void *bzy_path_extension(void *p)
@@ -101,7 +102,7 @@ void *bzy_path_extension(void *p)
 		{
 			if (i - 1 == base)
 			{
-				break;               /* Leading dot (dotfile): no extension. */
+				break; // Leading dot (dotfile): no extension.
 			}
 
 			return bzy_str_new(s + i - 1, n - (i - 1));
@@ -111,8 +112,10 @@ void *bzy_path_extension(void *p)
 	return bzy_str_new("", 0);
 }
 
-/* Collapse '.' and '..' segments and duplicate separators in place. Operates on
-   the part after any leading root, which is preserved verbatim. */
+/**
+ * Collapse '.' and '..' segments and duplicate separators in place.
+ * Operates on the part after any leading root, which is preserved verbatim.
+ */
 static int64_t normalize(char *buf, int64_t n)
 {
 	int64_t root = 0;
@@ -125,18 +128,18 @@ static int64_t normalize(char *buf, int64_t n)
 		root = (n >= 3 && buf[2] == '/') ? 3 : 2;
 	}
 
-	/* Walk segments of buf[root..n), writing kept ones back with single '/'. */
+	// Walk segments of buf[root..n), writing kept ones back with single '/'.
 	int64_t w = root;
 	int64_t i = root;
 	while (i < n)
 	{
-		while (i < n && buf[i] == '/')   /* Skip separators. */
+		while (i < n && buf[i] == '/') // Skip separators.
 		{
 			i++;
 		}
 
 		int64_t seg = i;
-		while (i < n && buf[i] != '/')   /* Span one segment. */
+		while (i < n && buf[i] != '/') // Span one segment.
 		{
 			i++;
 		}
@@ -149,26 +152,26 @@ static int64_t normalize(char *buf, int64_t n)
 
 		if (len == 1 && buf[seg] == '.')
 		{
-			continue;                    /* Drop '.'. */
+			continue; // Drop '.'.
 		}
 
 		if (len == 2 && buf[seg] == '.' && buf[seg + 1] == '.')
 		{
-			if (w > root)                /* Pop the previous kept segment. */
+			if (w > root) // Pop the previous kept segment.
 			{
-				while (w > root && buf[w - 1] != '/')   /* Back over the segment. */
+				while (w > root && buf[w - 1] != '/') // Back over the segment.
 				{
 					w--;
 				}
 
-				if (w > root)            /* Drop its preceding separator. */
+				if (w > root) // Drop its preceding separator.
 				{
 					w--;
 				}
 
 				continue;
 			}
-			/* Nothing to pop above the root: keep the '..'. */
+			// Nothing to pop above the root: keep the '..'.
 		}
 
 		if (w > root)
@@ -180,7 +183,7 @@ static int64_t normalize(char *buf, int64_t n)
 		w += len;
 	}
 
-	/* Strip a trailing '/' left above the root. */
+	// Strip a trailing '/' left above the root.
 	while (w > root && buf[w - 1] == '/')
 	{
 		w--;
@@ -219,7 +222,7 @@ void *bzy_path_absolute(void *p)
 		bn = cn + 1 + n;
 	}
 
-	for (int64_t i = 0; i < bn; i++)   /* Unify separators before normalizing. */
+	for (int64_t i = 0; i < bn; i++) // Unify separators before normalizing.
 	{
 		if (buf[i] == '\\')
 		{

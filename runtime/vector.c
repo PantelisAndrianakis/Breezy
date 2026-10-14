@@ -3,11 +3,12 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-/* A growable ring-buffer vector. The data buffer is a managed BzyArray (the
-   vector's one child), so ARC + the cycle collector reach elements through the
-   array span; unused ring slots stay 0 so that span is NULL-safe.
-   Layout (object_size = 64): 0 vtable | 8 rc | 16 gcinfo | 24 length | 32 cap |
-   40 head | 48 data array | 56 elem_kind. */
+/**
+ * A growable ring-buffer vector.
+ * The data buffer is a managed BzyArray (the vector's one child), so ARC + the cycle collector reach elements through the array span; unused ring slots stay 0 so that span is NULL-safe.
+ * Layout (object_size = 64): 0 vtable | 8 rc | 16 gcinfo | 24 length | 32 cap |
+ * 40 head | 48 data array | 56 elem_kind.
+ */
 
 static int64_t  *V_LEN(void *v)
 {
@@ -36,7 +37,7 @@ static int64_t  *V_KIND(void *v)
 
 static int64_t *vec_slots(void *v)
 {
-	return (int64_t*)((char*)(*V_DATA(v)) + 32);   /* BzyArray data at +32. */
+	return (int64_t*)((char*)(*V_DATA(v)) + 32); // BzyArray data at +32.
 }
 
 static int vec_managed(void *v)
@@ -46,7 +47,7 @@ static int vec_managed(void *v)
 
 static int64_t vec_phys(void *v, int64_t i)
 {
-	return (*V_HEAD(v) + i) & (*V_CAP(v) - 1);   /* cap is always a power of two, so mask == modulo. */
+	return (*V_HEAD(v) + i) & (*V_CAP(v) - 1); // cap is always a power of two, so mask == modulo.
 }
 
 /* Runtime-owned vtable/descriptor: no finalizer, one managed child at offset 48. */
@@ -63,19 +64,17 @@ void *bzy_vec_new(int64_t elem_kind)
 {
 	void *v = bzy_alloc(64);
 	*(void**)v = vec_vtable();
-	/* The backing array is allocated lazily on the first push, so an unused vector
-	   costs only its header. vec_grow handles the cap == 0 case. */
+	// The backing array is allocated lazily on the first push, so an unused vector costs only its header. vec_grow handles the cap == 0 case.
 	*V_KIND(v) = elem_kind;
-	return v;   /* len, cap, head and data are left zero by bzy_alloc. */
+	return v; // len, cap, head and data are left zero by bzy_alloc.
 }
 
-/* Shared-receiver gate. Every public vector op funnels through one of these: a
-   vector that crossed cores (SHARED gcinfo bit) takes its stripe for the whole
-   op - len/head/cap/data mutate together, so per-op locking is the unit of
-   atomicity. A confined vector skips the branch entirely. The deep-share of an
-   incoming managed element happens BEFORE the stripe is taken, and old-occupant
-   releases happen AFTER it is dropped (lock ordering: the roots lock, a stripe,
-   and a destructor cascade are never held together). */
+/**
+ * Shared-receiver gate.
+ * Every public vector op funnels through one of these: a vector that crossed cores (SHARED gcinfo bit) takes its stripe for the whole op - len/head/cap/data mutate together, so per-op locking is the unit of atomicity.
+ * A confined vector skips the branch entirely.
+ * The deep-share of an incoming managed element happens BEFORE the stripe is taken, and old-occupant releases happen AFTER it is dropped (lock ordering: the roots lock, a stripe, and a destructor cascade are never held together).
+ */
 static int vec_is_shared(void *v)
 {
 	return (*(int64_t*)((char*)v + 16) & (1ll << 3)) != 0;
@@ -94,9 +93,10 @@ int64_t bzy_vec_len(void *v)
 	return *V_LEN(v);
 }
 
-/* Moves the elements into newdata (capacity newcap) in logical order at head 0
-   and releases the old backing array. The ring is at most two contiguous runs,
-   so it moves as two block copies. */
+/**
+ * Moves the elements into newdata (capacity newcap) in logical order at head 0 and releases the old backing array.
+ * The ring is at most two contiguous runs, so it moves as two block copies.
+ */
 static void vec_relocate(void *v, void *newdata, int64_t newcap)
 {
 	void *olddata = *V_DATA(v);
@@ -105,15 +105,13 @@ static void vec_relocate(void *v, void *newdata, int64_t newcap)
 		int64_t n = *V_LEN(v), cap = *V_CAP(v), head = *V_HEAD(v) & (cap - 1);
 		int64_t *os = (int64_t*)((char*)olddata + 32);
 		int64_t *ns = (int64_t*)((char*)newdata + 32);
-		int64_t first = cap - head < n ? cap - head : n;   /* The run from head to the buffer end. */
+		int64_t first = cap - head < n ? cap - head : n; // The run from head to the buffer end.
 		memcpy(ns, os + head, (size_t)first * 8);
 		memcpy(ns + first, os, (size_t)(n - first) * 8);
-		*(int64_t*)((char*)olddata + 24) = 0;   /* Ownership moved: the old array releases no elements. */
+		*(int64_t*)((char*)olddata + 24) = 0; // Ownership moved: the old array releases no elements.
 	}
 
-	/* A shared vector's fresh backing array inherits the SHARED bit: it is
-	   newborn and sole-referenced here, so a plain OR is race-free (and the
-	   roots lock must NOT be taken while holding a stripe). */
+	// A shared vector's fresh backing array inherits the SHARED bit: it is newborn and sole-referenced here, so a plain OR is race-free (and the roots lock must NOT be taken while holding a stripe).
 	if (vec_is_shared(v))
 	{
 		*(int64_t*)((char*)newdata + 16) |= (1ll << 3);
@@ -124,7 +122,7 @@ static void vec_relocate(void *v, void *newdata, int64_t newcap)
 	*V_HEAD(v) = 0;
 	if (olddata)
 	{
-		bzy_release(olddata);   /* Length zeroed: frees the block only. */
+		bzy_release(olddata); // Length zeroed: frees the block only.
 	}
 }
 
@@ -134,11 +132,11 @@ static void vec_grow(void *v)
 	vec_relocate(v, bzy_array_new(newcap, vec_managed(v) ? 1 : 0), newcap);
 }
 
-/* Grow the backing array once so the vector can hold at least `want` elements
-   without reallocating. A single allocation to the next power-of-two capacity >=
-   want, re-normalizing any existing ring into logical order at head 0 -- unlike
-   repeated push-driven doubling, which would copy O(n) elements many times while
-   filling a known-size result. A no-op when the current capacity already suffices. */
+/**
+ * Grow the backing array once so the vector can hold at least `want` elements without reallocating.
+ * A single allocation to the next power-of-two capacity >= want, re-normalizing any existing ring into logical order at head 0 -- unlike repeated push-driven doubling, which would copy O(n) elements many times while filling a known-size result.
+ * A no-op when the current capacity already suffices.
+ */
 void bzy_vec_reserve(void *v, int64_t want)
 {
 	if (vec_is_shared(v))
@@ -185,7 +183,7 @@ void bzy_vec_push_back(void *v, int64_t val)
 	{
 		if (vec_managed(v))
 		{
-			bzy_share_crosscore((void*)val);   /* Insert barrier, before the stripe. */
+			bzy_share_crosscore((void*)val); // Insert barrier, before the stripe.
 		}
 
 		bzy_shared_lock(v);
@@ -206,7 +204,7 @@ static int64_t vec_pop_back_impl(void *v)
 
 	int64_t p = vec_phys(v, *V_LEN(v) - 1);
 	int64_t val = vec_slots(v)[p];
-	vec_slots(v)[p] = 0;                    /* Transfer out (owned): no release. */
+	vec_slots(v)[p] = 0; // Transfer out (owned): no release.
 	(*V_LEN(v))--;
 	return val;
 }
@@ -234,7 +232,7 @@ static int64_t vec_get_impl(void *v, int64_t i)
 	int64_t val = vec_slots(v)[vec_phys(v, i)];
 	if (vec_managed(v))
 	{
-		bzy_retain((void*)val);   /* Retain inside the stripe on the shared path. */
+		bzy_retain((void*)val); // Retain inside the stripe on the shared path.
 	}
 
 	return val;
@@ -253,8 +251,7 @@ int64_t bzy_vec_get(void *v, int64_t i)
 	return vec_get_impl(v, i);
 }
 
-/* Returns the displaced occupant (0 for value kinds) so callers can release it
-   outside the stripe - a destructor cascade must never run under the lock. */
+/* Returns the displaced occupant (0 for value kinds) so callers can release it outside the stripe - a destructor cascade must never run under the lock. */
 static int64_t vec_set_impl(void *v, int64_t i, int64_t val)
 {
 	if (i < 0 || i >= *V_LEN(v))
@@ -280,7 +277,7 @@ void bzy_vec_set(void *v, int64_t i, int64_t val)
 	{
 		if (vec_managed(v))
 		{
-			bzy_share_crosscore((void*)val);   /* Insert barrier, before the stripe. */
+			bzy_share_crosscore((void*)val); // Insert barrier, before the stripe.
 		}
 
 		bzy_shared_lock(v);
@@ -335,7 +332,7 @@ static void vec_push_front_impl(void *v, int64_t val)
 	}
 
 	int64_t cap = *V_CAP(v);
-	*V_HEAD(v) = (*V_HEAD(v) - 1 + cap) & (cap - 1);   /* Power-of-two cap: mask == modulo. */
+	*V_HEAD(v) = (*V_HEAD(v) - 1 + cap) & (cap - 1); // Power-of-two cap: mask == modulo.
 	vec_slots(v)[*V_HEAD(v)] = val;
 	(*V_LEN(v))++;
 }
@@ -346,7 +343,7 @@ void bzy_vec_push_front(void *v, int64_t val)
 	{
 		if (vec_managed(v))
 		{
-			bzy_share_crosscore((void*)val);   /* Insert barrier, before the stripe. */
+			bzy_share_crosscore((void*)val); // Insert barrier, before the stripe.
 		}
 
 		bzy_shared_lock(v);
@@ -367,8 +364,8 @@ static int64_t vec_pop_front_impl(void *v)
 
 	int64_t p = *V_HEAD(v);
 	int64_t val = vec_slots(v)[p];
-	vec_slots(v)[p] = 0;                    /* Transfer out (owned). */
-	*V_HEAD(v) = (p + 1) & (*V_CAP(v) - 1);   /* Power-of-two cap: mask == modulo. */
+	vec_slots(v)[p] = 0; // Transfer out (owned).
+	*V_HEAD(v) = (p + 1) & (*V_CAP(v) - 1); // Power-of-two cap: mask == modulo.
 	(*V_LEN(v))--;
 	return val;
 }
@@ -415,8 +412,7 @@ int64_t bzy_vec_peek_front(void *v)
 	return vec_peek_front_impl(v);
 }
 
-/* Returns the removed occupant (0 for value kinds) so callers can release it
-   outside the stripe. */
+/* Returns the removed occupant (0 for value kinds) so callers can release it outside the stripe. */
 static int64_t vec_remove_at_impl(void *v, int64_t i)
 {
 	if (i < 0 || i >= *V_LEN(v))
@@ -431,7 +427,7 @@ static int64_t vec_remove_at_impl(void *v, int64_t i)
 		old = s[vec_phys(v, i)];
 	}
 
-	for (int64_t j = i; j < *V_LEN(v) - 1; j++)   /* Shift logical j+1 -> j. */
+	for (int64_t j = i; j < *V_LEN(v) - 1; j++) // Shift logical j+1 -> j.
 	{
 		s[vec_phys(v, j)] = s[vec_phys(v, j + 1)];
 	}
@@ -477,7 +473,7 @@ static int vec_eq(void *v, int64_t a, int64_t b)
 	case 3:
 		return bzy_str_eq((void*)a, (void*)b) ? 1 : 0;
 	default:
-		return a == b;   /* int/bool (0) and object identity (4). */
+		return a == b; // int/bool (0) and object identity (4).
 	}
 }
 
@@ -510,7 +506,6 @@ int64_t bzy_vec_index_of(void *v, int64_t needle)
 
 int64_t bzy_vec_contains(void *v, int64_t needle)
 {
-	/* Delegates to the gated index_of; taking the stripe here too would
-	   self-deadlock on the same stripe (non-reentrant locks). */
+	// Delegates to the gated index_of; taking the stripe here too would self-deadlock on the same stripe (non-reentrant locks).
 	return bzy_vec_index_of(v, needle) >= 0 ? 1 : 0;
 }

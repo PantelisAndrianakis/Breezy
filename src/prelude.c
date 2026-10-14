@@ -1,10 +1,10 @@
 #include "prelude.h"
 
-/* Built-in vector types, written in Breezy and compiled into every program.
-   They are ordinary classes: escape analysis stack-allocates non-escaping
-   locals (no heap/ARC), ARC handles escapes, and calculateDistance is just
-   Math.sqrt. Distance precision matches the element type (float for *f, else
-   double); equals is exact component-wise comparison. */
+/**
+ * Built-in vector types, written in Breezy and compiled into every program.
+ * They are ordinary classes: escape analysis stack-allocates non-escaping locals (no heap/ARC), ARC handles escapes, and calculateDistance is just Math.sqrt.
+ * Distance precision matches the element type (float for *f, else double); equals is exact component-wise comparison.
+ */
 
 static const char VEC2I[] =
 	"class Vector2i\n"
@@ -178,12 +178,13 @@ static const char VEC3D[] =
 	"	}\n"
 	"}\n";
 
-/* DateTime: a mutable date-time object. One field (epoch millis, UTC);
-   accessors present local time via bzy_local_offset_secs (runtime/clock.c).
-   Civil-date math is a branch-free day<->civil algorithm in Breezy;
-   CivilDate/LocalParts exist only to return grouped fields (Breezy has no
-   multiple return). Months are 1-based; getDayOfWeek is ISO (1=Mon..7=Sun).
-   See documentation/stdlib/datetime.md. */
+/**
+ * DateTime: a mutable date-time object.
+ * One field (epoch millis, UTC); accessors present local time via bzy_local_offset_secs (runtime/clock.c).
+ * Civil-date math is a branch-free day<->civil algorithm in Breezy; CivilDate/LocalParts exist only to return grouped fields (Breezy has no multiple return).
+ * Months are 1-based; getDayOfWeek is ISO (1=Mon..7=Sun).
+ * See documentation/stdlib/datetime.md.
+ */
 static const char DATETIME[] =
 	"extern long bzy_local_offset_secs(long secs);\n"
 	"class CivilDate\n"
@@ -419,8 +420,10 @@ static const char DATETIME[] =
 	"	string format(string pattern) { return Clock.getDateString(this.millis, pattern); }\n"
 	"}\n";
 
-/* Option<T> and Result<T, E>: built-in generic sum types for "a value or nothing"
-   and "a value or an error". Generic enums, so they cost nothing until used. */
+/**
+ * Option<T> and Result<T, E>: built-in generic sum types for "a value or nothing" and "a value or an error".
+ * Generic enums, so they cost nothing until used.
+ */
 static const char OPTION[] =
 	"enum Option<T>\n"
 	"{\n"
@@ -435,16 +438,14 @@ static const char RESULT[] =
 	"	Err(E e);\n"
 	"}\n";
 
-/* Pool<T>: a bounded pool of reusable resources, backed by a buffered channel
-   used as a free-list. The constructor opens `size` resources from the factory
-   up front; acquire() hands one out (parking the breeze when all are checked
-   out), release() returns one. The connection pool is Pool<PgConnection> /
-   Pool<MyConnection>; the same class pools any reusable resource. Generic, so it
-   costs nothing until instantiated. The factory must be bound to a ()->T variable
-   before `new Pool<T>(...)` (a lambda literal is not inferred through a generic
-   constructor parameter). See documentation/stdlib/pool.md.
-   ponytail: fixed size, no lazy-grow / idle-eviction / validate-on-borrow /
-   acquire-timeout / closeAll — each is a measured follow-up, not v1. */
+/**
+ * Pool<T>: a bounded pool of reusable resources, backed by a buffered channel used as a free-list.
+ * The constructor opens `size` resources from the factory up front; acquire() hands one out (parking the breeze when all are checked out), release() returns one.
+ * The connection pool is Pool<PgConnection> / Pool<MyConnection>; the same class pools any reusable resource.
+ * Generic, so it costs nothing until instantiated.
+ * The factory must be bound to a ()->T variable before `new Pool<T>(...)` (a lambda literal is not inferred through a generic constructor parameter).
+ * See documentation/stdlib/pool.md. ponytail: fixed size, no lazy-grow / idle-eviction / validate-on-borrow / acquire-timeout / closeAll - each is a measured follow-up, not v1.
+ */
 static const char POOL[] =
 	"class Pool<T>\n"
 	"{\n"
@@ -474,13 +475,12 @@ const int   BZY_PRELUDE_COUNT = 12;
 
 /* ---- Desktop GUI prelude (Breezy source). ---- */
 
-/* The C entry points implemented in runtime/desktop.c. Marshalled to the GTK
-   thread; marked `blocking` so the calling breeze parks instead of stalling a
-   scheduler core while the GTK thread services the request. Names match the C
-   symbols (bzy_desktop_*); Breezy `long` carries handles, `int`/`bool` are
-   32-bit, `string` marshals to char*. */
-/* Split across units of <=8 functions each (the per-unit top-level function
-   cap), since each prelude string is parsed as one unit. */
+/**
+ * The C entry points implemented in runtime/desktop.c.
+ * Marshalled to the GTK thread; marked `blocking` so the calling breeze parks instead of stalling a scheduler core while the GTK thread services the request.
+ * Names match the C symbols (bzy_desktop_*); Breezy `long` carries handles, `int`/`bool` are 32-bit, `string` marshals to char*.
+ */
+/* Split across units of <=8 functions each (the per-unit top-level function cap), since each prelude string is parsed as one unit. */
 static const char DESKTOP_EXTERNS_A[] =
 	"extern blocking bool bzy_desktop_is_enabled();\n"
 	"extern blocking long bzy_desktop_frame_new();\n"
@@ -630,9 +630,7 @@ static const char DESKTOP_BUTTON[] =
 	"	}\n"
 	"}\n";
 
-/* Desktop: the entry point, the registration table mapping event reg-indices
-   back to widget objects, and the run-loop that pulls events and dispatches to
-   listeners in Breezy (C never calls back in). */
+/* Desktop: the entry point, the registration table mapping event reg-indices back to widget objects, and the run-loop that pulls events and dispatches to listeners in Breezy (C never calls back in). */
 static const char DESKTOP_CORE[] =
 	"static class Desktop\n"
 	"{\n"

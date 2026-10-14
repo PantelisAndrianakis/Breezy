@@ -1,14 +1,10 @@
-/* OpenGL surface over SDL2, loaded dynamically at run time (no link-time dep).
-   Own TU: a program that never references Graphics.openGL / GlSurface drops this
-   object; even when present it needs no SDL2 to link (SDL2 is dlopen'd lazily, so
-   absence degrades to a clean IOException).
-
-   Threading (differs from runtime/surface.c -- there is NO render thread): a GL
-   context becomes current on the thread that creates it, so the CALLING BREEZE's
-   worker creates the window+context and the breeze itself runs the whole
-   poll/draw/swap loop on that worker. A running breeze is never stolen, so the
-   loop stays pinned as long as it never awaits; swapBuffers() stamps and checks
-   the owning OS-thread id and aborts clearly if the breeze migrated mid-frame. */
+/**
+ * OpenGL surface over SDL2, loaded dynamically at run time (no link-time dep).
+ * Own TU: a program that never references Graphics.openGL / GlSurface drops this object; even when present it needs no SDL2 to link (SDL2 is dlopen'd lazily, so absence degrades to a clean IOException).
+ *
+ * Threading (differs from runtime/surface.c -- there is NO render thread): a GL context becomes current on the thread that creates it, so the CALLING BREEZE's worker creates the window+context and the breeze itself runs the whole poll/draw/swap loop on that worker.
+ * A running breeze is never stolen, so the loop stays pinned as long as it never awaits; swapBuffers() stamps and checks the owning OS-thread id and aborts clearly if the breeze migrated mid-frame.
+ */
 #include "breezy.h"
 #include "platform.h"
 #include <string.h>
@@ -155,8 +151,10 @@ typedef struct
 	uintptr_t owner_tid;   /* OS thread that holds the context current. */
 } GlCtrl;
 
-/* ---- GlSurface handle layout (object_size = 40):
-   0 vtable | 8 rc | 16 gcinfo | 24 ctrl(GlCtrl*) | 32 closed(int64). ---- */
+/**
+ * ---- GlSurface handle layout (object_size = 40):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 ctrl(GlCtrl*) | 32 closed(int64). ----
+ */
 #define GL_CTRL(o)   (*(GlCtrl**)((char*)(o) + 24))
 #define GL_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
 
@@ -214,7 +212,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 {
 	if (!gl_load())
 	{
-		return NULL;    /* gl_load already called bzy_io_fail. */
+		return NULL; // gl_load already called bzy_io_fail.
 	}
 
 	if (w <= 0 || h <= 0)
@@ -229,7 +227,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 		return NULL;
 	}
 
-	sdl.GL_SetAttribute(BZ_SDL_GL_DOUBLEBUFFER, 1);   /* Default/compat context: immediate mode stays available. */
+	sdl.GL_SetAttribute(BZ_SDL_GL_DOUBLEBUFFER, 1); // Default/compat context: immediate mode stays available.
 
 	const char *tt = title ? bzy_str_data(title) : "";
 	void *win = sdl.CreateWindow(tt, BZ_SDL_WINDOWPOS_UNDEFINED, BZ_SDL_WINDOWPOS_UNDEFINED,
@@ -248,9 +246,9 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 		return NULL;
 	}
 
-	sdl.GL_MakeCurrent(win, ctx);   /* Current on THIS worker thread (synchronous, no offload). */
+	sdl.GL_MakeCurrent(win, ctx); // Current on THIS worker thread (synchronous, no offload).
 
-	bzy_dyn_set_resolver(gl_getproc);   /* extern dynamic gl* now resolve through the live context. */
+	bzy_dyn_set_resolver(gl_getproc); // extern dynamic gl* now resolve through the live context.
 
 	GlCtrl *c = (GlCtrl*)calloc(1, sizeof(GlCtrl));
 	if (!c)
@@ -269,7 +267,7 @@ void *bzy_glsurface_open(int64_t w, int64_t h, void *title)
 	*(void**)o = gl_vtable();
 	GL_CTRL(o) = c;
 	GL_CLOSED(o) = 0;
-	bzy_share_crosscore(o);   /* Handle may be touched after a (disallowed-but-survivable) migration; share to be safe. */
+	bzy_share_crosscore(o); // Handle may be touched after a (disallowed-but-survivable) migration; share to be safe.
 	return o;
 }
 
@@ -280,7 +278,7 @@ int64_t bzy_glsurface_poll(void *s)
 		return 0;
 	}
 
-	char ev[64];   /* >= sizeof(SDL_Event) (56). */
+	char ev[64]; // >= sizeof(SDL_Event) (56).
 	while (sdl.PollEvent(ev))
 	{
 		uint32_t t = *(uint32_t*)(ev + 0);
@@ -310,7 +308,7 @@ int64_t bzy_glsurface_poll(void *s)
 			int32_t x = *(int32_t*)(ev + 20);
 			return (4LL << 48) | ((int64_t)(x & 0xFFFFFF) << 24) | b;
 		}
-		/* Else: unmapped event, keep draining. */
+		// Else: unmapped event, keep draining.
 	}
 
 	return 0;
@@ -342,7 +340,7 @@ int64_t bzy_glsurface_isopen(void *s)
 		return 0;
 	}
 
-	return 1;   /* Open until close(); SDL_QUIT is delivered via pollEvent (kind 6). */
+	return 1; // Open until close(); SDL_QUIT is delivered via pollEvent (kind 6).
 }
 
 void bzy_glsurface_close(void *s)

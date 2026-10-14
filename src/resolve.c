@@ -25,16 +25,14 @@ static int g_lambda_seq;       /* Monotonic id for synthetic lambda body labels.
 static const char *g_cur_file;   /* File of the unit being resolved, for diagnostics. */
 static const char *g_cur_src;    /* Its source buffer, for the diagnostic line echo. */
 
-/* Every resolved body (free functions, methods, constructors, lambda bodies),
-   collected in resolution order so the whole-program escape fixpoint and the
-   per-function lowering passes can run after the entire program is resolved. */
+/* Every resolved body (free functions, methods, constructors, lambda bodies), collected in resolution order so the whole-program escape fixpoint and the per-function lowering passes can run after the entire program is resolved. */
 static Func **g_lower=NULL;
 static int    g_lower_n=0;
 static int    g_lower_cap=0;
 
 static void die(int line, const char *msg, const char *arg)
 {
-	/* col 0: resolve-time AST nodes carry no column, so echo the line without a caret. */
+	// col 0: resolve-time AST nodes carry no column, so echo the line without a caret.
 	lexer_diag(g_cur_src, g_cur_file, line, 0, msg, arg);
 }
 
@@ -43,9 +41,7 @@ static FinalTable *g_finals = NULL;
 static int g_final_n = 0;
 static int g_final_cap = 0;
 
-/* Set right before resolving the base of an index or of a `.length`, and
-   consumed by the very next EX_IDENT / EX_FIELD: the one place a final array
-   may appear. */
+/* Set right before resolving the base of an index or of a `.length`, and consumed by the very next EX_IDENT / EX_FIELD: the one place a final array may appear. */
 static int g_final_base = 0;
 
 int final_table_count(void)
@@ -71,9 +67,10 @@ static void die_final_use(int line, const char *name)
 	die_named(line, "Final array ", name, " can only be indexed or read for its length.");
 }
 
-/* The value of one literal in a final array's list. Returns 'i' (integer,
-   possibly negated), 'f' (floating point, possibly negated), 'b' (bool) or 0
-   when the element is not a literal. */
+/**
+ * The value of one literal in a final array's list.
+ * Returns 'i' (integer, possibly negated), 'f' (floating point, possibly negated), 'b' (bool) or 0 when the element is not a literal.
+ */
 static char final_literal(const Expr *e, long long *iv, double *dv)
 {
 	int neg = 0;
@@ -125,8 +122,10 @@ static int final_int_fits(TypeKind k, long long v)
 	return v >= 0 && v < (1LL << bits);
 }
 
-/* Validates a final array's type and literal list and registers its table.
-   Returns the table id + 1. */
+/**
+ * Validates a final array's type and literal list and registers its table.
+ * Returns the table id + 1.
+ */
 static int final_register(const TypeRef *t, Expr *init, int line)
 {
 	TypeKind ek = (t->kind == TY_ARRAY && t->elem) ? t->elem->kind : TY_VOID;
@@ -198,11 +197,11 @@ static int class_is_exception(ClassInfo *c)
 	return 0;
 }
 
-/* A class is Comparable if it declares `int compareTo(SelfClass other)`. The
-   ordered containers (PriorityQueue / TreeMap / TreeSet) call it to order object
-   keys -- the ordering analogue of the reserved protocol the hash containers use
-   to hash object keys. We do not add F-bounded generics: the self-typed parameter
-   is accepted as any object/generic type, checked structurally here. */
+/**
+ * A class is Comparable if it declares `int compareTo(SelfClass other)`.
+ * The ordered containers (PriorityQueue / TreeMap / TreeSet) call it to order object keys -- the ordering analogue of the reserved protocol the hash containers use to hash object keys.
+ * We do not add F-bounded generics: the self-typed parameter is accepted as any object/generic type, checked structurally here.
+ */
 static int class_is_comparable(const char *class_name)
 {
 	ClassInfo *ci = types_find_class(g_types, class_name);
@@ -221,8 +220,7 @@ static int class_is_comparable(const char *class_name)
 	return pk == TY_OBJECT || pk == TY_GENERIC;
 }
 
-/* StringBuilder is a runtime-provided builtin object class (not user-declared),
-   so its type, new, and methods are special-cased rather than table-resolved. */
+/* StringBuilder is a runtime-provided builtin object class (not user-declared), so its type, new, and methods are special-cased rather than table-resolved. */
 static int is_stringbuilder(const TypeRef *t)
 {
 	return t->kind==TY_OBJECT && strcmp(t->class_name,"StringBuilder")==0;
@@ -273,9 +271,11 @@ static TypeKind literal_type(Expr *e)
 	return TY_INT;
 }
 
-/* Can a value of kind 'from' be stored into a slot of kind 'to' without a cast?
-   Scalars widen only within the same signedness; objects stay permissive (subtype
-   checking is out of scope). Bool<->integer and narrowing need an explicit cast. */
+/**
+ * Can a value of kind 'from' be stored into a slot of kind 'to' without a cast?
+ * Scalars widen only within the same signedness; objects stay permissive (subtype checking is out of scope).
+ * Bool<->integer and narrowing need an explicit cast.
+ */
 /* Structural type equality (used for invariant array element comparison). */
 static int typeref_equal(const TypeRef *x, const TypeRef *y)
 {
@@ -311,27 +311,27 @@ static int assignable(const TypeRef *to, const TypeRef *from)
 {
 	if (from->kind==TY_NULL && ty_is_managed(to->kind))
 	{
-		return 1;   /* null assigns to any managed reference. */
+		return 1; // null assigns to any managed reference.
 	}
 
 	if (to->kind==TY_ARRAY && from->kind==TY_ARRAY)
 	{
-		return typeref_equal(to,from);   /* Invariant: int[]!=long[], Dog[]!=Animal[]. */
+		return typeref_equal(to,from); // Invariant: int[]!=long[], Dog[]!=Animal[].
 	}
 
 	if (to->kind==TY_MAP && from->kind==TY_MAP)
 	{
-		return typeref_equal(to,from);   /* Invariant on both key and value. */
+		return typeref_equal(to,from); // Invariant on both key and value.
 	}
 
 	if (to->kind==TY_GENERIC && from->kind==TY_GENERIC)
 	{
-		return typeref_equal(to,from);   /* Invariant on template + element. */
+		return typeref_equal(to,from); // Invariant on template + element.
 	}
 
 	if (to->kind == from->kind)
 	{
-		return 1;   /* Same scalar/bool/object-by-kind/string/void. */
+		return 1; // Same scalar/bool/object-by-kind/string/void.
 	}
 
 	if (ty_is_int(to->kind) && ty_is_int(from->kind))
@@ -341,7 +341,7 @@ static int assignable(const TypeRef *to, const TypeRef *from)
 
 	if (to->kind==TY_DOUBLE && ty_is_int(from->kind))
 	{
-		return 1;   /* Implicit int->double widening. */
+		return 1; // Implicit int->double widening.
 	}
 
 	return 0;
@@ -349,7 +349,7 @@ static int assignable(const TypeRef *to, const TypeRef *from)
 
 static void resolve_math(Expr *e)
 {
-	const char *m = e->name + 5;   /* After "Math.". */
+	const char *m = e->name + 5; // After "Math.".
 	if (strcmp(m,"abs")==0)
 	{
 		if (e->arg_count!=1)
@@ -363,7 +363,7 @@ static void resolve_math(Expr *e)
 			die(e->line,"Math.abs requires a number.",NULL);
 		}
 
-		e->type.kind = ty_is_int(k) ? k : TY_DOUBLE;   /* Float promotes to double. */
+		e->type.kind = ty_is_int(k) ? k : TY_DOUBLE; // Float promotes to double.
 		return;
 	}
 
@@ -438,7 +438,7 @@ static void resolve_math(Expr *e)
 
 static void resolve_clock(Expr *e)
 {
-	const char *m = e->name + 6;   /* After "Clock.". */
+	const char *m = e->name + 6; // After "Clock.".
 	if (strcmp(m,"getDateString")==0)
 	{
 		if (e->arg_count == 1)
@@ -581,7 +581,7 @@ static void resolve_string_method(Expr *e)
 	}
 	else if (strcmp(nm,"padLeft")==0 || strcmp(nm,"padRight")==0)
 	{
-		/* padLeft(width) / padRight(width), optionally + a pad string. */
+		// padLeft(width) / padRight(width), optionally + a pad string.
 		int ok = (e->arg_count == 1 && ty_is_int(e->args[0]->type.kind))
 				 || (e->arg_count == 2 && ty_is_int(e->args[0]->type.kind)
 					 && e->args[1]->type.kind == TY_STRING);
@@ -594,7 +594,7 @@ static void resolve_string_method(Expr *e)
 	}
 	else if (strcmp(nm,"split")==0 || strcmp(nm,"splitAny")==0)
 	{
-		/* split(sep) / splitAny(chars), optionally + a bool to drop empty fields. */
+		// split(sep) / splitAny(chars), optionally + a bool to drop empty fields.
 		int ok = (e->arg_count == 1 && e->args[0]->type.kind == TY_STRING)
 				 || (e->arg_count == 2 && e->args[0]->type.kind == TY_STRING
 					 && e->args[1]->type.kind == TY_BOOL);
@@ -646,13 +646,13 @@ static void resolve_string_method(Expr *e)
 
 static void resolve_regex(Expr *e)
 {
-	const char *m = e->name + 6;   /* After "Regex.". */
+	const char *m = e->name + 6; // After "Regex.".
 	int predicate = (strcmp(m,"matches")==0 || strcmp(m,"test")==0);
 	int find = strcmp(m,"find")==0;
 	int replace = strcmp(m,"replace")==0;
-	int match = strcmp(m,"capture")==0;        /* string[] of [whole, g1, ...]. */
-	int find_all = strcmp(m,"findAll")==0;     /* string[] of whole matches. */
-	int match_all = strcmp(m,"captureAll")==0; /* string[][] of per-match groups. */
+	int match = strcmp(m,"capture")==0; // string[] of [whole, g1, ...].
+	int find_all = strcmp(m,"findAll")==0; // string[] of whole matches.
+	int match_all = strcmp(m,"captureAll")==0; // string[][] of per-match groups.
 	if (!predicate && !find && !replace && !match && !find_all && !match_all)
 	{
 		die(e->line,"Unknown Regex method: ",m);
@@ -699,11 +699,10 @@ static void resolve_regex(Expr *e)
 	e->type.kind = predicate ? TY_BOOL : TY_STRING;
 }
 
-/* Path.* : pure path-string helpers. join takes two strings, the rest one;
-   all return a string. */
+/* Path.* : pure path-string helpers. join takes two strings, the rest one; all return a string. */
 static void resolve_path(Expr *e)
 {
-	const char *m = e->name + 5;   /* After "Path.". */
+	const char *m = e->name + 5; // After "Path.".
 	int join = strcmp(m,"join")==0;
 	int ok = join
 			 || strcmp(m,"fileName")==0
@@ -748,7 +747,7 @@ static int file_is_byte_array(TypeRef *t)
 
 static void resolve_system(Expr *e)
 {
-	const char *m = e->name + 7;   /* After "System.". */
+	const char *m = e->name + 7; // After "System.".
 	if (strcmp(m,"args")==0)
 	{
 		if (e->arg_count != 0)
@@ -776,7 +775,7 @@ static void resolve_system(Expr *e)
 			die(e->line,"System.shell wait argument must be a bool.",NULL);
 		}
 
-		e->type.kind=TY_INT;   /* Async: pid. Wait: exit code. */
+		e->type.kind=TY_INT; // Async: pid. Wait: exit code.
 		return;
 	}
 
@@ -831,7 +830,7 @@ static void resolve_system(Expr *e)
 			die(e->line,"System.pollKey() takes no arguments.",NULL);
 		}
 
-		e->type.kind = TY_INT;   /* Next input byte (0..255), or -1 when none. */
+		e->type.kind = TY_INT; // Next input byte (0..255), or -1 when none.
 		return;
 	}
 
@@ -853,7 +852,7 @@ static void resolve_system(Expr *e)
 			die(e->line,"System.pollMouse() takes no arguments.",NULL);
 		}
 
-		e->type.kind = TY_LONG;   /* Packed event (x/y/flags), or -1 when none. */
+		e->type.kind = TY_LONG; // Packed event (x/y/flags), or -1 when none.
 		return;
 	}
 
@@ -875,7 +874,7 @@ static void resolve_system(Expr *e)
 			die(e->line,"System.affinity(mask) takes one integer bitmask argument.",NULL);
 		}
 
-		e->type.kind = TY_BOOL;   /* true on success, false on failure. */
+		e->type.kind = TY_BOOL; // true on success, false on failure.
 		return;
 	}
 
@@ -884,7 +883,7 @@ static void resolve_system(Expr *e)
 
 static void resolve_network(Expr *e)
 {
-	const char *m = e->name + 8;   /* After "Network.". */
+	const char *m = e->name + 8; // After "Network.".
 	if (strcmp(m,"listen")==0)
 	{
 		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
@@ -947,7 +946,7 @@ static void resolve_network(Expr *e)
 			die(e->line,"Network.rawSocket(protocol) takes one integer protocol.",NULL);
 		}
 
-		e->type.kind=TY_SOCKET;   /* Reuse the socket handle: read/write/close work as-is. */
+		e->type.kind=TY_SOCKET; // Reuse the socket handle: read/write/close work as-is.
 		return;
 	}
 
@@ -1017,7 +1016,7 @@ static void resolve_network(Expr *e)
 
 static void resolve_memory(Expr *e)
 {
-	const char *m = e->name + 7;   /* After "Memory.". */
+	const char *m = e->name + 7; // After "Memory.".
 	if (strcmp(m,"alloc")==0)
 	{
 		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
@@ -1045,7 +1044,7 @@ static TypeKind simd_lane_kind(TypeKind v)
 		return TY_INT;
 	}
 
-	return TY_FLOAT;   /* f32x4 / f32x8. */
+	return TY_FLOAT; // f32x4 / f32x8.
 }
 
 extern int g_program_uses_avx;    /* Defined in codegen.c; set for any 256-bit value. */
@@ -1053,10 +1052,10 @@ extern int g_program_uses_avx2;   /* Stronger: the i32x8 integer ops need AVX2. 
 
 static void resolve_simd(Expr *e)
 {
-	const char *m = e->name + 5;   /* After "Simd.". */
+	const char *m = e->name + 5; // After "Simd.".
 
-	/* Flag AVX use for the startup guard: any 256-bit operand means AVX ops are
-	   emitted (i32x8 needs AVX2). The pure producers set it in their branches. */
+	// Flag AVX use for the startup guard: any 256-bit operand means AVX ops are emitted (i32x8 needs AVX2).
+	// The pure producers set it in their branches.
 	for (int ai = 0; ai < e->arg_count; ai++)
 	{
 		TypeKind ak = e->args[ai]->type.kind;
@@ -1072,7 +1071,7 @@ static void resolve_simd(Expr *e)
 
 	if (strcmp(m,"pack")==0)
 	{
-		/* All-float lanes: two -> f64x2, four -> f32x4. All-int lanes: four -> i32x4. */
+		// All-float lanes: two -> f64x2, four -> f32x4. All-int lanes: four -> i32x4.
 		int all_float = 1, all_int = 1;
 		for (int i=0; i<e->arg_count; i++)
 		{
@@ -1108,9 +1107,7 @@ static void resolve_simd(Expr *e)
 		die(e->line,"Simd.pack takes two floats (f64x2), four floats (f32x4), or four ints (i32x4).",NULL);
 	}
 
-	/* 256-bit AVX f64x4: an explicit width-suffixed constructor so four double
-	   lanes are never confused with the four-lane f32x4 (float literals are
-	   double, so arity alone cannot tell them apart). */
+	// 256-bit AVX f64x4: an explicit width-suffixed constructor so four double lanes are never confused with the four-lane f32x4 (float literals are double, so arity alone cannot tell them apart).
 	if (strcmp(m,"pack256")==0)
 	{
 		int all_float = 1, all_int = 1;
@@ -1182,8 +1179,7 @@ static void resolve_simd(Expr *e)
 		return;
 	}
 
-	/* Horizontal reductions: sum all lanes, or the dot product of two vectors,
-	   collapsing to a scalar of the lane type. */
+	// Horizontal reductions: sum all lanes, or the dot product of two vectors, collapsing to a scalar of the lane type.
 	if (strcmp(m,"sum")==0)
 	{
 		if (e->arg_count!=1 || !ty_is_simd(e->args[0]->type.kind))
@@ -1218,15 +1214,15 @@ static void resolve_simd(Expr *e)
 		TypeKind ek = e->args[0]->type.elem->kind;
 		if (ek==TY_DOUBLE)
 		{
-			e->type.kind=TY_F64X2;       /* Lanes i, i+1. */
+			e->type.kind=TY_F64X2; // Lanes i, i+1.
 		}
 		else if (ek==TY_FLOAT)
 		{
-			e->type.kind=TY_F32X4;       /* Lanes i..i+3. */
+			e->type.kind=TY_F32X4; // Lanes i..i+3.
 		}
 		else if (ek==TY_INT)
 		{
-			e->type.kind=TY_I32X4;       /* Lanes i..i+3. */
+			e->type.kind=TY_I32X4; // Lanes i..i+3.
 		}
 		else
 		{
@@ -1255,8 +1251,7 @@ static void resolve_simd(Expr *e)
 		return;
 	}
 
-	/* 256-bit AVX load/store: four double lanes (f64x4) of a double[], or eight
-	   float lanes (f32x8) of a float[]. */
+	// 256-bit AVX load/store: four double lanes (f64x4) of a double[], or eight float lanes (f32x8) of a float[].
 	if (strcmp(m,"load256")==0)
 	{
 		int ok = e->arg_count==2 && e->args[0]->type.kind==TY_ARRAY && e->args[0]->type.elem
@@ -1296,7 +1291,7 @@ static void resolve_simd(Expr *e)
 
 static void resolve_graphics(Expr *e)
 {
-	const char *m = e->name + 9;   /* After "Graphics.". */
+	const char *m = e->name + 9; // After "Graphics.".
 	if (strcmp(m,"open")==0)
 	{
 		if (e->arg_count!=3 || !ty_is_int(e->args[0]->type.kind)
@@ -1326,7 +1321,7 @@ static void resolve_graphics(Expr *e)
 
 static void resolve_ffi(Expr *e)
 {
-	const char *m = e->name + 4;   /* After "Ffi.". */
+	const char *m = e->name + 4; // After "Ffi.".
 	if (strcmp(m,"bind")==0)
 	{
 		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
@@ -1343,7 +1338,7 @@ static void resolve_ffi(Expr *e)
 
 static void resolve_log(Expr *e)
 {
-	const char *m = e->name + 4;   /* After "Log.". */
+	const char *m = e->name + 4; // After "Log.".
 	if (strcmp(m,"open")==0)
 	{
 		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
@@ -1360,7 +1355,7 @@ static void resolve_log(Expr *e)
 
 static void resolve_xml(Expr *e)
 {
-	const char *m = e->name + 4;   /* After "Xml.". */
+	const char *m = e->name + 4; // After "Xml.".
 	if (strcmp(m,"parse")==0)
 	{
 		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
@@ -1377,7 +1372,7 @@ static void resolve_xml(Expr *e)
 
 static void resolve_json(Expr *e)
 {
-	const char *m = e->name + 5;   /* After "Json.". */
+	const char *m = e->name + 5; // After "Json.".
 	if (strcmp(m,"parse")==0)
 	{
 		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
@@ -1437,7 +1432,7 @@ static void resolve_json(Expr *e)
 
 static void resolve_http(Expr *e)
 {
-	const char *m = e->name + 5;   /* After "Http.". */
+	const char *m = e->name + 5; // After "Http.".
 	if (strcmp(m,"readRequest")==0)
 	{
 		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_SOCKET)
@@ -1499,7 +1494,7 @@ static void resolve_http(Expr *e)
 
 static void resolve_postgres(Expr *e)
 {
-	const char *m = e->name + 9;   /* After "Postgres.". */
+	const char *m = e->name + 9; // After "Postgres.".
 	if (strcmp(m,"connect")==0 || strcmp(m,"connectTls")==0 || strcmp(m,"connectTlsInsecure")==0)
 	{
 		if (e->arg_count!=5 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
@@ -1531,7 +1526,7 @@ static void resolve_postgres(Expr *e)
 
 static void resolve_mysql(Expr *e)
 {
-	const char *m = e->name + 6;   /* After "Mysql.". */
+	const char *m = e->name + 6; // After "Mysql.".
 	if (strcmp(m,"connect")==0 || strcmp(m,"connectTls")==0 || strcmp(m,"connectTlsInsecure")==0)
 	{
 		if (e->arg_count!=5 || e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind)
@@ -1563,7 +1558,7 @@ static void resolve_mysql(Expr *e)
 
 static void resolve_file(Expr *e)
 {
-	const char *m = e->name + 5;   /* After "File.". */
+	const char *m = e->name + 5; // After "File.".
 
 	if (strcmp(m,"openChannel")==0)
 	{
@@ -1592,7 +1587,7 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
-	/* Path -> bool predicates. */
+	// Path -> bool predicates.
 	if (strcmp(m,"exists")==0 || strcmp(m,"isFile")==0 || strcmp(m,"isFolder")==0)
 	{
 		if (e->arg_count != 1)
@@ -1605,7 +1600,7 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
-	/* Path -> void mutations. */
+	// Path -> void mutations.
 	if (strcmp(m,"createFile")==0 || strcmp(m,"createFolder")==0
 			|| strcmp(m,"delete")==0 || strcmp(m,"deleteRecursive")==0)
 	{
@@ -1693,7 +1688,7 @@ static void resolve_file(Expr *e)
 		return;
 	}
 
-	/* Search: folder [+ pattern] -> string[] of full paths. */
+	// Search: folder [+ pattern] -> string[] of full paths.
 	if (strcmp(m,"list")==0 || strcmp(m,"search")==0 || strcmp(m,"searchRecursive")==0)
 	{
 		int want = (strcmp(m,"list")==0) ? 1 : 2;
@@ -1754,7 +1749,7 @@ static void resolve_file(Expr *e)
 
 static void resolve_random(Expr *e)
 {
-	const char *m = e->name + 7;   /* After "Random.". */
+	const char *m = e->name + 7; // After "Random.".
 	if (strcmp(m,"nextBool")==0)
 	{
 		e->type.kind = TY_BOOL;
@@ -1820,9 +1815,7 @@ static void resolve_block(SymTable *st, Block *b, const char *tc);
 static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc);
 static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc);
 
-/* Resolve an expression that may be a lambda against an expected function type:
-   a lambda gets its parameter types inferred from `expected` and its captures
-   collected; anything else resolves normally (the expected type is unused). */
+/* Resolve an expression that may be a lambda against an expected function type: a lambda gets its parameter types inferred from `expected` and its captures collected; anything else resolves normally (the expected type is unused). */
 static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc);
 
 static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const char *tc)
@@ -1833,9 +1826,7 @@ static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const 
 		return;
 	}
 
-	/* A bare named function in a (P)->R context becomes a function value: rewrite
-	   the identifier in place into an adapter lambda (a0, ...) => name(a0, ...) and
-	   resolve that, reusing the closure machinery (it captures nothing -> singleton). */
+	// A bare named function in a (P)->R context becomes a function value: rewrite the identifier in place into an adapter lambda (a0, ...) => name(a0, ...) and resolve that, reusing the closure machinery (it captures nothing -> singleton).
 	if (e->kind == EX_IDENT && expected && expected->kind == TY_FUNC
 			&& types_find_func(g_types, e->name))
 	{
@@ -1862,10 +1853,8 @@ static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const 
 		return;
 	}
 
-	/* Generic enum construction (Wrap.Of(5)) in a typed context: the expected type
-	   is the already-monomorphized base instance (e.g. Wrap$int), so the concrete
-	   variant is Wrap$Of + the same arg suffix = Wrap$Of$int (co-instantiated with
-	   the base). Build `new Wrap$Of$int(5)` directly - no arg inference needed. */
+	// Generic enum construction (Wrap.Of(5)) in a typed context: the expected type is the already-monomorphized base instance (e.g. Wrap$int), so the concrete variant is Wrap$Of + the same arg suffix = Wrap$Of$int (co-instantiated with the base).
+	// Build `new Wrap$Of$int(5)` directly - no arg inference needed.
 	if (e->kind == EX_METHOD_CALL && e->lhs && e->lhs->kind == EX_IDENT
 			&& enum_is(e->lhs->name) && enum_is_generic(e->lhs->name)
 			&& enum_const_is_payload(e->lhs->name, e->name)
@@ -1876,9 +1865,9 @@ static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const 
 		size_t bl = strlen(base);
 		if (strncmp(inst, base, bl) == 0 && inst[bl] == '$')
 		{
-			const char *vt = enum_variant_class(base, e->name);   /* "Wrap$Of". */
+			const char *vt = enum_variant_class(base, e->name); // "Wrap$Of".
 			char concrete[160];
-			snprintf(concrete, sizeof(concrete), "%s%s", vt, inst + bl);   /* + "$int". */
+			snprintf(concrete, sizeof(concrete), "%s%s", vt, inst + bl); // + "$int".
 			Expr *nw = expr_new(EX_NEW, e->line);
 			snprintf(nw->name, sizeof(nw->name), "%s", concrete);
 			for (int a = 0; a < e->arg_count; a++)
@@ -1892,8 +1881,7 @@ static void resolve_value(SymTable *st, Expr *e, const TypeRef *expected, const 
 		}
 	}
 
-	/* Bare zero-field generic variant in a typed context (Option<int> x = Option.None):
-	   construct Option$None$int from the expected base instance. */
+	// Bare zero-field generic variant in a typed context (Option<int> x = Option.None): construct Option$None$int from the expected base instance.
 	if (e->kind == EX_FIELD && e->lhs && e->lhs->kind == EX_IDENT
 			&& enum_is(e->lhs->name) && enum_is_generic(e->lhs->name)
 			&& enum_const_is_payload(e->lhs->name, e->name)
@@ -1944,12 +1932,14 @@ static LambdaCap *lam_add_cap(LambdaInfo *l, const char *name, TypeRef type, int
 	c->type = type;
 	c->src_offset = src_off;
 	c->is_managed = ty_is_managed(type.kind);
-	c->env_offset = 32 + (l->cap_count - 1) * 8;   /* Env header is 32 bytes; captures follow. */
+	c->env_offset = 32 + (l->cap_count - 1) * 8; // Env header is 32 bytes; captures follow.
 	return c;
 }
 
-/* A malloc'd array of the call's resolved argument types, for overload_select.
-   Leaked deliberately (the compiler is short-lived); avoids a fixed arg cap. */
+/**
+ * A malloc'd array of the call's resolved argument types, for overload_select.
+ * Leaked deliberately (the compiler is short-lived); avoids a fixed arg cap.
+ */
 static TypeRef *arg_types_of(Expr *e)
 {
 	TypeRef *a = malloc(sizeof(TypeRef) * (e->arg_count > 0 ? e->arg_count : 1));
@@ -1961,10 +1951,11 @@ static TypeRef *arg_types_of(Expr *e)
 	return a;
 }
 
-/* Append cloned default-value arguments for omitted trailing parameters of a call
-   whose target's AST is `ast` (NULL for builtins — a no-op). Stops at the first
-   missing parameter that has no default, leaving the caller's existing arg-count
-   check to report the error. Each injected default is resolved in place. */
+/**
+ * Append cloned default-value arguments for omitted trailing parameters of a call whose target's AST is `ast` (NULL for builtins - a no-op).
+ * Stops at the first missing parameter that has no default, leaving the caller's existing arg-count check to report the error.
+ * Each injected default is resolved in place.
+ */
 static void fill_default_args(SymTable *st, Expr *e, Func *ast, const char *tc)
 {
 	if (!ast)
@@ -1992,15 +1983,14 @@ static void resolve_args(SymTable *st, Expr *e, const char *tc)
 	{
 		if (e->args[i]->is_func_addr)
 		{
-			continue;   /* FFI function-pointer arg: already typed as its address (TY_LONG). */
+			continue; // FFI function-pointer arg: already typed as its address (TY_LONG).
 		}
 
 		resolve_expr(st,e->args[i],tc);
 	}
 }
 
-/* scheduleAfter(f, delayMs) / scheduleEvery(f, delayMs, periodMs): f is a bare
-   named zero-arg void function (not a value), the rest are integer delays. */
+/* scheduleAfter(f, delayMs) / scheduleEvery(f, delayMs, periodMs): f is a bare named zero-arg void function (not a value), the rest are integer delays. */
 static void resolve_schedule(SymTable *st, Expr *e, const char *tc)
 {
 	int periodic = (strcmp(e->name,"scheduleEvery")==0);
@@ -2032,7 +2022,7 @@ static void resolve_schedule(SymTable *st, Expr *e, const char *tc)
 		die(e->line,"Schedule target must take no arguments.",NULL);
 	}
 
-	/* The delay (and period) are ordinary integer expressions. */
+	// The delay (and period) are ordinary integer expressions.
 	for (int i = 1; i < e->arg_count; i++)
 	{
 		resolve_expr(st, e->args[i], tc);
@@ -2060,8 +2050,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		e->type.kind=TY_NULL;
 		break;
 	case EX_TRYOP:
-		/* A top-level `expr?` is desugared in resolve_block; reaching here means a
-		   nested use, which is not supported yet. */
+		// A top-level `expr?` is desugared in resolve_block; reaching here means a nested use, which is not supported yet.
 		die(e->line,"'?' is supported only at the top of a variable initializer or assignment for now.",NULL);
 		break;
 	case EX_FLOAT:
@@ -2071,7 +2060,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		e->type.kind=TY_STRING;
 		break;
 	case EX_NEWARRAY:
-		resolve_expr(st,e->lhs,tc);                 /* The count. */
+		resolve_expr(st,e->lhs,tc); // The count.
 		if (!ty_is_int(e->lhs->type.kind))
 		{
 			die(e->line,"Array length must be an integer.",NULL);
@@ -2107,7 +2096,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Unknown map value type: ",e->type.elem2->class_name);
 		}
 
-		break;   /* e->type is already TY_MAP + key/value, set by the parser. */
+		break; // e->type is already TY_MAP + key/value, set by the parser.
 	case EX_NEWCHANNEL:
 		if (e->arg_count!=1)
 		{
@@ -2127,7 +2116,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Unknown channel element type: ",e->type.elem->class_name);
 		}
 
-		break;   /* e->type is already TY_CHANNEL + elem, set by the parser. */
+		break; // e->type is already TY_CHANNEL + elem, set by the parser.
 	case EX_NEWGEN:
 	{
 		const char *tmpl=e->type.class_name;
@@ -2150,7 +2139,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Unknown collection element type: ",e->type.elem->class_name);
 		}
 
-		break;   /* e->type already TY_GENERIC + elem, set by the parser. */
+		break; // e->type already TY_GENERIC + elem, set by the parser.
 	}
 	case EX_INDEX:
 		g_final_base = (e->lhs->kind == EX_IDENT || e->lhs->kind == EX_FIELD);
@@ -2159,10 +2148,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		resolve_expr(st,e->rhs,tc);
 		if (e->lhs->type.kind==TY_GENERIC && strcmp(e->lhs->type.class_name,"List")==0)
 		{
-			/* List subscript read: rewrite `list[i]` into `list.get(i)` so it reuses
-			   the existing (ring-aware, bounds-checked, managed-safe) get lowering.
-			   A `list[i] = v` target is rewritten to set() one level up, in ST_ASSIGN,
-			   before this rvalue path is ever reached. */
+			// List subscript read: rewrite `list[i]` into `list.get(i)` so it reuses the existing (ring-aware, bounds-checked, managed-safe) get lowering.
+			// A `list[i] = v` target is rewritten to set() one level up, in ST_ASSIGN, before this rvalue path is ever reached.
 			if (!ty_is_int(e->rhs->type.kind))
 			{
 				die(e->line,"List index must be an integer.",NULL);
@@ -2175,7 +2162,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			e->args = NULL;
 			e->arg_count = 0;
 			expr_add_arg(e, idx);
-			resolve_expr(st, e, tc);   /* Resolve as the method call (sets e->type = elem). */
+			resolve_expr(st, e, tc); // Resolve as the method call (sets e->type = elem).
 			break;
 		}
 
@@ -2190,17 +2177,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		e->type = *e->lhs->type.elem;
-		/* A managed element of an array whose static type may cross cores gets
-		   SHARED-bit gated access in codegen (the locked slot helpers when the
-		   array actually crossed); the gated read is OWNED on both paths. Value
-		   arrays never gate - aligned native element access is already atomic. */
+		// A managed element of an array whose static type may cross cores gets SHARED-bit gated access in codegen (the locked slot helpers when the array actually crossed); the gated read is OWNED on both paths.
+		// Value arrays never gate - aligned native element access is already atomic.
 		e->anno_shared_gate = ty_is_managed(e->type.kind)
 							  && types_typeref_maybe_shared(g_types,&e->lhs->type);
 		break;
 	case EX_CAST:
 	{
 		resolve_expr(st,e->lhs,tc);
-		TypeKind to=e->type.kind, from=e->lhs->type.kind;   /* Target set by parser. */
+		TypeKind to=e->type.kind, from=e->lhs->type.kind; // Target set by parser.
 		int to_num=ty_is_int(to) || ty_is_float(to);
 		int from_num=ty_is_int(from) || ty_is_float(from);
 		if (to==TY_BOOL || from==TY_BOOL)
@@ -2233,8 +2218,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		g_final_base = 0;
 		if (!s && g_cur_lam)
 		{
-			/* Inside a lambda body, a name not bound by a parameter/local that
-			   names an enclosing local is captured BY VALUE into the closure env. */
+			// Inside a lambda body, a name not bound by a parameter/local that names an enclosing local is captured BY VALUE into the closure env.
 			LambdaCap *c = lam_find_cap(g_cur_lam, e->name);
 			if (!c)
 			{
@@ -2247,10 +2231,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				if (encs)
 				{
 					c = lam_add_cap(g_cur_lam, e->name, encs->type, encs->offset);
-					/* Give the capture a real slot in the body's frame; a prologue
-					   seeds it from the env object so every read path (including the
-					   binary-op leaf fusion) just reads a normal local. `st` here is
-					   the body's own symbol table. */
+					// Give the capture a real slot in the body's frame; a prologue seeds it from the env object so every read path (including the binary-op leaf fusion) just reads a normal local.
+					// `st` here is the body's own symbol table.
 					Symbol *ls = sym_add(st, e->name, encs->type);
 					c->local_slot = ls->offset;
 				}
@@ -2266,11 +2248,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (!s)
 		{
-			/* Not a local or parameter. Inside a method, a bare name may refer
-			   to a field of the enclosing class: desugar `x` to `this.x` (or, for
-			   a static field, to the `Class.field` form). This rewrites the node
-			   into the exact EX_FIELD shape the parser builds for explicit field
-			   access, so resolve/codegen handle it through their existing paths. */
+			// Not a local or parameter.
+			// Inside a method, a bare name may refer to a field of the enclosing class: desugar `x` to `this.x` (or, for a static field, to the `Class.field` form).
+			// This rewrites the node into the exact EX_FIELD shape the parser builds for explicit field access, so resolve/codegen handle it through their existing paths.
 			if (tc)
 			{
 				ClassInfo *cc=types_find_class(g_types,tc);
@@ -2279,15 +2259,14 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				{
 					if (fld->is_static)
 					{
-						/* Mirror the parser's `Class.field` shape: EX_FIELD with an
-						   EX_IDENT class-name lhs. Downstream passes assume every
-						   EX_FIELD has a non-NULL lhs, so the lhs must be present. */
+						// Mirror the parser's `Class.field` shape: EX_FIELD with an EX_IDENT class-name lhs.
+						// Downstream passes assume every EX_FIELD has a non-NULL lhs, so the lhs must be present.
 						Expr *cls=expr_new(EX_IDENT,e->line);
 						strcpy(cls->name,tc);
 						e->kind=EX_FIELD;
 						e->lhs=cls;
 						e->type=fld->type;
-						e->anno_int=-1;             /* Static-field sentinel (see codegen). */
+						e->anno_int=-1; // Static-field sentinel (see codegen).
 						strcpy(e->anno_str,tc);
 						if (fld->final_id)
 						{
@@ -2331,7 +2310,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	}
 	case EX_LAMBDA:
-		resolve_lambda(st, e, NULL, tc);   /* No target type here: params must be annotated. */
+		resolve_lambda(st, e, NULL, tc); // No target type here: params must be annotated.
 		break;
 	case EX_ARRAYLIT:
 		die(e->line, "An array literal can only initialize a final array.", NULL);
@@ -2356,7 +2335,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (nc && nc->has_ctor)
 		{
-			OverloadCand cands[8] = {0};   /* Zero is_variadic for all (only externs are variadic). */
+			OverloadCand cands[8] = {0}; // Zero is_variadic for all (only externs are variadic).
 			for (int ci=0; ci<nc->ctor_count; ci++)
 			{
 				cands[ci].param_types=nc->ctors[ci].param_types;
@@ -2454,16 +2433,13 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (a==TY_STRING || b==TY_STRING)
 		{
-			/* A null-reference check (`s == null` / `s != null`) is a managed-vs-null
-			   comparison, not concatenation — let it fall through to the ==/!= logic
-			   below. (String value-equality still uses .equals(), so `s1 == s2` keeps
-			   landing in the error path here.) */
+			// A null-reference check (`s == null` / `s != null`) is a managed-vs-null comparison, not concatenation - let it fall through to the ==/!= logic below.
+			// (String value-equality still uses .equals(), so `s1 == s2` keeps landing in the error path here.)
 			int null_cmp = (e->op==TOKEN_EQ || e->op==TOKEN_NEQ) && (a==TY_NULL || b==TY_NULL);
 			if (!null_cmp)
 			{
-				/* Concatenation with '+': when either operand is a string, the other
-				   may be a string or any scalar (integer, floating, or bool) — the
-				   scalar is converted to its text form. Objects/arrays are rejected. */
+				// Concatenation with '+': when either operand is a string, the other may be a string or any scalar (integer, floating, or bool) - the scalar is converted to its text form.
+				// Objects/arrays are rejected.
 				int a_ok = a==TY_STRING || ty_is_int(a) || ty_is_float(a) || a==TY_BOOL;
 				int b_ok = b==TY_STRING || ty_is_int(b) || ty_is_float(b) || b==TY_BOOL;
 				if (e->op!=TOKEN_PLUS || !a_ok || !b_ok)
@@ -2478,10 +2454,9 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		if (ty_is_float(a) || ty_is_float(b))
 		{
-			/* Numeric promotion: when either operand is floating, the other must
-			   also be numeric (integer or floating). The result widens to the
-			   most general type present: double if either side is double,
-			   otherwise float. Integers promote to that float type implicitly. */
+			// Numeric promotion: when either operand is floating, the other must also be numeric (integer or floating).
+			// The result widens to the most general type present: double if either side is double, otherwise float.
+			// Integers promote to that float type implicitly.
 			if (!(ty_is_int(a) || ty_is_float(a)) || !(ty_is_int(b) || ty_is_float(b)))
 			{
 				die(e->line,"Non-numeric operand.",NULL);
@@ -2551,9 +2526,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Shift operators '<<'/'>>' require integer operands.",NULL);
 			}
 
-			/* The result takes the left operand's type; the shift count's
-			   type and signedness do not affect the result. A signed left operand
-			   shifts arithmetically ('>>' = sar), an unsigned one logically (shr). */
+			// The result takes the left operand's type; the shift count's type and signedness do not affect the result.
+			// A signed left operand shifts arithmetically ('>>' = sar), an unsigned one logically (shr).
 			e->type.kind = a;
 			break;
 		}
@@ -2563,8 +2537,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Arithmetic operands must be integers.",NULL);
 		}
 
-		/* Integer promotion: the wider rank wins. For mixed signedness, unsigned
-		   wins — the result is the unsigned type at the wider rank. */
+		// Integer promotion: the wider rank wins.
+		// For mixed signedness, unsigned wins - the result is the unsigned type at the wider rank.
 		TypeKind wider = ty_rank(a)>=ty_rank(b) ? a : b;
 		e->type.kind = (ty_is_signed(a)!=ty_is_signed(b)) ? ty_to_unsigned(wider) : wider;
 		break;
@@ -2573,9 +2547,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	{
 		int final_ok = g_final_base;
 		g_final_base = 0;
-		/* Enum constant access (Color.RED): the lhs is the enum type name, not a
-		   variable. The node stays EX_FIELD; codegen re-detects it via enum_is and
-		   loads the singleton slot, so lhs is left unresolved. */
+		// Enum constant access (Color.RED): the lhs is the enum type name, not a variable.
+		// The node stays EX_FIELD; codegen re-detects it via enum_is and loads the singleton slot, so lhs is left unresolved.
 		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
 		{
 			if (enum_ordinal(e->lhs->name,e->name)<0)
@@ -2598,9 +2571,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
-		/* Static field access (C.total): the lhs is a class name, not a variable.
-		   Annotate with the sentinel anno_int=-1 + class so codegen loads the slot;
-		   lhs is left unresolved. */
+		// Static field access (C.total): the lhs is a class name, not a variable.
+		// Annotate with the sentinel anno_int=-1 + class so codegen loads the slot; lhs is left unresolved.
 		if (e->lhs->kind==EX_IDENT && !sym_find(st,e->lhs->name))
 		{
 			ClassInfo *sc=types_find_class(g_types,e->lhs->name);
@@ -2634,8 +2606,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 		}
 
-		/* Namespace constant access (File.READONLY etc.): the lhs is the namespace
-		   identifier, not a variable. Rewrite the node to an integer literal. */
+		// Namespace constant access (File.READONLY etc.): the lhs is the namespace identifier, not a variable.
+		// Rewrite the node to an integer literal.
 		if (e->lhs->kind==EX_IDENT && strcmp(e->lhs->name,"File")==0)
 		{
 			long long v = -1;
@@ -2679,7 +2651,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			e->type.kind=TY_INT;
-			e->anno_int=24;             /* The length field offset. */
+			e->anno_int=24; // The length field offset.
 			break;
 		}
 
@@ -2691,7 +2663,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			e->type.kind=TY_INT;
-			e->anno_int=24;             /* The size field offset. */
+			e->anno_int=24; // The size field offset.
 			break;
 		}
 
@@ -2703,7 +2675,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 
 			e->type.kind=TY_INT;
-			e->anno_int=24;             /* Length (vector) / size (map) field offset. */
+			e->anno_int=24; // Length (vector) / size (map) field offset.
 			break;
 		}
 
@@ -2712,29 +2684,28 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			if (strcmp(e->name,"name")==0)
 			{
 				e->type.kind=TY_STRING;
-				e->anno_int=24;         /* name@24. */
+				e->anno_int=24; // name@24.
 			}
 			else if (strcmp(e->name,"text")==0)
 			{
 				e->type.kind=TY_STRING;
-				e->anno_int=32;         /* text@32. */
+				e->anno_int=32; // text@32.
 			}
 			else if (strcmp(e->name,"attrCount")==0)
 			{
 				e->type.kind=TY_INT;
-				e->anno_int=48;         /* attr_count@48. */
+				e->anno_int=48; // attr_count@48.
 			}
 			else if (strcmp(e->name,"children")==0)
 			{
-				/* A List<XmlNode> stored on the node; a borrowed field read at 56,
-				   traversed by the existing collection combinators. */
+				// A List<XmlNode> stored on the node; a borrowed field read at 56, traversed by the existing collection combinators.
 				TypeRef el;
 				memset(&el,0,sizeof(el));
 				el.kind=TY_XMLNODE;
 				e->type.kind=TY_GENERIC;
 				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
 				e->type.elem=typeref_box(el);
-				e->anno_int=56;         /* children@56. */
+				e->anno_int=56; // children@56.
 			}
 			else
 			{
@@ -2748,8 +2719,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		{
 			if (strcmp(e->name,"size")==0)
 			{
-				/* Array length / object key count -- kind-dependent, so codegen
-				   lowers it to a bzy_json_size call (not a raw offset load). */
+				// Array length / object key count -- kind-dependent, so codegen lowers it to a bzy_json_size call (not a raw offset load).
 				e->type.kind=TY_INT;
 				e->anno_int=0;
 			}
@@ -2832,13 +2802,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_METHOD_CALL:
 	{
-		/* Static enum calls: Enum.values() / Enum.valueOf(string). The lhs is the
-		   enum type name, not a variable; codegen re-detects via enum_is. */
+		// Static enum calls: Enum.values() / Enum.valueOf(string).
+		// The lhs is the enum type name, not a variable; codegen re-detects via enum_is.
 		if (e->lhs->kind==EX_IDENT && enum_is(e->lhs->name))
 		{
-			/* Payload variant construction (Shape.Circle(2.0)): rewrite to
-			   `new Shape$Circle(2.0)`, which builds a fresh instance typed as the
-			   variant subclass (is-a the base enum, so assignable/matchable). */
+			// Payload variant construction (Shape.Circle(2.0)): rewrite to `new Shape$Circle(2.0)`, which builds a fresh instance typed as the variant subclass (is-a the base enum, so assignable/matchable).
 			if (enum_const_is_payload(e->lhs->name,e->name))
 			{
 				if (enum_is_generic(e->lhs->name))
@@ -2892,7 +2860,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
-		/* Static method call (C.peek()): the lhs is a class name, not a variable. */
+		// Static method call (C.peek()): the lhs is a class name, not a variable.
 		if (e->lhs->kind==EX_IDENT && !sym_find(st,e->lhs->name))
 		{
 			ClassInfo *sc=types_find_class(g_types,e->lhs->name);
@@ -2906,7 +2874,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 				resolve_args(st,e,tc);
 
-				OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
+				OverloadCand cands[16] = {0}; // Zero is_variadic for all (only externs are variadic).
 				for (int oi=0; oi<ocount && oi<16; oi++)
 				{
 					MethodInfo *mi=types_find_method_idx(sc,e->name,oi);
@@ -2985,11 +2953,11 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 			if (strcmp(e->name,"getKey")==0)
 			{
-				e->type = *e->lhs->type.elem;    /* K. */
+				e->type = *e->lhs->type.elem; // K.
 			}
 			else if (strcmp(e->name,"getValue")==0)
 			{
-				e->type = *e->lhs->type.elem2;   /* V. */
+				e->type = *e->lhs->type.elem2; // V.
 			}
 			else
 			{
@@ -3061,7 +3029,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					die(e->line,"Listener.accept() / accept(timeoutMs).",NULL);
 				}
 
-				e->type.kind=TY_SOCKET;   /* null on timeout when a timeout is given. */
+				e->type.kind=TY_SOCKET; // null on timeout when a timeout is given.
 			}
 			else if (strcmp(e->name,"tryAccept")==0)
 			{
@@ -3070,7 +3038,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					die(e->line,"Listener.tryAccept() takes no arguments.",NULL);
 				}
 
-				e->type.kind=TY_SOCKET;   /* null if none pending. */
+				e->type.kind=TY_SOCKET; // null if none pending.
 			}
 			else if (strcmp(e->name,"port")==0)
 			{
@@ -3123,7 +3091,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				memset(&el,0,sizeof(el));
 				el.kind=TY_BYTE;
 				e->type.kind=TY_ARRAY;
-				e->type.elem=typeref_box(el);   /* byte[] (null on timeout/none). */
+				e->type.elem=typeref_box(el); // byte[] (null on timeout/none).
 			}
 			else if (strcmp(e->name,"readText")==0 || strcmp(e->name,"tryReadText")==0)
 			{
@@ -3242,7 +3210,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				memset(&el,0,sizeof(el));
 				el.kind=TY_BYTE;
 				e->type.kind=TY_ARRAY;
-				e->type.elem=typeref_box(el);   /* byte[] (null on timeout). */
+				e->type.elem=typeref_box(el); // byte[] (null on timeout).
 			}
 			else if (strcmp(e->name,"write")==0)
 			{
@@ -3322,7 +3290,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				memset(&el,0,sizeof(el));
 				el.kind=TY_BYTE;
 				e->type.kind=TY_ARRAY;
-				e->type.elem=typeref_box(el);   /* byte[]. */
+				e->type.elem=typeref_box(el); // byte[].
 			}
 			else if (strcmp(e->name,"write")==0)
 			{
@@ -3479,7 +3447,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					die(e->line,"UdpSocket.receive() / receive(timeoutMs).",NULL);
 				}
 
-				e->type.kind=TY_DATAGRAM;   /* null on timeout when a timeout is given. */
+				e->type.kind=TY_DATAGRAM; // null on timeout when a timeout is given.
 			}
 			else if (strcmp(e->name,"tryReceive")==0)
 			{
@@ -3488,7 +3456,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					die(e->line,"UdpSocket.tryReceive() takes no arguments.",NULL);
 				}
 
-				e->type.kind=TY_DATAGRAM;   /* null if none ready. */
+				e->type.kind=TY_DATAGRAM; // null if none ready.
 			}
 			else if (strcmp(e->name,"port")==0)
 			{
@@ -3824,7 +3792,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				die(e->line,"Unknown Row method: ",e->name);
 			}
 
-			/* Every getter accepts a column index (int) or a column name (string). */
+			// Every getter accepts a column index (int) or a column name (string).
 			if (e->arg_count!=1 || !(ty_is_int(e->args[0]->type.kind) || e->args[0]->type.kind==TY_STRING))
 			{
 				die(e->line,"Row getters take one column index (int) or name (string).",NULL);
@@ -3848,7 +3816,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 			else
 			{
-				e->type.kind=TY_BOOL;    /* getBool / isNull. */
+				e->type.kind=TY_BOOL; // getBool / isNull.
 			}
 			break;
 		}
@@ -4033,7 +4001,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				memset(&el,0,sizeof(el));
 				el.kind=TY_BYTE;
 				e->type.kind=TY_ARRAY;
-				e->type.elem=typeref_box(el);   /* byte[]. */
+				e->type.elem=typeref_box(el); // byte[].
 			}
 			else if (strcmp(e->name,"writeAt")==0)
 			{
@@ -4087,7 +4055,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					die(e->line,"FileChannel.lock() takes no arguments.",NULL);
 				}
 
-				e->type.kind=TY_BOOL;   /* true once the exclusive lock is held. */
+				e->type.kind=TY_BOOL; // true once the exclusive lock is held.
 			}
 			else if (strcmp(e->name,"unlock")==0)
 			{
@@ -4265,10 +4233,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			TypeRef *T=e->lhs->type.elem;
 			const char *nm=e->name;
 
-			/* Vector-backed combinators take a lambda whose parameter types come from
-			   the element type: resolve the lambda argument against its constructed
-			   function type (which drives param inference) BEFORE the generic
-			   argument pass, which would otherwise resolve it with no expected type. */
+			// Vector-backed combinators take a lambda whose parameter types come from the element type: resolve the lambda argument against its constructed function type (which drives param inference) BEFORE the generic argument pass, which would otherwise resolve it with no expected type.
 			int vecbacked = strcmp(tmpl,"Box")!=0 && strcmp(tmpl,"Set")!=0
 							&& strcmp(tmpl,"PriorityQueue")!=0 && strcmp(tmpl,"TreeSet")!=0
 							&& strcmp(tmpl,"TreeMap")!=0;
@@ -4281,16 +4246,15 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 			resolve_args(st,e,tc);
 
-			/* Ordered containers require an ordering for object keys/elements:
-			   the class must implement Comparable (int compareTo). Primitives and
-			   strings order natively. */
+			// Ordered containers require an ordering for object keys/elements: the class must implement Comparable (int compareTo).
+			// Primitives and strings order natively.
 			int is_ordered = strcmp(tmpl,"PriorityQueue")==0 || strcmp(tmpl,"TreeSet")==0 || strcmp(tmpl,"TreeMap")==0;
 			if (is_ordered && T->kind==TY_OBJECT && !class_is_comparable(T->class_name))
 			{
 				die(e->line,"An object key/element of an ordered collection must implement Comparable (int compareTo).",NULL);
 			}
 
-			/* Shared by all: contains(T) -> bool. */
+			// Shared by all: contains(T) -> bool.
 			if (strcmp(nm,"contains")==0)
 			{
 				if (e->arg_count!=1 || !assignable(T,&e->args[0]->type))
@@ -4550,7 +4514,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				break;
 			}
 
-			/* Vector-backed: List / Stack / Queue / Deque / ArrayDeque. */
+			// Vector-backed: List / Stack / Queue / Deque / ArrayDeque.
 			int add1   = strcmp(nm,"add")==0 || strcmp(nm,"push")==0 || strcmp(nm,"enqueue")==0
 						 || strcmp(nm,"addFirst")==0 || strcmp(nm,"addLast")==0;
 			int takeT  = strcmp(nm,"pop")==0 || strcmp(nm,"dequeue")==0 || strcmp(nm,"peek")==0
@@ -4678,8 +4642,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 			else if (strcmp(e->name,"putIfAbsent")==0)
 			{
-				/* Atomic compound op: the result is the value now associated with
-				   the key (the existing value when present, else the inserted one). */
+				// Atomic compound op: the result is the value now associated with the key (the existing value when present, else the inserted one).
 				if (e->arg_count!=2 || !assignable(K,&e->args[0]->type) || !assignable(V,&e->args[1]->type))
 				{
 					die(e->line,"Map.putIfAbsent(key,value) type mismatch.",NULL);
@@ -4689,7 +4652,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 			else if (strcmp(e->name,"getOrDefault")==0)
 			{
-				/* Atomic compound op: the value when present, else the default. */
+				// Atomic compound op: the value when present, else the default.
 				if (e->arg_count!=2 || !assignable(K,&e->args[0]->type) || !assignable(V,&e->args[1]->type))
 				{
 					die(e->line,"Map.getOrDefault(key,default) type mismatch.",NULL);
@@ -4772,8 +4735,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c && e->lhs->type.kind==TY_OBJECT)
 		{
-			/* Interface-typed receiver: resolve against the interface's method set;
-			   dispatch uses the method's reserved global vtable slot. */
+			// Interface-typed receiver: resolve against the interface's method set; dispatch uses the method's reserved global vtable slot.
 			InterfaceInfo *itf=types_find_interface(g_types,e->lhs->type.class_name);
 			if (itf)
 			{
@@ -4807,7 +4769,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				}
 
 				e->type=itf->ret_types[k];
-				e->anno_int=itf->vslot[k];   /* The global interface slot. */
+				e->anno_int=itf->vslot[k]; // The global interface slot.
 				strcpy(e->anno_str,itf->name);
 				break;
 			}
@@ -4818,8 +4780,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Method call on non-object.",NULL);
 		}
 
-		/* Enum instance built-ins: name() -> string, ordinal() -> int (read the
-		   hidden fields; lowered directly in codegen). */
+		// Enum instance built-ins: name() -> string, ordinal() -> int (read the hidden fields; lowered directly in codegen).
 		if (enum_is(c->name) && (strcmp(e->name,"name")==0 || strcmp(e->name,"ordinal")==0))
 		{
 			if (e->arg_count!=0)
@@ -4841,7 +4802,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					die(e->line,"getClassName() takes no arguments.",NULL);
 				}
 
-				e->type.kind=TY_STRING;   /* Builtin: dynamic class name, lowered directly in codegen. */
+				e->type.kind=TY_STRING; // Builtin: dynamic class name, lowered directly in codegen.
 				break;
 			}
 
@@ -4850,7 +4811,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 		resolve_args(st,e,tc);
 
-		OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
+		OverloadCand cands[16] = {0}; // Zero is_variadic for all (only externs are variadic).
 		for (int oi=0; oi<ocount && oi<16; oi++)
 		{
 			MethodInfo *mi=types_find_method_idx(c,e->name,oi);
@@ -4890,9 +4851,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 	}
 	case EX_CALL:
 	{
-		/* Calling a function value: a local/parameter/captured name of type (P)->R,
-		   rather than a named function. Resolve as an indirect call through the
-		   closure object (its code pointer at +24, the closure itself as arg0). */
+		// Calling a function value: a local/parameter/captured name of type (P)->R, rather than a named function.
+		// Resolve as an indirect call through the closure object (its code pointer at +24, the closure itself as arg0).
 		Symbol *fv = sym_find(st, e->name);
 		if (fv && fv->type.kind == TY_FUNC)
 		{
@@ -4912,7 +4872,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 
 			e->type = *fv->type.elem;
 			e->anno_indirect = 1;
-			e->anno_int = fv->offset;   /* Stack slot of the closure value. */
+			e->anno_int = fv->offset; // Stack slot of the closure value.
 			break;
 		}
 	}
@@ -4923,9 +4883,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	}
 
-		/* FFI: a bare function name passed where the callee expects a `long` (a C
-		   function pointer) marshals to the function's address. Mark such args before
-		   resolve_args so it skips them; codegen emits `lea [rel label]`. */
+		// FFI: a bare function name passed where the callee expects a `long` (a C function pointer) marshals to the function's address.
+		// Mark such args before resolve_args so it skips them; codegen emits `lea [rel label]`.
 	{
 		FuncInfo *callee = types_find_func(g_types, e->name);
 		if (callee)
@@ -4937,9 +4896,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 						&& (pt->kind == TY_LONG || pt->kind == TY_FUNC)
 						&& types_find_func(g_types, e->args[ai]->name))
 				{
-					/* A TY_FUNC param checks the named function's signature exactly:
-					   return type and every parameter type must match (scalar kinds).
-					   A loose `long` param accepts any function address unchecked. */
+					// A TY_FUNC param checks the named function's signature exactly: return type and every parameter type must match (scalar kinds).
+					// A loose `long` param accepts any function address unchecked.
 					if (pt->kind == TY_FUNC)
 					{
 						FuncInfo *cb = types_find_func(g_types, e->args[ai]->name);
@@ -4960,7 +4918,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 					}
 
 					e->args[ai]->is_func_addr = 1;
-					e->args[ai]->type = *pt;   /* Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr. */
+					e->args[ai]->type = *pt; // Match the param (TY_LONG or TY_FUNC) for overload selection; codegen emits the address via is_func_addr.
 				}
 			}
 		}
@@ -5178,7 +5136,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			die(e->line,"Unknown function: ",e->name);
 		}
 
-		OverloadCand cands[16] = {0};   /* Zero is_variadic for all (only externs are variadic). */
+		OverloadCand cands[16] = {0}; // Zero is_variadic for all (only externs are variadic).
 		for (int oi=0; oi<ocount && oi<16; oi++)
 		{
 			FuncInfo *fo=types_find_func_idx(g_types,e->name,oi);
@@ -5212,9 +5170,8 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			}
 		}
 
-		/* Variadic (`...`) arguments are C-ABI-native: a scalar/long/double (placed
-		   in GP/xmm) or a string (marshalled to char*). Arrays, objects, and maps
-		   cannot be passed through `...`. */
+		// Variadic (`...`) arguments are C-ABI-native: a scalar/long/double (placed in GP/xmm) or a string (marshalled to char*).
+		// Arrays, objects, and maps cannot be passed through `...`.
 		if (fi->is_variadic)
 		{
 			for (int i=fi->param_count; i<e->arg_count; i++)
@@ -5250,12 +5207,11 @@ LambdaInfo *bzy_lambda_at(int i)
 	return g_lams[i];
 }
 
-/* Resolve a lambda literal against the expected function type from its context.
-   Infers omitted parameter types from the target, then synthesizes a body
-   function (env pointer as arg0, then the lambda parameters) and resolves it
-   through the normal function pipeline so it gets a frame and the full analysis
-   passes. Captures of enclosing locals are recorded by the EX_IDENT hook while
-   that body resolves (g_cur_lam set, g_lam_enc = the enclosing scope). */
+/**
+ * Resolve a lambda literal against the expected function type from its context.
+ * Infers omitted parameter types from the target, then synthesizes a body function (env pointer as arg0, then the lambda parameters) and resolves it through the normal function pipeline so it gets a frame and the full analysis passes.
+ * Captures of enclosing locals are recorded by the EX_IDENT hook while that body resolves (g_cur_lam set, g_lam_enc = the enclosing scope).
+ */
 static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const char *tc)
 {
 	(void)tc;
@@ -5279,7 +5235,7 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 		}
 	}
 
-	/* The satisfied signature + a unique body label. */
+	// The satisfied signature + a unique body label.
 	TypeRef sig;
 	memset(&sig,0,sizeof(sig));
 	sig.kind = TY_FUNC;
@@ -5293,7 +5249,7 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 	e->type = sig;
 	snprintf(lam->label,sizeof(lam->label),"__lambda_%d",g_lambda_seq++);
 
-	/* Synthesize the body function: env arg0, then the parameters. */
+	// Synthesize the body function: env arg0, then the parameters.
 	Func *sf = func_new();
 	snprintf(sf->name,sizeof(sf->name),"%s",lam->label);
 	sf->is_lambda = 1;
@@ -5301,7 +5257,7 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 	Param *envp = func_add_param(sf);
 	snprintf(envp->name,sizeof(envp->name),"__env");
 	memset(&envp->type,0,sizeof(envp->type));
-	envp->type.kind = TY_LONG;   /* Raw closure pointer; never ARC-managed as a parameter. */
+	envp->type.kind = TY_LONG; // Raw closure pointer; never ARC-managed as a parameter.
 	for (int i = 0; i < lam->param_count; i++)
 	{
 		Param *pp = func_add_param(sf);
@@ -5332,8 +5288,8 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 		sf->body = b;
 	}
 
-	/* Resolve + analyze the body. Save the resolver state resolve_func clobbers
-	   (this runs nested inside the enclosing function's resolution). */
+	// Resolve + analyze the body.
+	// Save the resolver state resolve_func clobbers (this runs nested inside the enclosing function's resolution).
 	SymTable *save_enc = g_lam_enc;
 	LambdaInfo *save_lam = g_cur_lam;
 	const TypeRef *save_ret = g_ret;
@@ -5347,7 +5303,7 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 	g_loop_depth = save_loop;
 	g_break_depth = save_brk;
 
-	/* Hand the capture seed list to codegen's body prologue. */
+	// Hand the capture seed list to codegen's body prologue.
 	sf->cap_count = lam->cap_count;
 	for (int i = 0; i < lam->cap_count; i++)
 	{
@@ -5355,9 +5311,8 @@ static void resolve_lambda(SymTable *st, Expr *e, const TypeRef *expected, const
 		sf->cap_local_off[i] = lam->caps[i].local_slot;
 	}
 
-	/* A captured local is a borrow -- the closure environment owns the reference
-	   and releases it when the closure is freed. Drop capture slots from the body's
-	   release set so the body does not over-release them at its exit. */
+	// A captured local is a borrow -- the closure environment owns the reference and releases it when the closure is freed.
+	// Drop capture slots from the body's release set so the body does not over-release them at its exit.
 	int w = 0;
 	for (int r = 0; r < sf->obj_local_count; r++)
 	{
@@ -5399,8 +5354,7 @@ static TypeRef list_of(TypeRef elem)
 	return r;
 }
 
-/* Build a function type (params...)->ret as the expected type for a combinator's
-   lambda argument. params are copied from the given element/accumulator types. */
+/* Build a function type (params...)->ret as the expected type for a combinator's lambda argument. params are copied from the given element/accumulator types. */
 static TypeRef func_type(const TypeRef *params, int nparams, TypeRef ret)
 {
 	TypeRef f;
@@ -5415,10 +5369,10 @@ static TypeRef func_type(const TypeRef *params, int nparams, TypeRef ret)
 	return f;
 }
 
-/* Resolve a vector-backed combinator: map/filter/forEach/reduce. The lambda
-   argument is resolved against a function type built from the element type T,
-   which supplies the inferred parameter types. v1 map preserves the element
-   type (U == T). */
+/**
+ * Resolve a vector-backed combinator: map/filter/forEach/reduce.
+ * The lambda argument is resolved against a function type built from the element type T, which supplies the inferred parameter types. v1 map preserves the element type (U == T).
+ */
 static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc)
 {
 	const char *nm = e->name;
@@ -5429,7 +5383,7 @@ static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc
 			die(e->line,"reduce(seed, (acc,x)->acc) takes a seed and a lambda.",NULL);
 		}
 
-		resolve_value(st, e->args[0], NULL, tc);       /* Seed -> accumulator type U. */
+		resolve_value(st, e->args[0], NULL, tc); // Seed -> accumulator type U.
 		TypeRef U = e->args[0]->type;
 		TypeRef params[2] = { U, *T };
 		TypeRef ft = func_type(params, 2, U);
@@ -5452,13 +5406,13 @@ static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc
 	memset(&ret,0,sizeof(ret));
 	if (strcmp(nm,"map")==0)
 	{
-		ret = *T;                                      /* v1: element-type preserving. */
+		ret = *T; // v1: element-type preserving.
 	}
 	else if (strcmp(nm,"filter")==0)
 	{
 		ret.kind = TY_BOOL;
 	}
-	else   /* forEach */
+	else // forEach
 	{
 		ret.kind = TY_VOID;
 	}
@@ -5478,20 +5432,20 @@ static void resolve_combinator(SymTable *st, Expr *e, TypeRef *T, const char *tc
 	{
 		e->type = list_of(*T);
 	}
-	else   /* forEach */
+	else // forEach
 	{
 		e->type.kind = TY_VOID;
 	}
 }
 
-/* Lower payload binds in a `match`: for each arm `Variant(a, b) => ...`, splice
-   in, right after the case marker, a tag-narrowing local and one field-read local
-   per bind, so the arm body sees ordinary typed locals. Reuses the existing
-   vardecl + field-read codegen (including ARC) - no special arm machinery.
-       Variant(a, b) =>           __mvN = subject;   (is_narrow: base -> subclass)
-                                  TA a = __mvN.f0;
-                                  TB b = __mvN.f1;
-   Runs once, before the arm bodies resolve, while case labels are still IDENTs. */
+/**
+ * Lower payload binds in a `match`: for each arm `Variant(a, b) => ...`, splice in, right after the case marker, a tag-narrowing local and one field-read local per bind, so the arm body sees ordinary typed locals.
+ * Reuses the existing vardecl + field-read codegen (including ARC) - no special arm machinery.
+ *     Variant(a, b) =>           __mvN = subject;   (is_narrow: base -> subclass)
+ *                                TA a = __mvN.f0;
+ *                                TB b = __mvN.f1;
+ * Runs once, before the arm bodies resolve, while case labels are still IDENTs.
+ */
 static int g_match_bind_seq = 0;
 
 static void inject_match_binds(Stmt *sw, const char *enum_name)
@@ -5522,7 +5476,7 @@ static void inject_match_binds(Stmt *sw, const char *enum_name)
 			continue;
 		}
 
-		const char *label = c->value->name;   /* Still an IDENT before the ordinal rewrite. */
+		const char *label = c->value->name; // Still an IDENT before the ordinal rewrite.
 		const char *vclass = enum_variant_class(enum_name, label);
 		if (!vclass)
 		{
@@ -5593,7 +5547,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (s->is_final)
 		{
 			int id = final_register(&s->decl_type, s->decl_init, s->line);
-			s->decl_init = NULL;   /* The table replaces the initializer. */
+			s->decl_init = NULL; // The table replaces the initializer.
 			s->final_id = id;
 			Symbol *fsym = sym_add(st, s->decl_name, s->decl_type);
 			fsym->final_id = id;
@@ -5609,9 +5563,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		if (s->decl_init)
 		{
 			resolve_value(st,s->decl_init,&s->decl_type,tc);
-			/* A match-arm narrowing (is_narrow) assigns the base-enum subject into a
-			   variant-subclass local; the matched tag guarantees the dynamic type, so
-			   the normal downcast rejection is skipped. */
+			// A match-arm narrowing (is_narrow) assigns the base-enum subject into a variant-subclass local; the matched tag guarantees the dynamic type, so the normal downcast rejection is skipped.
 			if (!s->is_narrow && !assignable(&s->decl_type, &s->decl_init->type))
 			{
 				die(s->line,"Initializer type does not match; add a cast.",NULL);
@@ -5630,15 +5582,14 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		if (s->target->kind == EX_INDEX && (s->target->lhs->kind == EX_IDENT || s->target->lhs->kind == EX_FIELD))
 		{
-			g_final_base = 1;   /* The pre-resolve below sees an index base. */
+			g_final_base = 1; // The pre-resolve below sees an index base.
 		}
 
 		if (s->target->kind==EX_INDEX)
 		{
-			/* A List subscript store `list[i] = v` becomes `list.set(i, v)`. Resolve
-			   the receiver to learn its type; only List rewrites (arrays keep the
-			   native indexed store). The receiver is a plain lvalue base, so the
-			   re-resolve on the array fall-through is idempotent. */
+			// A List subscript store `list[i] = v` becomes `list.set(i, v)`.
+			// Resolve the receiver to learn its type; only List rewrites (arrays keep the native indexed store).
+			// The receiver is a plain lvalue base, so the re-resolve on the array fall-through is idempotent.
 			resolve_expr(st,s->target->lhs,tc);
 			g_final_base = 0;
 			if (s->target->lhs->type.kind==TY_GENERIC && strcmp(s->target->lhs->type.class_name,"List")==0)
@@ -5646,8 +5597,8 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 				Expr *call = expr_new(EX_METHOD_CALL, s->line);
 				call->lhs = s->target->lhs;
 				snprintf(call->name, sizeof call->name, "set");
-				expr_add_arg(call, s->target->rhs);   /* index. */
-				expr_add_arg(call, s->value);          /* value (type-checked by set's resolve). */
+				expr_add_arg(call, s->target->rhs); // index.
+				expr_add_arg(call, s->value); // value (type-checked by set's resolve).
 				s->kind = ST_EXPR;
 				s->expr = call;
 				resolve_expr(st, s->expr, tc);
@@ -5657,7 +5608,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		if (s->target->kind == EX_IDENT || s->target->kind == EX_FIELD)
 		{
-			g_final_base = 1;   /* Reported as an assignment, not as a misuse. */
+			g_final_base = 1; // Reported as an assignment, not as a misuse.
 		}
 
 		resolve_expr(st,s->target,tc);
@@ -5728,15 +5679,15 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		elem.elem2=NULL;
 		if (ik==TY_ARRAY || ik==TY_MAP)
 		{
-			elem=*s->expr->type.elem;   /* Array element, or map key. */
+			elem=*s->expr->type.elem; // Array element, or map key.
 		}
 		else if (ik==TY_STRING)
 		{
-			elem.kind=TY_INT;           /* One byte per step, as an int. */
+			elem.kind=TY_INT; // One byte per step, as an int.
 		}
 		else if (ik==TY_GENERIC && strcmp(s->expr->type.class_name,"Box")!=0)
 		{
-			elem=*s->expr->type.elem;   /* List/Stack/Queue/Deque/Set yield T. */
+			elem=*s->expr->type.elem; // List/Stack/Queue/Deque/Set yield T.
 		}
 		else
 		{
@@ -5750,7 +5701,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		if (elem.kind==TY_ENTRY)
 		{
-			s->decl_type = elem;   /* Adopt the iterable's Entry<K,V> so getKey/getValue type. */
+			s->decl_type = elem; // Adopt the iterable's Entry<K,V> so getKey/getValue type.
 		}
 
 		Symbol *lv=sym_add(st,s->decl_name,s->decl_type);
@@ -5795,7 +5746,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		}
 		break;
 	case ST_ASM:
-		break;   /* Opaque verbatim assembly: nothing to resolve. */
+		break; // Opaque verbatim assembly: nothing to resolve.
 	case ST_FOR:
 		resolve_stmt(st,s->for_init,tc);
 		resolve_expr(st,s->cond,tc);
@@ -5817,13 +5768,13 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		TypeKind ck=s->cond->type.kind;
 		int is_enum_switch = (ck==TY_OBJECT && enum_is(s->cond->type.class_name));
 		int is_string_switch = (ck==TY_STRING);
-		/* Splice payload binds into match arms before the arm bodies resolve. */
+		// Splice payload binds into match arms before the arm bodies resolve.
 		if (s->is_match && is_enum_switch)
 		{
 			inject_match_binds(s, s->cond->type.class_name);
 		}
-		/* Permitted operands: integers, bool, enum, string. Floats are rejected
-		   (exact-equality matching is unsafe for floating point). */
+		// Permitted operands: integers, bool, enum, string.
+		// Floats are rejected (exact-equality matching is unsafe for floating point).
 		if (!ty_is_int(ck) && ck!=TY_BOOL && !is_enum_switch && !is_string_switch)
 		{
 			if (ty_is_float(ck))
@@ -5846,7 +5797,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			{
 				if (is_enum_switch)
 				{
-					/* case CONST: -> the operand enum's ordinal. */
+					// case CONST: -> the operand enum's ordinal.
 					if (c->value->kind!=EX_IDENT)
 					{
 						die(c->line,"Enum switch case must be a constant name.",NULL);
@@ -5883,7 +5834,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 						seen_str[nseen++]=c->value->str_val;
 					}
 
-					continue;   /* String dedupe handled above; skip the integer path. */
+					continue; // String dedupe handled above; skip the integer path.
 				}
 				else if (ck==TY_BOOL)
 				{
@@ -5925,9 +5876,9 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 
 		g_break_depth--;
 
-		/* `match` is exhaustive: with no default arm, every enum constant must
-		   have an arm. Report the first uncovered constant. (seen[] holds the
-		   case ordinals after the enum-label rewrite above.) */
+		// `match` is exhaustive: with no default arm, every enum constant must have an arm.
+		// Report the first uncovered constant.
+		// (seen[] holds the case ordinals after the enum-label rewrite above.)
 		if (s->is_match && ndefault==0)
 		{
 			if (!is_enum_switch)
@@ -5960,7 +5911,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	}
 	case ST_CASE:
 	case ST_DEFAULT:
-		break;   /* Resolved as part of the enclosing switch body. */
+		break; // Resolved as part of the enclosing switch body.
 	case ST_SELECT:
 	{
 		if (s->sel_arm_count==0)
@@ -5968,8 +5919,8 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 			die(s->line,"select needs at least one send/receive arm.",NULL);
 		}
 
-		/* No default => a blocking select (cooperatively yields and retries until
-		   an arm is ready). With a default it is non-blocking. */
+		// No default => a blocking select (cooperatively yields and retries until an arm is ready).
+		// With a default it is non-blocking.
 		for (int i=0; i<s->sel_arm_count; i++)
 		{
 			SelectArm *a=&s->sel_arms[i];
@@ -6035,7 +5986,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 		break;
 	}
 	case ST_CATCH:
-		break;   /* Resolved as part of the enclosing try. */
+		break; // Resolved as part of the enclosing try.
 	case ST_SPAWN:
 	{
 		resolve_expr(st,s->expr,tc);
@@ -6073,21 +6024,19 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	}
 }
 
-/* ---- Combinator desugaring ----------------------------------------------------
-   A statement-level collection combinator over a literal expression-body lambda is
-   rewritten into an equivalent `foreach` loop before resolution, so the loop flows
-   through the same hoisting + register promotion a hand-written loop gets (the
-   closure path, cg_combinator, stays for nested-expression uses and function-value
-   arguments). For example:
-
-       sum = xs.reduce(0, (acc, x) => acc + (x + base));
-   becomes
-       sum = 0;
-       foreach (T __cbN in xs) { sum = sum + (__cbN + base); }
-
-   map/filter build a fresh List and add per element; forEach (expression body)
-   drops the result. Captures stay ordinary in-scope reads (base above); the
-   element parameter is renamed to a fresh loop variable so it never clashes. */
+/**
+ * ---- Combinator desugaring ----------------------------------------------------
+ * A statement-level collection combinator over a literal expression-body lambda is rewritten into an equivalent `foreach` loop before resolution, so the loop flows through the same hoisting + register promotion a hand-written loop gets (the closure path, cg_combinator, stays for nested-expression uses and function-value arguments).
+ * For example:
+ *
+ *     sum = xs.reduce(0, (acc, x) => acc + (x + base));
+ * becomes
+ *     sum = 0;
+ *     foreach (T __cbN in xs) { sum = sum + (__cbN + base); }
+ *
+ * map/filter build a fresh List and add per element; forEach (expression body) drops the result.
+ * Captures stay ordinary in-scope reads (base above); the element parameter is renamed to a fresh loop variable so it never clashes.
+ */
 
 static int g_desugar_seq;
 
@@ -6159,8 +6108,7 @@ static void block_splice(Block *b, int i, Stmt **out, int k)
 	b->count = need;
 }
 
-/* If statement s is a desugarable statement-level combinator, write the equivalent
-   statements into out[] (at most 2) and return their count; else return 0. */
+/* If statement s is a desugarable statement-level combinator, write the equivalent statements into out[] (at most 2) and return their count; else return 0. */
 static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 {
 	Expr *C = NULL, *target = NULL;
@@ -6192,14 +6140,13 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	const char *nm = C->name;
 	int is_filter = strcmp(nm,"filter")==0;
 	int is_foreach = strcmp(nm,"forEach")==0, is_reduce = strcmp(nm,"reduce")==0;
-	int is_map = 0;   /* map keeps the cg_combinator path (a presized indexed fill). */
+	int is_map = 0; // map keeps the cg_combinator path (a presized indexed fill).
 	if (!(is_filter || is_foreach || is_reduce))
 	{
 		return 0;
 	}
 
-	/* forEach is a void statement; the others must be the whole right-hand side and
-	   assign to a plain name. */
+	// forEach is a void statement; the others must be the whole right-hand side and assign to a plain name.
 	if (is_foreach && s->kind != ST_EXPR)
 	{
 		return 0;
@@ -6224,13 +6171,11 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	LambdaInfo *lam = C->args[lam_idx]->lam;
 	if (lam->is_block)
 	{
-		return 0;   /* Expression body only; a block body keeps the closure path. */
+		return 0; // Expression body only; a block body keeps the closure path.
 	}
 
-	/* Element type from the receiver: resolve a throwaway clone so the foreach
-	   resolves the original exactly once. The clone's resolution may register
-	   lambdas (a receiver like xs.filter(...)) -- roll the lambda registry back
-	   afterwards on every path so those throwaway lambdas are not emitted twice. */
+	// Element type from the receiver: resolve a throwaway clone so the foreach resolves the original exactly once.
+	// The clone's resolution may register lambdas (a receiver like xs.filter(...)) -- roll the lambda registry back afterwards on every path so those throwaway lambdas are not emitted twice.
 	int lam_save = g_lam_count, seq_save = g_lambda_seq;
 	Expr *rc = expr_clone(C->lhs);
 	resolve_expr(st, rc, tc);
@@ -6289,7 +6234,7 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 
 	int n = 0;
 
-	/* The shared initializer: `sink = <init>` as a vardecl or an assignment. */
+	// The shared initializer: `sink = <init>` as a vardecl or an assignment.
 	if (!is_foreach)
 	{
 		Expr *init = is_reduce ? C->args[0] : mk_new_list(T, line);
@@ -6309,9 +6254,7 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 			out[n++] = as;
 		}
 
-		/* Pre-size the result to the source length so the fill never reallocates
-		   (only when the receiver is a plain name -- reading its `size` twice is
-		   then side-effect free). */
+		// Pre-size the result to the source length so the fill never reallocates (only when the receiver is a plain name -- reading its `size` twice is then side-effect free).
 		if ((is_map || is_filter) && C->lhs->kind == EX_IDENT)
 		{
 			Expr *sz = expr_new(EX_FIELD, line);
@@ -6330,8 +6273,8 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	if (is_reduce)
 	{
 		Expr *body = expr_clone(lam->body_expr);
-		ident_rename(body, lam->params[0].name, sink);   /* acc -> sink. */
-		ident_rename(body, elemParam, xv);               /* x   -> loop var. */
+		ident_rename(body, lam->params[0].name, sink); // acc -> sink.
+		ident_rename(body, elemParam, xv); // x   -> loop var.
 		Stmt *bs = stmt_new(ST_ASSIGN, line);
 		bs->target = mk_ident(sink, line);
 		bs->value = body;
@@ -6365,7 +6308,7 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 		block_push(iff->then_blk, es);
 		block_push(fe->then_blk, iff);
 	}
-	else   /* forEach, expression body. */
+	else // forEach, expression body.
 	{
 		Expr *body = expr_clone(lam->body_expr);
 		ident_rename(body, lam->params[0].name, xv);
@@ -6378,8 +6321,7 @@ static int desugar_combinator(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 	return n;
 }
 
-/* The `?` operand slot of a statement, if its top-level value is `expr?`:
-   a variable initializer or an assignment RHS. */
+/* The `?` operand slot of a statement, if its top-level value is `expr?`: a variable initializer or an assignment RHS. */
 static Expr **tryop_slot(Stmt *s)
 {
 	if (s->kind==ST_VARDECL && s->decl_init && s->decl_init->kind==EX_TRYOP)
@@ -6397,13 +6339,15 @@ static Expr **tryop_slot(Stmt *s)
 
 static int g_tryop_seq = 0;
 
-/* Desugar `Type v = expr?;` (and the assignment form) into:
-       OperandType __q = expr;
-       if (__q.ordinal() != 0) { return __q; }   // None/Err: propagate.
-       OkVariant __qs = __q;                       // tag-narrow to Some/Ok.
-       Type v = __qs.<payload>;                     // unwrap.
-   Reuses if/return ARC and the match-bind narrowing; `?` itself never reaches
-   codegen. Returns the replacement statement count (0 if not a `?` statement). */
+/**
+ * Desugar `Type v = expr?;` (and the assignment form) into:
+ *     OperandType __q = expr;
+ *     if (__q.ordinal() != 0) { return __q; }   // None/Err: propagate.
+ *     OkVariant __qs = __q;                       // tag-narrow to Some/Ok.
+ *     Type v = __qs.<payload>;                     // unwrap.
+ * Reuses if/return ARC and the match-bind narrowing; `?` itself never reaches codegen.
+ * Returns the replacement statement count (0 if not a `?` statement).
+ */
 static int desugar_tryop(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 {
 	Expr **slot = tryop_slot(s);
@@ -6427,7 +6371,7 @@ static int desugar_tryop(SymTable *st, Stmt *s, const char *tc, Stmt **out)
 		die(s->line,"'?' requires the enclosing function to return the same Option/Result type.",NULL);
 	}
 
-	const char *okclass = enum_variant_class(ot, enum_const_name(ot,0));   /* Some/Ok variant. */
+	const char *okclass = enum_variant_class(ot, enum_const_name(ot,0)); // Some/Ok variant.
 	ClassInfo *vc = types_find_class(g_types, okclass);
 	const char *payload = NULL;
 	for (int i=0; i<vc->field_count; i++)
@@ -6533,11 +6477,12 @@ static void resolve_block(SymTable *st, Block *b, const char *tc)
 	}
 }
 
-/* Frame analysis. max_temp_depth approximates the deepest count
-   of values codegen must preserve across a sub-evaluation (today via push rax);
-   max_outgoing_args is the widest call. These size the static-rsp frame.
-   Over-estimating only wastes a few frame bytes; the precise calibration cross-
-   check is the "no push remains" assertion. Nothing reads these yet. */
+/**
+ * Frame analysis. max_temp_depth approximates the deepest count of values codegen must preserve across a sub-evaluation (today via push rax); max_outgoing_args is the widest call.
+ * These size the static-rsp frame.
+ * Over-estimating only wastes a few frame bytes; the precise calibration cross-check is the "no push remains" assertion.
+ * Nothing reads these yet.
+ */
 static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 {
 	if (!e)
@@ -6545,12 +6490,10 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 		return 0;
 	}
 
-	/* Conservative upper bound: the expression-tree HEIGHT. Codegen preserves at
-	   most one value per nesting level descended (a binary lhs, an index base, or a
-	   result held across a release), so the count of simultaneously-live temp slots
-	   never exceeds the height. Leaves preserve nothing (height 0). This over-counts
-	   slightly (a few wasted 8-byte slots) but can never under-count, so converting
-	   every push site to temp slots is safe and the overflow trap stays silent. */
+	// Conservative upper bound: the expression-tree HEIGHT.
+	// Codegen preserves at most one value per nesting level descended (a binary lhs, an index base, or a result held across a release), so the count of simultaneously-live temp slots never exceeds the height.
+	// Leaves preserve nothing (height 0).
+	// This over-counts slightly (a few wasted 8-byte slots) but can never under-count, so converting every push site to temp slots is safe and the overflow trap stays silent.
 	int is_call = e->kind==EX_CALL || e->kind==EX_METHOD_CALL || e->kind==EX_NEW;
 	if (is_call)
 	{
@@ -6590,8 +6533,7 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 		}
 	}
 
-	/* An expression-body lambda may be inlined into the enclosing frame at a
-	   combinator call site, so its body's temps count here too. */
+	// An expression-body lambda may be inlined into the enclosing frame at a combinator call site, so its body's temps count here too.
 	if (e->kind == EX_LAMBDA && e->lam && !e->lam->is_block)
 	{
 		c = frame_expr_depth(e->lam->body_expr, depth_out, args_out);
@@ -6610,12 +6552,11 @@ static int frame_expr_depth(Expr *e, int *depth_out, int *args_out)
 	return d;
 }
 
-/* Upper bound on the scratch block codegen reserves AT THIS NODE (the bytes its
-   `sub rsp,N` claims; 0 if it emits none). The static-rsp arena (Task 4 of the
-   fixed-rsp plan) replaces those `sub rsp,N` blocks with a software byte-stack, so
-   the frame must hold the peak sum of simultaneously-live blocks. Each value here
-   over-bounds the corresponding codegen site; the arena overflow trap is the
-   runtime backstop if a site is ever missed. */
+/**
+ * Upper bound on the scratch block codegen reserves AT THIS NODE (the bytes its `sub rsp,N` claims; 0 if it emits none).
+ * The static-rsp arena (Task 4 of the fixed-rsp plan) replaces those `sub rsp,N` blocks with a software byte-stack, so the frame must hold the peak sum of simultaneously-live blocks.
+ * Each value here over-bounds the corresponding codegen site; the arena overflow trap is the runtime backstop if a site is ever missed.
+ */
 static int frame_node_block(Expr *e)
 {
 	switch (e->kind)
@@ -6623,18 +6564,17 @@ static int frame_node_block(Expr *e)
 	case EX_BINARY:
 		if (e->type.kind==TY_STRING)
 		{
-			return ((64 + 1) * 8 + 15) & ~15;   /* n-ary concat, n <= CONCAT_MAX (64): 528. */
+			return ((64 + 1) * 8 + 15) & ~15; // n-ary concat, n <= CONCAT_MAX (64): 528.
 		}
 
 		if (e->type.kind==TY_FLOAT || e->type.kind==TY_DOUBLE)
 		{
-			return 16;                          /* cg_binary_fp spills the lhs (8, rounded to 16). */
+			return 16; // cg_binary_fp spills the lhs (8, rounded to 16).
 		}
 
-		return 0;                               /* Integer binary uses temp slots now, no sub rsp. */
+		return 0; // Integer binary uses temp slots now, no sub rsp.
 	case EX_METHOD_CALL:
-		/* A collection combinator (map/filter/forEach/reduce) reserves a working
-		   block plus a per-call argument block simultaneously (cg_combinator). */
+		// A collection combinator (map/filter/forEach/reduce) reserves a working block plus a per-call argument block simultaneously (cg_combinator).
 		if (strcmp(e->name,"map")==0 || strcmp(e->name,"filter")==0
 				|| strcmp(e->name,"forEach")==0 || strcmp(e->name,"reduce")==0)
 		{
@@ -6644,18 +6584,18 @@ static int frame_node_block(Expr *e)
 		return 48;
 	case EX_CALL:
 	case EX_NEW:
-		return 48;                              /* Widest call-shaped block (blocking ctx); arg/builtin blocks <= 32. */
+		return 48; // Widest call-shaped block (blocking ctx); arg/builtin blocks <= 32.
 	case EX_INDEX:
-		return 32;                              /* Map/array index marshaling block. */
+		return 32; // Map/array index marshaling block.
 	default:
 		return 0;
 	}
 }
 
-/* Peak nested scratch-block bytes needed to evaluate e. A node's own block is live
-   while its children are evaluated (codegen reserves the block, then evaluates the
-   operands into it), so the requirement is this node's block plus the deepest child
-   requirement. Conservatively treats every child as evaluated under the block. */
+/**
+ * Peak nested scratch-block bytes needed to evaluate e. A node's own block is live while its children are evaluated (codegen reserves the block, then evaluates the operands into it), so the requirement is this node's block plus the deepest child requirement.
+ * Conservatively treats every child as evaluated under the block.
+ */
 static int frame_scratch_bytes(Expr *e, int *max_out)
 {
 	if (!e)
@@ -6688,8 +6628,7 @@ static int frame_scratch_bytes(Expr *e, int *max_out)
 		}
 	}
 
-	/* An expression-body lambda may be inlined into the enclosing frame at a
-	   combinator call site, so its body's scratch counts here too. */
+	// An expression-body lambda may be inlined into the enclosing frame at a combinator call site, so its body's scratch counts here too.
 	if (e->kind == EX_LAMBDA && e->lam && !e->lam->is_block)
 	{
 		c = frame_scratch_bytes(e->lam->body_expr, max_out);
@@ -6750,7 +6689,7 @@ static void frame_stmt(Stmt *s, int *d, int *a, int *sc)
 	{
 		if (*a < 2)
 		{
-			*a = 2;   /* The try_send/try_recv calls each pass two outgoing args. */
+			*a = 2; // The try_send/try_recv calls each pass two outgoing args.
 		}
 
 		for (int i=0; i<s->sel_arm_count; i++)
@@ -6768,33 +6707,27 @@ static void frame_annotate(Func *f)
 {
 	int d = 0, a = 0, sc = 0;
 	frame_block(f->body, &d, &a, &sc);
-	/* d is the expression-tree height. A single construct can hold up to two
-	   simultaneous preserves at one level (e.g. an array/field store keeps both the
-	   value and the receiver/base across a sub-evaluation), so the live-temp count
-	   can reach ~2x the height; 2*d+2 is a safe over-estimate. The cg_temp_push
-	   overflow trap remains the backstop if any path still exceeds it. */
+	// d is the expression-tree height.
+	// A single construct can hold up to two simultaneous preserves at one level (e.g. an array/field store keeps both the value and the receiver/base across a sub-evaluation), so the live-temp count can reach ~2x the height; 2*d+2 is a safe over-estimate.
+	// The cg_temp_push overflow trap remains the backstop if any path still exceeds it.
 	f->max_temp_depth = d > 0 ? (2*d + 2) : 0;
 	f->max_outgoing_args = a;
-	/* sc is the expression-tree scratch peak. Statement-level codegen (spawn-arg
-	   marshaling, foreach iterators) reserves its own scratch outside the expression
-	   tree; a fixed margin over-covers it. The arena overflow trap stays the backstop. */
+	// sc is the expression-tree scratch peak.
+	// Statement-level codegen (spawn-arg marshaling, foreach iterators) reserves its own scratch outside the expression tree; a fixed margin over-covers it.
+	// The arena overflow trap stays the backstop.
 	f->max_scratch_bytes = sc + 128;
 }
 
-/* ---- P5: string self-accumulation loop recognizer ----------------------------
-   Recognize the O(n^2) shape `s = s + ...` (and `s += ...`) repeated in a loop,
-   where `s` is a string local, the chain appends on the end (leftmost leaf is s),
-   and `s` is used nowhere else in the loop. When recognized, annotate the loop so
-   codegen (Task 2) can lower it to an O(n) StringBuilder. Annotation only here;
-   behaviour is unchanged until codegen consumes accum_sb_offset.
-
-   The escape check the design lists (condition 5) is unnecessary: escape.c only
-   tracks `new`-allocated object locals, never string locals, so esc_has(s) is
-   always false for a string. Condition 4 below (`s` appears nowhere else in the
-   body / cond / post) is strictly stronger -- if `s` is never read, passed, or
-   aliased in the loop and the loop cannot exit early (condition 6), materializing
-   `s` once at loop end is byte-identical to per-iteration concatenation. Being too
-   strict only forgoes the optimization; it can never change behaviour. */
+/**
+ * ---- P5: string self-accumulation loop recognizer ----------------------------
+ * Recognize the O(n^2) shape `s = s + ...` (and `s += ...`) repeated in a loop, where `s` is a string local, the chain appends on the end (leftmost leaf is s), and `s` is used nowhere else in the loop.
+ * When recognized, annotate the loop so codegen (Task 2) can lower it to an O(n) StringBuilder.
+ * Annotation only here; behaviour is unchanged until codegen consumes accum_sb_offset.
+ *
+ * The escape check the design lists (condition 5) is unnecessary: escape.c only tracks `new`-allocated object locals, never string locals, so esc_has(s) is always false for a string.
+ * Condition 4 below (`s` appears nowhere else in the body / cond / post) is strictly stronger -- if `s` is never read, passed, or aliased in the loop and the loop cannot exit early (condition 6), materializing `s` once at loop end is byte-identical to per-iteration concatenation.
+ * Being too strict only forgoes the optimization; it can never change behaviour.
+ */
 
 static int p5_expr_count_offset(Expr *e, int off)
 {
@@ -6857,10 +6790,10 @@ static int p5_stmt_mentions(Stmt *s, int off)
 		   || p5_block_mentions(s->else_blk, off);
 }
 
-/* True if the statement (recursively) can transfer control out of the enclosing
-   loop's single fall-off-the-end exit: return/throw leave the function; break
-   leaves a loop; try installs a handler the unwinder uses. Conservatively bails
-   on a break in a nested loop or switch too (safe, just a missed optimization). */
+/**
+ * True if the statement (recursively) can transfer control out of the enclosing loop's single fall-off-the-end exit: return/throw leave the function; break leaves a loop; try installs a handler the unwinder uses.
+ * Conservatively bails on a break in a nested loop or switch too (safe, just a missed optimization).
+ */
 static int p5_stmt_has_exit(Stmt *s);
 
 static int p5_block_has_exit(Block *b)
@@ -6905,9 +6838,10 @@ static int p5_stmt_has_exit(Stmt *s)
 		   || p5_block_has_exit(s->else_blk);
 }
 
-/* Count the leaf operands of a string-concat chain (a '+' whose result is string
-   is an interior node). Mirrors codegen's cg_collect_concat so the recognizer can
-   refuse a chain the flattener would overflow (CONCAT_MAX). */
+/**
+ * Count the leaf operands of a string-concat chain (a '+' whose result is string is an interior node).
+ * Mirrors codegen's cg_collect_concat so the recognizer can refuse a chain the flattener would overflow (CONCAT_MAX).
+ */
 static int p5_count_leaves(Expr *e)
 {
 	if (e->kind == EX_BINARY && e->type.kind == TY_STRING)
@@ -6926,8 +6860,8 @@ static void p5_try_lower_accum(Stmt *loop, Func *f)
 		return;
 	}
 
-	/* Find the single direct-child `s = <string + chain>` whose leftmost leaf is
-	   the assigned string local itself (append-on-end). Two such assignments -> bail. */
+	// Find the single direct-child `s = <string + chain>` whose leftmost leaf is the assigned string local itself (append-on-end).
+	// Two such assignments -> bail.
 	Stmt *A = NULL;
 	for (int i=0; i<B->count; i++)
 	{
@@ -6951,12 +6885,12 @@ static void p5_try_lower_accum(Stmt *loop, Func *f)
 
 		if (leaf->kind != EX_IDENT || leaf->anno_int != st->target->anno_int)
 		{
-			continue;   /* Prepend (`s = x + s`) or some other shape. */
+			continue; // Prepend (`s = x + s`) or some other shape.
 		}
 
 		if (A)
 		{
-			return;     /* More than one accumulator into s -> keep v1 simple. */
+			return; // More than one accumulator into s -> keep v1 simple.
 		}
 
 		A = st;
@@ -6969,15 +6903,13 @@ static void p5_try_lower_accum(Stmt *loop, Func *f)
 
 	int soff = A->target->anno_int;
 
-	/* The chain must fit codegen's concat flattener (CONCAT_MAX == 64 leaves);
-	   longer chains are vanishingly rare and are simply left unlowered. */
+	// The chain must fit codegen's concat flattener (CONCAT_MAX == 64 leaves); longer chains are vanishingly rare and are simply left unlowered.
 	if (p5_count_leaves(A->value) > 64)
 	{
 		return;
 	}
 
-	/* Condition 4: s occurs exactly once in the chain (the leftmost leaf) and
-	   nowhere else in the body, cond, or for clauses. */
+	// Condition 4: s occurs exactly once in the chain (the leftmost leaf) and nowhere else in the body, cond, or for clauses.
 	if (p5_expr_count_offset(A->value, soff) != 1)
 	{
 		return;
@@ -7002,15 +6934,14 @@ static void p5_try_lower_accum(Stmt *loop, Func *f)
 		return;
 	}
 
-	/* Condition 6: the only loop exit must be falling off the end. */
+	// Condition 6: the only loop exit must be falling off the end.
 	if (p5_block_has_exit(B))
 	{
 		return;
 	}
 
-	/* Recognized: reserve a frame slot for the builder and annotate. The slot is
-	   the next 8 bytes below the existing locals; codegen lays temps/scratch below
-	   frame_size, so [rbp - frame_size] does not collide with any local. */
+	// Recognized: reserve a frame slot for the builder and annotate.
+	// The slot is the next 8 bytes below the existing locals; codegen lays temps/scratch below frame_size, so [rbp - frame_size] does not collide with any local.
 	f->frame_size += 8;
 	loop->accum_sb_offset = f->frame_size;
 	loop->accum_stmt = A;
@@ -7054,15 +6985,15 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	g_types=tt;
 	if (f->is_extern)
 	{
-		/* Validate the FFI signature, then skip body resolution (there is none). */
+		// Validate the FFI signature, then skip body resolution (there is none).
 		if (f->ret_type.kind==TY_STRING || f->ret_type.kind==TY_OBJECT
 				|| f->ret_type.kind==TY_ARRAY || f->ret_type.kind==TY_MAP)
 		{
 			die(0,"extern return type must be a scalar or long (string/object returns are not supported yet).",NULL);
 		}
 
-		/* A value array marshals to its element-data pointer (a C buffer). Object and
-		   string arrays hold pointers C cannot use as a flat buffer, so reject them. */
+		// A value array marshals to its element-data pointer (a C buffer).
+		// Object and string arrays hold pointers C cannot use as a flat buffer, so reject them.
 		for (int i=0; i<f->param_count; i++)
 		{
 			TypeRef *pt = &f->params[i].type;
@@ -7071,9 +7002,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 				die(0,"extern array parameter must be a value array (object/string arrays cannot marshal to a C buffer).",NULL);
 			}
 
-			/* A callback (TY_FUNC) parameter's signature must be C-ABI-native scalars:
-			   no managed types (received as a raw long + fromCString/fromCBytes), no
-			   nested function types. */
+			// A callback (TY_FUNC) parameter's signature must be C-ABI-native scalars: no managed types (received as a raw long + fromCString/fromCBytes), no nested function types.
 			if (pt->kind==TY_FUNC)
 			{
 				TypeKind rk = pt->elem ? pt->elem->kind : TY_VOID;
@@ -7096,8 +7025,7 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 		return;
 	}
 
-	/* Default parameter values may only fill trailing parameters: once a
-	   parameter has a default, every parameter after it must have one too. */
+	// Default parameter values may only fill trailing parameters: once a parameter has a default, every parameter after it must have one too.
 	int seen_default=0;
 	for (int i=0; i<f->param_count; i++)
 	{
@@ -7134,41 +7062,40 @@ void resolve_func(TypeTable *tt, Func *f, const char *this_class)
 	f->frame_size=sym_frame_size(&st);
 	ownership_annotate(f);
 
-	/* The escape pass and the layout passes it feeds (frame sizing depends on the
-	   stack objects escape marks) are deferred: escape now consults a whole-program
-	   summary that is not complete until every body is resolved. Collect this body
-	   and lower it in resolve_program once the program is whole. */
+	// The escape pass and the layout passes it feeds (frame sizing depends on the stack objects escape marks) are deferred: escape now consults a whole-program summary that is not complete until every body is resolved.
+	// Collect this body and lower it in resolve_program once the program is whole.
 	g_lower=grow_ensure(g_lower,g_lower_n,&g_lower_cap,sizeof(*g_lower));
 	g_lower[g_lower_n++]=f;
 }
 
-/* Per-function lowering, run after the interprocedural escape summaries are fixed.
-   Order preserved from the old resolve_func tail: escape marks stack objects,
-   then the frame/const/promote/range passes consume that and the resolved body. */
+/**
+ * Per-function lowering, run after the interprocedural escape summaries are fixed.
+ * Order preserved from the old resolve_func tail: escape marks stack objects, then the frame/const/promote/range passes consume that and the resolved body.
+ */
 static void lower_func(TypeTable *tt, Func *f)
 {
 	escape_annotate(tt,f);
-	p5_scan_block(f->body,f);   /* P5: recognize string self-accumulation loops (annotation only). */
+	p5_scan_block(f->body,f); // P5: recognize string self-accumulation loops (annotation only).
 	frame_annotate(f);
-	constprop_annotate(f);   /* Rewrite single-assignment literal-scalar reads to the literal (frees their registers). */
+	constprop_annotate(f); // Rewrite single-assignment literal-scalar reads to the literal (frees their registers).
 	if (!f->is_lambda)
 	{
-		promote_annotate(f);   /* Choose scalar locals to keep in r12..r15 (codegen consults the map). A lambda's captures have no AST definition (a prologue seeds their slots from env), so promotion would read an unloaded register -- keep lambda bodies on the stack. */
+		promote_annotate(f); // Choose scalar locals to keep in r12..r15 (codegen consults the map). A lambda's captures have no AST definition (a prologue seeds their slots from env), so promotion would read an unloaded register -- keep lambda bodies on the stack.
 	}
 
-	nonneg_annotate(f);   /* Flag divides with a provably non-negative dividend. */
-	bce_annotate(f);   /* Flag array indexes provably in [0, length) so codegen drops the check. */
+	nonneg_annotate(f); // Flag divides with a provably non-negative dividend.
+	bce_annotate(f); // Flag array indexes provably in [0, length) so codegen drops the check.
 }
 
 void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 {
-	g_lam_count = 0;     /* Reset the lambda registry: a process may compile more than once (the test harness). */
+	g_lam_count = 0; // Reset the lambda registry: a process may compile more than once (the test harness).
 	g_lambda_seq = 0;
 	g_desugar_seq = 0;
-	g_lower_n = 0;       /* Reset the deferred-lowering list (the buffer is reused across compiles). */
-	g_program_uses_avx = 0;   /* Per-program (the test harness compiles several in one process). */
+	g_lower_n = 0; // Reset the deferred-lowering list (the buffer is reused across compiles).
+	g_program_uses_avx = 0; // Per-program (the test harness compiles several in one process).
 	g_program_uses_avx2 = 0;
-	types_compute_shared_set(tt,units,unit_count);   /* Decide which types get atomic refcounts / op gating before resolving bodies. */
+	types_compute_shared_set(tt,units,unit_count); // Decide which types get atomic refcounts / op gating before resolving bodies.
 
 	for (int i = 0; i < g_final_n; i++)
 	{
@@ -7176,7 +7103,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 		free(g_finals[i].dvals);
 	}
 
-	g_final_n = 0;   /* Final tables are per program (the test harness compiles several). */
+	g_final_n = 0; // Final tables are per program (the test harness compiles several).
 	for (int i = 0; i < unit_count; i++)
 	{
 		Unit *u = units[i];
@@ -7201,7 +7128,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 				int id = final_register(&fd->type, fd->init, fd->name_line);
 				FieldInfo *fi = types_find_field(types_find_class(tt, d->name), fd->name);
 				fi->final_id = id;
-				fd->init = NULL;   /* The table replaces the initializer: no startup store. */
+				fd->init = NULL; // The table replaces the initializer: no startup store.
 			}
 		}
 	}
@@ -7221,7 +7148,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 			ClassDecl *d=u->klasses[ci];
 			for (int k=0; k<d->method_count; k++)
 			{
-				/* A static method has no `this`: resolve it like a free function. */
+				// A static method has no `this`: resolve it like a free function.
 				int mstatic = d->methods[k]->is_static || d->is_static;
 				resolve_func(tt,d->methods[k], mstatic ? NULL : d->name);
 			}
@@ -7231,11 +7158,8 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 				resolve_func(tt,d->ctors[ci],d->name);
 			}
 
-			/* Static field initializers live outside any function body; resolve
-			   each in an empty scope and type-check against the field. Instance
-			   field initializers were already lowered to constructor assignments
-			   by fieldinit_expand, so any init left here belongs to a static
-			   field and is type-checked through the normal assignment path. */
+			// Static field initializers live outside any function body; resolve each in an empty scope and type-check against the field.
+			// Instance field initializers were already lowered to constructor assignments by fieldinit_expand, so any init left here belongs to a static field and is type-checked through the normal assignment path.
 			for (int k=0; k<d->field_count; k++)
 			{
 				if (d->fields[k].init)
@@ -7252,8 +7176,7 @@ void resolve_program(TypeTable *tt, Unit **units, int unit_count)
 		}
 	}
 
-	/* The program is whole: fix the interprocedural escape summaries, then lower
-	   every body (stack-object marking + frame/const/promote/range passes). */
+	// The program is whole: fix the interprocedural escape summaries, then lower every body (stack-object marking + frame/const/promote/range passes).
 	escape_solve(tt,g_lower,g_lower_n);
 	for (int i=0; i<g_lower_n; i++)
 	{

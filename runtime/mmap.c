@@ -1,9 +1,8 @@
-/* Memory-mapped file: a whole-file read-write map (MAP_SHARED / PAGE_READWRITE)
-   exposing the file's bytes with no per-access syscall. Own TU: a program that
-   never references FileChannel.map / MappedFile drops this object. mmap and
-   CreateFileMapping are OS core (no dlopen). The map reuses the FileChannel's
-   already-writable handle/fd; the raw pointer is process-global, so the owning
-   breeze may migrate workers freely (the handle is shared cross-core). */
+/**
+ * Memory-mapped file: a whole-file read-write map (MAP_SHARED / PAGE_READWRITE) exposing the file's bytes with no per-access syscall.
+ * Own TU: a program that never references FileChannel.map / MappedFile drops this object. mmap and CreateFileMapping are OS core (no dlopen).
+ * The map reuses the FileChannel's already-writable handle/fd; the raw pointer is process-global, so the owning breeze may migrate workers freely (the handle is shared cross-core).
+ */
 #include "breezy.h"
 #include <string.h>
 #include <stdlib.h>
@@ -29,8 +28,10 @@ typedef struct
 	int64_t src;
 } MmapCtrl;
 
-/* MappedFile handle layout (object_size = 40):
-   0 vtable | 8 rc | 16 gcinfo | 24 ctrl(MmapCtrl*) | 32 closed(int64). */
+/**
+ * MappedFile handle layout (object_size = 40):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 ctrl(MmapCtrl*) | 32 closed(int64).
+ */
 #define MF_CTRL(o)   (*(MmapCtrl**)((char*)(o) + 24))
 #define MF_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
 
@@ -176,10 +177,10 @@ void *bzy_mmap_map(void *fc)
 	return o;
 }
 
-/* Anonymous memory region: a zero-filled, page-aligned MappedFile not backed by
-   any file. Linux uses MAP_ANONYMOUS; Windows a page-file-backed file mapping
-   (INVALID_HANDLE_VALUE), so the same MappedFile object, accessors, and teardown
-   apply. src = -1 marks it anonymous (flush has nothing to sync to disk). */
+/**
+ * Anonymous memory region: a zero-filled, page-aligned MappedFile not backed by any file.
+ * Linux uses MAP_ANONYMOUS; Windows a page-file-backed file mapping (INVALID_HANDLE_VALUE), so the same MappedFile object, accessors, and teardown apply. src = -1 marks it anonymous (flush has nothing to sync to disk).
+ */
 void *bzy_memory_map(int64_t bytes)
 {
 	if (bytes <= 0)
@@ -339,7 +340,7 @@ void bzy_mmap_copy_into(void *m, void *dst, int64_t srcOff, int64_t n)
 		bzy_oob_abort(srcOff, len);
 	}
 
-	memcpy((char*)dst + 32, (char*)c->base + srcOff, (size_t)n);   /* Packed byte[] payload at +32. No syscall. */
+	memcpy((char*)dst + 32, (char*)c->base + srcOff, (size_t)n); // Packed byte[] payload at +32. No syscall.
 }
 
 /* The reverse of copy_into: bulk-write a byte[] into the region at dstOff. */
@@ -353,7 +354,7 @@ void bzy_mmap_copy_from(void *m, void *src, int64_t dstOff, int64_t n)
 		bzy_oob_abort(dstOff, len);
 	}
 
-	memcpy((char*)c->base + dstOff, (char*)src + 32, (size_t)n);   /* Packed byte[] payload at +32. */
+	memcpy((char*)c->base + dstOff, (char*)src + 32, (size_t)n); // Packed byte[] payload at +32.
 }
 
 /* flush: offloaded (blocks), mirrors filechannel sync's result-code pattern. */
@@ -395,7 +396,7 @@ void bzy_mmap_flush(void *m)
 
 	if (MF_CTRL(m)->src < 0)
 	{
-		return;    /* Anonymous region: nothing to sync to disk. */
+		return; // Anonymous region: nothing to sync to disk.
 	}
 
 	FlushCtx f = { MF_CTRL(m), 0 };

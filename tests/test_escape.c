@@ -51,7 +51,7 @@ static void test_local_only_is_stack(void)
 	Expr *n=first_new(f);
 	ASSERT(n!=NULL);
 	ASSERT_INT(n->anno_stack, 1);
-	ASSERT(f->stack_alloc_bytes >= 24);    /* object_size(Cell) = 16 + 1*8. */
+	ASSERT(f->stack_alloc_bytes >= 24); // object_size(Cell) = 16 + 1*8.
 }
 
 static void test_returned_escapes(void)
@@ -59,14 +59,14 @@ static void test_returned_escapes(void)
 	Func *f=build("Cell make() { Cell c; c = new Cell(); return c; }");
 	Expr *n=first_new(f);
 	ASSERT(n!=NULL);
-	ASSERT_INT(n->anno_stack, 0);          /* Heap: c is returned. */
+	ASSERT_INT(n->anno_stack, 0); // Heap: c is returned.
 }
 
 static void test_field_store_escapes(void)
 {
 	Func *f=build("Cell make2() { Cell a; Cell b; a = new Cell(); b = new Cell(); a.v = 1; return a; }");
-	Expr *a_new=f->body->stmts[2]->value;  /* a = new Cell(): a is returned -> heap. */
-	Expr *b_new=f->body->stmts[3]->value;  /* b = new Cell(): local-only -> stack. */
+	Expr *a_new=f->body->stmts[2]->value; // a = new Cell(): a is returned -> heap.
+	Expr *b_new=f->body->stmts[3]->value; // b = new Cell(): local-only -> stack.
 	ASSERT_INT(a_new->anno_stack, 0);
 	ASSERT_INT(b_new->anno_stack, 1);
 }

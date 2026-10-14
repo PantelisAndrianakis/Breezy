@@ -1,7 +1,8 @@
-/* Runtime-bound extern resolution. Own TU: a program with no `extern dynamic` and
-   no Ffi.bind links none of this. The active resolver is a single function pointer;
-   Ffi.bind registers a dlopen+dlsym resolver, and Graphics.openGL registers
-   SDL_GL_GetProcAddress through the same bzy_dyn_set_resolver. */
+/**
+ * Runtime-bound extern resolution.
+ * Own TU: a program with no `extern dynamic` and no Ffi.bind links none of this.
+ * The active resolver is a single function pointer; Ffi.bind registers a dlopen+dlsym resolver, and Graphics.openGL registers SDL_GL_GetProcAddress through the same bzy_dyn_set_resolver.
+ */
 #include "breezy.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -27,7 +28,7 @@ void *bzy_dynsym(const char *name)
 	{
 		char msg[160];
 		snprintf(msg, sizeof(msg), "dynamic extern '%s' unresolved.", name ? name : "?");
-		bzy_io_fail(msg);   /* Copies the message; throws via the call site's io_check. */
+		bzy_io_fail(msg); // Copies the message; throws via the call site's io_check.
 	}
 
 	return p;

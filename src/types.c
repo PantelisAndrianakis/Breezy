@@ -27,9 +27,7 @@ void types_init(TypeTable *tt)
 	tt->shared_container_count = 0;
 }
 
-/* Append a freshly-allocated, zeroed entry to a stable-object table: the pointer
-   array grows (may realloc), but the returned object never moves, so pointers
-   held elsewhere (e.g. ClassInfo.parent) stay valid. */
+/* Append a freshly-allocated, zeroed entry to a stable-object table: the pointer array grows (may realloc), but the returned object never moves, so pointers held elsewhere (e.g. ClassInfo.parent) stay valid. */
 static ClassInfo *tt_add_class(TypeTable *tt)
 {
 	tt->classes = grow_ensure(tt->classes, tt->class_count, &tt->classes_cap, sizeof(ClassInfo *));
@@ -73,7 +71,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(o, 0, sizeof(*o));
 	o->fields = grow_reserve(o->fields, 1, &o->fields_cap, sizeof(FieldInfo));
 	strcpy(o->name, "IndexOutOfBounds");
-	o->parent = c;                       /* `c` is the Exception entry above. */
+	o->parent = c; // `c` is the Exception entry above.
 	strcpy(o->fields[0].name, "message");
 	o->fields[0].type.kind = TY_STRING;
 	o->fields[0].offset = 24;
@@ -86,7 +84,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(io, 0, sizeof(*io));
 	io->fields = grow_reserve(io->fields, 1, &io->fields_cap, sizeof(FieldInfo));
 	strcpy(io->name, "IOException");
-	io->parent = c;                      /* Subclass of Exception. */
+	io->parent = c; // Subclass of Exception.
 	strcpy(io->fields[0].name, "message");
 	io->fields[0].type.kind = TY_STRING;
 	io->fields[0].offset = 24;
@@ -99,7 +97,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(nf, 0, sizeof(*nf));
 	nf->fields = grow_reserve(nf->fields, 1, &nf->fields_cap, sizeof(FieldInfo));
 	strcpy(nf->name, "NumberFormatException");
-	nf->parent = c;                      /* Subclass of Exception. */
+	nf->parent = c; // Subclass of Exception.
 	strcpy(nf->fields[0].name, "message");
 	nf->fields[0].type.kind = TY_STRING;
 	nf->fields[0].offset = 24;
@@ -112,7 +110,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(xe, 0, sizeof(*xe));
 	xe->fields = grow_reserve(xe->fields, 1, &xe->fields_cap, sizeof(FieldInfo));
 	strcpy(xe->name, "XmlException");
-	xe->parent = c;                      /* Subclass of Exception. */
+	xe->parent = c; // Subclass of Exception.
 	strcpy(xe->fields[0].name, "message");
 	xe->fields[0].type.kind = TY_STRING;
 	xe->fields[0].offset = 24;
@@ -125,7 +123,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(je, 0, sizeof(*je));
 	je->fields = grow_reserve(je->fields, 1, &je->fields_cap, sizeof(FieldInfo));
 	strcpy(je->name, "JsonException");
-	je->parent = c;                      /* Subclass of Exception. */
+	je->parent = c; // Subclass of Exception.
 	strcpy(je->fields[0].name, "message");
 	je->fields[0].type.kind = TY_STRING;
 	je->fields[0].offset = 24;
@@ -138,7 +136,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(he, 0, sizeof(*he));
 	he->fields = grow_reserve(he->fields, 1, &he->fields_cap, sizeof(FieldInfo));
 	strcpy(he->name, "HttpException");
-	he->parent = c;                      /* Subclass of Exception. */
+	he->parent = c; // Subclass of Exception.
 	strcpy(he->fields[0].name, "message");
 	he->fields[0].type.kind = TY_STRING;
 	he->fields[0].offset = 24;
@@ -151,7 +149,7 @@ void types_register_builtins(TypeTable *tt)
 	memset(de, 0, sizeof(*de));
 	de->fields = grow_reserve(de->fields, 1, &de->fields_cap, sizeof(FieldInfo));
 	strcpy(de->name, "DbException");
-	de->parent = c;                      /* Subclass of Exception. */
+	de->parent = c; // Subclass of Exception.
 	strcpy(de->fields[0].name, "message");
 	de->fields[0].type.kind = TY_STRING;
 	de->fields[0].offset = 24;
@@ -174,15 +172,13 @@ ClassInfo *types_find_class(TypeTable *tt, const char *name)
 	return NULL;
 }
 
-/* ---- Maybe-shared closure -------------------------------------------------
-   Decides which types may cross a core boundary. Classes in the set allocate
-   with the SHARED gcinfo literal (atomic refcounts from birth); builtin
-   container types in the set make codegen emit a SHARED-bit test at their op
-   sites (types_typeref_maybe_shared). Share points are channel handoffs, spawn
-   arguments, and static-field stores; the closure drags along everything a
-   shared value of a seeded type can reach. Conservative and type-based: a
-   type in the set may never actually cross, but its objects only pay the
-   atomic refcount / a predicted-not-taken bit test, never the lock. */
+/**
+ * ---- Maybe-shared closure -------------------------------------------------
+ * Decides which types may cross a core boundary.
+ * Classes in the set allocate with the SHARED gcinfo literal (atomic refcounts from birth); builtin container types in the set make codegen emit a SHARED-bit test at their op sites (types_typeref_maybe_shared).
+ * Share points are channel handoffs, spawn arguments, and static-field stores; the closure drags along everything a shared value of a seeded type can reach.
+ * Conservative and type-based: a type in the set may never actually cross, but its objects only pay the atomic refcount / a predicted-not-taken bit test, never the lock.
+ */
 
 static int typeref_same(TypeRef *a, TypeRef *b)
 {
@@ -213,11 +209,10 @@ static void mark_class_shared(TypeTable *tt, const char *name)
 	}
 }
 
-/* An interface used as a shared type (a channel rejects interface elements, but a
-   shared class's interface-typed field, a spawn param, or a shared container's
-   element can all carry one) means any implementor's instances may cross a core.
-   Implementors are not born shared - their field stores take the runtime gate via
-   types_class_hierarchy_shared - so marking the interface is all that is needed. */
+/**
+ * An interface used as a shared type (a channel rejects interface elements, but a shared class's interface-typed field, a spawn param, or a shared container's element can all carry one) means any implementor's instances may cross a core.
+ * Implementors are not born shared - their field stores take the runtime gate via types_class_hierarchy_shared - so marking the interface is all that is needed.
+ */
 static void mark_interface_shared(TypeTable *tt, const char *name)
 {
 	InterfaceInfo *it=types_find_interface(tt,name);
@@ -239,14 +234,14 @@ static void add_shared_container(TypeTable *tt, TypeRef *t)
 	}
 
 	tt->shared_containers=grow_ensure(tt->shared_containers,tt->shared_container_count,&tt->shared_container_cap,sizeof(*tt->shared_containers));
-	tt->shared_containers[tt->shared_container_count++]=*t;   /* Struct copy; elem pointers stay owned by the AST. */
+	tt->shared_containers[tt->shared_container_count++]=*t; // Struct copy; elem pointers stay owned by the AST.
 	g_shared_changed=1;
 }
 
-/* Mark one type as maybe-crossing-cores and drag everything a shared value of
-   that type can reach: container element/key/value types and builtin-template
-   args (List<T> stays TY_GENERIC after monomorphization). Shared classes drag
-   their field types in the fixpoint below. */
+/**
+ * Mark one type as maybe-crossing-cores and drag everything a shared value of that type can reach: container element/key/value types and builtin-template args (List<T> stays TY_GENERIC after monomorphization).
+ * Shared classes drag their field types in the fixpoint below.
+ */
 static void mark_type_shared(TypeTable *tt, TypeRef *t)
 {
 	if (!t)
@@ -257,8 +252,8 @@ static void mark_type_shared(TypeTable *tt, TypeRef *t)
 	switch (t->kind)
 	{
 	case TY_OBJECT:
-		mark_class_shared(tt,t->class_name);     /* No-op if the name is an interface... */
-		mark_interface_shared(tt,t->class_name); /* ...and vice versa. */
+		mark_class_shared(tt,t->class_name); // No-op if the name is an interface...
+		mark_interface_shared(tt,t->class_name); // ...and vice versa.
 		break;
 	case TY_ARRAY:
 	case TY_MAP:
@@ -270,14 +265,13 @@ static void mark_type_shared(TypeTable *tt, TypeRef *t)
 		break;
 	case TY_STRING:
 	case TY_CHANNEL:
-		break;   /* Strings are immutable leaves (runtime promotion covers refcounts); channels are shared at alloc already. */
+		break; // Strings are immutable leaves (runtime promotion covers refcounts); channels are shared at alloc already.
 	default:
-		break;   /* Value types never carry a SHARED bit. */
+		break; // Value types never carry a SHARED bit.
 	}
 }
 
-/* Seed pass over a TypeRef found in a signature: every channel element type is
-   a share seed, whatever its kind. */
+/* Seed pass over a TypeRef found in a signature: every channel element type is a share seed, whatever its kind. */
 static void seed_shared_from_typeref(TypeTable *tt, TypeRef *t)
 {
 	if (!t)
@@ -294,8 +288,10 @@ static void seed_shared_from_typeref(TypeTable *tt, TypeRef *t)
 	seed_shared_from_typeref(tt,t->elem2);
 }
 
-/* Seed pass over statements: a spawned function's parameters cross to another
-   core as spawn args. Same nesting walk as codegen's stmt_has_try. */
+/**
+ * Seed pass over statements: a spawned function's parameters cross to another core as spawn args.
+ * Same nesting walk as codegen's stmt_has_try.
+ */
 static void seed_shared_from_spawns(TypeTable *tt, Block *b);
 
 static void seed_shared_from_spawn_stmt(TypeTable *tt, Stmt *s)
@@ -340,10 +336,7 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 {
 	g_shared_changed=0;
 
-	/* Seeds: channel element types anywhere in a usable signature (class fields,
-	   method/function/ctor parameters and returns - a channel only reaches
-	   another breeze through one of these); static field types (reachable from
-	   every breeze with no handoff point); spawned functions' parameter types. */
+	// Seeds: channel element types anywhere in a usable signature (class fields, method/function/ctor parameters and returns - a channel only reaches another breeze through one of these); static field types (reachable from every breeze with no handoff point); spawned functions' parameter types.
 	for (int ci=0; ci<tt->class_count; ci++)
 	{
 		ClassInfo *c=tt->classes[ci];
@@ -408,10 +401,8 @@ void types_compute_shared_set(TypeTable *tt, Unit **units, int unit_count)
 		}
 	}
 
-	/* Fixpoint: a shared class drags ALL its managed field types (object fields
-	   as before, container fields newly - a shared object's container field
-	   crosses with it), and a shared container drags its element types (inside
-	   mark_type_shared). Iterate to closure. */
+	// Fixpoint: a shared class drags ALL its managed field types (object fields as before, container fields newly - a shared object's container field crosses with it), and a shared container drags its element types (inside mark_type_shared).
+	// Iterate to closure.
 	do
 	{
 		g_shared_changed=0;
@@ -471,25 +462,18 @@ static int class_implements_shared_iface(TypeTable *tt, ClassInfo *c)
 	return 0;
 }
 
-/* A class is "shared-reachable" if its own instances may cross a core: it is a
-   shared class, or it implements a shared interface (it can be handed off through
-   that interface type). */
+/* A class is "shared-reachable" if its own instances may cross a core: it is a shared class, or it implements a shared interface (it can be handed off through that interface type). */
 static int class_shared_reachable(TypeTable *tt, ClassInfo *c)
 {
 	return c->is_shared || class_implements_shared_iface(tt,c);
 }
 
-/* The shared-set fixpoint marks a class by exact name, so a class reached only
-   through a SUPERTYPE handoff - a base class (`extends`) or an interface
-   (`implements`) used as the channel/parameter/field/container type - is never
-   marked is_shared even though share_walk promotes its instances at runtime. A
-   field store through such a reference would then publish an unshared value into a
-   SHARED object. This reports whether that risk exists for a class whose own
-   is_shared is clear: true when a shared-reachable class sits above it in the class
-   hierarchy (a supertype handoff reaches this instance), below it (a shared
-   subtype instance is reached through this base reference), or when the class (or
-   an ancestor) implements a shared interface. Codegen gates a runtime SHARED-bit
-   test on it. */
+/**
+ * The shared-set fixpoint marks a class by exact name, so a class reached only through a SUPERTYPE handoff - a base class (`extends`) or an interface (`implements`) used as the channel/parameter/field/container type - is never marked is_shared even though share_walk promotes its instances at runtime.
+ * A field store through such a reference would then publish an unshared value into a SHARED object.
+ * This reports whether that risk exists for a class whose own is_shared is clear: true when a shared-reachable class sits above it in the class hierarchy (a supertype handoff reaches this instance), below it (a shared subtype instance is reached through this base reference), or when the class (or an ancestor) implements a shared interface.
+ * Codegen gates a runtime SHARED-bit test on it.
+ */
 int types_class_hierarchy_shared(TypeTable *tt, ClassInfo *c)
 {
 	if (!c)
@@ -630,11 +614,11 @@ FieldInfo *types_find_field(ClassInfo *c, const char *name)
 	return NULL;
 }
 
-/* Class-hierarchy analysis: true when a call to `method_name` on static type
-   `class_name` is monomorphic -- no strict descendant of that class declares its
-   own override, so every possible runtime type resolves the method to the same
-   implementation. The whole program is compiled at once, so the hierarchy is
-   complete. Returns 0 for unknown classes, static methods, or builtins. */
+/**
+ * Class-hierarchy analysis: true when a call to `method_name` on static type `class_name` is monomorphic -- no strict descendant of that class declares its own override, so every possible runtime type resolves the method to the same implementation.
+ * The whole program is compiled at once, so the hierarchy is complete.
+ * Returns 0 for unknown classes, static methods, or builtins.
+ */
 int types_method_is_monomorphic(TypeTable *tt, const char *class_name, const char *method_name, int overload_idx)
 {
 	ClassInfo *base = types_find_class(tt, class_name);
@@ -646,7 +630,7 @@ int types_method_is_monomorphic(TypeTable *tt, const char *class_name, const cha
 	MethodInfo *bm = types_find_method_idx(base, method_name, overload_idx);
 	if (!bm || bm->vtable_slot < 0)
 	{
-		return 0;   /* Not found, or a static method (already called directly). */
+		return 0; // Not found, or a static method (already called directly).
 	}
 
 	char bsig[160];
@@ -675,8 +659,7 @@ int types_method_is_monomorphic(TypeTable *tt, const char *class_name, const cha
 			continue;
 		}
 
-		/* A descendant that declares an override of THIS exact overload (same name
-		   and signature) makes the call polymorphic. */
+		// A descendant that declares an override of THIS exact overload (same name and signature) makes the call polymorphic.
 		for (int mi = 0; mi < d->method_count; mi++)
 		{
 			if (strcmp(d->methods[mi].name, method_name) != 0
@@ -738,9 +721,10 @@ int types_is_interface(TypeTable *tt, const char *name)
 	return types_find_interface(tt,name) != NULL;
 }
 
-/* Grow all five InterfaceInfo parallel arrays in lockstep under one cap. Done
-   manually (not five grow_ensure calls) because a single shared cap would
-   short-circuit calls 2..5 after the first grew it, leaving those undersized. */
+/**
+ * Grow all five InterfaceInfo parallel arrays in lockstep under one cap.
+ * Done manually (not five grow_ensure calls) because a single shared cap would short-circuit calls 2..5 after the first grew it, leaving those undersized.
+ */
 static void iface_reserve(InterfaceInfo *itf)
 {
 	if (itf->method_count < itf->method_cap)
@@ -757,9 +741,7 @@ static void iface_reserve(InterfaceInfo *itf)
 	itf->method_cap = nc;
 }
 
-/* Append one interface method (name / return type / param count); allocates
-   param_types[k] to exactly pcount entries (filled by the caller) and returns
-   the index k. The caller assigns vslot[k]. */
+/* Append one interface method (name / return type / param count); allocates param_types[k] to exactly pcount entries (filled by the caller) and returns the index k. The caller assigns vslot[k]. */
 static int iface_add_method(InterfaceInfo *itf, const char *name, TypeRef ret, int pcount)
 {
 	iface_reserve(itf);
@@ -771,10 +753,11 @@ static int iface_add_method(InterfaceInfo *itf, const char *name, TypeRef ret, i
 	return k;
 }
 
-/* Reserve global vtable slots 0 and 1 for the synthesized record methods, before
-   any user interface claims a slot. Every vtable then has slot 0 = hashCode and
-   slot 1 = equals (zero/gap for non-records), so the runtime can hardcode those
-   offsets for key_kind==3 keys. Must run once, before types_register_interfaces. */
+/**
+ * Reserve global vtable slots 0 and 1 for the synthesized record methods, before any user interface claims a slot.
+ * Every vtable then has slot 0 = hashCode and slot 1 = equals (zero/gap for non-records), so the runtime can hardcode those offsets for key_kind==3 keys.
+ * Must run once, before types_register_interfaces.
+ */
 void types_reserve_hashable(TypeTable *tt)
 {
 	InterfaceInfo *itf=tt_add_interface(tt);
@@ -784,17 +767,18 @@ void types_reserve_hashable(TypeTable *tt)
 	{
 		.kind=TY_INT
 	},0);
-	itf->vslot[hc]=tt->iface_slots++;   /* Global slot 0. */
+	itf->vslot[hc]=tt->iface_slots++; // Global slot 0.
 	int eq=iface_add_method(itf,"equals",(TypeRef)
 	{
 		.kind=TY_BOOL
-	},1);   /* param type set per record. */
-	itf->vslot[eq]=tt->iface_slots++;   /* Global slot 1. */
+	},1); // param type set per record.
+	itf->vslot[eq]=tt->iface_slots++; // Global slot 1.
 }
 
-/* Register each interface, assigning every method a global vtable slot in [0..K).
-   Must run for all units before any class members (so K = tt->iface_slots is final
-   before vtable-slot assignment shifts class methods above it). */
+/**
+ * Register each interface, assigning every method a global vtable slot in [0..K).
+ * Must run for all units before any class members (so K = tt->iface_slots is final before vtable-slot assignment shifts class methods above it).
+ */
 void types_register_interfaces(TypeTable *tt, Unit *u)
 {
 	for (int i=0; i<u->interface_count; i++)
@@ -812,13 +796,12 @@ void types_register_interfaces(TypeTable *tt, Unit *u)
 				itf->param_types[idx][p]=m->params[p].type;
 			}
 
-			itf->vslot[idx]=tt->iface_slots++;   /* Global reserved slot. */
+			itf->vslot[idx]=tt->iface_slots++; // Global reserved slot.
 		}
 	}
 }
 
-/* The reserved global vtable slot for method `name` if `c` implements an interface
-   that declares it; -1 otherwise. */
+/* The reserved global vtable slot for method `name` if `c` implements an interface that declares it; -1 otherwise. */
 static int iface_slot_for(TypeTable *tt, ClassInfo *c, const char *name)
 {
 	for (int ii=0; ii<c->implements_count; ii++)
@@ -854,9 +837,10 @@ static void link_parent(TypeTable *tt, ClassInfo *c, ClassDecl *d)
 
 static void link_unit_class(TypeTable *tt, ClassDecl *d);
 
-/* The first same-name FuncInfo not yet bound to an AST. Overloaded functions
-   share a name, so binding by first-match would collapse them; binding to an
-   unfilled slot distributes each declaration to a distinct FuncInfo. */
+/**
+ * The first same-name FuncInfo not yet bound to an AST.
+ * Overloaded functions share a name, so binding by first-match would collapse them; binding to an unfilled slot distributes each declaration to a distinct FuncInfo.
+ */
 static FuncInfo *find_unfilled_func(TypeTable *tt, const char *name)
 {
 	for (int i=0; i<tt->func_count; i++)
@@ -886,8 +870,8 @@ static void register_unit_funcs(TypeTable *tt, Unit *u)
 
 		if (f->is_extern)
 		{
-			/* Raw C symbol, no bzy_ prefix. The `$` escapes NASM reserved words
-			   (e.g. `abs`); NASM strips it, so the linker sees the bare symbol. */
+			// Raw C symbol, no bzy_ prefix.
+			// The `$` escapes NASM reserved words (e.g. `abs`); NASM strips it, so the linker sees the bare symbol.
 			snprintf(fi->asm_label,sizeof(fi->asm_label),"$%s",f->name);
 			fi->is_extern=1;
 			fi->is_blocking=f->is_blocking;
@@ -901,15 +885,11 @@ static void register_unit_funcs(TypeTable *tt, Unit *u)
 	}
 }
 
-/* Register every unit's members with classes processed PARENT-FIRST, whatever
-   the declaration or file order: a subclass copies its parent's fields,
-   methods, vtable size, and object size, so registering it against a name-only
-   parent truncates its vtable and misnumbers its slots (the call sites later
-   compute slots from the complete view - a guaranteed crash). File order is
-   filesystem-dependent (ext4 returns hash order, NTFS alphabetical), so it can
-   never be load-bearing. Builtins and other ClassInfos with no ClassDecl are
-   already complete and count as done; a stalled pass means an inheritance
-   cycle. */
+/**
+ * Register every unit's members with classes processed PARENT-FIRST, whatever the declaration or file order: a subclass copies its parent's fields, methods, vtable size, and object size, so registering it against a name-only parent truncates its vtable and misnumbers its slots (the call sites later compute slots from the complete view - a guaranteed crash).
+ * File order is filesystem-dependent (ext4 returns hash order, NTFS alphabetical), so it can never be load-bearing.
+ * Builtins and other ClassInfos with no ClassDecl are already complete and count as done; a stalled pass means an inheritance cycle.
+ */
 void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 {
 	for (int i=0; i<unit_count; i++)
@@ -917,10 +897,9 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 		register_unit_funcs(tt,units[i]);
 	}
 
-	/* Free functions: validate overload sets and mangle on demand. A lone name
-	   keeps its legacy label (bzy_<name> / $<name>); a name with multiple
-	   declarations gains a type-signature suffix. extern functions and main may
-	   not be overloaded. Each name is processed once, at its first occurrence. */
+	// Free functions: validate overload sets and mangle on demand.
+	// A lone name keeps its legacy label (bzy_<name> / $<name>); a name with multiple declarations gains a type-signature suffix. extern functions and main may not be overloaded.
+	// Each name is processed once, at its first occurrence.
 	for (int i=0; i<tt->func_count; i++)
 	{
 		const char *nm=tt->funcs[i]->name;
@@ -942,7 +921,7 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 		int cnt=types_func_overload_count(tt,nm);
 		if (cnt<=1)
 		{
-			continue;   /* Lone function: keep its legacy label. */
+			continue; // Lone function: keep its legacy label.
 		}
 
 		if (strcmp(nm,"main")==0)
@@ -997,7 +976,7 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 		}
 	}
 
-	/* Everything starts done (builtins, enum classes); user-declared classes pend. */
+	// Everything starts done (builtins, enum classes); user-declared classes pend.
 	for (int ci=0; ci<tt->class_count; ci++)
 	{
 		tt->classes[ci]->members_done=1;
@@ -1036,7 +1015,7 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 					ClassInfo *p=types_find_class(tt,d->parent_name);
 					if (p && !p->members_done)
 					{
-						continue;   /* Parent still pending: defer to a later pass. */
+						continue; // Parent still pending: defer to a later pass.
 					}
 				}
 
@@ -1062,7 +1041,7 @@ void types_register_all_members(TypeTable *tt, Unit **units, int unit_count)
 				}
 			}
 
-			break;   /* Unreachable: no progress implies a pending class above. */
+			break; // Unreachable: no progress implies a pending class above.
 		}
 	}
 }
@@ -1119,10 +1098,8 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		strcpy(c->implements[i],d->implements[i]);
 	}
 
-	/* Pre-size the per-class arrays once (inherited entries + this class's own,
-	   + 2 methods for a record's synthesized hashCode/equals). The registration
-	   loops below then never realloc, so the MethodInfo* pointers they hold for
-	   override detection stay valid. */
+	// Pre-size the per-class arrays once (inherited entries + this class's own, + 2 methods for a record's synthesized hashCode/equals).
+	// The registration loops below then never realloc, so the MethodInfo* pointers they hold for override detection stay valid.
 	int pfields=(c->parent?c->parent->field_count:0)+d->field_count;
 	int pmethods=(c->parent?c->parent->method_count:0)+d->method_count+2;
 	c->fields=grow_reserve(c->fields,pfields,&c->fields_cap,sizeof(FieldInfo));
@@ -1138,9 +1115,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		memcpy(c->fields,c->parent->fields,sizeof(FieldInfo)*c->field_count);
 		c->method_count=c->parent->method_count;
 		memcpy(c->methods,c->parent->methods,sizeof(MethodInfo)*c->method_count);
-		/* The memcpy aliased each inherited method's param_types pointer onto the
-		   parent's buffer; give every inherited method its own copy so a later
-		   override or grow never corrupts the parent. */
+		// The memcpy aliased each inherited method's param_types pointer onto the parent's buffer; give every inherited method its own copy so a later override or grow never corrupts the parent.
 		for (int mi=0; mi<c->method_count; mi++)
 		{
 			MethodInfo *src=&c->parent->methods[mi];
@@ -1157,11 +1132,10 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 	}
 	else
 	{
-		c->vtable_size=tt->iface_slots;   /* Reserve [0..K) for interface methods; own methods follow. */
+		c->vtable_size=tt->iface_slots; // Reserve [0..K) for interface methods; own methods follow.
 	}
 
-	/* Instance fields take sequential 8-byte slots from the parent's object_size;
-	   static fields are global slots (offset -1) and excluded from the layout. */
+	// Instance fields take sequential 8-byte slots from the parent's object_size; static fields are global slots (offset -1) and excluded from the layout.
 	int next_off = c->parent ? c->parent->object_size : 24;
 	for (int i=0; i<d->field_count; i++)
 	{
@@ -1187,7 +1161,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		Func *m=d->methods[i];
 		int mstatic = m->is_static || d->is_static;
 
-		/* Encode this method's parameter signature for override/overload matching. */
+		// Encode this method's parameter signature for override/overload matching.
 		TypeRef mpts[8];
 		for (int k=0; k<m->param_count && k<8; k++)
 		{
@@ -1197,10 +1171,10 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		char msig[160];
 		overload_encode_types(msig,sizeof(msig),mpts,m->param_count);
 
-		/* An inherited method with the SAME name AND signature is overridden
-		   (reuse its vtable slot). A same name+signature entry already owned by
-		   this class is a true duplicate. A different signature is a new overload
-		   (fresh slot). Static methods never override. */
+		// An inherited method with the SAME name AND signature is overridden (reuse its vtable slot).
+		// A same name+signature entry already owned by this class is a true duplicate.
+		// A different signature is a new overload (fresh slot).
+		// Static methods never override.
 		MethodInfo *existing=NULL;
 		for (int q=0; q<c->method_count; q++)
 		{
@@ -1224,7 +1198,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 
 			if (!mstatic)
 			{
-				existing=&c->methods[q];   /* Override of an inherited method. */
+				existing=&c->methods[q]; // Override of an inherited method.
 			}
 
 			break;
@@ -1242,11 +1216,11 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 			strcpy(mi->name,m->name);
 			if (mstatic)
 			{
-				mi->vtable_slot=-1;   /* No virtual dispatch. */
+				mi->vtable_slot=-1; // No virtual dispatch.
 			}
 			else
 			{
-				int islot=iface_slot_for(tt,c,m->name);   /* Interface method -> its reserved global slot. */
+				int islot=iface_slot_for(tt,c,m->name); // Interface method -> its reserved global slot.
 				mi->vtable_slot=(islot>=0) ? islot : c->vtable_size++;
 			}
 		}
@@ -1262,9 +1236,8 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		}
 	}
 
-	/* Assign method asm labels on demand: a name with >1 overload in this class
-	   gets a type-signature suffix; a lone name keeps the legacy label. Inherited
-	   (not-overridden) entries keep the parent's label and slot. */
+	// Assign method asm labels on demand: a name with >1 overload in this class gets a type-signature suffix; a lone name keeps the legacy label.
+	// Inherited (not-overridden) entries keep the parent's label and slot.
 	for (int i=0; i<c->method_count; i++)
 	{
 		MethodInfo *mi=&c->methods[i];
@@ -1296,8 +1269,8 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		}
 	}
 
-	/* Reject ambiguous method overload sets at declaration time. Check each
-	   own-declared name once, at its first occurrence. */
+	// Reject ambiguous method overload sets at declaration time.
+	// Check each own-declared name once, at its first occurrence.
 	for (int i=0; i<c->method_count; i++)
 	{
 		if (strcmp(c->methods[i].owner_class,c->name)!=0)
@@ -1342,9 +1315,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 
 	if (c->is_record)
 	{
-		/* Synthesize hashCode (slot 0) and equals (slot 1) over __Hashable's reserved
-		   slots. ast=NULL: codegen emits the bodies directly (cg_emit_record_methods),
-		   but the MethodInfo makes them resolvable/callable and vtable-placed. */
+		// Synthesize hashCode (slot 0) and equals (slot 1) over __Hashable's reserved slots. ast=NULL: codegen emits the bodies directly (cg_emit_record_methods), but the MethodInfo makes them resolvable/callable and vtable-placed.
 		InterfaceInfo *h=types_find_interface(tt,"__Hashable");
 		MethodInfo *hc=&c->methods[c->method_count++];
 		memset(hc,0,sizeof(*hc));
@@ -1385,7 +1356,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		MethodInfo *mi=&c->ctors[ci];
 		memset(mi,0,sizeof(*mi));
 		strcpy(mi->name,c->name);
-		mi->vtable_slot=-1;              /* Constructors are never virtual. */
+		mi->vtable_slot=-1; // Constructors are never virtual.
 		strcpy(mi->owner_class,c->name);
 		mi->ast=cf;
 		mi->ret_type=(TypeRef)
@@ -1399,7 +1370,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		}
 	}
 
-	/* Reject identical-signature duplicate constructors. */
+	// Reject identical-signature duplicate constructors.
 	for (int a=0; a<c->ctor_count; a++)
 	{
 		char sa[160];
@@ -1416,7 +1387,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		}
 	}
 
-	/* Reject sets that are ambiguous by construction (definition-time). */
+	// Reject sets that are ambiguous by construction (definition-time).
 	if (c->ctor_count>1)
 	{
 		OverloadCand cc[8];
@@ -1434,7 +1405,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		}
 	}
 
-	/* Mangle on demand: a lone constructor keeps the legacy label. */
+	// Mangle on demand: a lone constructor keeps the legacy label.
 	for (int ci=0; ci<c->ctor_count; ci++)
 	{
 		if (c->ctor_count==1)
@@ -1449,7 +1420,7 @@ static void link_unit_class(TypeTable *tt, ClassDecl *d)
 		}
 	}
 
-	/* Verify every implemented interface is fully + correctly satisfied. */
+	// Verify every implemented interface is fully + correctly satisfied.
 	for (int ii=0; ii<c->implements_count; ii++)
 	{
 		InterfaceInfo *itf=types_find_interface(tt,c->implements[ii]);

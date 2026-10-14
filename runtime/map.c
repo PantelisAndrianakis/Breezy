@@ -3,13 +3,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-/* Map layout (object_size = 80):
-   0 vtable | 8 rc | 16 gcinfo | 24 size | 32 cap | 40 ctrl ptr (raw bytes) |
-   48 keys BzyArray | 56 vals BzyArray | 64 key_kind | 72 val_is_managed.
-   key_kind: 0=int family, 1=string, 2=object identity,
-             3=record value (key's vtable slot 0 = hashCode, slot 1 = equals).
-   Keys/vals live in managed arrays, so ARC and the cycle collector reach map
-   contents through the array span descriptor; the finalizer only frees ctrl. */
+/**
+ * Map layout (object_size = 80):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 size | 32 cap | 40 ctrl ptr (raw bytes) |
+ * 48 keys BzyArray | 56 vals BzyArray | 64 key_kind | 72 val_is_managed.
+ * key_kind: 0=int family, 1=string, 2=object identity,
+ *           3=record value (key's vtable slot 0 = hashCode, slot 1 = equals).
+ * Keys/vals live in managed arrays, so ARC and the cycle collector reach map contents through the array span descriptor; the finalizer only frees ctrl.
+ */
 
 enum { CTRL_EMPTY = 0x80, CTRL_DELETED = 0xFE };
 
@@ -48,43 +49,40 @@ static int64_t  *M_VMAN(void *m)
 	return (int64_t*)((char*)m + 72);
 }
 
-/* Caching the per-slot hash only pays off for keys whose hash is expensive to
-   recompute on grow: string content (kind 1, FNV + a pointer chase into the key)
-   and record value (kind 3, a user hashCode call). Integer (0) and object
-   identity (2) keys hash in a couple of instructions, so caching them would only
-   add a per-insert store to a separate cache line - a measured net loss. */
+/**
+ * Caching the per-slot hash only pays off for keys whose hash is expensive to recompute on grow: string content (kind 1, FNV + a pointer chase into the key) and record value (kind 3, a user hashCode call).
+ * Integer (0) and object identity (2) keys hash in a couple of instructions, so caching them would only add a per-insert store to a separate cache line - a measured net loss.
+ */
 static int hash_is_cached(void *m)
 {
 	return *M_KKIND(m) == 1 || *M_KKIND(m) == 3;
 }
 
-/* When cached, the per-slot full hash lives in the same block as ctrl: cap
-   control bytes followed by cap 8-byte hashes. map_grow then re-places every
-   entry without recomputing - no re-hash and no pointer chase into each
-   scattered key object (the dominant string-key insert cost). Only valid when
-   hash_is_cached(m); the hashes region is not allocated otherwise. */
+/**
+ * When cached, the per-slot full hash lives in the same block as ctrl: cap control bytes followed by cap 8-byte hashes. map_grow then re-places every entry without recomputing - no re-hash and no pointer chase into each scattered key object (the dominant string-key insert cost).
+ * Only valid when hash_is_cached(m); the hashes region is not allocated otherwise.
+ */
 static uint64_t *map_hashes(void *m)
 {
 	return (uint64_t*)((*M_CTRL(m)) + *M_CAP(m));
 }
 
-/* A key slot holds a managed reference (retain/release applies) for every kind
-   except the raw integer family. Kept separate from the string-vs-identity
-   hashing decision so the two never re-tangle. */
+/**
+ * A key slot holds a managed reference (retain/release applies) for every kind except the raw integer family.
+ * Kept separate from the string-vs-identity hashing decision so the two never re-tangle.
+ */
 static int key_managed(void *m)
 {
 	return *M_KKIND(m) != 0;
 }
 
-/* Shared-receiver gate. Every public map op funnels through one: a map that
-   crossed cores (SHARED gcinfo bit) runs whole-op under its stripe; a confined
-   map skips the branch entirely. The user hashCode (record keys) and the insert
-   barrier both run BEFORE the stripe is taken - user code under a container
-   lock could touch another shared container and, on a stripe collision,
-   deadlock. The user equals during a locked probe is the residual exception: a
-   user equals that touches the SAME shared map is documented user error.
-   Displaced/removed occupants are released AFTER the stripe is dropped
-   so destructor cascades never run under the lock. */
+/**
+ * Shared-receiver gate.
+ * Every public map op funnels through one: a map that crossed cores (SHARED gcinfo bit) runs whole-op under its stripe; a confined map skips the branch entirely.
+ * The user hashCode (record keys) and the insert barrier both run BEFORE the stripe is taken - user code under a container lock could touch another shared container and, on a stripe collision, deadlock.
+ * The user equals during a locked probe is the residual exception: a user equals that touches the SAME shared map is documented user error.
+ * Displaced/removed occupants are released AFTER the stripe is dropped so destructor cascades never run under the lock.
+ */
 static int map_is_shared(void *m)
 {
 	return (*(int64_t*)((char*)m + 16) & (1ll << 3)) != 0;
@@ -110,8 +108,10 @@ static uint64_t mix64(uint64_t x)
 	return x;
 }
 
-/* Identity hash of an object pointer, NULL-safe. Used by synthesized record
-   hashCode for plain-object fields (compared by identity, hashed by address). */
+/**
+ * Identity hash of an object pointer, NULL-safe.
+ * Used by synthesized record hashCode for plain-object fields (compared by identity, hashed by address).
+ */
 int64_t bzy_ptr_hash(void *p)
 {
 	return p ? (int64_t)(uint32_t)mix64((uint64_t)p) : 0;
@@ -121,40 +121,37 @@ static uint64_t hash_bytes(const char *p, int64_t n)
 {
 	uint64_t h = 0x9e3779b97f4a7c15ULL;
 	int64_t i = 0;
-	for (; i + 8 <= n; i += 8)        /* Eight bytes per mix instead of one. */
+	for (; i + 8 <= n; i += 8) // Eight bytes per mix instead of one.
 	{
 		uint64_t w;
-		memcpy(&w, p + i, 8);          /* memcpy: no alignment assumption; GCC emits a mov. */
+		memcpy(&w, p + i, 8); // memcpy: no alignment assumption; GCC emits a mov.
 		h = mix64(h ^ w);
 	}
 
-	uint64_t tail = 0;                 /* Remaining 0-7 bytes, low-to-high. */
+	uint64_t tail = 0; // Remaining 0-7 bytes, low-to-high.
 	for (int64_t j = 0; i + j < n; j++)
 	{
 		tail |= (uint64_t)(uint8_t)p[i + j] << (j * 8);
 	}
 
 	h = mix64(h ^ tail);
-	return mix64(h ^ (uint64_t)n);     /* Length-mix preserved (distinguishes trailing zeros). */
+	return mix64(h ^ (uint64_t)n); // Length-mix preserved (distinguishes trailing zeros).
 }
 
 static uint64_t hash_key(void *m, int64_t key)
 {
-	/* kind 1 = string content; kind 3 = record value (vtable slot 0 = hashCode);
-	   kind 2 (object) falls through to raw pointer identity. */
+	// kind 1 = string content; kind 3 = record value (vtable slot 0 = hashCode); kind 2 (object) falls through to raw pointer identity.
 	if (*M_KKIND(m) == 3)
 	{
 		void *k = (void*)key;
-		int64_t (*hc)(void*) = (int64_t(*)(void*))(*(void***)k)[0];   /* vtable slot 0. */
+		int64_t (*hc)(void*) = (int64_t(*)(void*))(*(void***)k)[0]; // vtable slot 0.
 		return mix64((uint64_t)(uint32_t)hc(k));
 	}
 
 	if (*M_KKIND(m) == 1)
 	{
-		/* String content hash, cached on the string object so a reused key hashes
-		   only once. The slot is 0 until computed; if a real hash happens to be 0
-		   it is stored as 1 (a one-in-2^64 case that costs only a hair more
-		   collisions for that one string, never correctness). */
+		// String content hash, cached on the string object so a reused key hashes only once.
+		// The slot is 0 until computed; if a real hash happens to be 0 it is stored as 1 (a one-in-2^64 case that costs only a hair more collisions for that one string, never correctness).
 		void *s = (void*)key;
 		void *slot = bzy_str_hashslot(s);
 		uint64_t h;
@@ -178,17 +175,16 @@ static uint64_t hash_key(void *m, int64_t key)
 
 static int key_eq(void *m, int64_t a, int64_t b)
 {
-	/* kind 1 = string content; kind 3 = record value (vtable slot 1 = equals);
-	   kind 2 (object) falls through to raw pointer identity. */
+	// kind 1 = string content; kind 3 = record value (vtable slot 1 = equals); kind 2 (object) falls through to raw pointer identity.
 	if (*M_KKIND(m) == 3)
 	{
 		if (a == b)
 		{
-			return 1;   /* Identity fast path (also covers both-null). */
+			return 1; // Identity fast path (also covers both-null).
 		}
 
 		void *x = (void*)a;
-		int64_t (*eq)(void*, void*) = (int64_t(*)(void*, void*))(*(void***)x)[1];   /* vtable slot 1. */
+		int64_t (*eq)(void*, void*) = (int64_t(*)(void*, void*))(*(void***)x)[1]; // vtable slot 1.
 		return eq(x, (void*)b) != 0;
 	}
 
@@ -196,7 +192,7 @@ static int key_eq(void *m, int64_t a, int64_t b)
 	{
 		if (a == b)
 		{
-			return 1;   /* Same string object (e.g. a reused key): equal, skip the memcmp. */
+			return 1; // Same string object (e.g. a reused key): equal, skip the memcmp.
 		}
 
 		void *x = (void*)a, *y = (void*)b;
@@ -209,7 +205,7 @@ static int key_eq(void *m, int64_t a, int64_t b)
 
 static void bzy_map_finalize(void *m)
 {
-	free(*M_CTRL(m));   /* The two arrays are managed children, released by free_object. */
+	free(*M_CTRL(m)); // The two arrays are managed children, released by free_object.
 }
 
 /* Runtime-owned vtable/descriptor (finalizer + 2 managed children at 48, 56). */
@@ -229,7 +225,7 @@ static int64_t map_find(void *m, int64_t key, uint64_t h)
 	int64_t cap = *M_CAP(m);
 	if (cap == 0)
 	{
-		return -1;   /* Never-grown map: nothing to find. */
+		return -1; // Never-grown map: nothing to find.
 	}
 
 	uint8_t *ctrl = *M_CTRL(m);
@@ -276,7 +272,7 @@ static int64_t map_find_insert(void *m, int64_t key, uint64_t h)
 		}
 		else if (c == h2 && key_eq(m, keys[i], key))
 		{
-			return i;   /* Existing key (overwrite). */
+			return i; // Existing key (overwrite).
 		}
 
 		i = (i + step) & (cap - 1);
@@ -286,8 +282,7 @@ static int64_t map_find_insert(void *m, int64_t key, uint64_t h)
 
 static void map_grow(void *m);
 
-/* Returns the displaced value (0 when the key was new or values are unmanaged)
-   so callers can release it outside the stripe. */
+/* Returns the displaced value (0 when the key was new or values are unmanaged) so callers can release it outside the stripe. */
 static int64_t map_put_impl(void *m, int64_t key, int64_t val, uint64_t h)
 {
 	if ((*M_SIZE(m) + 1) > (*M_CAP(m) * 7) / 8)
@@ -339,7 +334,7 @@ void bzy_map_put(void *m, int64_t key, int64_t val)
 {
 	if (map_is_shared(m))
 	{
-		/* Insert barrier and the (possibly user) hash both before the stripe. */
+		// Insert barrier and the (possibly user) hash both before the stripe.
 		if (key_managed(m))
 		{
 			bzy_share_crosscore((void*)key);
@@ -376,7 +371,7 @@ static int64_t map_get_impl(void *m, int64_t key, uint64_t h)
 	int64_t v = vals_data(m)[slot];
 	if (*M_VMAN(m))
 	{
-		bzy_retain((void*)v);   /* Retain inside the stripe on the shared path. */
+		bzy_retain((void*)v); // Retain inside the stripe on the shared path.
 	}
 
 	return v;
@@ -410,8 +405,7 @@ int64_t bzy_map_has(void *m, int64_t key)
 	return map_find(m, key, hash_key(m, key)) >= 0 ? 1 : 0;
 }
 
-/* Writes the removed key/value (or 0s) to the out-params so callers can release
-   them outside the stripe. */
+/* Writes the removed key/value (or 0s) to the out-params so callers can release them outside the stripe. */
 static void map_remove_impl(void *m, int64_t key, uint64_t h, int64_t *out_key, int64_t *out_val)
 {
 	*out_key = 0;
@@ -477,7 +471,7 @@ static int64_t map_iter_impl(void *m, int64_t from)
 	uint8_t *ctrl = *M_CTRL(m);
 	for (int64_t i = from; i < cap; i++)
 	{
-		if ((ctrl[i] & 0x80) == 0)   /* FULL: top bit clear (EMPTY/DELETED set it). */
+		if ((ctrl[i] & 0x80) == 0) // FULL: top bit clear (EMPTY/DELETED set it).
 		{
 			return i;
 		}
@@ -506,10 +500,10 @@ int64_t bzy_map_key_at(void *m, int64_t slot)
 		bzy_shared_lock(m);
 		int64_t k = keys_data(m)[slot];
 		bzy_shared_unlock(m);
-		return k;   /* Borrowed: the map keeps the reference. */
+		return k; // Borrowed: the map keeps the reference.
 	}
 
-	return keys_data(m)[slot];   /* Borrowed: the map keeps the reference. */
+	return keys_data(m)[slot]; // Borrowed: the map keeps the reference.
 }
 
 int64_t bzy_map_val_at(void *m, int64_t slot)
@@ -519,10 +513,10 @@ int64_t bzy_map_val_at(void *m, int64_t slot)
 		bzy_shared_lock(m);
 		int64_t v = vals_data(m)[slot];
 		bzy_shared_unlock(m);
-		return v;   /* Borrowed: the map keeps the reference. */
+		return v; // Borrowed: the map keeps the reference.
 	}
 
-	return vals_data(m)[slot];   /* Borrowed: the map keeps the reference. */
+	return vals_data(m)[slot]; // Borrowed: the map keeps the reference.
 }
 
 /* val_kind: 3 = string (content equality), anything else = raw 8-byte equality. */
@@ -533,7 +527,7 @@ static int64_t map_contains_value_impl(void *m, int64_t needle, int64_t val_kind
 	int64_t *vals = vals_data(m);
 	for (int64_t i = 0; i < cap; i++)
 	{
-		if ((ctrl[i] & 0x80) != 0)   /* Skip EMPTY/DELETED (top bit set). */
+		if ((ctrl[i] & 0x80) != 0) // Skip EMPTY/DELETED (top bit set).
 		{
 			continue;
 		}
@@ -560,8 +554,10 @@ int64_t bzy_map_contains_value(void *m, int64_t needle, int64_t val_kind)
 	return map_contains_value_impl(m, needle, val_kind);
 }
 
-/* Write a 64-bit value v into a packed output buffer at byte offset (n * esize),
-   truncating to esize bytes. Managed elements are always 8-byte pointers. */
+/**
+ * Write a 64-bit value v into a packed output buffer at byte offset (n * esize), truncating to esize bytes.
+ * Managed elements are always 8-byte pointers.
+ */
 static void pack_write(char *base, int64_t n, int64_t esize, int64_t v)
 {
 	char *p = base + n * esize;
@@ -585,7 +581,7 @@ static void pack_write(char *base, int64_t n, int64_t esize, int64_t v)
 static void *map_keys_impl(void *m, int64_t elem_size)
 {
 	int64_t managed = key_managed(m) ? 1 : 0;
-	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed);   /* Owned (+1). */
+	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed); // Owned (+1).
 	char *out = (char*)a + 32;
 	int64_t cap = *M_CAP(m), *keys = keys_data(m);
 	uint8_t *ctrl = *M_CTRL(m);
@@ -622,7 +618,7 @@ void *bzy_map_keys(void *m, int64_t elem_size)
 static void *map_values_impl(void *m, int64_t elem_size)
 {
 	int64_t managed = *M_VMAN(m);
-	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed);   /* Owned (+1). */
+	void *a = bzy_array_new_sized(*M_SIZE(m), elem_size, managed); // Owned (+1).
 	char *out = (char*)a + 32;
 	int64_t cap = *M_CAP(m), *vals = vals_data(m);
 	uint8_t *ctrl = *M_CTRL(m);
@@ -658,7 +654,7 @@ void *bzy_map_values(void *m, int64_t elem_size)
 
 static void *map_entries_impl(void *m)
 {
-	void *a = bzy_array_new(*M_SIZE(m), 1);   /* Object array (entries are managed). */
+	void *a = bzy_array_new(*M_SIZE(m), 1); // Object array (entries are managed).
 	void **out = (void**)((char*)a + 32);
 	int64_t cap = *M_CAP(m), *keys = keys_data(m), *vals = vals_data(m);
 	uint8_t *ctrl = *M_CTRL(m);
@@ -667,7 +663,7 @@ static void *map_entries_impl(void *m)
 	{
 		if ((ctrl[i] & 0x80) == 0)
 		{
-			out[n++] = bzy_entry_new(keys[i], vals[i], kman, vman);   /* +1, transferred to the array. */
+			out[n++] = bzy_entry_new(keys[i], vals[i], kman, vman); // +1, transferred to the array.
 		}
 	}
 
@@ -687,14 +683,13 @@ void *bzy_map_entries(void *m)
 	return map_entries_impl(m);
 }
 
-/* Foreach support. A confined map is iterated in place (identity, retained so
-   the caller's release at loop end is uniform). A SHARED map is cloned under
-   its stripe and the frozen clone is iterated lock-free: slot cursors survive
-   because nothing rehashes the clone, and the contract is per-op (the view may
-   be stale by the time the body runs - safe, not snapshot-consistent for the
-   original). The clone is born confined; it never escapes the iterating
-   breeze. Cached per-slot hashes are reused, so no user hashCode runs under
-   the stripe. */
+/**
+ * Foreach support.
+ * A confined map is iterated in place (identity, retained so the caller's release at loop end is uniform).
+ * A SHARED map is cloned under its stripe and the frozen clone is iterated lock-free: slot cursors survive because nothing rehashes the clone, and the contract is per-op (the view may be stale by the time the body runs - safe, not snapshot-consistent for the original).
+ * The clone is born confined; it never escapes the iterating breeze.
+ * Cached per-slot hashes are reused, so no user hashCode runs under the stripe.
+ */
 void *bzy_map_iter_snapshot(void *m)
 {
 	if (!map_is_shared(m))
@@ -703,7 +698,7 @@ void *bzy_map_iter_snapshot(void *m)
 		return m;
 	}
 
-	void *c = bzy_map_new(*M_KKIND(m), *M_VMAN(m));   /* Owned (+1). */
+	void *c = bzy_map_new(*M_KKIND(m), *M_VMAN(m)); // Owned (+1).
 	bzy_shared_lock(m);
 	int64_t cap = *M_CAP(m);
 	if (cap > 0)
@@ -716,7 +711,7 @@ void *bzy_map_iter_snapshot(void *m)
 			if ((ctrl[s] & 0x80) == 0)
 			{
 				uint64_t h = cached ? map_hashes(m)[s] : hash_key(m, keys[s]);
-				map_put_impl(c, keys[s], vals[s], h);   /* Retains key and value into the clone. */
+				map_put_impl(c, keys[s], vals[s], h); // Retains key and value into the clone.
 			}
 		}
 	}
@@ -725,11 +720,10 @@ void *bzy_map_iter_snapshot(void *m)
 	return c;
 }
 
-/* Compound atomic operations: one probe under the stripe when the map is
-   shared, so a check-then-act sequence cannot interleave with another breeze.
-   Results are returned owned (+1) when values are managed, like bzy_map_get -
-   getOrDefault retains the default too, so the caller's result is uniformly
-   owned. putIfAbsent returns the value now associated with the key. */
+/**
+ * Compound atomic operations: one probe under the stripe when the map is shared, so a check-then-act sequence cannot interleave with another breeze.
+ * Results are returned owned (+1) when values are managed, like bzy_map_get - getOrDefault retains the default too, so the caller's result is uniformly owned. putIfAbsent returns the value now associated with the key.
+ */
 static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_t h)
 {
 	if ((*M_SIZE(m) + 1) > (*M_CAP(m) * 7) / 8)
@@ -745,7 +739,7 @@ static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_
 		int64_t v = vals[slot];
 		if (*M_VMAN(m))
 		{
-			bzy_retain((void*)v);   /* The existing value wins; owned result. */
+			bzy_retain((void*)v); // The existing value wins; owned result.
 		}
 
 		return v;
@@ -758,7 +752,7 @@ static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_
 
 	if (*M_VMAN(m))
 	{
-		bzy_retain((void*)val);     /* The map's reference. */
+		bzy_retain((void*)val); // The map's reference.
 	}
 
 	keys[slot] = key;
@@ -772,7 +766,7 @@ static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_
 	(*M_SIZE(m))++;
 	if (*M_VMAN(m))
 	{
-		bzy_retain((void*)val);     /* The caller's owned result, independent of the map's reference. */
+		bzy_retain((void*)val); // The caller's owned result, independent of the map's reference.
 	}
 
 	return val;
@@ -782,7 +776,7 @@ int64_t bzy_map_put_if_absent(void *m, int64_t key, int64_t val)
 {
 	if (map_is_shared(m))
 	{
-		/* Insert barrier and the (possibly user) hash both before the stripe. */
+		// Insert barrier and the (possibly user) hash both before the stripe.
 		if (key_managed(m))
 		{
 			bzy_share_crosscore((void*)key);
@@ -809,7 +803,7 @@ static int64_t map_get_or_default_impl(void *m, int64_t key, int64_t dflt, uint6
 	int64_t v = (slot >= 0) ? vals_data(m)[slot] : dflt;
 	if (*M_VMAN(m))
 	{
-		bzy_retain((void*)v);   /* Owned result on both branches (the default included). */
+		bzy_retain((void*)v); // Owned result on both branches (the default included).
 	}
 
 	return v;
@@ -841,11 +835,10 @@ void *bzy_map_new(int64_t key_kind, int64_t val_is_managed)
 {
 	void *m = bzy_alloc(80);
 	*(void**)m = map_vtable();
-	/* The backing store (ctrl + keys + vals) is allocated lazily on the first put,
-	   so an unused map costs only its header. map_grow handles the cap == 0 case. */
+	// The backing store (ctrl + keys + vals) is allocated lazily on the first put, so an unused map costs only its header. map_grow handles the cap == 0 case.
 	*M_KKIND(m) = key_kind;
 	*M_VMAN(m) = val_is_managed;
-	return m;   /* size, cap, ctrl, keys and vals are left zero by bzy_alloc. */
+	return m; // size, cap, ctrl, keys and vals are left zero by bzy_alloc.
 }
 
 static void map_grow(void *m)
@@ -858,8 +851,7 @@ static void map_grow(void *m)
 	int64_t *okeys = oldkeys ? (int64_t*)((char*)oldkeys + 32) : NULL;
 	int64_t *ovals = oldvals ? (int64_t*)((char*)oldvals + 32) : NULL;
 
-	/* When caching, one block holds newcap control bytes + newcap 8-byte hashes;
-	   otherwise just the control bytes (cheap-hash keys recompute on grow). */
+	// When caching, one block holds newcap control bytes + newcap 8-byte hashes; otherwise just the control bytes (cheap-hash keys recompute on grow).
 	uint8_t *nctrl = (uint8_t*)malloc((size_t)newcap + (cached ? (size_t)newcap * 8 : 0));
 	map_init_ctrl(nctrl, newcap);
 	uint64_t *nhashes = cached ? (uint64_t*)(nctrl + newcap) : NULL;
@@ -868,16 +860,14 @@ static void map_grow(void *m)
 	int64_t *nk = (int64_t*)((char*)nkeys + 32);
 	int64_t *nv = (int64_t*)((char*)nvals + 32);
 
-	/* A shared map's fresh backing arrays inherit the SHARED bit: they are
-	   newborn and sole-referenced here, so a plain OR is race-free (and the
-	   roots lock must NOT be taken while holding a stripe). */
+	// A shared map's fresh backing arrays inherit the SHARED bit: they are newborn and sole-referenced here, so a plain OR is race-free (and the roots lock must NOT be taken while holding a stripe).
 	if (map_is_shared(m))
 	{
 		*(int64_t*)((char*)nkeys + 16) |= (1ll << 3);
 		*(int64_t*)((char*)nvals + 16) |= (1ll << 3);
 	}
 
-	*M_CTRL(m) = nctrl;        /* Publish new buffers before re-probing. */
+	*M_CTRL(m) = nctrl; // Publish new buffers before re-probing.
 	*M_KEYS(m) = nkeys;
 	*M_VALS(m) = nvals;
 	*M_CAP(m) = newcap;
@@ -886,10 +876,9 @@ static void map_grow(void *m)
 	{
 		if (oldctrl[i] != CTRL_EMPTY && oldctrl[i] != CTRL_DELETED)
 		{
-			/* Reuse the cached hash (no recompute, no key pointer-chase); for
-			   cheap-hash keys recompute - it costs only a couple of instructions. */
+			// Reuse the cached hash (no recompute, no key pointer-chase); for cheap-hash keys recompute - it costs only a couple of instructions.
 			uint64_t h = cached ? oldhashes[i] : hash_key(m, okeys[i]);
-			int64_t s = map_find_insert(m, okeys[i], h);   /* Into the new arrays. */
+			int64_t s = map_find_insert(m, okeys[i], h); // Into the new arrays.
 			nk[s] = okeys[i];
 			nv[s] = ovals[i];
 			nctrl[s] = (uint8_t)(h & 0x7f);
@@ -898,12 +887,12 @@ static void map_grow(void *m)
 				nhashes[s] = h;
 			}
 
-			okeys[i] = 0;       /* Transfer ownership: blank the old slot. */
+			okeys[i] = 0; // Transfer ownership: blank the old slot.
 			ovals[i] = 0;
 		}
 	}
 
-	free(oldctrl);             /* Frees the (combined, when cached) ctrl block. */
-	bzy_release(oldkeys);      /* Old element slots are now NULL: frees the block only. */
+	free(oldctrl); // Frees the (combined, when cached) ctrl block.
+	bzy_release(oldkeys); // Old element slots are now NULL: frees the block only.
 	bzy_release(oldvals);
 }

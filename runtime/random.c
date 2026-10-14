@@ -2,8 +2,10 @@
 #include <stdint.h>
 #include <math.h>
 
-/* xoshiro256** seeded (lazily, from the clock) via splitmix64. A single global
-   generator. */
+/**
+ * xoshiro256** seeded (lazily, from the clock) via splitmix64.
+ * A single global generator.
+ */
 static uint64_t g_s[4];
 static int g_seeded;
 static int g_has_spare;
@@ -74,12 +76,12 @@ int64_t bzy_rnd_long(void)
 
 float bzy_rnd_float(void)
 {
-	return (float)((next_u64() >> 40) * (1.0f / 16777216.0f));   /* 24 bits / 2^24. */
+	return (float)((next_u64() >> 40) * (1.0f / 16777216.0f)); // 24 bits / 2^24.
 }
 
 double bzy_rnd_double(void)
 {
-	return (double)((next_u64() >> 11) * (1.0 / 9007199254740992.0));   /* 53 bits / 2^53. */
+	return (double)((next_u64() >> 11) * (1.0 / 9007199254740992.0)); // 53 bits / 2^53.
 }
 
 double bzy_rnd_gaussian(void)
@@ -117,7 +119,7 @@ int64_t bzy_rnd_get_ii(int64_t origin, int64_t bound)
 		return origin;
 	}
 
-	return origin + (int64_t)bounded((uint64_t)(bound - origin) + 1);   /* Inclusive. */
+	return origin + (int64_t)bounded((uint64_t)(bound - origin) + 1); // Inclusive.
 }
 
 int64_t bzy_rnd_get_l(int64_t bound)

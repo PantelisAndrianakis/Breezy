@@ -4,9 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Convert an integer-literal token's text to its value, honouring the radix
-   prefix: 0x/0X is hex, 0b/0B is binary, anything else is decimal. A bare
-   leading zero is decimal (not octal), matching the lexer. */
+/**
+ * Convert an integer-literal token's text to its value, honouring the radix prefix: 0x/0X is hex, 0b/0B is binary, anything else is decimal.
+ * A bare leading zero is decimal (not octal), matching the lexer.
+ */
 static long long parse_int_text(const char *s)
 {
 	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
@@ -130,8 +131,10 @@ static Expr *parse_xor(Parser *p)
 	return left;
 }
 
-/* Logical AND - tightest logical level, looser than the bitwise operators.
-   Left-associative, boolean. */
+/**
+ * Logical AND - tightest logical level, looser than the bitwise operators.
+ * Left-associative, boolean.
+ */
 static Expr *parse_and(Parser *p)
 {
 	Expr *left = parse_bitor(p);
@@ -149,8 +152,10 @@ static Expr *parse_and(Parser *p)
 	return left;
 }
 
-/* Bitwise OR - loosest of the bitwise operators, looser than comparison.
-   Left-associative. */
+/**
+ * Bitwise OR - loosest of the bitwise operators, looser than comparison.
+ * Left-associative.
+ */
 static Expr *parse_bitor(Parser *p)
 {
 	Expr *left = parse_bitxor(p);
@@ -186,8 +191,10 @@ static Expr *parse_bitxor(Parser *p)
 	return left;
 }
 
-/* Bitwise AND - tightest bitwise level, still looser than the comparisons.
-   Left-associative. */
+/**
+ * Bitwise AND - tightest bitwise level, still looser than the comparisons.
+ * Left-associative.
+ */
 static Expr *parse_bitand(Parser *p)
 {
 	Expr *left = parse_comparison(p);
@@ -220,11 +227,11 @@ static Expr *parse_comparison(Parser *p)
 	}
 	else if (p->cur.type==TOKEN_IDENT && strcmp(p->cur.text,"equals")==0)
 	{
-		op = TOKEN_EQ;   /* Soft keyword: == in infix position only. */
+		op = TOKEN_EQ; // Soft keyword: == in infix position only.
 	}
 	else if (p->cur.type==TOKEN_IDENT && strcmp(p->cur.text,"differs")==0)
 	{
-		op = TOKEN_NEQ;  /* Soft keyword: != in infix position only. */
+		op = TOKEN_NEQ; // Soft keyword: != in infix position only.
 	}
 
 	if (op)
@@ -241,9 +248,11 @@ static Expr *parse_comparison(Parser *p)
 	return left;
 }
 
-/* Shift level: binds looser than '+'/'-' but tighter than the comparisons.
-   `a + b << c` is `(a + b) << c`; `a << b < c` is
-   `(a << b) < c`. Left-associative. */
+/**
+ * Shift level: binds looser than '+'/'-' but tighter than the comparisons.
+ * `a + b << c` is `(a + b) << c`; `a << b < c` is `(a << b) < c`.
+ * Left-associative.
+ */
 static Expr *parse_shift(Parser *p)
 {
 	Expr *left = parse_additive(p);
@@ -309,12 +318,12 @@ static Expr *parse_unary(Parser *p)
 	}
 
 	if (check(p,TOKEN_LPAREN) && scalar_type_kind(p->peek.type,&ck) && ck != TY_VOID
-			&& !looks_like_lambda(p))   /* (int n) => ... is a lambda, not a cast. */
+			&& !looks_like_lambda(p)) // (int n) => ... is a lambda, not a cast.
 	{
 		int line=p->cur.line;
-		advance(p);                 /* Consume '('. */
+		advance(p); // Consume '('.
 		Expr *e=expr_new(EX_CAST,line);
-		parse_type(p,&e->type);     /* Cast target lives in the result type slot. */
+		parse_type(p,&e->type); // Cast target lives in the result type slot.
 		expect(p,TOKEN_RPAREN);
 		e->lhs=parse_unary(p);
 		return e;
@@ -371,8 +380,7 @@ static Expr *parse_postfix(Parser *p)
 		}
 
 		advance(p);
-		/* `map` is a type keyword but also a collection combinator method name; accept
-		   it (and only it) as a member name after a dot. */
+		// `map` is a type keyword but also a collection combinator method name; accept it (and only it) as a member name after a dot.
 		Token name;
 		if (check(p,TOKEN_MAP))
 		{
@@ -415,7 +423,7 @@ static Expr *parse_postfix(Parser *p)
 		pe->lhs=e;
 		e=pe;
 	}
-	while (check(p,TOKEN_QUESTION))   /* `operand?` propagation (Option/Result). */
+	while (check(p,TOKEN_QUESTION)) // `operand?` propagation (Option/Result).
 	{
 		int line=p->cur.line;
 		advance(p);
@@ -448,8 +456,10 @@ static int is_namespace(const char *name)
 	return strcmp(name,"Math")==0 || strcmp(name,"Clock")==0 || strcmp(name,"Random")==0 || strcmp(name,"Regex")==0 || strcmp(name,"File")==0 || strcmp(name,"Path")==0 || strcmp(name,"System")==0 || strcmp(name,"Network")==0 || strcmp(name,"Graphics")==0 || strcmp(name,"Ffi")==0 || strcmp(name,"Log")==0 || strcmp(name,"Xml")==0 || strcmp(name,"Json")==0 || strcmp(name,"Http")==0 || strcmp(name,"Postgres")==0 || strcmp(name,"Mysql")==0 || strcmp(name,"Memory")==0 || strcmp(name,"Simd")==0;
 }
 
-/* A '(' opens a lambda parameter list (rather than a grouped expression) iff the
-   token after the matching ')' is '=>'. Scans a parser copy, non-destructive. */
+/**
+ * A '(' opens a lambda parameter list (rather than a grouped expression) iff the token after the matching ')' is '=>'.
+ * Scans a parser copy, non-destructive.
+ */
 static int looks_like_lambda(Parser *p)
 {
 	if (p->cur.type != TOKEN_LPAREN)
@@ -483,8 +493,7 @@ static int looks_like_lambda(Parser *p)
 	}
 }
 
-/* True if the next lambda parameter carries an explicit type annotation (vs a
-   bare inferred name). */
+/* True if the next lambda parameter carries an explicit type annotation (vs a bare inferred name). */
 static int lambda_param_typed(Parser *p)
 {
 	TypeKind k;
@@ -495,21 +504,22 @@ static int lambda_param_typed(Parser *p)
 
 	if (check(p,TOKEN_STRING) || check(p,TOKEN_MAP) || check(p,TOKEN_CHANNEL) || check(p,TOKEN_LPAREN))
 	{
-		return 1;   /* string / map<> / channel<> / (P)->R param type. */
+		return 1; // string / map<> / channel<> / (P)->R param type.
 	}
 
 	if (check(p,TOKEN_IDENT)
 			&& (p->peek.type==TOKEN_IDENT || p->peek.type==TOKEN_LT || p->peek.type==TOKEN_LBRACKET))
 	{
-		return 1;   /* Type name / generic / array, followed by the param name. */
+		return 1; // Type name / generic / array, followed by the param name.
 	}
 
 	return 0;
 }
 
-/* Lambda literal: `name => body` or `(p, ...) => body`, where body is a single
-   expression or a `{ ... }` block. Parameter types are optional (inferred from
-   the expected function type at resolve). */
+/**
+ * Lambda literal: `name => body` or `(p, ...) => body`, where body is a single expression or a `{ ... }` block.
+ * Parameter types are optional (inferred from the expected function type at resolve).
+ */
 static Expr *parse_lambda(Parser *p)
 {
 	Expr *e = expr_new(EX_LAMBDA, p->cur.line);
@@ -564,7 +574,7 @@ static Expr *parse_lambda(Parser *p)
 static Expr *parse_primary(Parser *p)
 {
 	int line = p->cur.line;
-	int col  = p->cur.col;   /* Start column of the primary (for the LSP symbol index). */
+	int col  = p->cur.col; // Start column of the primary (for the LSP symbol index).
 	if ((check(p,TOKEN_IDENT) && p->peek.type==TOKEN_FATARROW)
 			|| (check(p,TOKEN_LPAREN) && looks_like_lambda(p)))
 	{
@@ -584,7 +594,7 @@ static Expr *parse_primary(Parser *p)
 	{
 		Expr *e=expr_new(EX_FLOAT,line);
 		e->float_val=strtod(p->cur.text,NULL);
-		strcpy(e->int_suffix,p->cur.suffix);   /* "f" → float, "" → double. */
+		strcpy(e->int_suffix,p->cur.suffix); // "f" → float, "" → double.
 		advance(p);
 		return e;
 	}
@@ -628,7 +638,7 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_LPAREN);
 			expect(p,TOKEN_RPAREN);
 			Expr *e=expr_new(EX_NEWMAP,line);
-			e->type=et;                       /* Carries elem (key) + elem2 (value). */
+			e->type=et; // Carries elem (key) + elem2 (value).
 			return e;
 		}
 
@@ -636,8 +646,8 @@ static Expr *parse_primary(Parser *p)
 		{
 			expect(p,TOKEN_LPAREN);
 			Expr *e=expr_new(EX_NEWCHANNEL,line);
-			e->type=et;                       /* Carries elem (T). */
-			expr_add_arg(e, parse_expr(p));   /* Capacity. */
+			e->type=et; // Carries elem (T).
+			expr_add_arg(e, parse_expr(p)); // Capacity.
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
@@ -645,7 +655,7 @@ static Expr *parse_primary(Parser *p)
 		if (et.kind==TY_GENERIC)
 		{
 			Expr *e=expr_new(EX_NEWGEN,line);
-			e->type=et;                       /* class_name (template) + elem or targs. */
+			e->type=et; // class_name (template) + elem or targs.
 			expect(p,TOKEN_LPAREN);
 			if (et.targ_count>0 && !check(p,TOKEN_RPAREN))
 			{
@@ -662,9 +672,9 @@ static Expr *parse_primary(Parser *p)
 
 		if (check(p,TOKEN_LBRACKET))
 		{
-			advance(p);                       /* '[' */
+			advance(p); // '['
 			Expr *e=expr_new(EX_NEWARRAY,line);
-			e->lhs=parse_expr(p);             /* The count. */
+			e->lhs=parse_expr(p); // The count.
 			expect(p,TOKEN_RBRACKET);
 			e->type.kind=TY_ARRAY;
 			e->type.elem=typeref_box(et);
@@ -674,10 +684,10 @@ static Expr *parse_primary(Parser *p)
 		expect(p,TOKEN_LPAREN);
 		Expr *e=expr_new(EX_NEW,line);
 		e->col=col;
-		strcpy(e->name,et.class_name);        /* Object: et is an IDENT class. */
+		strcpy(e->name,et.class_name); // Object: et is an IDENT class.
 		if (!check(p,TOKEN_RPAREN))
 		{
-			e->arg_count=parse_args(p,e);   /* Constructor arguments. */
+			e->arg_count=parse_args(p,e); // Constructor arguments.
 		}
 
 		expect(p,TOKEN_RPAREN);
@@ -688,7 +698,7 @@ static Expr *parse_primary(Parser *p)
 	{
 		char ns[64];
 		strcpy(ns,p->cur.text);
-		advance(p);                 /* Namespace. */
+		advance(p); // Namespace.
 		expect(p,TOKEN_DOT);
 		Token m=expect(p,TOKEN_IDENT);
 		if (check(p,TOKEN_LPAREN))
@@ -696,14 +706,14 @@ static Expr *parse_primary(Parser *p)
 			expect(p,TOKEN_LPAREN);
 			Expr *e=expr_new(EX_CALL,line);
 			e->col=col;
-			snprintf(e->name,sizeof e->name,"%.31s.%.31s",ns,m.text);   /* Bounded to fit name[64] (ns/method are short). */
+			snprintf(e->name,sizeof e->name,"%.31s.%.31s",ns,m.text); // Bounded to fit name[64] (ns/method are short).
 			e->arg_count=parse_args(p,e);
 			expect(p,TOKEN_RPAREN);
 			return e;
 		}
 
-		/* No call parens: a namespace constant, e.g. File.READONLY. Build a field
-		   access (lhs = the namespace identifier); resolve folds it to a literal. */
+		// No call parens: a namespace constant, e.g. File.READONLY.
+		// Build a field access (lhs = the namespace identifier); resolve folds it to a literal.
 		Expr *id=expr_new(EX_IDENT,line);
 		id->col=col;
 		strcpy(id->name,ns);
@@ -829,16 +839,16 @@ static int is_generic_template(const char *name)
 		   || strcmp(name,"TreeMap")==0;
 }
 
-/* Consume the single '>' that closes a generic type. Nested generics such as
-   map<Box,map<Box,int>> end in a '>>' which the lexer scans as one TOKEN_SHR
-   (the shift operator); here we split it - consuming one '>' by demoting the
-   current token to a lone '>' that the enclosing generic's close then consumes.
-   This is the standard generics-vs-shift disambiguation (cf. javac, Roslyn). */
+/**
+ * Consume the single '>' that closes a generic type.
+ * Nested generics such as map<Box,map<Box,int>> end in a '>>' which the lexer scans as one TOKEN_SHR (the shift operator); here we split it - consuming one '>' by demoting the current token to a lone '>' that the enclosing generic's close then consumes.
+ * This is the standard generics-vs-shift disambiguation (cf. javac, Roslyn).
+ */
 static void expect_gt(Parser *p)
 {
 	if (p->cur.type==TOKEN_SHR)
 	{
-		p->cur.type=TOKEN_GT;   /* One '>' consumed; one '>' remains as cur. */
+		p->cur.type=TOKEN_GT; // One '>' consumed; one '>' remains as cur.
 		return;
 	}
 
@@ -853,16 +863,15 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	out->elem2=NULL;
 	out->targs=NULL;
 	out->targ_cap=0;
-	out->targ_count=0;   /* Cleared for every base type; only user generics set it. */
-	/* A known template name immediately followed by '<' is a generic. Since
-	   parse_base_type is only reached in type position, an unknown IDENT before
-	   '<' is a clear error, not a downstream parse failure. */
+	out->targ_count=0; // Cleared for every base type; only user generics set it.
+	// A known template name immediately followed by '<' is a generic.
+	// Since parse_base_type is only reached in type position, an unknown IDENT before '<' is a clear error, not a downstream parse failure.
 	if (check(p,TOKEN_IDENT) && p->peek.type==TOKEN_LT)
 	{
 		char tmpl[64];
 		strcpy(tmpl,p->cur.text);
 		int builtin = is_generic_template(tmpl);
-		advance(p);                 /* Template / generic-class name. */
+		advance(p); // Template / generic-class name.
 		expect(p,TOKEN_LT);
 		out->kind=TY_GENERIC;
 		strcpy(out->class_name,tmpl);
@@ -873,18 +882,18 @@ static int parse_base_type(Parser *p, TypeRef *out)
 		{
 			TypeRef el;
 			parse_type(p,&el);
-			out->elem=typeref_box(el);   /* Built-in templates carry T in elem (4e/4f). */
+			out->elem=typeref_box(el); // Built-in templates carry T in elem (4e/4f).
 			if (strcmp(tmpl,"TreeMap")==0)
 			{
 				expect(p,TOKEN_COMMA);
 				TypeRef val;
 				parse_type(p,&val);
-				out->elem2=typeref_box(val);   /* TreeMap<K,V>: V in elem2 (like map<K,V>). */
+				out->elem2=typeref_box(val); // TreeMap<K,V>: V in elem2 (like map<K,V>).
 			}
 		}
 		else
 		{
-			/* User-generic application: Name<T1, T2, ...>; validated whole-program. */
+			// User-generic application: Name<T1, T2, ...>; validated whole-program.
 			do
 			{
 				TypeRef a;
@@ -959,7 +968,7 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	{
 		out->kind=TY_ENTRY;
 		out->class_name[0]='\0';
-		out->elem=NULL;        /* K/V are supplied by the iterable in resolve. */
+		out->elem=NULL; // K/V are supplied by the iterable in resolve.
 		out->elem2=NULL;
 		advance(p);
 		return 1;
@@ -1196,20 +1205,18 @@ static int parse_base_type(Parser *p, TypeRef *out)
 	return 0;
 }
 
-/* A base type followed by zero or more empty `[]` suffixes → array types. Only
-   an empty `[]` is consumed here (the `[5]` of `new T[5]` and the `[i]` of an
-   index are left for their own parsers). */
+/**
+ * A base type followed by zero or more empty `[]` suffixes → array types.
+ * Only an empty `[]` is consumed here (the `[5]` of `new T[5]` and the `[i]` of an index are left for their own parsers).
+ */
 static int parse_type(Parser *p, TypeRef *out)
 {
-	/* Arrow function type: (P1, P2, ...) -> R. The leading '(' only begins a
-	   function type in type position (Breezy has no grouped types), so this is
-	   unambiguous. The internal shape matches the FFI TY_FUNC: elem = return,
-	   targs = parameters. */
+	// Arrow function type: (P1, P2, ...) -> R. The leading '(' only begins a function type in type position (Breezy has no grouped types), so this is unambiguous. The internal shape matches the FFI TY_FUNC: elem = return, targs = parameters.
 	if (check(p,TOKEN_LPAREN))
 	{
 		memset(out,0,sizeof(*out));
 		out->kind=TY_FUNC;
-		advance(p);   /* '(' */
+		advance(p); // '('
 		if (!check(p,TOKEN_RPAREN))
 		{
 			do
@@ -1238,8 +1245,8 @@ static int parse_type(Parser *p, TypeRef *out)
 
 	while (check(p,TOKEN_LBRACKET) && p->peek.type==TOKEN_RBRACKET)
 	{
-		advance(p);   /* '[' */
-		advance(p);   /* ']' */
+		advance(p); // '['
+		advance(p); // ']'
 		TypeRef elem = *out;
 		out->kind=TY_ARRAY;
 		out->class_name[0]='\0';
@@ -1249,10 +1256,10 @@ static int parse_type(Parser *p, TypeRef *out)
 	return 1;
 }
 
-/* A '(' begins an arrow function type (vardecl) rather than a parenthesized/cast
-   expression iff the token after the matching ')' is '->'. Scans a copy of the
-   parser so the real token stream is untouched (Parser holds its lexer by value
-   and token text points into the persistent source). */
+/**
+ * A '(' begins an arrow function type (vardecl) rather than a parenthesized/cast expression iff the token after the matching ')' is '->'.
+ * Scans a copy of the parser so the real token stream is untouched (Parser holds its lexer by value and token text points into the persistent source).
+ */
 static int looks_like_fn_type(Parser *p)
 {
 	if (p->cur.type != TOKEN_LPAREN)
@@ -1303,13 +1310,12 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
-	/* `map<...>` / `channel<...>` declarations start unambiguously with the keyword. */
+	// `map<...>` / `channel<...>` declarations start unambiguously with the keyword.
 	if (check(p,TOKEN_MAP) || check(p,TOKEN_CHANNEL))
 	{
 		return 1;
 	}
-	/* `Box<...>` / `Pair<...>` etc.: any IDENT followed by '<' begins a generic
-	   variable declaration (Breezy has no bare comparison statements). */
+	// `Box<...>` / `Pair<...>` etc.: any IDENT followed by '<' begins a generic variable declaration (Breezy has no bare comparison statements).
 	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_LT)
 	{
 		return 1;
@@ -1319,7 +1325,7 @@ static int starts_vardecl(Parser *p)
 	{
 		return 1;
 	}
-	/* `Foo[] a;` — an object-array declaration (vs. the index expression `foo[i]`). */
+	// `Foo[] a;` - an object-array declaration (vs. the index expression `foo[i]`).
 	if (check(p,TOKEN_IDENT) && p->peek.type == TOKEN_LBRACKET && p->peek2.type == TOKEN_RBRACKET)
 	{
 		return 1;
@@ -1328,8 +1334,7 @@ static int starts_vardecl(Parser *p)
 	return 0;
 }
 
-/* A declaration initializer: an expression, or a `{ v, v, ... }` array literal
-   (the resolver accepts the literal only for a final array). */
+/* A declaration initializer: an expression, or a `{ v, v, ... }` array literal (the resolver accepts the literal only for a final array). */
 static Expr *parse_init(Parser *p)
 {
 	if (!check(p,TOKEN_LBRACE))
@@ -1381,8 +1386,7 @@ static Stmt *parse_if(Parser *p)
 	{
 		if (check(p,TOKEN_IF))
 		{
-			/* `else if` chains: wrap the trailing if-statement in a one-statement
-			   block so the else branch stays a Block, like an explicit `else {}`. */
+			// `else if` chains: wrap the trailing if-statement in a one-statement block so the else branch stays a Block, like an explicit `else {}`.
 			Block *b=block_new();
 			block_push(b,parse_if(p));
 			s->else_blk=b;
@@ -1408,8 +1412,7 @@ static Stmt *parse_while(Parser *p)
 	return s;
 }
 
-/* A statement with no trailing ';' (a for-loop init/post clause): a var-decl, an
-   assignment, or a bare expression. */
+/* A statement with no trailing ';' (a for-loop init/post clause): a var-decl, an assignment, or a bare expression. */
 static int compound_to_binop(TokenType t, int *op)
 {
 	switch (t)
@@ -1449,8 +1452,10 @@ static int compound_to_binop(TokenType t, int *op)
 	}
 }
 
-/* Build `target = (target OP rhs)` from a compound assignment. The target node
-   is shared as both the store target and the binary's left operand. */
+/**
+ * Build `target = (target OP rhs)` from a compound assignment.
+ * The target node is shared as both the store target and the binary's left operand.
+ */
 static Stmt *make_compound_assign(int line, Expr *target, int binop, Expr *rhs)
 {
 	Expr *bin=expr_new(EX_BINARY,line);
@@ -1516,7 +1521,7 @@ static Stmt *parse_simple_stmt(Parser *p)
 static Stmt *parse_for(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                       /* Consume 'for'. */
+	advance(p); // Consume 'for'.
 	Stmt *s=stmt_new(ST_FOR,line);
 	expect(p,TOKEN_LPAREN);
 	s->for_init=parse_simple_stmt(p);
@@ -1532,8 +1537,7 @@ static Stmt *parse_for(Parser *p)
 static Expr *parse_case_const(Parser *p)
 {
 	int line=p->cur.line;
-	/* A bare identifier is an enum constant label (case RED:); the resolver maps
-	   it to the operand enum's ordinal. */
+	// A bare identifier is an enum constant label (case RED:); the resolver maps it to the operand enum's ordinal.
 	if (check(p,TOKEN_IDENT))
 	{
 		Token id=expect(p,TOKEN_IDENT);
@@ -1558,8 +1562,7 @@ static Expr *parse_case_const(Parser *p)
 		return e;
 	}
 
-	/* A float literal is parsed only so the resolver can reject float/double
-	   switches with a clear operand-level message (they are forbidden). */
+	// A float literal is parsed only so the resolver can reject float/double switches with a clear operand-level message (they are forbidden).
 	if (check(p,TOKEN_FLOAT_LIT))
 	{
 		Expr *e=expr_new(EX_FLOAT,line);
@@ -1587,14 +1590,14 @@ static Expr *parse_case_const(Parser *p)
 	return e;
 }
 
-/* match (subject) { LABEL => stmt-or-block  ... [default => ...] }
-   Lowered to the same ST_SWITCH node as `switch`, with two differences enforced
-   later: every arm ends in an implicit break (no fallthrough), and the resolver
-   checks the arms exhaustively cover the enum (or a default is present). */
+/**
+ * match (subject) { LABEL => stmt-or-block  ... [default => ...] }
+ * Lowered to the same ST_SWITCH node as `switch`, with two differences enforced later: every arm ends in an implicit break (no fallthrough), and the resolver checks the arms exhaustively cover the enum (or a default is present).
+ */
 static Stmt *parse_match(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                       /* Consume 'match'. */
+	advance(p); // Consume 'match'.
 	Stmt *s=stmt_new(ST_SWITCH,line);
 	s->is_match=1;
 	expect(p,TOKEN_LPAREN);
@@ -1615,7 +1618,7 @@ static Stmt *parse_match(Parser *p)
 		{
 			Stmt *c=stmt_new(ST_CASE,cl);
 			c->value=parse_case_const(p);
-			/* Optional payload binds: Circle(r) / Rect(w, h). */
+			// Optional payload binds: Circle(r) / Rect(w, h).
 			if (check(p,TOKEN_LPAREN))
 			{
 				advance(p);
@@ -1653,20 +1656,21 @@ static Stmt *parse_match(Parser *p)
 			block_push(s->then_blk,parse_statement(p));
 		}
 
-		block_push(s->then_blk,stmt_new(ST_BREAK,cl));   /* Implicit per-arm break: no fallthrough. */
+		block_push(s->then_blk,stmt_new(ST_BREAK,cl)); // Implicit per-arm break: no fallthrough.
 	}
 
 	expect(p,TOKEN_RBRACE);
 	return s;
 }
 
-/* asm { "raw line"; "raw line"; ... } - each string literal is emitted verbatim
-   into the generated assembly. An escape hatch: the programmer is responsible for
-   register and frame discipline. */
+/**
+ * asm { "raw line"; "raw line"; ... } - each string literal is emitted verbatim into the generated assembly.
+ * An escape hatch: the programmer is responsible for register and frame discipline.
+ */
 static Stmt *parse_asm(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                       /* Consume 'asm'. */
+	advance(p); // Consume 'asm'.
 	Stmt *s=stmt_new(ST_ASM,line);
 	expect(p,TOKEN_LBRACE);
 	int cap=0;
@@ -1677,7 +1681,7 @@ static Stmt *parse_asm(Parser *p)
 		strncpy(s->asm_lines[s->asm_line_count],t.text,255);
 		s->asm_lines[s->asm_line_count][255]='\0';
 		s->asm_line_count++;
-		match(p,TOKEN_SEMICOLON);      /* Optional ';' between lines. */
+		match(p,TOKEN_SEMICOLON); // Optional ';' between lines.
 	}
 
 	expect(p,TOKEN_RBRACE);
@@ -1697,14 +1701,15 @@ static Block *parse_arm_body(Parser *p)
 	return b;
 }
 
-/* select { [v =] ch.recv() => body ; ch.send(x) => body ; default => body }
-   Multiplexes over channel receive/send. A `default` arm makes it non-blocking
-   (runs when no arm is ready). The head of a non-default arm is a channel method
-   call (recv/send), optionally bound on a receive (`v = ch.recv()`). */
+/**
+ * select { [v =] ch.recv() => body ; ch.send(x) => body ; default => body } Multiplexes over channel receive/send.
+ * A `default` arm makes it non-blocking (runs when no arm is ready).
+ * The head of a non-default arm is a channel method call (recv/send), optionally bound on a receive (`v = ch.recv()`).
+ */
 static Stmt *parse_select(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                       /* Consume 'select'. */
+	advance(p); // Consume 'select'.
 	Stmt *s=stmt_new(ST_SELECT,line);
 	expect(p,TOKEN_LBRACE);
 	int cap=0;
@@ -1726,12 +1731,12 @@ static Stmt *parse_select(Parser *p)
 
 		SelectArm arm;
 		memset(&arm,0,sizeof(arm));
-		/* Optional receive binding: `v = ...`. */
+		// Optional receive binding: `v = ...`.
 		if (check(p,TOKEN_IDENT) && p->peek.type==TOKEN_ASSIGN)
 		{
 			strcpy(arm.bind,p->cur.text);
-			advance(p);                /* IDENT */
-			advance(p);                /* '=' */
+			advance(p); // IDENT
+			advance(p); // '='
 		}
 
 		Expr *call=parse_expr(p);
@@ -1777,7 +1782,7 @@ static Stmt *parse_select(Parser *p)
 static Stmt *parse_switch(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                       /* Consume 'switch'. */
+	advance(p); // Consume 'switch'.
 	Stmt *s=stmt_new(ST_SWITCH,line);
 	expect(p,TOKEN_LPAREN);
 	s->cond=parse_expr(p);
@@ -1807,7 +1812,7 @@ static Stmt *parse_switch(Parser *p)
 		}
 		else if (check(p,TOKEN_LBRACE))
 		{
-			Block *grp=parse_block(p);            /* Brace-delimited group: flatten. */
+			Block *grp=parse_block(p); // Brace-delimited group: flatten.
 			for (int i=0; i<grp->count; i++)
 			{
 				block_push(s->then_blk,grp->stmts[i]);
@@ -1832,7 +1837,7 @@ static Stmt *parse_switch(Parser *p)
 static Stmt *parse_foreach(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                       /* Consume 'foreach'. */
+	advance(p); // Consume 'foreach'.
 	Stmt *s=stmt_new(ST_FOREACH,line);
 	expect(p,TOKEN_LPAREN);
 	parse_type(p,&s->decl_type);
@@ -1911,7 +1916,7 @@ static Stmt *parse_assign_or_expr(Parser *p)
 static Stmt *parse_try(Parser *p)
 {
 	int line=p->cur.line;
-	advance(p);                              /* Consume 'try'. */
+	advance(p); // Consume 'try'.
 	Stmt *s=stmt_new(ST_TRY,line);
 	s->then_blk=parse_block(p);
 	s->else_blk=block_new();
@@ -2055,24 +2060,23 @@ static Block *parse_block(Parser *p)
 	return b;
 }
 
-/* Parse one parameter — its type, name, and an optional "= <literal>" default
-   value (literal constants only). A default is substituted when the argument is
-   omitted at a call site (see fill_default_args in the resolver). */
+/**
+ * Parse one parameter - its type, name, and an optional "= <literal>" default value (literal constants only).
+ * A default is substituted when the argument is omitted at a call site (see fill_default_args in the resolver).
+ */
 static void parse_one_param(Parser *p, Param *pm)
 {
 	parse_type(p,&pm->type);
 	if (check(p,TOKEN_LPAREN))
 	{
-		/* C function-pointer type: ret(paramtype, ...). parse_type put the return
-		   type in pm->type; wrap it into a TY_FUNC carrying the parameter types.
-		   Unambiguous: a '(' immediately after a base type (before the parameter
-		   name) only occurs for a function type. */
+		// C function-pointer type: ret(paramtype, ...). parse_type put the return type in pm->type; wrap it into a TY_FUNC carrying the parameter types.
+		// Unambiguous: a '(' immediately after a base type (before the parameter name) only occurs for a function type.
 		TypeRef ret = pm->type;
 		TypeRef fn;
 		memset(&fn,0,sizeof(fn));
 		fn.kind = TY_FUNC;
 		fn.elem = typeref_box(ret);
-		advance(p);   /* '(' */
+		advance(p); // '('
 		if (!check(p,TOKEN_RPAREN))
 		{
 			do
@@ -2130,8 +2134,8 @@ static Func *parse_extern(Parser *p)
 		{
 			if (check(p,TOKEN_DOT))
 			{
-				/* Trailing `...` (three TOKEN_DOT): a variadic C function. Only valid
-				   as the final entry in an extern parameter list. */
+				// Trailing `...` (three TOKEN_DOT): a variadic C function.
+				// Only valid as the final entry in an extern parameter list.
 				expect(p,TOKEN_DOT);
 				expect(p,TOKEN_DOT);
 				expect(p,TOKEN_DOT);
@@ -2146,7 +2150,7 @@ static Func *parse_extern(Parser *p)
 	}
 
 	expect(p,TOKEN_RPAREN);
-	expect(p,TOKEN_SEMICOLON);   /* No body. */
+	expect(p,TOKEN_SEMICOLON); // No body.
 	f->body=NULL;
 	return f;
 }
@@ -2201,7 +2205,7 @@ static InterfaceDecl *parse_interface(Parser *p)
 		}
 
 		expect(p,TOKEN_RPAREN);
-		expect(p,TOKEN_SEMICOLON);   /* Signature only, no body. */
+		expect(p,TOKEN_SEMICOLON); // Signature only, no body.
 		m->body=NULL;
 		itf->methods=grow_ensure(itf->methods,itf->method_count,&itf->methods_cap,sizeof(*itf->methods));
 		itf->methods[itf->method_count++]=m;
@@ -2225,7 +2229,7 @@ static ClassDecl *parse_class(Parser *p)
 		{
 			c->type_params       = grow_ensure(c->type_params,       c->type_param_count, &c->type_param_cap,        sizeof(*c->type_params));
 			c->type_param_bounds = grow_ensure(c->type_param_bounds, c->type_param_count, &c->type_param_bounds_cap, sizeof(*c->type_param_bounds));
-			c->type_param_bounds[c->type_param_count][0]='\0';   /* Default: no bound. */
+			c->type_param_bounds[c->type_param_count][0]='\0'; // Default: no bound.
 			Token tp=expect(p,TOKEN_IDENT);
 			strcpy(c->type_params[c->type_param_count],tp.text);
 			if (match(p,TOKEN_COLON))
@@ -2245,9 +2249,9 @@ static ClassDecl *parse_class(Parser *p)
 		Token par=expect(p,TOKEN_IDENT);
 		strcpy(c->parent_name,par.text);
 		c->has_parent=1;
-		if (check(p,TOKEN_LT))           /* Parametric inheritance: extends Base<args>. */
+		if (check(p,TOKEN_LT)) // Parametric inheritance: extends Base<args>.
 		{
-			advance(p);                  /* '<' */
+			advance(p); // '<'
 			int pcap=0;
 			do
 			{
@@ -2275,13 +2279,13 @@ static ClassDecl *parse_class(Parser *p)
 	expect(p,TOKEN_LBRACE);
 	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 	{
-		int member_static = match(p,TOKEN_STATIC);   /* `static` field/method modifier. */
-		int member_final = match(p,TOKEN_FINAL);     /* `static final` read-only array field. */
-		/* Constructor: the class name immediately followed by '(' (no return type). */
+		int member_static = match(p,TOKEN_STATIC); // `static` field/method modifier.
+		int member_final = match(p,TOKEN_FINAL); // `static final` read-only array field.
+		// Constructor: the class name immediately followed by '(' (no return type).
 		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,c->name)==0 && p->peek.type==TOKEN_LPAREN)
 		{
 			Token cname=p->cur;
-			advance(p);                 /* Class name. */
+			advance(p); // Class name.
 			Func *f=func_new();
 			f->ret_type.kind=TY_VOID;
 			strcpy(f->name,c->name);
@@ -2307,7 +2311,7 @@ static ClassDecl *parse_class(Parser *p)
 			}
 
 			class_add_ctor(c,f);
-			c->ctor=c->ctors[0];   /* Legacy alias. */
+			c->ctor=c->ctors[0]; // Legacy alias.
 			continue;
 		}
 
@@ -2372,10 +2376,7 @@ static ClassDecl *parse_class(Parser *p)
 	return c;
 }
 
-/* True when the token stream after a variant's '(' opens a typed parameter
-   (`double r`, `Tree left`, `List<int> xs`, `int[] a`) rather than a value
-   argument (`255`, `FOO`). Distinguishes a payload variant `Circle(double r)`
-   from a singleton-constant argument list `RED(255, 0, 0)`. */
+/* True when the token stream after a variant's '(' opens a typed parameter (`double r`, `Tree left`, `List<int> xs`, `int[] a`) rather than a value argument (`255`, `FOO`). Distinguishes a payload variant `Circle(double r)` from a singleton-constant argument list `RED(255, 0, 0)`. */
 static int variant_is_payload(Parser *p)
 {
 	TypeKind k;
@@ -2398,15 +2399,17 @@ static int variant_is_payload(Parser *p)
 	return 0;
 }
 
-/* enum Name [implements I, J] { CONST [ (args) ] [ { overrides } ] (, CONST)*
-   [ ; shared-fields-and-methods ] }. Modeled on parse_class for the members. */
+/**
+ * enum Name [implements I, J] { CONST [ (args) ] [ { overrides } ] (, CONST)* [ ; shared-fields-and-methods ] }.
+ * Modeled on parse_class for the members.
+ */
 static EnumDecl *parse_enum(Parser *p)
 {
-	advance(p);                 /* 'enum' */
+	advance(p); // 'enum'
 	EnumDecl *e=enum_new();
 	Token name=expect(p,TOKEN_IDENT);
 	strcpy(e->name,name.text);
-	if (match(p,TOKEN_LT))           /* Generic enum: enum Name<T, ...>. */
+	if (match(p,TOKEN_LT)) // Generic enum: enum Name<T, ...>.
 	{
 		do
 		{
@@ -2436,7 +2439,7 @@ static EnumDecl *parse_enum(Parser *p)
 	}
 
 	expect(p,TOKEN_LBRACE);
-	/* Constants: IDENT [ (args) ] [ { method overrides } ], comma-separated. */
+	// Constants: IDENT [ (args) ] [ { method overrides } ], comma-separated.
 	if (check(p,TOKEN_IDENT))
 	{
 		do
@@ -2451,8 +2454,7 @@ static EnumDecl *parse_enum(Parser *p)
 				{
 					if (variant_is_payload(p))
 					{
-						/* Payload variant: typed fields become a constructible
-						   subclass (a sum-type case). */
+						// Payload variant: typed fields become a constructible subclass (a sum-type case).
 						do
 						{
 							if (c->payload_count>=8)
@@ -2491,7 +2493,7 @@ static EnumDecl *parse_enum(Parser *p)
 
 			if (check(p,TOKEN_LBRACE))
 			{
-				advance(p);             /* '{' of the per-constant body. */
+				advance(p); // '{' of the per-constant body.
 				while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 				{
 					if (c->override_count>=8)
@@ -2530,10 +2532,10 @@ static EnumDecl *parse_enum(Parser *p)
 		while (match(p,TOKEN_COMMA));
 	}
 
-	match(p,TOKEN_SEMICOLON);   /* Optional ';' before shared members. */
+	match(p,TOKEN_SEMICOLON); // Optional ';' before shared members.
 	while (!check(p,TOKEN_RBRACE) && !check(p,TOKEN_EOF))
 	{
-		/* Constructor: IDENT == enum name followed by '('. */
+		// Constructor: IDENT == enum name followed by '('.
 		if (check(p,TOKEN_IDENT) && strcmp(p->cur.text,e->name)==0 && p->peek.type==TOKEN_LPAREN)
 		{
 			advance(p);
@@ -2621,7 +2623,7 @@ Unit *parse_unit(Parser *p)
 		}
 		else if (check(p,TOKEN_STATIC) && p->peek.type==TOKEN_CLASS)
 		{
-			advance(p);                 /* 'static'; parse_class consumes 'class'. */
+			advance(p); // 'static'; parse_class consumes 'class'.
 			ClassDecl *c=parse_class(p);
 			c->is_static=1;
 			unit_add_class(u,c);
@@ -2632,7 +2634,7 @@ Unit *parse_unit(Parser *p)
 		}
 		else if (check(p,TOKEN_RECORD))
 		{
-			ClassDecl *c=parse_class(p);   /* Same body grammar; parse_class consumes the leading keyword. */
+			ClassDecl *c=parse_class(p); // Same body grammar; parse_class consumes the leading keyword.
 			c->is_record=1;
 			unit_add_class(u,c);
 		}

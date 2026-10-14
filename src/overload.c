@@ -3,11 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* A single, unique code per scalar TypeKind; composite kinds recurse. The map
-   is total and injective over TypeKind so two different parameter lists can
-   never produce the same suffix. The rare handle kinds get a "Z<n>" code keyed
-   on the enum value — still injective, and they never appear as overload
-   discriminators in practice. */
+/**
+ * A single, unique code per scalar TypeKind; composite kinds recurse.
+ * The map is total and injective over TypeKind so two different parameter lists can never produce the same suffix.
+ * The rare handle kinds get a "Z<n>" code keyed on the enum value - still injective, and they never appear as overload discriminators in practice.
+ */
 static void encode_one(char *out, size_t cap, int *n, const TypeRef *t)
 {
 #define PUT(ch) do { if (*n + 1 < (int)cap) { out[(*n)++] = (char)(ch); } } while (0)
@@ -104,7 +104,7 @@ static void encode_one(char *out, size_t cap, int *n, const TypeRef *t)
 		}
 		break;
 	default:
-		/* Handle kinds (Timer/Socket/...): injective "Z<enum>". */
+		// Handle kinds (Timer/Socket/...): injective "Z<enum>".
 		snprintf(buf, sizeof(buf), "Z%d", (int)t->kind);
 		PUTS(buf);
 		break;
@@ -165,7 +165,7 @@ static int typeref_same(const TypeRef *a, const TypeRef *b)
 			   && a->elem && b->elem && typeref_same(a->elem, b->elem);
 	}
 
-	return 1;   /* Same scalar/bool/string kind. */
+	return 1; // Same scalar/bool/string kind.
 }
 
 int overload_rank_arg(const TypeRef *param, const TypeRef *arg)
@@ -180,7 +180,7 @@ int overload_rank_arg(const TypeRef *param, const TypeRef *arg)
 		return 0;
 	}
 
-	/* Widening: the same conversions assignable() allows. */
+	// Widening: the same conversions assignable() allows.
 	if (ty_is_int(param->kind) && ty_is_int(arg->kind)
 			&& ty_is_signed(param->kind) == ty_is_signed(arg->kind)
 			&& ty_rank(arg->kind) <= ty_rank(param->kind))
@@ -193,7 +193,7 @@ int overload_rank_arg(const TypeRef *param, const TypeRef *arg)
 		return 1;
 	}
 
-	/* Permissive: any object assigns to any object slot (assignable() rule). */
+	// Permissive: any object assigns to any object slot (assignable() rule).
 	if (param->kind == TY_OBJECT && arg->kind == TY_OBJECT)
 	{
 		return 2;
@@ -202,9 +202,10 @@ int overload_rank_arg(const TypeRef *param, const TypeRef *arg)
 	return -1;
 }
 
-/* 1 if a call of argc args is viable for candidate c (admissible arity and every
-   argument assignable). Ranks are recomputed on demand rather than stored, so
-   neither the candidate count nor the argument count is bounded. */
+/**
+ * 1 if a call of argc args is viable for candidate c (admissible arity and every argument assignable).
+ * Ranks are recomputed on demand rather than stored, so neither the candidate count nor the argument count is bounded.
+ */
 static int candidate_viable(const OverloadCand *c, const TypeRef *args, int argc)
 {
 	if (argc < c->min_args)
@@ -217,8 +218,7 @@ static int candidate_viable(const OverloadCand *c, const TypeRef *args, int argc
 		return 0;
 	}
 
-	/* Match the fixed parameters only; a variadic extern's extra args have no
-	   declared type and are accepted (their natural types are placed by codegen). */
+	// Match the fixed parameters only; a variadic extern's extra args have no declared type and are accepted (their natural types are placed by codegen).
 	int fixed = argc < c->param_count ? argc : c->param_count;
 	for (int i = 0; i < fixed; i++)
 	{
@@ -256,8 +256,9 @@ int overload_select(const OverloadCand *cands, int ncand, const TypeRef *args, i
 		return r;
 	}
 
-	/* Best = dominates every other: no worse on all args, strictly better on at
-	   least one. Lower rank is better. Ranks are recomputed here. */
+	// Best = dominates every other: no worse on all args, strictly better on at least one.
+	// Lower rank is better.
+	// Ranks are recomputed here.
 	int result = OVL_AMBIG;
 	for (int a = 0; a < nv && result == OVL_AMBIG; a++)
 	{
@@ -316,9 +317,8 @@ int overload_min_args(const Func *f)
 
 int overload_set_is_ambiguous(const OverloadCand *cands, int ncand)
 {
-	/* Probe each candidate's own parameter prefix (an exact, rank-0 match for
-	   that candidate) at every arity it admits. If the full set ties on that
-	   probe, two candidates are mutually indistinguishable for that arity. */
+	// Probe each candidate's own parameter prefix (an exact, rank-0 match for that candidate) at every arity it admits.
+	// If the full set ties on that probe, two candidates are mutually indistinguishable for that arity.
 	for (int c = 0; c < ncand; c++)
 	{
 		for (int n = cands[c].min_args; n <= cands[c].param_count; n++)

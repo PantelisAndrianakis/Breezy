@@ -1,23 +1,22 @@
-/* runtime/xml.c -- read-only XML reader (pragmatic subset). Own TU: a program that
-   never calls Xml.parse links none of this. The parser builds a tree of managed
-   XmlNode objects; ARC + the cycle collector reclaim it via the per-type typeinfo.
-
-   This file is Task 2 of the Phase E.3 plan: the well-formed scanner (elements,
-   attributes, text) + the managed node. Entity/numeric-ref/CDATA decoding and the
-   comment/PI skipping land in Task 7; the Xml.parse entry + accessors in 3-8. */
+/**
+ * runtime/xml.c -- read-only XML reader (pragmatic subset).
+ * Own TU: a program that never calls Xml.parse links none of this.
+ * The parser builds a tree of managed XmlNode objects; ARC + the cycle collector reclaim it via the per-type typeinfo.
+ *
+ * This file is Task 2 of the Phase E.3 plan: the well-formed scanner (elements, attributes, text) + the managed node.
+ * Entity/numeric-ref/CDATA decoding and the comment/PI skipping land in Task 7; the Xml.parse entry + accessors in 3-8.
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-/* Emitted per-program by codegen; bzy_xml_check stamps a thrown XmlException with
-   it (the bzy_number_check pattern). */
+/* Emitted per-program by codegen; bzy_xml_check stamps a thrown XmlException with it (the bzy_number_check pattern). */
 extern char __vtable_XmlException[];
 extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
-/* XmlNode layout: vtable|rc|gcinfo|name@24|text@32|attrs@40|acount@48|children@56.
-   attrs is one array of 2 * acount strings: name, value, name, value, ... */
+/* XmlNode layout: vtable|rc|gcinfo|name@24|text@32|attrs@40|acount@48|children@56. attrs is one array of 2 * acount strings: name, value, name, value, ... */
 #define X_NAME   24
 #define X_TEXT   32
 #define X_ATTRS  40
@@ -28,8 +27,7 @@ extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 #define NODE_SET(n, off, v) (*(void**)((char*)(n) + (off)) = (void*)(v))
 #define NODE_GET(n, off)    (*(void**)((char*)(n) + (off)))
 
-/* Managed-node typeinfo: {finalizer=0, child_count=4, name,text,attrs,kids}.
-   attr_count@48 is a plain int, not a managed child. */
+/* Managed-node typeinfo: {finalizer=0, child_count=4, name,text,attrs,kids}. attr_count@48 is a plain int, not a managed child. */
 static int64_t g_xml_ti[6] = { 0, 4, X_NAME, X_TEXT, X_ATTRS, X_KIDS };
 static int64_t g_xml_vt[2];
 static int     g_xml_vt_built;
@@ -42,18 +40,17 @@ static void *xml_vtable(void)
 		g_xml_vt_built = 1;
 	}
 
-	return &g_xml_vt[1];   /* The object stores this; [stored-8] == &g_xml_ti[0]. */
+	return &g_xml_vt[1]; // The object stores this; [stored-8] == &g_xml_ti[0].
 }
 
 static void *node_new(void)
 {
-	void *n = bzy_alloc(X_SIZE);            /* Zeroed; rc=1; gcinfo set by alloc. */
+	void *n = bzy_alloc(X_SIZE); // Zeroed; rc=1; gcinfo set by alloc.
 	*(void**)n = xml_vtable();
 	return n;
 }
 
-/* Store an owned (+1) string into a managed array slot, transferring ownership
-   (the array's SPAN typeinfo releases the slot when the array is freed). */
+/* Store an owned (+1) string into a managed array slot, transferring ownership (the array's SPAN typeinfo releases the slot when the array is freed). */
 static void arr_set(void *arr, int64_t i, void *str)
 {
 	((void**)((char*)arr + 32))[i] = str;
@@ -158,11 +155,10 @@ static int64_t scan_name(Scan *s)
 	return (int64_t)(s->p - start);
 }
 
-/* An owned (+1) string for a name. Names repeat on every record of a document,
-   so each distinct one is allocated once per parse and shared; strings are
-   immutable, so sharing is invisible. ponytail: linear scan of XML_NAMES
-   entries, names past that are allocated per use; a hash table if documents
-   with many distinct names need it. */
+/**
+ * An owned (+1) string for a name.
+ * Names repeat on every record of a document, so each distinct one is allocated once per parse and shared; strings are immutable, so sharing is invisible. ponytail: linear scan of XML_NAMES entries, names past that are allocated per use; a hash table if documents with many distinct names need it.
+ */
 static void *intern_name(Scan *s, const char *p, int64_t len)
 {
 	for (int i = 0; i < s->nnames; i++)
@@ -178,7 +174,7 @@ static void *intern_name(Scan *s, const char *p, int64_t len)
 	void *n = bzy_str_new(p, len);
 	if (s->nnames < XML_NAMES)
 	{
-		bzy_retain(n);   /* The table's own reference. */
+		bzy_retain(n); // The table's own reference.
 		s->names[s->nnames++] = n;
 	}
 
@@ -278,12 +274,13 @@ static void append_utf8(TextBuf *t, long cp)
 	tb_push(t, (char*)b, (size_t)n);
 }
 
-/* Decode one entity reference at the cursor (positioned on '&') into the buffer:
-   the five built-ins, or a numeric character reference &#NN; / &#xHH;. Returns 1
-   on success, 0 (with the error set) on an unknown or malformed reference. */
+/**
+ * Decode one entity reference at the cursor (positioned on '&') into the buffer: the five built-ins, or a numeric character reference &#NN; / &#xHH;.
+ * Returns 1 on success, 0 (with the error set) on an unknown or malformed reference.
+ */
 static int decode_entity(Scan *s, TextBuf *t)
 {
-	advance(s);   /* '&'. */
+	advance(s); // '&'.
 	if (peek(s) == '#')
 	{
 		advance(s);
@@ -328,7 +325,7 @@ static int decode_entity(Scan *s, TextBuf *t)
 			return 0;
 		}
 
-		advance(s);   /* ';'. */
+		advance(s); // ';'.
 		append_utf8(t, cp);
 		return 1;
 	}
@@ -373,7 +370,7 @@ static int decode_entity(Scan *s, TextBuf *t)
 		return 0;
 	}
 
-	advance(s);   /* ';'. */
+	advance(s); // ';'.
 	tb_push(t, &rep, 1);
 	return 1;
 }
@@ -404,9 +401,10 @@ static void skip_until(Scan *s, const char *term)
 	}
 }
 
-/* Document-level: skip whitespace, comments, the <?xml?> declaration, and other
-   processing instructions, stopping at an element start or end of input. A
-   DOCTYPE is rejected. */
+/**
+ * Document-level: skip whitespace, comments, the <?xml?> declaration, and other processing instructions, stopping at an element start or end of input.
+ * A DOCTYPE is rejected.
+ */
 static void skip_misc(Scan *s)
 {
 	for (;;)
@@ -434,13 +432,15 @@ static void skip_misc(Scan *s)
 		}
 		else
 		{
-			break;    /* An element start. */
+			break; // An element start.
 		}
 	}
 }
 
-/* Parse the attributes of a start tag into the node (after the tag name, before
-   '>' or '/>'). Leaves the cursor at '>' or '/'. */
+/**
+ * Parse the attributes of a start tag into the node (after the tag name, before '>' or '/>').
+ * Leaves the cursor at '>' or '/'.
+ */
 static void parse_attrs(Scan *s, void *node)
 {
 	AttrTmp a = { 0 };
@@ -509,7 +509,7 @@ static void parse_attrs(Scan *s, void *node)
 
 		void *aval = bzy_str_new(vb.data ? vb.data : "", (int64_t)vb.len);
 		free(vb.data);
-		advance(s);   /* Closing quote. */
+		advance(s); // Closing quote.
 		at_push(&a, aname, aval);
 	}
 
@@ -518,7 +518,7 @@ static void parse_attrs(Scan *s, void *node)
 		void *attrs = bzy_array_new(2 * a.count, 1);
 		for (int i = 0; i < a.count; i++)
 		{
-			arr_set(attrs, 2 * i, a.names[i]);   /* Transfer owned. */
+			arr_set(attrs, 2 * i, a.names[i]); // Transfer owned.
 			arr_set(attrs, 2 * i + 1, a.vals[i]);
 		}
 
@@ -527,8 +527,7 @@ static void parse_attrs(Scan *s, void *node)
 	}
 	else
 	{
-		/* On error, release whatever was collected so far; on the 0-attr path
-		   there is nothing to free. */
+		// On error, release whatever was collected so far; on the 0-attr path there is nothing to free.
 		for (int i = 0; i < a.count; i++)
 		{
 			bzy_release(a.names[i]);
@@ -569,7 +568,7 @@ static void *parse_element(Scan *s)
 	}
 
 	skip_ws(s);
-	if (peek(s) == '/')          /* Self-closing <tag/>. */
+	if (peek(s) == '/') // Self-closing <tag/>.
 	{
 		advance(s);
 		if (peek(s) != '>')
@@ -581,7 +580,7 @@ static void *parse_element(Scan *s)
 
 		advance(s);
 		NODE_SET(node, X_TEXT, bzy_str_new("", 0));
-		NODE_SET(node, X_KIDS, bzy_vec_new(4));   /* An empty children list. */
+		NODE_SET(node, X_KIDS, bzy_vec_new(4)); // An empty children list.
 		return node;
 	}
 
@@ -594,11 +593,10 @@ static void *parse_element(Scan *s)
 
 	advance(s);
 
-	/* Content: direct text runs (into tb) interleaved with child elements. The
-	   children list is always present (empty for a leaf) so `node.children` is a
-	   plain borrowed field read -- no NULL case for the collection combinators. */
+	// Content: direct text runs (into tb) interleaved with child elements.
+	// The children list is always present (empty for a leaf) so `node.children` is a plain borrowed field read -- no NULL case for the collection combinators.
 	TextBuf tb = { 0 };
-	void *kids = bzy_vec_new(4);   /* Object elements. */
+	void *kids = bzy_vec_new(4); // Object elements.
 
 	for (;;)
 	{
@@ -610,12 +608,12 @@ static void *parse_element(Scan *s)
 
 		if (peek(s) == '<')
 		{
-			if (peek2(s) == '/')                 /* End tag </name>. */
+			if (peek2(s) == '/') // End tag </name>.
 			{
-				advance(s);                       /* '<'. */
-				advance(s);                       /* '/'. */
+				advance(s); // '<'.
+				advance(s); // '/'.
 				const char *estart = s->p;
-				int64_t elen = scan_name(s);      /* Compared in place: no string for the end tag. */
+				int64_t elen = scan_name(s); // Compared in place: no string for the end tag.
 				if (s->err)
 				{
 					break;
@@ -638,9 +636,9 @@ static void *parse_element(Scan *s)
 				break;
 			}
 
-			if (peek2(s) == '!')                 /* CDATA, comment, or a rejected DTD. */
+			if (peek2(s) == '!') // CDATA, comment, or a rejected DTD.
 			{
-				if (match_lit(s, "<![CDATA["))   /* Literal content, no decode. */
+				if (match_lit(s, "<![CDATA[")) // Literal content, no decode.
 				{
 					const char *cs = s->p;
 					while (!at_end(s) && !(s->end - s->p >= 3 && memcmp(s->p, "]]>", 3) == 0))
@@ -670,7 +668,7 @@ static void *parse_element(Scan *s)
 				break;
 			}
 
-			if (peek2(s) == '?')                 /* Processing instruction: skip. */
+			if (peek2(s) == '?') // Processing instruction: skip.
 			{
 				match_lit(s, "<?");
 				skip_until(s, "?>");
@@ -689,10 +687,10 @@ static void *parse_element(Scan *s)
 				break;
 			}
 
-			bzy_vec_push_back(kids, (int64_t)child);  /* Retains. */
-			bzy_release(child);                       /* Drop our +1; the vector owns it. */
+			bzy_vec_push_back(kids, (int64_t)child); // Retains.
+			bzy_release(child); // Drop our +1; the vector owns it.
 		}
-		else                                     /* A run of character data (entities decoded). */
+		else // A run of character data (entities decoded).
 		{
 			while (!at_end(s) && peek(s) != '<')
 			{
@@ -737,9 +735,10 @@ static void *parse_element(Scan *s)
 	return node;
 }
 
-/* Parse a whole document: optional leading whitespace, a single root element,
-   trailing whitespace only. Returns the owned (+1) root, or NULL with the error
-   message + line + column written through the out-params. */
+/**
+ * Parse a whole document: optional leading whitespace, a single root element, trailing whitespace only.
+ * Returns the owned (+1) root, or NULL with the error message + line + column written through the out-params.
+ */
 void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t *col)
 {
 	Scan s;
@@ -750,7 +749,7 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	s.err = NULL;
 	s.nnames = 0;
 
-	skip_misc(&s);   /* Leading whitespace, comments, <?xml?> declaration, PIs. */
+	skip_misc(&s); // Leading whitespace, comments, <?xml?> declaration, PIs.
 	if (!s.err && (peek(&s) != '<' || !is_name_start(peek2(&s))))
 	{
 		fail(&s, "expected a root element");
@@ -759,7 +758,7 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	void *root = s.err ? NULL : parse_element(&s);
 	if (!s.err)
 	{
-		skip_misc(&s);   /* Trailing whitespace, comments, PIs. */
+		skip_misc(&s); // Trailing whitespace, comments, PIs.
 		if (s.p != s.end)
 		{
 			fail(&s, "trailing content after the root element");
@@ -768,7 +767,7 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 
 	for (int i = 0; i < s.nnames; i++)
 	{
-		bzy_release(s.names[i]);   /* The table's references; nodes keep their own. */
+		bzy_release(s.names[i]); // The table's references; nodes keep their own.
 	}
 
 	if (s.err)
@@ -827,7 +826,7 @@ void *bzy_xml_attr_name_at(void *node, int64_t i)
 	int64_t n = *(int64_t*)((char*)node + X_ACOUNT);
 	if (i < 0 || i >= n)
 	{
-		bzy_oob_abort(i, n);   /* No return. */
+		bzy_oob_abort(i, n); // No return.
 	}
 
 	void *nm = ((void**)((char*)NODE_GET(node, X_ATTRS) + 32))[2 * i];
@@ -835,11 +834,12 @@ void *bzy_xml_attr_name_at(void *node, int64_t i)
 	return nm;
 }
 
-/* ---- descendants --------------------------------------------------------------
-
-   Walk a node's subtree pre-order, pushing every descendant element onto `out`.
-   The children list is parser-built (only push_back, so head is 0); read its slots
-   directly. push_back retains each element into the result. */
+/**
+ * ---- descendants --------------------------------------------------------------
+ *
+ * Walk a node's subtree pre-order, pushing every descendant element onto `out`.
+ * The children list is parser-built (only push_back, so head is 0); read its slots directly. push_back retains each element into the result.
+ */
 static void collect_descendants(void *node, void *out)
 {
 	void *kids = NODE_GET(node, X_KIDS);
@@ -848,8 +848,8 @@ static void collect_descendants(void *node, void *out)
 		return;
 	}
 
-	int64_t len = *(int64_t*)((char*)kids + 24);   /* length@24. */
-	void *data = NODE_GET(kids, 48);               /* data array@48. */
+	int64_t len = *(int64_t*)((char*)kids + 24); // length@24.
+	void *data = NODE_GET(kids, 48); // data array@48.
 	if (!data)
 	{
 		return;
@@ -857,14 +857,13 @@ static void collect_descendants(void *node, void *out)
 
 	for (int64_t i = 0; i < len; i++)
 	{
-		void *child = ((void**)((char*)data + 32))[i];   /* Borrowed slot. */
-		bzy_vec_push_back(out, (int64_t)child);          /* Retains into the result. */
+		void *child = ((void**)((char*)data + 32))[i]; // Borrowed slot.
+		bzy_vec_push_back(out, (int64_t)child); // Retains into the result.
 		collect_descendants(child, out);
 	}
 }
 
-/* All descendant elements, pre-order (the receiver excluded), as an owned (+1)
-   List<XmlNode>. */
+/* All descendant elements, pre-order (the receiver excluded), as an owned (+1) List<XmlNode>. */
 void *bzy_xml_descendants(void *node)
 {
 	void *out = bzy_vec_new(4);
@@ -876,8 +875,7 @@ void *bzy_xml_descendants(void *node)
 
 static __thread const char *g_xml_error;   /* Set by bzy_xml_parse; consumed by bzy_xml_check. */
 
-/* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error
-   message buffered for the codegen-emitted bzy_xml_check at the call site. */
+/* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error message buffered for the codegen-emitted bzy_xml_check at the call site. */
 void *bzy_xml_parse(void *src)
 {
 	const char *err = NULL;
@@ -906,6 +904,6 @@ void bzy_xml_check(int64_t pc, int64_t frame)
 	g_xml_error = NULL;
 	void *exc = bzy_alloc(32);
 	*(void**)exc = (void*)__vtable_XmlException;
-	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
-	bzy_throw(exc, pc, frame);                  /* Never returns. */
+	*(void**)((char*)exc + 24) = msg; // Exception.message.
+	bzy_throw(exc, pc, frame); // Never returns.
 }

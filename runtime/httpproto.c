@@ -1,11 +1,12 @@
-/* runtime/httpproto.c -- HTTP/1.1 message codec (RFC 7230) over a Breezy Socket.
-   Own TU: a program that never names Http links none of this. Parses requests and
-   responses into managed HttpRequest/HttpResponse nodes; headers are parallel
-   string arrays scanned case-insensitively. Distinct from runtime/http.c (readUrl).
-
-   This file is Task 2 of the Phase E.5 plan: the node descriptors, the buffered
-   socket reader, and the request parser. The Breezy entry, accessors, builders,
-   and the response parser land in Tasks 3-7. */
+/**
+ * runtime/httpproto.c -- HTTP/1.1 message codec (RFC 7230) over a Breezy Socket.
+ * Own TU: a program that never names Http links none of this.
+ * Parses requests and responses into managed HttpRequest/HttpResponse nodes; headers are parallel string arrays scanned case-insensitively.
+ * Distinct from runtime/http.c (readUrl).
+ *
+ * This file is Task 2 of the Phase E.5 plan: the node descriptors, the buffered socket reader, and the request parser.
+ * The Breezy entry, accessors, builders, and the response parser land in Tasks 3-7.
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,8 +18,10 @@
 extern int bzy_sock_recv(void *s, char *buf, int max, int64_t timeout_ms);
 extern int64_t bzy_sock_send_all(void *s, const char *buf, int64_t len);
 
-/* HttpRequest:  method@24 path@32 hnames@40 hvals@48 body@56 version@64, size 72.
-   HttpResponse: status@24 reason@32 hnames@40 hvals@48 body@56,           size 72. */
+/**
+ * HttpRequest:  method@24 path@32 hnames@40 hvals@48 body@56 version@64, size 72.
+ * HttpResponse: status@24 reason@32 hnames@40 hvals@48 body@56,           size 72.
+ */
 #define H_METHOD 24
 #define H_PATH   32
 #define H_STATUS 24
@@ -92,8 +95,10 @@ typedef struct
 	const char *err;
 } Reader;
 
-/* Append more bytes from the socket; sets eof at a clean close. Returns 1 if any
-   bytes were added, 0 at EOF. */
+/**
+ * Append more bytes from the socket; sets eof at a clean close.
+ * Returns 1 if any bytes were added, 0 at EOF.
+ */
 static int rd_fill(Reader *r)
 {
 	if (r->eof)
@@ -123,8 +128,7 @@ static int rd_fill(Reader *r)
 	return 1;
 }
 
-/* Index of the next CRLF at/after `from`, filling as needed; -1 at EOF before a
-   line completes. */
+/* Index of the next CRLF at/after `from`, filling as needed; -1 at EOF before a line completes. */
 static int64_t rd_find_crlf(Reader *r, int64_t from)
 {
 	int64_t scan = from;
@@ -138,7 +142,7 @@ static int64_t rd_find_crlf(Reader *r, int64_t from)
 			}
 		}
 
-		scan = r->len > 0 ? r->len - 1 : 0;   /* A CR may sit at the fill boundary. */
+		scan = r->len > 0 ? r->len - 1 : 0; // A CR may sit at the fill boundary.
 		if (!rd_fill(r))
 		{
 			return -1;
@@ -212,7 +216,7 @@ static void hdr_store(void *node, Hdrs *h)
 		HSET(node, H_HVALS, vals);
 	}
 
-	free(h->names);   /* Spines only; the slots moved into the arrays. */
+	free(h->names); // Spines only; the slots moved into the arrays.
 	free(h->vals);
 }
 
@@ -262,8 +266,10 @@ static void *hdr_val_at(void *node, int64_t i)
 
 /* ---- parsing a message (shared header + body machinery) --------------------- */
 
-/* Parse the header block from pos (after the start line) into h; advance pos past
-   the terminating blank line. Returns 1 ok, 0 on error (r->err set). */
+/**
+ * Parse the header block from pos (after the start line) into h; advance pos past the terminating blank line.
+ * Returns 1 ok, 0 on error (r->err set).
+ */
 static int parse_headers(Reader *r, Hdrs *h)
 {
 	for (;;)
@@ -277,7 +283,7 @@ static int parse_headers(Reader *r, Hdrs *h)
 
 		if (cr == r->pos)
 		{
-			r->pos = cr + 2;    /* Blank line: end of headers. */
+			r->pos = cr + 2; // Blank line: end of headers.
 			return 1;
 		}
 
@@ -301,7 +307,7 @@ static int parse_headers(Reader *r, Hdrs *h)
 		int64_t vs = colon + 1, ve = cr;
 		while (vs < ve && (r->buf[vs] == ' ' || r->buf[vs] == '\t'))
 		{
-			vs++;    /* Trim OWS. */
+			vs++; // Trim OWS.
 		}
 		while (ve > vs && (r->buf[ve - 1] == ' ' || r->buf[ve - 1] == '\t'))
 		{
@@ -336,9 +342,10 @@ static int has_chunked(void *val)
 	return 0;
 }
 
-/* Read the body into an owned string per the node's framing headers: chunked
-   transfer-encoding, else Content-Length, else empty. Returns the owned string, or
-   NULL with r->err set. */
+/**
+ * Read the body into an owned string per the node's framing headers: chunked transfer-encoding, else Content-Length, else empty.
+ * Returns the owned string, or NULL with r->err set.
+ */
 static void *parse_body(Reader *r, void *node)
 {
 	void *kte = bzy_str_new("Transfer-Encoding", 17);
@@ -392,10 +399,10 @@ static void *parse_body(Reader *r, void *node)
 
 			memcpy(out + olen, r->buf + r->pos, (size_t)sz);
 			olen += (size_t)sz;
-			r->pos += sz + 2;   /* Chunk data + its trailing CRLF. */
+			r->pos += sz + 2; // Chunk data + its trailing CRLF.
 		}
 
-		int64_t cr = rd_find_crlf(r, r->pos);   /* CRLF after the 0-chunk (trailers ignored). */
+		int64_t cr = rd_find_crlf(r, r->pos); // CRLF after the 0-chunk (trailers ignored).
 		if (cr >= 0)
 		{
 			r->pos = cr + 2;
@@ -432,9 +439,10 @@ static void *parse_body(Reader *r, void *node)
 	return s;
 }
 
-/* Parse one request: METHOD SP PATH SP VERSION CRLF, headers, body. Returns an
-   owned HttpRequest, NULL on a clean boundary EOF (*was_eof=1), or NULL with
-   r->err set on a malformed message. */
+/**
+ * Parse one request: METHOD SP PATH SP VERSION CRLF, headers, body.
+ * Returns an owned HttpRequest, NULL on a clean boundary EOF (*was_eof=1), or NULL with r->err set on a malformed message.
+ */
 static void *parse_request(Reader *r, int *was_eof)
 {
 	*was_eof = 0;
@@ -443,7 +451,7 @@ static void *parse_request(Reader *r, int *was_eof)
 	{
 		if (r->len == 0)
 		{
-			*was_eof = 1;    /* Clean close at a boundary. */
+			*was_eof = 1; // Clean close at a boundary.
 			return NULL;
 		}
 
@@ -501,9 +509,10 @@ static void *parse_request(Reader *r, int *was_eof)
 	return node;
 }
 
-/* Parse one response: VERSION SP STATUS SP REASON CRLF, headers, body. Returns an
-   owned HttpResponse, NULL on a clean boundary EOF (*was_eof=1), or NULL with
-   r->err set on a malformed message. */
+/**
+ * Parse one response: VERSION SP STATUS SP REASON CRLF, headers, body.
+ * Returns an owned HttpResponse, NULL on a clean boundary EOF (*was_eof=1), or NULL with r->err set on a malformed message.
+ */
 static void *parse_response(Reader *r, int *was_eof)
 {
 	*was_eof = 0;
@@ -543,7 +552,7 @@ static void *parse_response(Reader *r, int *was_eof)
 		return NULL;
 	}
 
-	int64_t rs = sp2 >= 0 ? sp2 + 1 : cr;   /* Reason may be empty (no second space). */
+	int64_t rs = sp2 >= 0 ? sp2 + 1 : cr; // Reason may be empty (no second space).
 
 	void *node = resp_new();
 	*(int64_t*)((char*)node + H_STATUS) = strtoll(r->buf + sp1 + 1, NULL, 10);
@@ -578,9 +587,10 @@ extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
 static __thread const char *g_http_error;   /* Set by the runtime; consumed by bzy_http_check. */
 
-/* Read one request off the socket. Returns the owned HttpRequest, or NULL: a clean
-   boundary EOF leaves g_http_error unset (Breezy sees null); a malformed message
-   buffers the error for the codegen-emitted bzy_http_check at the call site. */
+/**
+ * Read one request off the socket.
+ * Returns the owned HttpRequest, or NULL: a clean boundary EOF leaves g_http_error unset (Breezy sees null); a malformed message buffers the error for the codegen-emitted bzy_http_check at the call site.
+ */
 void *bzy_http_read_request(void *sock)
 {
 	Reader r = { 0 };
@@ -623,8 +633,8 @@ void bzy_http_check(int64_t pc, int64_t frame)
 	g_http_error = NULL;
 	void *exc = bzy_alloc(32);
 	*(void**)exc = (void*)__vtable_HttpException;
-	*(void**)((char*)exc + 24) = msg;          /* Exception.message. */
-	bzy_throw(exc, pc, frame);                  /* Never returns. */
+	*(void**)((char*)exc + 24) = msg; // Exception.message.
+	bzy_throw(exc, pc, frame); // Never returns.
 }
 
 /* ---- shared message accessors (work on a request or a response node) -------- */
@@ -651,7 +661,7 @@ int64_t bzy_http_has_header(void *node, void *name)
 /* An owned (+1) List<string> of the header names, in received order. */
 void *bzy_http_header_names(void *node)
 {
-	void *list = bzy_vec_new(3);   /* String elements. */
+	void *list = bzy_vec_new(3); // String elements.
 	void *names = HGET(node, H_HNAMES);
 	int64_t n = names ? *(int64_t*)((char*)names + 24) : 0;
 	void **slots = names ? (void**)((char*)names + 32) : NULL;
@@ -856,8 +866,10 @@ static void emit_body(TextBuf *t, void *node)
 	}
 }
 
-/* Serialize a response (status line + headers + Content-Length + body) and write
-   it with one socket send. The node is the method receiver (arg 0). */
+/**
+ * Serialize a response (status line + headers + Content-Length + body) and write it with one socket send.
+ * The node is the method receiver (arg 0).
+ */
 int64_t bzy_http_send_response(void *node, void *sock)
 {
 	TextBuf t = { 0 };
@@ -873,8 +885,10 @@ int64_t bzy_http_send_response(void *node, void *sock)
 	return rc;
 }
 
-/* Serialize a request (request line + headers + Content-Length + body), one send.
-   The node is the method receiver (arg 0). */
+/**
+ * Serialize a request (request line + headers + Content-Length + body), one send.
+ * The node is the method receiver (arg 0).
+ */
 int64_t bzy_http_send_request(void *node, void *sock)
 {
 	TextBuf t = { 0 };

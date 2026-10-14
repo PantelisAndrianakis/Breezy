@@ -1,10 +1,9 @@
-/* Network.rawSocket(protocol): open a raw IP socket (SOCK_RAW) for low-level
-   packet work. Privilege-gated by the OS -- needs CAP_NET_RAW/root on POSIX or
-   Administrator on Windows -- so a denied open sets the io-error (the codegen
-   post-call bzy_io_check turns it into a catchable IOException) rather than
-   crashing. The returned handle is an ordinary socket handle (bzy_sock_wrap), so
-   send/recv/close reuse the existing reactor-integrated socket machinery.
-   Own translation unit: a program that never calls rawSocket links none of it. */
+/**
+ * Network.rawSocket(protocol): open a raw IP socket (SOCK_RAW) for low-level packet work.
+ * Privilege-gated by the OS -- needs CAP_NET_RAW/root on POSIX or Administrator on Windows -- so a denied open sets the io-error (the codegen post-call bzy_io_check turns it into a catchable IOException) rather than crashing.
+ * The returned handle is an ordinary socket handle (bzy_sock_wrap), so send/recv/close reuse the existing reactor-integrated socket machinery.
+ * Own translation unit: a program that never calls rawSocket links none of it.
+ */
 #include "breezy.h"
 #include "network_internal.h"
 

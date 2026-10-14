@@ -6,23 +6,19 @@
 #include <stdlib.h>
 #include <string.h>   /* strcmp for the .length field name. */
 
-/* Bounds-check elimination by forward interval analysis.
-
-   For every integer local we carry a conservative inclusive interval [lo, hi];
-   for every array local we carry an interval for its *length*. At each EX_INDEX
-   `arr[idx]` we ask: is idx provably >= 0 and < the array's minimum length? If
-   so the runtime check is redundant and we set anno_index_safe.
-
-   Soundness is the whole game. Anything we cannot bound becomes the full range
-   (`known == 0`), which never satisfies the elimination test, so a missed fact
-   only costs a check we keep - never one we wrongly drop. Loops widen every
-   variable they assign to the full range before the body is analysed, except a
-   recognised counted-for induction variable, which gets its exact iteration
-   range. Forward assignments inside the body then re-tighten derived values
-   (e.g. `cbase = u * 8`) on each iteration, which is where the real indices come
-   from. Arithmetic is done in 64-bit with overflow guarded to the operand's
-   declared width, so a result that could wrap on the hardware degrades to the
-   full range rather than a false-tight one. */
+/**
+ * Bounds-check elimination by forward interval analysis.
+ *
+ * For every integer local we carry a conservative inclusive interval [lo, hi]; for every array local we carry an interval for its *length*.
+ * At each EX_INDEX `arr[idx]` we ask: is idx provably >= 0 and < the array's minimum length?
+ * If so the runtime check is redundant and we set anno_index_safe.
+ *
+ * Soundness is the whole game.
+ * Anything we cannot bound becomes the full range (`known == 0`), which never satisfies the elimination test, so a missed fact only costs a check we keep - never one we wrongly drop.
+ * Loops widen every variable they assign to the full range before the body is analysed, except a recognised counted-for induction variable, which gets its exact iteration range.
+ * Forward assignments inside the body then re-tighten derived values (e.g. `cbase = u * 8`) on each iteration, which is where the real indices come from.
+ * Arithmetic is done in 64-bit with overflow guarded to the operand's declared width, so a result that could wrap on the hardware degrades to the full range rather than a false-tight one.
+ */
 
 #define I32_MIN (-2147483648LL)
 #define I32_MAX 2147483647LL
@@ -44,8 +40,7 @@ static Iv iv_const(long long v)
 	return r;
 }
 
-/* Restrict an interval to a declared integer width: if it might not fit, the
-   hardware would wrap, so the only sound interval left is the full range. */
+/* Restrict an interval to a declared integer width: if it might not fit, the hardware would wrap, so the only sound interval left is the full range. */
 static Iv iv_clamp(Iv x, TypeKind k)
 {
 	if (!x.known)
@@ -65,10 +60,10 @@ static Iv iv_clamp(Iv x, TypeKind k)
 
 	if (k == TY_LONG)
 	{
-		return x;   /* Computed in 64-bit with overflow already guarded. */
+		return x; // Computed in 64-bit with overflow already guarded.
 	}
 
-	return IV_TOP;  /* Unsigned / non-integer index math: do not reason about it. */
+	return IV_TOP; // Unsigned / non-integer index math: do not reason about it.
 }
 
 static Iv iv_add(Iv a, Iv b)
@@ -145,29 +140,29 @@ typedef struct
 	int *aoff;       /* array-length interval keys. */
 	Iv  *alen;
 	int acap;
-	/* Symbolic guard facts: index var sb_io[i] is provably in [0, length of the
-	   array at sb_arr[i]) - from a loop guard `sb_io < arr.length`, with neither
-	   reassigned in the body. Lets arr[i] be proved safe without a numeric length. */
+	/**
+	 * Symbolic guard facts: index var sb_io[i] is provably in [0, length of the array at sb_arr[i]) - from a loop guard `sb_io < arr.length`, with neither reassigned in the body.
+	 * Lets arr[i] be proved safe without a numeric length.
+	 */
 	int sbn;
 	int *sb_io;
 	int *sb_arr;
 	int sbcap;
-	/* Intra-block redundant-check memo: (array local, index local) pairs already
-	   bounds-checked earlier in this straight-line run with neither rewritten since.
-	   A repeat access is provably in range - the earlier check throws first on an
-	   out-of-range index, so the repeat only runs when in range. Not copied into a
-	   child scope (env_dup) and cleared at every control-flow boundary, so it only
-	   ever records same-block, all-paths-execute facts. */
+	/**
+	 * Intra-block redundant-check memo: (array local, index local) pairs already bounds-checked earlier in this straight-line run with neither rewritten since.
+	 * A repeat access is provably in range - the earlier check throws first on an out-of-range index, so the repeat only runs when in range.
+	 * Not copied into a child scope (env_dup) and cleared at every control-flow boundary, so it only ever records same-block, all-paths-execute facts.
+	 */
 	int ckn;
 	int *ck_arr;
 	int *ck_idx;
 	int ckcap;
 } Env;
 
-/* Deep copy: a child scope must own its interval buffers so narrowing it does
-   not mutate the parent's. (The arrays are dynamic now, so a plain `*env` would
-   alias them.) The child's buffers are leaked at scope end, like all compiler
-   allocation. */
+/**
+ * Deep copy: a child scope must own its interval buffers so narrowing it does not mutate the parent's.
+ * (The arrays are dynamic now, so a plain `*env` would alias them.) The child's buffers are leaked at scope end, like all compiler allocation.
+ */
 static Env env_dup(const Env *s)
 {
 	Env d;
@@ -247,15 +242,13 @@ static int sb_has(Env *e, int io, int arr_off)
 	return 0;
 }
 
-/* Drop the whole redundant-check memo - called at every control-flow boundary,
-   where straight-line dominance no longer holds. */
+/* Drop the whole redundant-check memo - called at every control-flow boundary, where straight-line dominance no longer holds. */
 static void ck_clear(Env *e)
 {
 	e->ckn = 0;
 }
 
-/* True if (array arr, index idx) was already bounds-checked in this straight-line
-   run with neither rewritten since. */
+/* True if (array arr, index idx) was already bounds-checked in this straight-line run with neither rewritten since. */
 static int ck_has(Env *e, int arr, int idx)
 {
 	for (int i = 0; i < e->ckn; i++)
@@ -289,9 +282,10 @@ static void ck_add(Env *e, int arr, int idx)
 	e->ckn++;
 }
 
-/* Invalidate every memo entry whose array or index is local `off` - it was just
-   reassigned, so the earlier check no longer proves the repeat in range. (An
-   element store arr[j] = v does NOT reach here: it cannot change arr's length.) */
+/**
+ * Invalidate every memo entry whose array or index is local `off` - it was just reassigned, so the earlier check no longer proves the repeat in range.
+ * (An element store arr[j] = v does NOT reach here: it cannot change arr's length.)
+ */
 static void ck_kill(Env *e, int off)
 {
 	if (off == 0)
@@ -416,7 +410,7 @@ static Iv iv_expr(Expr *e, Env *env)
 
 		return IV_TOP;
 	case EX_FIELD:
-		/* The length of a final array is a compile-time constant. */
+		// The length of a final array is a compile-time constant.
 		if (e->lhs && e->lhs->anno_final && strcmp(e->name, "length") == 0)
 		{
 			return iv_const(final_table(e->lhs->anno_final - 1)->count);
@@ -475,14 +469,13 @@ static Iv iv_expr(Expr *e, Env *env)
 			}
 			else if (b.known && b.lo >= 0)
 			{
-				/* Every set bit of a&b is also set in b, so 0 <= (a&b) <= b <= b.hi
-				   whenever b is non-negative - regardless of a's sign. */
+				// Every set bit of a&b is also set in b, so 0 <= (a&b) <= b <= b.hi whenever b is non-negative - regardless of a's sign.
 				Iv t = { 1, 0, b.hi };
 				r = t;
 			}
 			else if (a.known && a.lo >= 0)
 			{
-				/* Symmetric: a non-negative left operand bounds the result. */
+				// Symmetric: a non-negative left operand bounds the result.
 				Iv t = { 1, 0, a.hi };
 				r = t;
 			}
@@ -610,8 +603,10 @@ static void mod_block(Block *b, OffSet *s)
 	}
 }
 
-/* True if any identifier read inside `e` refers to a slot in `s`. Used to reject
-   a loop bound that the loop itself rewrites. */
+/**
+ * True if any identifier read inside `e` refers to a slot in `s`.
+ * Used to reject a loop bound that the loop itself rewrites.
+ */
 static int expr_reads_any(Expr *e, OffSet *s)
 {
 	if (!e)
@@ -661,9 +656,7 @@ static void mark_indexes(Expr *e, Env *env)
 		Iv len = alen_get(env, e->lhs->anno_int);
 		if (len.known)
 		{
-			/* Exact constant length (a `new T[N]` array, never re-bound to a
-			   different length on this path): a kept bounds check can compare the
-			   index against the immediate N instead of loading [base + 24]. */
+			// Exact constant length (a `new T[N]` array, never re-bound to a different length on this path): a kept bounds check can compare the index against the immediate N instead of loading [base + 24].
 			if (len.lo == len.hi && len.lo > 0)
 			{
 				e->anno_len_const = len.lo;
@@ -676,18 +669,15 @@ static void mark_indexes(Expr *e, Env *env)
 			}
 		}
 
-		/* Symbolic guard: arr[i] where i is provably in [0, arr.length) from the
-		   enclosing `for (i; i < arr.length; i++)` over this same array. */
+		// Symbolic guard: arr[i] where i is provably in [0, arr.length) from the enclosing `for (i; i < arr.length; i++)` over this same array.
 		if (e->rhs->kind == EX_IDENT
 				&& sb_has(env, e->rhs->anno_int, e->lhs->anno_int))
 		{
 			e->anno_index_safe = 1;
 		}
 
-		/* Intra-block CSE: the same (array local, index local) was already
-		   bounds-checked earlier in this straight-line run with neither rewritten
-		   since, so the earlier check guards this access - drop the redundant one.
-		   Only plain-local base and index qualify; anything else is left checked. */
+		// Intra-block CSE: the same (array local, index local) was already bounds-checked earlier in this straight-line run with neither rewritten since, so the earlier check guards this access - drop the redundant one.
+		// Only plain-local base and index qualify; anything else is left checked.
 		if (!e->anno_index_safe && e->rhs->kind == EX_IDENT
 				&& e->lhs->anno_int != 0 && e->rhs->anno_int != 0)
 		{
@@ -704,7 +694,7 @@ static void mark_indexes(Expr *e, Env *env)
 
 	if (e->kind == EX_INDEX && e->lhs->kind == EX_FIELD && e->lhs->anno_final)
 	{
-		/* A static final array: exact constant length, no local to track. */
+		// A static final array: exact constant length, no local to track.
 		long long n = final_table(e->lhs->anno_final - 1)->count;
 		if (n > 0)
 		{
@@ -721,8 +711,7 @@ static void mark_indexes(Expr *e, Env *env)
 
 static void bce_block(Block *b, Env *env);
 
-/* Record an array-length fact for `off` from the value it is assigned, or clear
-   it (alias to an array of unknown length) so we never assume a stale length. */
+/* Record an array-length fact for `off` from the value it is assigned, or clear it (alias to an array of unknown length) so we never assume a stale length. */
 static void note_array_assign(Env *env, int off, Expr *val)
 {
 	if (val && val->kind == EX_NEWARRAY)
@@ -735,13 +724,15 @@ static void note_array_assign(Env *env, int off, Expr *val)
 	}
 }
 
-/* Analyse a loop. `body`/`post` are widened to the full range up front; if the
-   loop is a recognised increasing counted-for, its induction variable instead
-   gets its exact iteration range, which is what makes derived indices provable. */
-/* Invalidate memo entries for every local this straight-line statement writes
-   (a reassigned array base or index var). Reuses the modified-set walk, so an
-   `i++` buried in a subexpression is caught too. Only call for straight-line
-   statements - control-flow statements clear the whole memo instead. */
+/**
+ * Analyse a loop.
+ * `body`/`post` are widened to the full range up front; if the loop is a recognised increasing counted-for, its induction variable instead gets its exact iteration range, which is what makes derived indices provable.
+ */
+/**
+ * Invalidate memo entries for every local this straight-line statement writes (a reassigned array base or index var).
+ * Reuses the modified-set walk, so an `i++` buried in a subexpression is caught too.
+ * Only call for straight-line statements - control-flow statements clear the whole memo instead.
+ */
 static void ck_kill_stmt_writes(Env *env, Stmt *st)
 {
 	OffSet wr = { .n = 0 };
@@ -760,16 +751,15 @@ static void bce_loop(Stmt *st, Env *env)
 	mod_block(st->then_blk, &mod);
 	mod_stmt(st->for_post, &mod);
 
-	/* Body-only modified set (excludes the post step): a value the body never
-	   rewrites is stable across the body, which the symbolic guard fact needs. */
+	// Body-only modified set (excludes the post step): a value the body never rewrites is stable across the body, which the symbolic guard fact needs.
 	OffSet body_mod = { .n = 0 };
 	mod_block(st->then_blk, &body_mod);
 
-	/* Recognise: for (int i = LO; i < HI; i = i + C>0)  (or i++). */
+	// Recognise: for (int i = LO; i < HI; i = i + C>0)  (or i++).
 	int ind = 0;
 	Iv ind_iv = IV_TOP;
-	int sb_ind = 0;     /* Index var with a symbolic array-length bound (0 = none). */
-	int sb_array = 0;   /* The array whose length bounds it. */
+	int sb_ind = 0; // Index var with a symbolic array-length bound (0 = none).
+	int sb_array = 0; // The array whose length bounds it.
 	if (st->kind == ST_FOR && st->for_init && st->cond && st->for_post)
 	{
 		int io = 0;
@@ -792,15 +782,15 @@ static void bce_loop(Stmt *st, Env *env)
 					  && cond->lhs->kind == EX_IDENT && cond->lhs->anno_int == io
 					  && io != 0);
 
-		/* Descending twin: `i >= LO` / `i > LO` guarded by a negative step. */
+		// Descending twin: `i >= LO` / `i > LO` guarded by a negative step.
 		int cmp_down_ok = (cond->kind == EX_BINARY
 						   && (cond->op == TOKEN_GT || cond->op == TOKEN_GTE)
 						   && cond->lhs->kind == EX_IDENT && cond->lhs->anno_int == io
 						   && io != 0);
 
-		/* Positive step: `i = i + C` (C>0) or `i++`. */
+		// Positive step: `i = i + C` (C>0) or `i++`.
 		int step_ok = 0;
-		/* Negative step: `i = i - C` (C>0) or `i--`. */
+		// Negative step: `i = i - C` (C>0) or `i--`.
 		int step_down_ok = 0;
 		Stmt *post = st->for_post;
 		if (post->kind == ST_ASSIGN && post->target && post->target->kind == EX_IDENT
@@ -836,7 +826,7 @@ static void bce_loop(Stmt *st, Env *env)
 
 		if (cmp_ok && step_ok && lo)
 		{
-			Iv lo_iv = iv_expr(lo, env);          /* Evaluated in the pre-loop env. */
+			Iv lo_iv = iv_expr(lo, env); // Evaluated in the pre-loop env.
 			Iv hi_iv = iv_expr(cond->rhs, env);
 			int hi_stable = !expr_reads_any(cond->rhs, &mod);
 			if (lo_iv.known && hi_iv.known && hi_stable)
@@ -850,12 +840,8 @@ static void bce_loop(Stmt *st, Env *env)
 				}
 			}
 
-			/* Symbolic guard fact (no numeric length needed): a STRICT `i < arr.length`
-			   over an array `arr` (a plain local) neither the body nor the step
-			   rewrites, with i starting >= 0 and only increasing, makes every arr[i]
-			   in the body provably in [0, arr.length). Requires i not reassigned in
-			   the body (only the +C step), so its value at each use still satisfies
-			   the guard checked at loop entry. */
+			// Symbolic guard fact (no numeric length needed): a STRICT `i < arr.length` over an array `arr` (a plain local) neither the body nor the step rewrites, with i starting >= 0 and only increasing, makes every arr[i] in the body provably in [0, arr.length).
+			// Requires i not reassigned in the body (only the +C step), so its value at each use still satisfies the guard checked at loop entry.
 			Expr *bnd = cond->rhs;
 			if (cond->op == TOKEN_LT && lo_iv.known && lo_iv.lo >= 0
 					&& bnd->kind == EX_FIELD && bnd->lhs && bnd->lhs->kind == EX_IDENT
@@ -871,10 +857,8 @@ static void bce_loop(Stmt *st, Env *env)
 		}
 		else if (cmp_down_ok && step_down_ok && lo)
 		{
-			/* Descending: i runs from the init (the top) down to the guard's
-			   floor; the negative step never skips below it mid-body because
-			   the body itself does not rewrite i (mod-widened otherwise). */
-			Iv top_iv = iv_expr(lo, env);          /* The init is the TOP. */
+			// Descending: i runs from the init (the top) down to the guard's floor; the negative step never skips below it mid-body because the body itself does not rewrite i (mod-widened otherwise).
+			Iv top_iv = iv_expr(lo, env); // The init is the TOP.
 			Iv floor_iv = iv_expr(cond->rhs, env);
 			int floor_stable = !expr_reads_any(cond->rhs, &mod);
 			if (top_iv.known && floor_iv.known && floor_stable)
@@ -893,7 +877,7 @@ static void bce_loop(Stmt *st, Env *env)
 	Env child = env_dup(env);
 	for (int i = 0; i < mod.n; i++)
 	{
-		env_set(&child, mod.off[i], IV_TOP);   /* Loop-carried values: unknown in the body. */
+		env_set(&child, mod.off[i], IV_TOP); // Loop-carried values: unknown in the body.
 	}
 
 	if (ind != 0)
@@ -914,14 +898,14 @@ static void bce_loop(Stmt *st, Env *env)
 		mark_indexes(st->for_post->expr, &child);
 	}
 
-	/* After the loop, the parent must not trust any value the loop rewrote. */
+	// After the loop, the parent must not trust any value the loop rewrote.
 	for (int i = 0; i < mod.n; i++)
 	{
 		env_set(env, mod.off[i], IV_TOP);
 		alen_set(env, mod.off[i], IV_TOP);
 	}
 
-	ck_clear(env);   /* The loop is a control-flow boundary. */
+	ck_clear(env); // The loop is a control-flow boundary.
 }
 
 static void bce_stmt(Stmt *st, Env *env)
@@ -976,8 +960,7 @@ static void bce_stmt(Stmt *st, Env *env)
 	case ST_IF:
 	{
 		mark_indexes(st->cond, env);
-		/* Branches may each assign; widen their union, then descend so inner
-		   loops still get tight local facts. */
+		// Branches may each assign; widen their union, then descend so inner loops still get tight local facts.
 		OffSet mod = { .n = 0 };
 		mod_block(st->then_blk, &mod);
 		mod_block(st->else_blk, &mod);
@@ -991,7 +974,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			alen_set(env, mod.off[i], IV_TOP);
 		}
 
-		ck_clear(env);   /* The branch is a control-flow boundary. */
+		ck_clear(env); // The branch is a control-flow boundary.
 		break;
 	}
 	case ST_SWITCH:
@@ -1016,7 +999,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			alen_set(env, mod.off[i], IV_TOP);
 		}
 
-		ck_clear(env);   /* switch / try is a control-flow boundary. */
+		ck_clear(env); // switch / try is a control-flow boundary.
 		break;
 	}
 	case ST_SELECT:
@@ -1052,7 +1035,7 @@ static void bce_stmt(Stmt *st, Env *env)
 			alen_set(env, mod.off[i], IV_TOP);
 		}
 
-		ck_clear(env);   /* select is a control-flow boundary. */
+		ck_clear(env); // select is a control-flow boundary.
 		break;
 	}
 	default:
@@ -1087,6 +1070,6 @@ void bce_annotate(Func *f)
 	}
 
 	Env env;
-	memset(&env, 0, sizeof(env));   /* All counts/caps zero, all buffers NULL. */
+	memset(&env, 0, sizeof(env)); // All counts/caps zero, all buffers NULL.
 	bce_block(f->body, &env);
 }

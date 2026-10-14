@@ -47,8 +47,8 @@ static void test_static_field_layout(void)
 	ClassInfo *c=types_find_class(&tt,"C");
 	ASSERT_INT(types_find_field(c,"total")->is_static, 1);
 	ASSERT_INT(types_find_field(c,"id")->is_static, 0);
-	ASSERT_INT(types_find_field(c,"id")->offset, 24);   /* First INSTANCE field; static excluded. */
-	ASSERT_INT(c->object_size, 32);                     /* header(24) + id(8). */
+	ASSERT_INT(types_find_field(c,"id")->offset, 24); // First INSTANCE field; static excluded.
+	ASSERT_INT(c->object_size, 32); // header(24) + id(8).
 }
 
 static void test_static_method_no_vtable_slot(void)

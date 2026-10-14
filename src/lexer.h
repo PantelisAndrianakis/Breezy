@@ -64,8 +64,10 @@ void        lexer_init(Lexer *l, const char *src);
 Token       lexer_next(Lexer *l);
 const char *token_type_name(TokenType t);
 
-/* Print a diagnostic with a `file:line:col:` header and a caret pointing at
-   the offending column, then exit(1). `arg` is appended to `msg` if non-NULL. */
+/**
+ * Print a diagnostic with a `file:line:col:` header and a caret pointing at the offending column, then exit(1).
+ * `arg` is appended to `msg` if non-NULL.
+ */
 void        lexer_diag(const char *src, const char *file, int line, int col,
 					   const char *msg, const char *arg);
 

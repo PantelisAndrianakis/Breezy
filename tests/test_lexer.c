@@ -88,15 +88,15 @@ static void test_float_literals(void)
 	t = lexer_next(&l);
 	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
 	ASSERT_STR(t.text, "2.");
-	t = lexer_next(&l);   /* 2.0d - explicit double suffix. */
+	t = lexer_next(&l); // 2.0d - explicit double suffix.
 	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
 	ASSERT_STR(t.text, "2.0");
 	ASSERT_STR(t.suffix, "d");
-	t = lexer_next(&l);   /* 3.0D - uppercase, normalized to 'd'. */
+	t = lexer_next(&l); // 3.0D - uppercase, normalized to 'd'.
 	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
 	ASSERT_STR(t.text, "3.0");
 	ASSERT_STR(t.suffix, "d");
-	t = lexer_next(&l);   /* 1e3d - suffix after an exponent. */
+	t = lexer_next(&l); // 1e3d - suffix after an exponent.
 	ASSERT_INT(t.type, TOKEN_FLOAT_LIT);
 	ASSERT_STR(t.text, "1e3");
 	ASSERT_STR(t.suffix, "d");
@@ -218,7 +218,7 @@ static void test_block_comment(void)
 	Token t = lexer_next(&l);
 	ASSERT_INT(t.type, TOKEN_IDENT);
 	ASSERT_STR(t.text, "x");
-	ASSERT_INT(lexer_next(&l).type, TOKEN_ASSIGN);   // the empty block comment was skipped
+	ASSERT_INT(lexer_next(&l).type, TOKEN_ASSIGN); // the empty block comment was skipped
 }
 
 static void test_compound_assign_ops(void)
@@ -268,11 +268,11 @@ static void test_logical_tokens(void)
 	ASSERT_INT(lexer_next(&l).type, TOKEN_OR);
 	ASSERT_INT(lexer_next(&l).type, TOKEN_XOR);
 	ASSERT_INT(lexer_next(&l).type, TOKEN_NOT);
-	ASSERT_INT(lexer_next(&l).type, TOKEN_AND);   /* && is a synonym for and. */
-	ASSERT_INT(lexer_next(&l).type, TOKEN_OR);    /* || is a synonym for or. */
-	ASSERT_INT(lexer_next(&l).type, TOKEN_NOT);   /* bare ! is not. */
+	ASSERT_INT(lexer_next(&l).type, TOKEN_AND); // && is a synonym for and.
+	ASSERT_INT(lexer_next(&l).type, TOKEN_OR); // || is a synonym for or.
+	ASSERT_INT(lexer_next(&l).type, TOKEN_NOT); // bare ! is not.
 	ASSERT_INT(lexer_next(&l).type, TOKEN_EOF);
-	/* != must still be one token, not ! then =. */
+	// != must still be one token, not ! then =.
 	lexer_init(&l, "!=");
 	ASSERT_INT(lexer_next(&l).type, TOKEN_NEQ);
 }
@@ -280,7 +280,7 @@ static void test_logical_tokens(void)
 static void test_less_or_greater(void)
 {
 	Lexer l;
-	/* '<>' (less-or-greater) is a synonym for !=; the other '<' forms are unaffected. */
+	// '<>' (less-or-greater) is a synonym for !=; the other '<' forms are unaffected.
 	lexer_init(&l, "<> < <= << !=");
 	ASSERT_INT(lexer_next(&l).type, TOKEN_NEQ);
 	ASSERT_INT(lexer_next(&l).type, TOKEN_LT);

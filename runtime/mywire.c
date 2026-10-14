@@ -1,15 +1,13 @@
-/* runtime/mywire.c -- MySQL/MariaDB client/server protocol over a Breezy Socket.
-   Own TU: a program that never names Mysql links none of this. Async by reusing
-   the reactor-parked socket I/O, like the PostgreSQL driver (pgwire.c); the shared
-   DbResult/Row result model (dbresult.c) and the auth crypto (crypto.c) are reused
-   unchanged. One driver serves both MySQL and MariaDB -- same wire protocol.
-
-   MySQL framing differs from Postgres: every packet is [3-byte little-endian payload
-   length][1-byte sequence number][payload], integers are little-endian, and strings
-   are often length-encoded. This file is Task 3 of the Phase F.2 plan: the framing,
-   the length-encoded codec, the buffered reader, and the handshake to an OK/ERR
-   decision. Authentication (Task 5), query (Tasks 6-7), and the Breezy entry points
-   (Task 4) build on this layer. */
+/**
+ * runtime/mywire.c -- MySQL/MariaDB client/server protocol over a Breezy Socket.
+ * Own TU: a program that never names Mysql links none of this.
+ * Async by reusing the reactor-parked socket I/O, like the PostgreSQL driver (pgwire.c); the shared DbResult/Row result model (dbresult.c) and the auth crypto (crypto.c) are reused unchanged.
+ * One driver serves both MySQL and MariaDB -- same wire protocol.
+ *
+ * MySQL framing differs from Postgres: every packet is [3-byte little-endian payload length][1-byte sequence number][payload], integers are little-endian, and strings are often length-encoded.
+ * This file is Task 3 of the Phase F.2 plan: the framing, the length-encoded codec, the buffered reader, and the handshake to an OK/ERR decision.
+ * Authentication (Task 5), query (Tasks 6-7), and the Breezy entry points (Task 4) build on this layer.
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -29,16 +27,16 @@ extern int  bzy_crypto_load(void);
 extern void bzy_crypto_sha1(const unsigned char *in, size_t len, unsigned char *out20);
 extern void bzy_crypto_sha256(const unsigned char *in, size_t len, unsigned char *out32);
 
-/* TLS transport (tls.c): the raw-byte twins + the upgrade-an-existing-socket entry.
-   Used only by connectTls; a plaintext connection never references these. */
+/**
+ * TLS transport (tls.c): the raw-byte twins + the upgrade-an-existing-socket entry.
+ * Used only by connectTls; a plaintext connection never references these.
+ */
 extern int     bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms);
 extern int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len);
 extern void   *bzy_tls_upgrade_client(void *transport, const char *host, int insecure);
 extern void    bzy_tls_close(void *s);
 
-/* The transport a connection rides on: a plain Socket, or after connectTls a
-   TlsSocket. x_recv/x_send branch on is_tls so all the protocol code below stays
-   transport-agnostic -- it threads an Xport* where it used to thread a void *sock. */
+/* The transport a connection rides on: a plain Socket, or after connectTls a TlsSocket. x_recv/x_send branch on is_tls so all the protocol code below stays transport-agnostic -- it threads an Xport* where it used to thread a void *sock. */
 typedef struct
 {
 	void *t;
@@ -95,8 +93,10 @@ static uint64_t le64(const unsigned char *p)
 	return v;
 }
 
-/* Decode a length-encoded integer; *adv receives the bytes consumed. A leading
-   0xfb (NULL) or 0xfe-as-EOF is the caller's job to detect before calling. */
+/**
+ * Decode a length-encoded integer; *adv receives the bytes consumed.
+ * A leading 0xfb (NULL) or 0xfe-as-EOF is the caller's job to detect before calling.
+ */
 static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
 {
 	unsigned char c = p[0];
@@ -117,7 +117,7 @@ static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
 		*adv = 4;
 		return le24(p + 1);
 	}
-	*adv = 9;   /* 0xfe: 8-byte. */
+	*adv = 9; // 0xfe: 8-byte.
 	uint64_t v = 0;
 	for (int i = 0; i < 8; i++)
 	{
@@ -127,8 +127,10 @@ static uint64_t lenenc_int(const unsigned char *p, int64_t *adv)
 	return v;
 }
 
-/* Read a length-encoded string in [*p, end); advances *p, sets *slen, and sets
-   *isnull on a 0xfb NULL marker. Returns the data pointer (NULL when NULL). */
+/**
+ * Read a length-encoded string in [*p, end); advances *p, sets *slen, and sets *isnull on a 0xfb NULL marker.
+ * Returns the data pointer (NULL when NULL).
+ */
 static const char *lenenc_str(const unsigned char **p, const unsigned char *end, int64_t *slen, int *isnull)
 {
 	*isnull = 0;
@@ -151,7 +153,7 @@ static const char *lenenc_str(const unsigned char **p, const unsigned char *end,
 	const char *s = (const char*)*p;
 	if (*p + n > end)
 	{
-		n = (uint64_t)(end - *p);    /* Defensive clamp. */
+		n = (uint64_t)(end - *p); // Defensive clamp.
 	}
 	*p += n;
 	*slen = (int64_t)n;
@@ -212,9 +214,7 @@ static int rd_need(Reader *r, int64_t need)
 	return 1;
 }
 
-/* Read one packet: a 4-byte header (3-byte LE length + 1-byte sequence) then the
-   payload. *payload points into the reader buffer (valid until the next rd_packet);
-   *plen is the payload length, *seq the sequence number. 0 at EOF. */
+/* Read one packet: a 4-byte header (3-byte LE length + 1-byte sequence) then the payload. *payload points into the reader buffer (valid until the next rd_packet); *plen is the payload length, *seq the sequence number. 0 at EOF. */
 static int rd_packet(Reader *r, unsigned char **payload, int64_t *plen, int *seq)
 {
 	if (!rd_need(r, 4))
@@ -373,17 +373,17 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 {
 	const unsigned char *end = p + plen;
 	memset(hs, 0, sizeof(*hs));
-	strcpy(hs->plugin, "mysql_native_password");   /* Default if none advertised. */
+	strcpy(hs->plugin, "mysql_native_password"); // Default if none advertised.
 
 	if (plen < 1 || *p != 10)
 	{
-		return 0;    /* Protocol version 10. */
+		return 0; // Protocol version 10.
 	}
 
 	p++;
 	while (p < end && *p)
 	{
-		p++;    /* server version cstr. */
+		p++; // server version cstr.
 	}
 
 	p++;
@@ -392,46 +392,46 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 		return 0;
 	}
 
-	p += 4;                                        /* connection id. */
+	p += 4; // connection id.
 	if (p + 8 > end)
 	{
 		return 0;
 	}
 
-	memcpy(hs->scramble, p, 8);                    /* auth-plugin-data part 1. */
+	memcpy(hs->scramble, p, 8); // auth-plugin-data part 1.
 	p += 8;
-	p += 1;                                        /* filler. */
+	p += 1; // filler.
 	if (p + 2 > end)
 	{
-		return 1;    /* No extended part; scramble is short. */
+		return 1; // No extended part; scramble is short.
 	}
 
-	p += 2;                                        /* capability flags lower. */
+	p += 2; // capability flags lower.
 
 	if (p + 1 > end)
 	{
 		return 1;
 	}
 
-	p += 1;                                        /* character set. */
+	p += 1; // character set.
 	if (p + 2 > end)
 	{
 		return 1;
 	}
 
-	p += 2;                                        /* status flags. */
+	p += 2; // status flags.
 	if (p + 2 > end)
 	{
 		return 1;
 	}
 
-	p += 2;                                        /* capability flags upper. */
+	p += 2; // capability flags upper.
 	int auth_data_len = (p < end) ? *p : 0;
 	p += 1;
-	p += 10;                                       /* reserved. */
+	p += 10; // reserved.
 
 	int part2 = auth_data_len ? auth_data_len - 8 : 13;
-	int take = part2 - 1;                          /* Drop the trailing NUL. */
+	int take = part2 - 1; // Drop the trailing NUL.
 	if (take > 12)
 	{
 		take = 12;
@@ -449,7 +449,7 @@ static int parse_handshake(const unsigned char *p, int64_t plen, Handshake *hs)
 
 	p += part2;
 
-	if (p < end)                                   /* auth plugin name cstr. */
+	if (p < end) // auth plugin name cstr.
 	{
 		size_t i = 0;
 		while (p < end && *p && i < sizeof(hs->plugin) - 1)
@@ -487,8 +487,7 @@ static int auth_native(const char *password, const unsigned char *scramble, unsi
 	return 20;
 }
 
-/* caching_sha2_password fast path:
-   SHA256(pw) XOR SHA256(SHA256(SHA256(pw)) + scramble), 32 bytes. */
+/* caching_sha2_password fast path: SHA256(pw) XOR SHA256(SHA256(SHA256(pw)) + scramble), 32 bytes. */
 static int auth_caching_sha2(const char *password, const unsigned char *scramble, unsigned char *out)
 {
 	if (!password[0])
@@ -522,11 +521,10 @@ static int compute_auth(const char *plugin, const char *password, const unsigned
 		return auth_caching_sha2(password, scramble, out);
 	}
 
-	return 0;   /* Unknown plugin -> empty; the server will AuthSwitch or reject. */
+	return 0; // Unknown plugin -> empty; the server will AuthSwitch or reject.
 }
 
-/* The capability flags the handshake response advertises. with_ssl adds CLIENT_SSL
-   (set on both the SSLRequest packet and the response that follows it over TLS). */
+/* The capability flags the handshake response advertises. with_ssl adds CLIENT_SSL (set on both the SSLRequest packet and the response that follows it over TLS). */
 static uint32_t client_caps(const char *db, int with_ssl)
 {
 	uint32_t caps = CLIENT_LONG_PASSWORD | CLIENT_LONG_FLAG | CLIENT_PROTOCOL_41
@@ -544,35 +542,36 @@ static uint32_t client_caps(const char *db, int with_ssl)
 	return caps;
 }
 
-/* Send the SSLRequest packet: the first 32 bytes of a handshake response (capability
-   flags with CLIENT_SSL, max-packet, charset, the 23-byte filler) and no username or
-   auth. The server switches to TLS after this; the full handshake response follows
-   over the encrypted channel. */
+/**
+ * Send the SSLRequest packet: the first 32 bytes of a handshake response (capability flags with CLIENT_SSL, max-packet, charset, the 23-byte filler) and no username or auth.
+ * The server switches to TLS after this; the full handshake response follows over the encrypted channel.
+ */
 static int send_ssl_request(Xport *x, int seq, const char *db)
 {
 	Wbuf w = { 0 };
 	w_le32(&w, client_caps(db, 1));
-	w_le32(&w, 0x01000000);          /* Max packet size 16 MiB. */
-	w_u8(&w, 45);                    /* utf8mb4_general_ci. */
-	w_zero(&w, 23);                  /* Reserved. */
+	w_le32(&w, 0x01000000); // Max packet size 16 MiB.
+	w_u8(&w, 45); // utf8mb4_general_ci.
+	w_zero(&w, 23); // Reserved.
 	int ok = send_packet(x, seq, w.p, w.len);
 	free(w.p);
 	return ok;
 }
 
-/* Build + send the Handshake Response. `auth` is the computed auth-response; `seq` is
-   the next sequence number (handshake+1 plaintext, handshake+2 after an SSLRequest).
-   with_ssl keeps CLIENT_SSL set so the response matches the SSLRequest's caps. */
+/**
+ * Build + send the Handshake Response.
+ * `auth` is the computed auth-response; `seq` is the next sequence number (handshake+1 plaintext, handshake+2 after an SSLRequest). with_ssl keeps CLIENT_SSL set so the response matches the SSLRequest's caps.
+ */
 static int send_handshake_response(Xport *x, int seq, const char *user, const char *db,
 								   const char *plugin, const unsigned char *auth, int authlen, int with_ssl)
 {
 	Wbuf w = { 0 };
 	w_le32(&w, client_caps(db, with_ssl));
-	w_le32(&w, 0x01000000);          /* Max packet size 16 MiB. */
-	w_u8(&w, 45);                    /* utf8mb4_general_ci. */
-	w_zero(&w, 23);                  /* Reserved. */
+	w_le32(&w, 0x01000000); // Max packet size 16 MiB.
+	w_u8(&w, 45); // utf8mb4_general_ci.
+	w_zero(&w, 23); // Reserved.
 	w_cstr(&w, user);
-	w_u8(&w, (unsigned char)authlen);   /* CLIENT_SECURE_CONNECTION: 1-byte length + data. */
+	w_u8(&w, (unsigned char)authlen); // CLIENT_SECURE_CONNECTION: 1-byte length + data.
 	if (authlen)
 	{
 		w_bytes(&w, auth, authlen);
@@ -590,11 +589,10 @@ static int send_handshake_response(Xport *x, int seq, const char *user, const ch
 	return ok;
 }
 
-/* Run the handshake on a connected socket: read the server greeting, compute the
-   auth-response for the server's plugin, send the response, and resolve the auth
-   exchange (OK / ERR / AuthSwitchRequest / AuthMoreData). Returns 1 on success,
-   0 with the error sink set. caching_sha2_password's full-auth path (0x01 0x04)
-   needs TLS, which is the deferred connectTls follow-up. */
+/**
+ * Run the handshake on a connected socket: read the server greeting, compute the auth-response for the server's plugin, send the response, and resolve the auth exchange (OK / ERR / AuthSwitchRequest / AuthMoreData).
+ * Returns 1 on success, 0 with the error sink set. caching_sha2_password's full-auth path (0x01 0x04) needs TLS, which is the deferred connectTls follow-up.
+ */
 int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const char *password, const char *db, int tls_mode)
 {
 	Reader r = { 0 };
@@ -632,12 +630,11 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 		return 0;
 	}
 
-	int rseq = seq + 1;   /* The next packet's sequence after the greeting. */
+	int rseq = seq + 1; // The next packet's sequence after the greeting.
 	if (tls_mode)
 	{
-		/* MySQL upgrades mid-handshake: send the SSLRequest, switch to TLS over the
-		   same socket, then run the rest of the handshake -- and the whole session --
-		   encrypted. The transport swap is written back through x for the caller. */
+		// MySQL upgrades mid-handshake: send the SSLRequest, switch to TLS over the same socket, then run the rest of the handshake -- and the whole session -- encrypted.
+		// The transport swap is written back through x for the caller.
 		if (!send_ssl_request(x, rseq, db))
 		{
 			bzy_db_set_error("Failed to send the MySQL SSLRequest.");
@@ -650,7 +647,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 		if (!tls)
 		{
 			bzy_db_set_error("MySQL TLS handshake or certificate verification failed.");
-			x->t = NULL;   /* The upgrade already consumed + released the socket. */
+			x->t = NULL; // The upgrade already consumed + released the socket.
 			free(r.buf);
 			return 0;
 		}
@@ -680,7 +677,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 		unsigned char marker = (plen >= 1) ? payload[0] : 0xff;
 		if (marker == 0x00)
 		{
-			ok = 1;    /* OK. */
+			ok = 1; // OK.
 			break;
 		}
 
@@ -690,7 +687,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			break;
 		}
 
-		if (marker == 0xfe)   /* AuthSwitchRequest: 0xfe + plugin cstr + scramble. */
+		if (marker == 0xfe) // AuthSwitchRequest: 0xfe + plugin cstr + scramble.
 		{
 			char newplugin[64];
 			size_t i = 0;
@@ -704,7 +701,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			newplugin[i] = '\0';
 			if (q < end)
 			{
-				q++;    /* Step past the NUL. */
+				q++; // Step past the NUL.
 			}
 
 			unsigned char newscr[20];
@@ -730,28 +727,28 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 			continue;
 		}
 
-		if (marker == 0x01)   /* AuthMoreData (caching_sha2_password). */
+		if (marker == 0x01) // AuthMoreData (caching_sha2_password).
 		{
 			unsigned char sub = (plen >= 2) ? payload[1] : 0;
 			if (sub == 0x03)
 			{
-				continue;    /* fast_auth_success -> next packet is OK. */
+				continue; // fast_auth_success -> next packet is OK.
 			}
 
-			if (sub == 0x04)                 /* full_auth: no cached entry on the server. */
+			if (sub == 0x04) // full_auth: no cached entry on the server.
 			{
 				if (!x->is_tls)
 				{
 					bzy_db_set_error("MySQL caching_sha2_password full authentication requires a TLS connection; use Mysql.connectTls (or a mysql_native_password account).");
 					break;
 				}
-				/* Over TLS the cleartext password is safe; send it NUL-terminated. */
+				// Over TLS the cleartext password is safe; send it NUL-terminated.
 				if (!send_packet(x, seq + 1, password, (int64_t)strlen(password) + 1))
 				{
 					bzy_db_set_error("Failed to send the MySQL full-auth password.");
 					break;
 				}
-				continue;   /* The next packet is OK (or ERR). */
+				continue; // The next packet is OK (or ERR).
 			}
 
 			bzy_db_set_error("Unsupported MySQL authentication continuation.");
@@ -768,9 +765,7 @@ int bzy_my_run_handshake(Xport *x, const char *host, const char *user, const cha
 
 /* ---- the MyConnection node + the Breezy entry points -------------------------- */
 
-/* MyConnection: transport@24 (a Socket, or a TlsSocket after connectTls), is_tls@32,
-   size 40, typeinfo {0,1,24} -- the single managed slot traces the transport whichever
-   kind it is; is_tls is a plain int the GC ignores. */
+/* MyConnection: transport@24 (a Socket, or a TlsSocket after connectTls), is_tls@32, size 40, typeinfo {0,1,24} -- the single managed slot traces the transport whichever kind it is; is_tls is a plain int the GC ignores. */
 #define MYC_SOCK 24
 #define MYC_TLS  32
 #define MYC_SIZE 40
@@ -790,8 +785,10 @@ static void *myc_vtable(void)
 	return &g_myc_vt[1];
 }
 
-/* Connect, handshake, and wrap the socket in a MyConnection. On any failure the
-   error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns. */
+/**
+ * Connect, handshake, and wrap the socket in a MyConnection.
+ * On any failure the error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns.
+ */
 void *bzy_my_connect(void *host, int64_t port, void *user, void *pass, void *db)
 {
 	void *sock = bzy_socket_connect(host, port);
@@ -811,15 +808,16 @@ void *bzy_my_connect(void *host, int64_t port, void *user, void *pass, void *db)
 
 	void *n = bzy_alloc(MYC_SIZE);
 	*(void**)n = myc_vtable();
-	*(void**)((char*)n + MYC_SOCK) = sock;   /* Transfer the +1 from bzy_socket_connect. */
+	*(void**)((char*)n + MYC_SOCK) = sock; // Transfer the +1 from bzy_socket_connect.
 	*(int*)((char*)n + MYC_TLS) = 0;
 	return n;
 }
 
-/* Connect over TLS. MySQL negotiates the upgrade mid-handshake (read the greeting,
-   send an SSLRequest with CLIENT_SSL, switch to TLS, then send the handshake response
-   over the encrypted channel). insecure skips certificate + hostname verification
-   (self-signed / dev). Over TLS, caching_sha2_password full authentication works too. */
+/**
+ * Connect over TLS.
+ * MySQL negotiates the upgrade mid-handshake (read the greeting, send an SSLRequest with CLIENT_SSL, switch to TLS, then send the handshake response over the encrypted channel). insecure skips certificate + hostname verification (self-signed / dev).
+ * Over TLS, caching_sha2_password full authentication works too.
+ */
 static void *my_connect_tls(void *host, int64_t port, void *user, void *pass, void *db, int insecure)
 {
 	void *sock = bzy_socket_connect(host, port);
@@ -833,9 +831,8 @@ static void *my_connect_tls(void *host, int64_t port, void *user, void *pass, vo
 	if (!bzy_my_run_handshake(&x, bzy_str_data(host), bzy_str_data(user), bzy_str_data(pass),
 							  bzy_str_data(db), insecure ? 2 : 1))
 	{
-		/* x.t is the current transport: the original socket if the upgrade had not
-		   run, the TlsSocket if it had, or NULL if the upgrade itself failed (already
-		   cleaned up). Tear down whatever remains. */
+		// x.t is the current transport: the original socket if the upgrade had not run, the TlsSocket if it had, or NULL if the upgrade itself failed (already cleaned up).
+		// Tear down whatever remains.
 		if (x.t)
 		{
 			if (x.is_tls)
@@ -855,23 +852,22 @@ static void *my_connect_tls(void *host, int64_t port, void *user, void *pass, vo
 
 	void *n = bzy_alloc(MYC_SIZE);
 	*(void**)n = myc_vtable();
-	*(void**)((char*)n + MYC_SOCK) = x.t;   /* The TlsSocket; the +1 transferred. */
+	*(void**)((char*)n + MYC_SOCK) = x.t; // The TlsSocket; the +1 transferred.
 	*(int*)((char*)n + MYC_TLS) = 1;
 	return n;
 }
 
 void *bzy_my_connect_tls(void *host, int64_t port, void *user, void *pass, void *db)
 {
-	return my_connect_tls(host, port, user, pass, db, 0);   /* Verify cert + hostname. */
+	return my_connect_tls(host, port, user, pass, db, 0); // Verify cert + hostname.
 }
 
 void *bzy_my_connect_tls_insecure(void *host, int64_t port, void *user, void *pass, void *db)
 {
-	return my_connect_tls(host, port, user, pass, db, 1);   /* Skip verification. */
+	return my_connect_tls(host, port, user, pass, db, 1); // Skip verification.
 }
 
-/* Send COM_QUIT and close the socket (idempotent; the node keeps its +1 Socket
-   reference, released when the MyConnection is released). */
+/* Send COM_QUIT and close the socket (idempotent; the node keeps its +1 Socket reference, released when the MyConnection is released). */
 void bzy_my_close(void *conn)
 {
 	if (!conn)
@@ -884,7 +880,7 @@ void bzy_my_close(void *conn)
 	{
 		int is_tls = *(int*)((char*)conn + MYC_TLS);
 		Xport x = { sock, is_tls };
-		char quit[1] = { 0x01 };   /* COM_QUIT, packet seq 0. */
+		char quit[1] = { 0x01 }; // COM_QUIT, packet seq 0.
 		send_packet(&x, 0, quit, 1);
 		if (is_tls)
 		{
@@ -901,12 +897,13 @@ void bzy_my_close(void *conn)
 
 static void arr_set(void *arr, int64_t i, void *p)
 {
-	((void**)((char*)arr + 32))[i] = p;   /* Array slots live at +32. */
+	((void**)((char*)arr + 32))[i] = p; // Array slots live at +32.
 }
 
-/* Decode a COM_QUERY response into a DbResult: a column count, that many
-   ColumnDefinition41 packets (we keep the `name`), an EOF, then text rows until
-   EOF, or an OK packet (non-row -> affected count) / ERR. Frees the reader buffer. */
+/**
+ * Decode a COM_QUERY response into a DbResult: a column count, that many ColumnDefinition41 packets (we keep the `name`), an EOF, then text rows until EOF, or an OK packet (non-row -> affected count) / ERR.
+ * Frees the reader buffer.
+ */
 static void *my_collect(Reader *r)
 {
 	unsigned char *payload;
@@ -927,7 +924,7 @@ static void *my_collect(Reader *r)
 		return NULL;
 	}
 
-	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
+	if (m0 == 0x00) // OK packet: a non-row statement.
 	{
 		int64_t adv;
 		uint64_t affected = lenenc_int(payload + 1, &adv);
@@ -946,7 +943,7 @@ static void *my_collect(Reader *r)
 	uint64_t ncols = lenenc_int(payload, &adv);
 	void *colnames = bzy_array_new((int64_t)ncols, 1);
 
-	for (uint64_t c = 0; c < ncols; c++)             /* ColumnDefinition41 packets. */
+	for (uint64_t c = 0; c < ncols; c++) // ColumnDefinition41 packets.
 	{
 		if (!rd_packet(r, &payload, &plen, &seq))
 		{
@@ -960,15 +957,15 @@ static void *my_collect(Reader *r)
 		const unsigned char *end = payload + plen;
 		int isnull;
 		int64_t sl;
-		lenenc_str(&p, end, &sl, &isnull);            /* catalog. */
-		lenenc_str(&p, end, &sl, &isnull);            /* schema. */
-		lenenc_str(&p, end, &sl, &isnull);            /* table. */
-		lenenc_str(&p, end, &sl, &isnull);            /* org_table. */
-		const char *name = lenenc_str(&p, end, &sl, &isnull);   /* name. */
+		lenenc_str(&p, end, &sl, &isnull); // catalog.
+		lenenc_str(&p, end, &sl, &isnull); // schema.
+		lenenc_str(&p, end, &sl, &isnull); // table.
+		lenenc_str(&p, end, &sl, &isnull); // org_table.
+		const char *name = lenenc_str(&p, end, &sl, &isnull); // name.
 		arr_set(colnames, (int64_t)c, bzy_str_new(name ? name : "", sl));
 	}
 
-	/* An EOF packet follows the column block (CLIENT_DEPRECATE_EOF is not set). */
+	// An EOF packet follows the column block (CLIENT_DEPRECATE_EOF is not set).
 	if (!rd_packet(r, &payload, &plen, &seq))
 	{
 		bzy_db_set_error("Truncated MySQL result (no column EOF).");
@@ -992,7 +989,7 @@ static void *my_collect(Reader *r)
 		unsigned char m = (plen >= 1) ? payload[0] : 0;
 		if (m == 0xfe && plen < 9)
 		{
-			break;    /* EOF: end of rows. */
+			break; // EOF: end of rows.
 		}
 
 		if (m == 0xff)
@@ -1049,8 +1046,10 @@ static void *my_collect(Reader *r)
 	return bzy_db_result_new(colnames, rows, nrows);
 }
 
-/* Run a COM_QUERY and decode the result. On a server error the error sink is set
-   (the codegen-emitted bzy_db_check raises it) and NULL returns. */
+/**
+ * Run a COM_QUERY and decode the result.
+ * On a server error the error sink is set (the codegen-emitted bzy_db_check raises it) and NULL returns.
+ */
 void *bzy_my_query(void *conn, void *sql)
 {
 	if (!conn)
@@ -1064,7 +1063,7 @@ void *bzy_my_query(void *conn, void *sql)
 	const char *s = bzy_str_data(sql);
 	int64_t sl = bzy_str_len(sql);
 	Wbuf w = { 0 };
-	w_u8(&w, 0x03);                                  /* COM_QUERY. */
+	w_u8(&w, 0x03); // COM_QUERY.
 	w_bytes(&w, s, sl);
 	int oks = send_packet(&xp, 0, w.p, w.len);
 	free(w.p);
@@ -1081,50 +1080,52 @@ void *bzy_my_query(void *conn, void *sql)
 
 /* ---- the prepared-statement (binary) protocol -------------------------------- */
 
-/* Parse a ColumnDefinition41: 6 length-encoded strings (we keep `name`, the 5th),
-   a 0x0c marker, then charset(2) column_length(4) type(1) flags(2) decimals(1).
-   Sets *type and *is_unsigned; returns an owned name string. */
+/**
+ * Parse a ColumnDefinition41: 6 length-encoded strings (we keep `name`, the 5th), a 0x0c marker, then charset(2) column_length(4) type(1) flags(2) decimals(1).
+ * Sets *type and *is_unsigned; returns an owned name string.
+ */
 static void *parse_col_def(const unsigned char *payload, int64_t plen, int *type, int *is_unsigned)
 {
 	const unsigned char *p = payload;
 	const unsigned char *end = payload + plen;
 	int isnull;
 	int64_t sl;
-	lenenc_str(&p, end, &sl, &isnull);   /* catalog. */
-	lenenc_str(&p, end, &sl, &isnull);   /* schema. */
-	lenenc_str(&p, end, &sl, &isnull);   /* table. */
-	lenenc_str(&p, end, &sl, &isnull);   /* org_table. */
-	const char *name = lenenc_str(&p, end, &sl, &isnull);   /* name. */
+	lenenc_str(&p, end, &sl, &isnull); // catalog.
+	lenenc_str(&p, end, &sl, &isnull); // schema.
+	lenenc_str(&p, end, &sl, &isnull); // table.
+	lenenc_str(&p, end, &sl, &isnull); // org_table.
+	const char *name = lenenc_str(&p, end, &sl, &isnull); // name.
 	int64_t namelen = sl;
-	lenenc_str(&p, end, &sl, &isnull);   /* org_name. */
+	lenenc_str(&p, end, &sl, &isnull); // org_name.
 
 	int64_t adv;
-	lenenc_int(p, &adv);                 /* length of the fixed-length fields (0x0c). */
+	lenenc_int(p, &adv); // length of the fixed-length fields (0x0c).
 	p += adv;
-	*type = 0xfd;                        /* Fallback: treat as a string. */
+	*type = 0xfd; // Fallback: treat as a string.
 	*is_unsigned = 0;
 	if (p + 9 <= end)
 	{
-		p += 2;                          /* character set. */
-		p += 4;                          /* column length. */
+		p += 2; // character set.
+		p += 4; // column length.
 		*type = *p;
 		p += 1;
 		uint32_t flags = le16(p);
-		*is_unsigned = (flags & 0x0020) ? 1 : 0;   /* UNSIGNED_FLAG. */
+		*is_unsigned = (flags & 0x0020) ? 1 : 0; // UNSIGNED_FLAG.
 	}
 
 	return bzy_str_new(name ? name : "", namelen);
 }
 
-/* Decode one non-NULL binary-protocol value to its text form (the shared result
-   model stores text). Fixed-width numerics and temporals are formatted; every other
-   type (string/blob/decimal/bit/enum/set/json/geometry) is a length-encoded string. */
+/**
+ * Decode one non-NULL binary-protocol value to its text form (the shared result model stores text).
+ * Fixed-width numerics and temporals are formatted; every other type (string/blob/decimal/bit/enum/set/json/geometry) is a length-encoded string.
+ */
 static void *decode_bin_value(const unsigned char **p, const unsigned char *end, int type, int is_unsigned)
 {
 	char tmp[64];
 	switch (type)
 	{
-	case 0x01:   /* TINY. */
+	case 0x01: // TINY.
 	{
 		unsigned char b = (*p)[0];
 		(*p) += 1;
@@ -1138,8 +1139,8 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		}
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x02:   /* SHORT. */
-	case 0x0d:   /* YEAR. */
+	case 0x02: // SHORT.
+	case 0x0d: // YEAR.
 	{
 		uint32_t u = le16(*p);
 		(*p) += 2;
@@ -1153,8 +1154,8 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		}
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x03:   /* LONG. */
-	case 0x09:   /* INT24. */
+	case 0x03: // LONG.
+	case 0x09: // INT24.
 	{
 		uint32_t u = le32(*p);
 		(*p) += 4;
@@ -1168,7 +1169,7 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		}
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x08:   /* LONGLONG. */
+	case 0x08: // LONGLONG.
 	{
 		uint64_t u = le64(*p);
 		(*p) += 8;
@@ -1182,7 +1183,7 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		}
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x04:   /* FLOAT. */
+	case 0x04: // FLOAT.
 	{
 		uint32_t bits = le32(*p);
 		(*p) += 4;
@@ -1191,7 +1192,7 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		snprintf(tmp, sizeof(tmp), "%g", (double)f);
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x05:   /* DOUBLE. */
+	case 0x05: // DOUBLE.
 	{
 		uint64_t bits = le64(*p);
 		(*p) += 8;
@@ -1200,9 +1201,9 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		snprintf(tmp, sizeof(tmp), "%.17g", d);
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x0a:   /* DATE. */
-	case 0x07:   /* TIMESTAMP. */
-	case 0x0c:   /* DATETIME. */
+	case 0x0a: // DATE.
+	case 0x07: // TIMESTAMP.
+	case 0x0c: // DATETIME.
 	{
 		unsigned char L = (*p)[0];
 		(*p) += 1;
@@ -1243,7 +1244,7 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		}
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	case 0x0b:   /* TIME. */
+	case 0x0b: // TIME.
 	{
 		unsigned char L = (*p)[0];
 		(*p) += 1;
@@ -1277,7 +1278,7 @@ static void *decode_bin_value(const unsigned char **p, const unsigned char *end,
 		}
 		return bzy_str_new(tmp, (int64_t)strlen(tmp));
 	}
-	default:     /* DECIMAL/VARCHAR/VAR_STRING/STRING/BLOB/BIT/ENUM/SET/JSON/... */
+	default: // DECIMAL/VARCHAR/VAR_STRING/STRING/BLOB/BIT/ENUM/SET/JSON/...
 	{
 		int64_t adv;
 		uint64_t n = lenenc_int(*p, &adv);
@@ -1313,7 +1314,7 @@ static void *my_collect_binary(Reader *r)
 		free(r->buf);
 		return NULL;
 	}
-	if (m0 == 0x00)                                  /* OK packet: a non-row statement. */
+	if (m0 == 0x00) // OK packet: a non-row statement.
 	{
 		int64_t adv;
 		uint64_t affected = lenenc_int(payload + 1, &adv);
@@ -1327,7 +1328,7 @@ static void *my_collect_binary(Reader *r)
 	int *types = (int*)malloc((size_t)ncols * sizeof(int));
 	int *uns = (int*)malloc((size_t)ncols * sizeof(int));
 
-	for (uint64_t c = 0; c < ncols; c++)             /* Column definitions (with types). */
+	for (uint64_t c = 0; c < ncols; c++) // Column definitions (with types).
 	{
 		if (!rd_packet(r, &payload, &plen, &seq))
 		{
@@ -1345,7 +1346,7 @@ static void *my_collect_binary(Reader *r)
 		uns[c] = un;
 	}
 
-	rd_packet(r, &payload, &plen, &seq);             /* EOF after the column block. */
+	rd_packet(r, &payload, &plen, &seq); // EOF after the column block.
 
 	void  **rowbuf = NULL;
 	int64_t nrows = 0, rowcap = 0;
@@ -1362,7 +1363,7 @@ static void *my_collect_binary(Reader *r)
 		unsigned char m = (plen >= 1) ? payload[0] : 0;
 		if (m == 0xfe && plen < 9)
 		{
-			break;    /* EOF: end of rows. */
+			break; // EOF: end of rows.
 		}
 		if (m == 0xff)
 		{
@@ -1371,7 +1372,7 @@ static void *my_collect_binary(Reader *r)
 			break;
 		}
 
-		/* Binary row: a 0x00 header, a NULL bitmap, then each non-NULL value. */
+		// Binary row: a 0x00 header, a NULL bitmap, then each non-NULL value.
 		const unsigned char *p = payload + 1;
 		const unsigned char *end = payload + plen;
 		int64_t nbm = ((int64_t)ncols + 7 + 2) / 8;
@@ -1420,10 +1421,10 @@ static void *my_collect_binary(Reader *r)
 	return bzy_db_result_new(colnames, rows, nrows);
 }
 
-/* Run a parameterized query via the prepared-statement protocol: PREPARE, EXECUTE
-   with the values bound as text-format (VAR_STRING) parameters -- never spliced into
-   SQL, so injection-safe -- then CLOSE. `params` is a managed string[]; a NULL slot
-   binds SQL NULL. */
+/**
+ * Run a parameterized query via the prepared-statement protocol: PREPARE, EXECUTE with the values bound as text-format (VAR_STRING) parameters -- never spliced into SQL, so injection-safe -- then CLOSE.
+ * `params` is a managed string[]; a NULL slot binds SQL NULL.
+ */
 void *bzy_my_query_params(void *conn, void *sql, void *params)
 {
 	if (!conn)
@@ -1436,7 +1437,7 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 	int64_t nparams = params ? *(int64_t*)((char*)params + 24) : 0;
 	void  **pslots = params ? (void**)((char*)params + 32) : NULL;
 
-	/* COM_STMT_PREPARE. */
+	// COM_STMT_PREPARE.
 	{
 		const char *s = bzy_str_data(sql);
 		int64_t sl = bzy_str_len(sql);
@@ -1471,35 +1472,35 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 		return NULL;
 	}
 
-	/* COM_STMT_PREPARE_OK: 0x00, statement id (4), columns (2), params (2), ... */
+	// COM_STMT_PREPARE_OK: 0x00, statement id (4), columns (2), params (2), ...
 	uint32_t stmt_id = le32(payload + 1);
 	int num_cols = (int)le16(payload + 5);
 	int num_params = (int)le16(payload + 7);
 
 	for (int i = 0; i < num_params; i++)
 	{
-		rd_packet(&r, &payload, &plen, &seq);    /* Param defs. */
+		rd_packet(&r, &payload, &plen, &seq); // Param defs.
 	}
 	if (num_params > 0)
 	{
-		rd_packet(&r, &payload, &plen, &seq);    /* EOF. */
+		rd_packet(&r, &payload, &plen, &seq); // EOF.
 	}
 	for (int i = 0; i < num_cols; i++)
 	{
-		rd_packet(&r, &payload, &plen, &seq);    /* Col defs (re-read at EXECUTE). */
+		rd_packet(&r, &payload, &plen, &seq); // Col defs (re-read at EXECUTE).
 	}
 	if (num_cols > 0)
 	{
-		rd_packet(&r, &payload, &plen, &seq);    /* EOF. */
+		rd_packet(&r, &payload, &plen, &seq); // EOF.
 	}
 
-	/* COM_STMT_EXECUTE. */
+	// COM_STMT_EXECUTE.
 	{
 		Wbuf w = { 0 };
 		w_u8(&w, 0x17);
 		w_le32(&w, stmt_id);
-		w_u8(&w, 0x00);                  /* Flags: no cursor. */
-		w_le32(&w, 1);                   /* Iteration count. */
+		w_u8(&w, 0x00); // Flags: no cursor.
+		w_le32(&w, 1); // Iteration count.
 		if (nparams > 0)
 		{
 			int64_t nbm = (nparams + 7) / 8;
@@ -1518,11 +1519,11 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 				w_u8(&w, byte);
 			}
 
-			w_u8(&w, 0x01);              /* new_params_bound_flag. */
+			w_u8(&w, 0x01); // new_params_bound_flag.
 			for (int64_t i = 0; i < nparams; i++)
 			{
-				w_u8(&w, 0xfd);          /* MYSQL_TYPE_VAR_STRING. */
-				w_u8(&w, 0x00);          /* Unsigned flag. */
+				w_u8(&w, 0xfd); // MYSQL_TYPE_VAR_STRING.
+				w_u8(&w, 0x00); // Unsigned flag.
 			}
 
 			for (int64_t i = 0; i < nparams; i++)
@@ -1547,9 +1548,9 @@ void *bzy_my_query_params(void *conn, void *sql, void *params)
 		}
 	}
 
-	void *result = my_collect_binary(&r);   /* Frees r.buf. */
+	void *result = my_collect_binary(&r); // Frees r.buf.
 
-	/* COM_STMT_CLOSE (best effort; the result is already decoded). */
+	// COM_STMT_CLOSE (best effort; the result is already decoded).
 	{
 		Wbuf w = { 0 };
 		w_u8(&w, 0x19);

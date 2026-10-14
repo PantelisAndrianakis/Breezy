@@ -66,8 +66,10 @@ TypeRef *typeref_box(TypeRef t)
 	return p;
 }
 
-/* Append a parameter type to a TY_FUNC signature (stored in targs, like generic
-   application args). Used to build C function-pointer types at parse. */
+/**
+ * Append a parameter type to a TY_FUNC signature (stored in targs, like generic application args).
+ * Used to build C function-pointer types at parse.
+ */
 void typeref_add_targ(TypeRef *f, TypeRef t)
 {
 	f->targs = grow_reserve(f->targs, f->targ_count + 1, &f->targ_cap, sizeof(*f->targs));
@@ -145,10 +147,10 @@ void unit_add_class(Unit *u, ClassDecl *c)
 
 TypeRef typeref_deepcopy(const TypeRef *t)
 {
-	TypeRef r=*t;   /* Shallow: scalars + class_name + the targs pointer (replaced below). */
+	TypeRef r=*t; // Shallow: scalars + class_name + the targs pointer (replaced below).
 	r.elem  = t->elem  ? typeref_box(typeref_deepcopy(t->elem))  : NULL;
 	r.elem2 = t->elem2 ? typeref_box(typeref_deepcopy(t->elem2)) : NULL;
-	r.targs=NULL;   /* Own buffer: do not alias t's (the copy is mutated independently). */
+	r.targs=NULL; // Own buffer: do not alias t's (the copy is mutated independently).
 	r.targ_cap=0;
 	if (t->targ_count>0)
 	{
@@ -184,8 +186,8 @@ Expr *expr_clone(const Expr *e)
 	}
 
 	Expr *n=expr_new(e->kind,e->line);
-	*n=*e;                                   /* Shallow copy scalars; args pointer aliases e until reset. */
-	n->args=NULL;                            /* Own buffer: rebuild rather than alias e->args. */
+	*n=*e; // Shallow copy scalars; args pointer aliases e until reset.
+	n->args=NULL; // Own buffer: rebuild rather than alias e->args.
 	n->arg_count=0;
 	n->arg_cap=0;
 	n->type=typeref_deepcopy(&e->type);
@@ -248,14 +250,14 @@ Func *func_clone(const Func *f)
 
 	Func *n=func_new();
 	*n=*f;
-	n->params=NULL;                          /* Own buffer: rebuild rather than alias f->params. */
+	n->params=NULL; // Own buffer: rebuild rather than alias f->params.
 	n->param_count=0;
 	n->param_cap=0;
 	n->ret_type=typeref_deepcopy(&f->ret_type);
 	for (int i=0; i<f->param_count; i++)
 	{
 		Param *p=func_add_param(n);
-		*p=f->params[i];                     /* Name + scalars. */
+		*p=f->params[i]; // Name + scalars.
 		p->type=typeref_deepcopy(&f->params[i].type);
 		p->def=expr_clone(f->params[i].def);
 	}
@@ -287,7 +289,7 @@ void class_add_ctor(ClassDecl *c, Func *f)
 ClassDecl *classdecl_clone(const ClassDecl *c)
 {
 	ClassDecl *n=class_new();
-	*n=*c;                                   /* Aliases fields/methods/ctors pointers until reset below. */
+	*n=*c; // Aliases fields/methods/ctors pointers until reset below.
 	n->fields=NULL;
 	n->field_count=0;
 	n->fields_cap=0;
@@ -297,7 +299,7 @@ ClassDecl *classdecl_clone(const ClassDecl *c)
 	n->ctors=NULL;
 	n->ctor_count=0;
 	n->ctors_cap=0;
-	n->implements=NULL;                      /* Own buffer (generic instances do implement interfaces). */
+	n->implements=NULL; // Own buffer (generic instances do implement interfaces).
 	n->implements_cap=0;
 	for (int i=0; i<c->implements_count; i++)
 	{

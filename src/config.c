@@ -5,8 +5,7 @@
 #include <string.h>
 #include <dirent.h>
 
-/* Env-derived flags, read once and cached (-1 = unread). bzy_config_reset_cache
-   forces a re-read, which tests use to flip BZY_IR around a single case. */
+/* Env-derived flags, read once and cached (-1 = unread). bzy_config_reset_cache forces a re-read, which tests use to flip BZY_IR around a single case. */
 static int g_ir_cached = -1;
 static int g_ir_regions_cached = -1;
 static int g_ir_calls_cached = -1;
@@ -24,9 +23,8 @@ int bzy_ir_enabled(void)
 {
 	if (g_ir_cached < 0)
 	{
-		/* Default ON: eligible call-free functions use the IR backend (the hot-spill
-		   safety gate keeps any function the IR would lose on the emitter). Set
-		   BZY_IR=0 to force the emitter everywhere. */
+		// Default ON: eligible call-free functions use the IR backend (the hot-spill safety gate keeps any function the IR would lose on the emitter).
+		// Set BZY_IR=0 to force the emitter everywhere.
 		const char *v = getenv("BZY_IR");
 		g_ir_cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
@@ -38,8 +36,8 @@ int bzy_ir_regions_enabled(void)
 {
 	if (g_ir_regions_cached < 0)
 	{
-		/* Default ON. Set BZY_IR_REGIONS=0 to keep eligible loops on the emitter
-		   while leaving whole-function IR active; BZY_IR=0 disables both. */
+		// Default ON.
+		// Set BZY_IR_REGIONS=0 to keep eligible loops on the emitter while leaving whole-function IR active; BZY_IR=0 disables both.
 		const char *v = getenv("BZY_IR_REGIONS");
 		g_ir_regions_cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
@@ -51,10 +49,9 @@ int bzy_ir_calls_enabled(void)
 {
 	if (g_ir_calls_cached < 0)
 	{
-		/* Default OFF (experimental). When set, an IR region may contain a direct
-		   call (IR_CALL), so call-containing loops get the IR allocator instead of
-		   the emitter fallback. Develop-behind-flag: the default build is unchanged
-		   until this is differentially proven and flipped on. */
+		// Default OFF (experimental).
+		// When set, an IR region may contain a direct call (IR_CALL), so call-containing loops get the IR allocator instead of the emitter fallback.
+		// Develop-behind-flag: the default build is unchanged until this is differentially proven and flipped on.
 		const char *v = getenv("BZY_IR_CALLS");
 		g_ir_calls_cached = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
 	}
@@ -66,9 +63,8 @@ int bzy_c_enabled(void)
 {
 	if (g_c_cached < 0)
 	{
-		/* Default ON: eligible loops and throw-free leaf functions go to gcc through
-		   out_c.c; anything the C route rejects keeps the assembly path. Set
-		   BZY_C=0 to emit everything as assembly. */
+		// Default ON: eligible loops and throw-free leaf functions go to gcc through out_c.c; anything the C route rejects keeps the assembly path.
+		// Set BZY_C=0 to emit everything as assembly.
 		const char *v = getenv("BZY_C");
 		g_c_cached = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
 	}
@@ -76,9 +72,10 @@ int bzy_c_enabled(void)
 	return g_c_cached && bzy_ir_enabled();
 }
 
-/* Append each double-quoted token in `val` to the grown string array `*arr`
-   (each entry allocated `width` bytes), bumping *count and growing *cap. Tokens
-   longer than the entry are truncated. */
+/**
+ * Append each double-quoted token in `val` to the grown string array `*arr` (each entry allocated `width` bytes), bumping *count and growing *cap.
+ * Tokens longer than the entry are truncated.
+ */
 static void parse_string_array(const char *val, char ***arr, int width, int *count, int *cap)
 {
 	const char *p = val;
@@ -148,9 +145,11 @@ static void parse_string_value(const char *val, char *out, int out_size)
 	out[len] = '\0';
 }
 
-/* Scan an INI-style body line by line. Within the named section header (e.g.
-   "[app]"), each `key = value` line is trimmed and handed to `fn(key, val, ctx)`.
-   Comments (#), blanks, and lines outside the section are skipped. */
+/**
+ * Scan an INI-style body line by line.
+ * Within the named section header (e.g. "[app]"), each `key = value` line is trimmed and handed to `fn(key, val, ctx)`.
+ * Comments (#), blanks, and lines outside the section are skipped.
+ */
 static void config_scan(const char *text, const char *section,
 						void (*fn)(const char *, const char *, void *), void *ctx)
 {
@@ -172,7 +171,7 @@ static void config_scan(const char *text, const char *section,
 			p++;
 		}
 
-		/* Trim leading whitespace. */
+		// Trim leading whitespace.
 		char *s = line;
 		while (*s == ' ' || *s == '\t' || *s == '\r')
 		{
@@ -181,7 +180,7 @@ static void config_scan(const char *text, const char *section,
 
 		if (*s == '#' || *s == '\0')
 		{
-			continue;   /* Comment or blank line. */
+			continue; // Comment or blank line.
 		}
 
 		if (*s == '[')
@@ -265,8 +264,8 @@ void config_load(const char *src_arg, LinkConfig *link, AppConfig *app)
 	char path[600];
 	char dir[CFG_PATH_LEN];
 
-	/* Derive the config path: <dir>/breezy.toml. If src_arg is a directory,
-	   that is the dir; otherwise use the source file's parent (or "."). */
+	// Derive the config path: <dir>/breezy.toml.
+	// If src_arg is a directory, that is the dir; otherwise use the source file's parent (or ".").
 	DIR *d = opendir(src_arg);
 	if (d)
 	{
@@ -304,7 +303,7 @@ void config_load(const char *src_arg, LinkConfig *link, AppConfig *app)
 	FILE *f = fopen(path, "rb");
 	if (!f)
 	{
-		return;   /* No config -> silent no-op. */
+		return; // No config -> silent no-op.
 	}
 
 	static char buf[65536];

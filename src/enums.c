@@ -14,8 +14,7 @@ static int is_reserved_method(const char *n)
 		   || strcmp(n,"name")==0 || strcmp(n,"ordinal")==0;
 }
 
-/* Forward a generic enum's type parameters onto a synthesized class so the
-   normal class monomorphization handles them. */
+/* Forward a generic enum's type parameters onto a synthesized class so the normal class monomorphization handles them. */
 static void copy_type_params(ClassDecl *c, const EnumDecl *e)
 {
 	for (int i=0; i<e->type_param_count; i++)
@@ -28,8 +27,7 @@ static void copy_type_params(ClassDecl *c, const EnumDecl *e)
 	}
 }
 
-/* The base class for an enum: hidden __ordinal/__name fields, then the user
-   fields, the user methods, the constructor, and the implements list. */
+/* The base class for an enum: hidden __ordinal/__name fields, then the user fields, the user methods, the constructor, and the implements list. */
 static ClassDecl *make_base_class(const EnumDecl *e)
 {
 	ClassDecl *c=class_new();
@@ -94,9 +92,7 @@ static Stmt *variant_assign(const char *field, Expr *value)
 	return s;
 }
 
-/* The constructor synthesized for a payload variant: parameters are the variant's
-   declared fields, and the body stamps the hidden __ordinal/__name and stores
-   each field, so `new Enum$Const(args)` builds a fully-formed instance. */
+/* The constructor synthesized for a payload variant: parameters are the variant's declared fields, and the body stamps the hidden __ordinal/__name and stores each field, so `new Enum$Const(args)` builds a fully-formed instance. */
 static Func *make_variant_ctor(const EnumConstant *k, int ord, const char *mangled)
 {
 	Func *f=func_new();
@@ -131,21 +127,18 @@ static Func *make_variant_ctor(const EnumConstant *k, int ord, const char *mangl
 	return f;
 }
 
-/* A per-constant subclass: extends the base, overrides the listed methods, and
-   carries a constructor. For an ordinary constant that is a copy of the enum
-   constructor (so `new Enum$CONST(args)` initializes the inherited fields the
-   same way the base does); for a payload variant it is the synthesized
-   field-storing constructor and the variant's own fields are added here. */
+/**
+ * A per-constant subclass: extends the base, overrides the listed methods, and carries a constructor.
+ * For an ordinary constant that is a copy of the enum constructor (so `new Enum$CONST(args)` initializes the inherited fields the same way the base does); for a payload variant it is the synthesized field-storing constructor and the variant's own fields are added here.
+ */
 static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *k, int ord, const char *mangled)
 {
 	ClassDecl *c=class_new();
 	strcpy(c->name,mangled);
 	c->has_parent=1;
 	strcpy(c->parent_name,e->name);
-	/* A generic enum's variant subclass is itself generic and extends the generic
-	   base: Enum$Variant<T> extends Enum<T>. Forward the parameters and the parent
-	   type arguments so monomorphization produces Enum$Variant$int extends
-	   Enum$int. */
+	// A generic enum's variant subclass is itself generic and extends the generic base: Enum$Variant<T> extends Enum<T>.
+	// Forward the parameters and the parent type arguments so monomorphization produces Enum$Variant$int extends Enum$int.
 	copy_type_params(c,e);
 	if (e->type_param_count>0)
 	{
@@ -174,8 +167,8 @@ static ClassDecl *make_constant_subclass(const EnumDecl *e, const EnumConstant *
 
 	if (k->payload_count>0 || e->type_param_count>0)
 	{
-		/* Payload variant, or any constant of a generic enum: a constructible
-		   subclass. Zero-field (None) just gets the ordinal/name-stamping ctor. */
+		// Payload variant, or any constant of a generic enum: a constructible subclass.
+		// Zero-field (None) just gets the ordinal/name-stamping ctor.
 		for (int i=0; i<k->payload_count; i++)
 		{
 			Field *ff=class_add_field(c);
@@ -211,7 +204,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 
 	info->constant_count=e->constant_count;
 	{
-		int cc=e->constant_count;   /* Per-constant parallel arrays, sized exactly. */
+		int cc=e->constant_count; // Per-constant parallel arrays, sized exactly.
 		info->constant_cap=cc;
 		info->const_name  = cc ? calloc((size_t)cc, sizeof(*info->const_name))  : NULL;
 		info->const_class = cc ? calloc((size_t)cc, sizeof(*info->const_class)) : NULL;
@@ -221,7 +214,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 		info->const_payload_n = cc ? calloc((size_t)cc, sizeof(*info->const_payload_n)) : NULL;
 	}
 
-	/* Base class first (a parent must register before its subclasses). */
+	// Base class first (a parent must register before its subclasses).
 	*units = grow_ensure(*units, *total, cap, sizeof(**units));
 	Unit *bu=unit_new();
 	unit_add_class(bu, make_base_class(e));
@@ -242,10 +235,7 @@ static void lower_one(const EnumDecl *e, Unit ***units, int *total, int *cap)
 		strcpy(info->const_name[i],k->name);
 		info->const_payload_n[i]=k->payload_count;
 
-		/* Constructible variant: a payload variant (Some(T v)), or - in a generic
-		   enum - any constant, since a generic enum has no per-instantiation
-		   singleton, so even a zero-field constant (None) becomes a constructible
-		   subclass `Enum$Const` built per use. */
+		// Constructible variant: a payload variant (Some(T v)), or - in a generic enum - any constant, since a generic enum has no per-instantiation singleton, so even a zero-field constant (None) becomes a constructible subclass `Enum$Const` built per use.
 		if (k->payload_count>0 || e->type_param_count>0)
 		{
 			info->const_payload[i]=1;
@@ -301,7 +291,7 @@ void enums_expand(Unit ***units, int *total, int *cap)
 			lower_one((*units)[i]->enums[j],units,total,cap);
 		}
 
-		(*units)[i]->enum_count=0;   /* Consumed: downstream sees only the synthesized classes. */
+		(*units)[i]->enum_count=0; // Consumed: downstream sees only the synthesized classes.
 	}
 }
 
@@ -367,8 +357,7 @@ void enum_register_instance(const char *inst, const char *base, const char *suff
 		return;
 	}
 
-	/* Capture the base's array pointers + count before growing g_enums (the grow
-	   may realloc, invalidating `b`; the captured arrays live outside it). */
+	// Capture the base's array pointers + count before growing g_enums (the grow may realloc, invalidating `b`; the captured arrays live outside it).
 	int cc=b->constant_count;
 	char (*bname)[64]=b->const_name;
 	char (*bclass)[64]=b->const_class;
@@ -394,7 +383,7 @@ void enum_register_instance(const char *inst, const char *base, const char *suff
 		info->const_payload_n[i]=bpayn?bpayn[i]:0;
 		if (bpay[i])
 		{
-			snprintf(info->const_class[i],64,"%s%s",bclass[i],suffix);   /* Wrap$Of -> Wrap$Of$int. */
+			snprintf(info->const_class[i],64,"%s%s",bclass[i],suffix); // Wrap$Of -> Wrap$Of$int.
 		}
 		else
 		{

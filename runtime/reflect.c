@@ -1,10 +1,11 @@
 #include "breezy.h"
 #include <string.h>
 
-/* Walk obj -> vtable -> (vtable-8) descriptor -> [2 + nobj] class-name pointer.
-   The descriptor is [finalizer][nobj][offsets...][name][backptr]; the name word
-   sits just past the nobj offsets (see codegen cg_emit_vtable). Reads the object's
-   actual vtable, so the result is the dynamic (most-derived) class. */
+/**
+ * Walk obj -> vtable -> (vtable-8) descriptor -> [2 + nobj] class-name pointer.
+ * The descriptor is [finalizer][nobj][offsets...][name][backptr]; the name word sits just past the nobj offsets (see codegen cg_emit_vtable).
+ * Reads the object's actual vtable, so the result is the dynamic (most-derived) class.
+ */
 void *bzy_class_name(void *obj)
 {
 	void *vtable = *(void**)obj;

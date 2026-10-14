@@ -1,11 +1,9 @@
 #include "constprop.h"
 
-/* A "write" to a local is: a var-decl initializer, an assignment with the local
-   as its lvalue (compound assignments desugar to plain ST_ASSIGN), a ++/-- whose
-   operand is the local, or a foreach loop/value variable. Counting every write
-   - including the ones hidden inside loops and ++/-- expressions - is what makes
-   rematerialization safe: a loop index initialised to 0 is also written by its
-   post-step, so it is never mistaken for a single-assignment constant. */
+/**
+ * A "write" to a local is: a var-decl initializer, an assignment with the local as its lvalue (compound assignments desugar to plain ST_ASSIGN), a ++/-- whose operand is the local, or a foreach loop/value variable.
+ * Counting every write - including the ones hidden inside loops and ++/-- expressions - is what makes rematerialization safe: a loop index initialised to 0 is also written by its post-step, so it is never mistaken for a single-assignment constant.
+ */
 
 static int expr_writes(Expr *e, int off)
 {
@@ -92,9 +90,10 @@ static int block_writes(Block *b, int off)
 	return n;
 }
 
-/* Rewrite every read of the local at offset `off` to the integer literal `val`.
-   An identifier has no children, so converting it in place is complete; the node
-   keeps its resolved type so codegen emits the correct width. */
+/**
+ * Rewrite every read of the local at offset `off` to the integer literal `val`.
+ * An identifier has no children, so converting it in place is complete; the node keeps its resolved type so codegen emits the correct width.
+ */
 static void rewrite_expr(Expr *e, int off, long long val)
 {
 	if (!e)
@@ -129,7 +128,7 @@ static void rewrite_stmt(Stmt *s, int off, long long val)
 	rewrite_expr(s->cond, off, val);
 	rewrite_expr(s->decl_init, off, val);
 	rewrite_expr(s->value, off, val);
-	rewrite_expr(s->target, off, val);   /* No write to off survives here (single-write guarantee). */
+	rewrite_expr(s->target, off, val); // No write to off survives here (single-write guarantee).
 	rewrite_expr(s->ret_val, off, val);
 	rewrite_expr(s->expr, off, val);
 	rewrite_stmt(s->for_init, off, val);
@@ -163,10 +162,8 @@ void constprop_annotate(Func *f)
 	{
 		Stmt *s = b->stmts[i];
 
-		/* A top-level (function-scope, unconditional) single write of an integer
-		   literal to a 64-bit local. Restricting to 64-bit locals keeps the value
-		   the full register width, so no slot-width re-extension is skipped; the
-		   write must dominate every read, which a top-level statement does. */
+		// A top-level (function-scope, unconditional) single write of an integer literal to a 64-bit local.
+		// Restricting to 64-bit locals keeps the value the full register width, so no slot-width re-extension is skipped; the write must dominate every read, which a top-level statement does.
 		int off = 0;
 		long long val = 0;
 		int ok = 0;
@@ -195,11 +192,10 @@ void constprop_annotate(Func *f)
 
 		if (block_writes(b, off) != 1)
 		{
-			continue;   /* Reassigned somewhere: not a constant. */
+			continue; // Reassigned somewhere: not a constant.
 		}
 
-		/* Rewrite reads only in statements after the write, so a read that
-		   precedes the assignment (use-before-init, already a bug) is left alone. */
+		// Rewrite reads only in statements after the write, so a read that precedes the assignment (use-before-init, already a bug) is left alone.
 		for (int j = i + 1; j < b->count; j++)
 		{
 			rewrite_stmt(b->stmts[j], off, val);

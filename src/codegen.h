@@ -20,9 +20,7 @@ typedef struct
 	int argtmp_base;   /* The rbp offset of ARGTMP[0]; ARGTMP[i] is argtmp_base + i*8. */
 	int assign_save;   /* The rbp offset that holds a new field-store value across receiver evaluation. */
 	int fp_save;       /* The rbp offset for spilling xmm0 (FP return / FP field store). */
-	int rbx_save;      /* The rbp offset holding the caller's rbx. rbx is callee-saved in both ABIs;
-	                      codegen uses it as scratch, so every function must save/restore it or it
-	                      corrupts a caller (e.g. the C runtime) that kept a value in rbx across the call. */
+	int rbx_save;      /* The rbp offset holding the caller's rbx. rbx is callee-saved in both ABIs; codegen uses it as scratch, so every function must save/restore it or it corrupts a caller (e.g. the C runtime) that kept a value in rbx across the call. */
 	int callee_save[4];  /* rbp offsets holding the caller's r12..r15 when this frame promotes locals. */
 	Func *cur_func;      /* The Func currently being emitted, or NULL for synthesized/hand-rolled frames. */
 	int temp_base;       /* rbp offset of temp slot 0; slot i is [rbp - (temp_base + i*8)] (fixed-rsp plan). */
@@ -109,20 +107,22 @@ void cg_init(Codegen *cg, FILE *out);
 void cg_emit(Codegen *cg, const char *fmt, ...);
 int  cg_label(Codegen *cg);
 
-/* Granlund-Montgomery signed magic number (M, shift s) for a positive constant
-   divisor d (>= 3, non-power-of-two): the signed quotient of n by d is
-   SRA(MULHI_S(n, M) [+ n when M < 0], s) + (n >>> 63). Shared by the emitter and
-   the IR backend so both lower constant division identically. */
+/**
+ * Granlund-Montgomery signed magic number (M, shift s) for a positive constant divisor d (>= 3, non-power-of-two): the signed quotient of n by d is SRA(MULHI_S(n, M) [+ n when M < 0], s) + (n >>> 63).
+ * Shared by the emitter and the IR backend so both lower constant division identically.
+ */
 void cg_magic_signed(long long d, long long *M_out, int *s_out);
 
-/* Granlund-Montgomery UNSIGNED magic (M, shift s, and an add flag) for a constant
-   divisor d (>= 3, non-power-of-two). add == 0: q = MULHU(n, M) >> s. add == 1:
-   q = MULHU(n, M); q = (((n - q) >> 1) + q) >> (s - 1). Shared by both backends. */
+/**
+ * Granlund-Montgomery UNSIGNED magic (M, shift s, and an add flag) for a constant divisor d (>= 3, non-power-of-two). add == 0: q = MULHU(n, M) >> s. add == 1: q = MULHU(n, M); q = (((n - q) >> 1) + q) >> (s - 1).
+ * Shared by both backends.
+ */
 void cg_magic_unsigned(unsigned long long d, unsigned long long *M_out, int *s_out, int *add_out);
 void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count);
 
-/* Emit one per-function exception record (PC range, frame size, name, object-local
-   offsets, try table) into .data, leaving .text active. Shared with the IR emitter
-   so an IR function that can throw a bounds error is unwindable. */
+/**
+ * Emit one per-function exception record (PC range, frame size, name, object-local offsets, try table) into .data, leaving .text active.
+ * Shared with the IR emitter so an IR function that can throw a bounds error is unwindable.
+ */
 void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f);
 #endif

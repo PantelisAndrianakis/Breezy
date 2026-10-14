@@ -23,7 +23,7 @@ void ir_func_free(IRFunc *f)
 		{
 			if (b->instrs[j].op == IR_CALL)
 			{
-				free(b->instrs[j].call_args);   /* The arg-vreg array malloc'd in lowering. */
+				free(b->instrs[j].call_args); // The arg-vreg array malloc'd in lowering.
 			}
 		}
 

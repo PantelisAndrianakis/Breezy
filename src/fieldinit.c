@@ -3,8 +3,10 @@
 #include <string.h>
 #include "fieldinit.h"
 
-/* Find a class by name across all units; parse order and file layout are
-   irrelevant. Template units cleared by generics_expand hold NULL slots. */
+/**
+ * Find a class by name across all units; parse order and file layout are irrelevant.
+ * Template units cleared by generics_expand hold NULL slots.
+ */
 static ClassDecl *find_class(Unit **units, int total, const char *name)
 {
 	for (int i=0; i<total; i++)
@@ -22,9 +24,10 @@ static ClassDecl *find_class(Unit **units, int total, const char *name)
 	return NULL;
 }
 
-/* Build one `this.<field> = <clone of init>` assignment. The initializer is
-   deep-copied because an ancestor's initializer is embedded into EVERY
-   descendant's constructor, and AST nodes are single-owner. */
+/**
+ * Build one `this.<field> = <clone of init>` assignment.
+ * The initializer is deep-copied because an ancestor's initializer is embedded into EVERY descendant's constructor, and AST nodes are single-owner.
+ */
 static Stmt *make_init_assign(const Field *f)
 {
 	int line=f->init->line;
@@ -42,10 +45,10 @@ static void lower_class(Unit **units, int total, ClassDecl *c)
 {
 	if (c->is_static)
 	{
-		return;   /* Every field is static; the __static_init path owns those. */
+		return; // Every field is static; the __static_init path owns those.
 	}
 
-	/* Gather the inheritance chain, self first; chain[depth-1] is the root. */
+	// Gather the inheritance chain, self first; chain[depth-1] is the root.
 	ClassDecl *chain[64];
 	int depth=0;
 	ClassDecl *cur=c;
@@ -61,7 +64,7 @@ static void lower_class(Unit **units, int total, ClassDecl *c)
 		cur = cur->has_parent ? find_class(units,total,cur->parent_name) : NULL;
 	}
 
-	/* Skip classes whose whole chain has no instance-field initializers. */
+	// Skip classes whose whole chain has no instance-field initializers.
 	int any=0;
 	for (int i=0; i<depth && !any; i++)
 	{
@@ -80,7 +83,7 @@ static void lower_class(Unit **units, int total, ClassDecl *c)
 		return;
 	}
 
-	/* Only this class's own constructors run at `new`, so one must exist. */
+	// Only this class's own constructors run at `new`, so one must exist.
 	if (c->ctor_count==0)
 	{
 		Func *f=func_new();
@@ -91,9 +94,8 @@ static void lower_class(Unit **units, int total, ClassDecl *c)
 		c->ctor=c->ctors[0];
 	}
 
-	/* Rebuild EVERY constructor's body: initializer assignments (ancestor-first,
-	   declaration order), then that constructor's original statements. Each gets
-	   its own cloned initializers (make_init_assign deep-copies). */
+	// Rebuild EVERY constructor's body: initializer assignments (ancestor-first, declaration order), then that constructor's original statements.
+	// Each gets its own cloned initializers (make_init_assign deep-copies).
 	for (int ctor_i=0; ctor_i<c->ctor_count; ctor_i++)
 	{
 		Func *ctor=c->ctors[ctor_i];
@@ -140,8 +142,7 @@ void fieldinit_expand(Unit **units, int total)
 		}
 	}
 
-	/* Clear instance-field inits only after EVERY class is lowered: a
-	   subclass in another unit reads its ancestor's init pointers above. */
+	// Clear instance-field inits only after EVERY class is lowered: a subclass in another unit reads its ancestor's init pointers above.
 	for (int i=0; i<total; i++)
 	{
 		for (int k=0; k<units[i]->class_count; k++)

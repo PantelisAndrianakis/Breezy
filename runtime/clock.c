@@ -9,10 +9,10 @@
 int64_t bzy_clock_millis(void)
 {
 	FILETIME ft;
-	GetSystemTimeAsFileTime(&ft);   /* 100-ns ticks since 1601-01-01 (UTC). */
+	GetSystemTimeAsFileTime(&ft); // 100-ns ticks since 1601-01-01 (UTC).
 	unsigned long long t = ((unsigned long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-	t -= 116444736000000000ULL;     /* Ticks between 1601 and the Unix epoch. */
-	return (int64_t)(t / 10000ULL); /* 100-ns ticks -> milliseconds. */
+	t -= 116444736000000000ULL; // Ticks between 1601 and the Unix epoch.
+	return (int64_t)(t / 10000ULL); // 100-ns ticks -> milliseconds.
 }
 
 /* Read the x86-64 invariant TSC. No system call; ~2-4 cycles. */
@@ -28,13 +28,13 @@ static volatile uint64_t g_scale_q32 = 0;   /* ns-per-tick in Q32.32 fixed-point
 
 static void rdtsc_init(void)
 {
-	/* Calibrate the TSC -> ns scale against QPC over a ~100 us spin. Called at
-	   most once per process (first bzy_clock_nanos call). */
+	// Calibrate the TSC -> ns scale against QPC over a ~100 us spin.
+	// Called at most once per process (first bzy_clock_nanos call).
 	LARGE_INTEGER f, c0, c1;
 	QueryPerformanceFrequency(&f);
 	QueryPerformanceCounter(&c0);
 	uint64_t t0 = read_tsc();
-	int64_t  end = c0.QuadPart + f.QuadPart / 10000;   /* ~100 us. */
+	int64_t  end = c0.QuadPart + f.QuadPart / 10000; // ~100 us.
 	do
 	{
 		QueryPerformanceCounter(&c1);
@@ -44,14 +44,14 @@ static void rdtsc_init(void)
 
 	uint64_t ns    = (uint64_t)((c1.QuadPart - c0.QuadPart) * 1000000000LL / f.QuadPart);
 	uint64_t scale = (uint64_t)(((unsigned __int128)ns << 32) / (t1 - t0));
-	g_tsc0      = t0;     /* Write base before scale. On x86 TSO, stores are not */
-	g_scale_q32 = scale;  /* reordered, so any reader that sees scale != 0 also   */
-	/* sees the matching tsc0.                               */
+	g_tsc0      = t0; // Write base before scale. On x86 TSO, stores are not
+	g_scale_q32 = scale; // reordered, so any reader that sees scale != 0 also
+	// sees the matching tsc0.
 }
 
 int64_t bzy_clock_nanos(void)
 {
-	/* Hot path: rdtsc + 128-bit multiply + shift -- ~3-4 ns, nanosecond resolution. */
+	// Hot path: rdtsc + 128-bit multiply + shift -- ~3-4 ns, nanosecond resolution.
 	if (!g_scale_q32)
 	{
 		rdtsc_init();
@@ -65,11 +65,7 @@ int64_t bzy_clock_nanos(void)
 
 int64_t bzy_clock_millis(void)
 {
-	/* time() has 1-second resolution, which collapses every sub-second timer onto
-	   one tick: timers scheduled milliseconds apart all come due together and the
-	   workers race to run them (broke proj_timer_order). clock_gettime(REALTIME)
-	   is the same epoch as time() -- so format_date still works -- but with
-	   millisecond resolution. */
+	// time() has 1-second resolution, which collapses every sub-second timer onto one tick: timers scheduled milliseconds apart all come due together and the workers race to run them (broke proj_timer_order). clock_gettime(REALTIME) is the same epoch as time() -- so format_date still works -- but with millisecond resolution.
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
@@ -77,18 +73,18 @@ int64_t bzy_clock_millis(void)
 
 int64_t bzy_clock_nanos(void)
 {
-	/* clock() measures CPU time, not elapsed wall time -- wrong for a monotonic
-	   counter (and what System.currentTimeNanos promises). CLOCK_MONOTONIC is the
-	   POSIX analogue of Windows' QueryPerformanceCounter. */
+	// clock() measures CPU time, not elapsed wall time -- wrong for a monotonic counter (and what System.currentTimeNanos promises).
+	// CLOCK_MONOTONIC is the POSIX analogue of Windows' QueryPerformanceCounter.
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 #endif
 
-/* Emit v (non-negative) zero-padded to at least `width` digits. Replaces an
-   snprintf("%0*d") that dominated the format hot path (format-string parse +
-   locale on every numeric field, 12M calls in the time benchmark). */
+/**
+ * Emit v (non-negative) zero-padded to at least `width` digits.
+ * Replaces an snprintf("%0*d") that dominated the format hot path (format-string parse + locale on every numeric field, 12M calls in the time benchmark).
+ */
 static void put_pad(char *o, int *n, int v, int width)
 {
 	char t[16];
@@ -111,14 +107,13 @@ static void put_pad(char *o, int *n, int v, int width)
 		t[len++] = '0';
 	}
 
-	for (int i = len - 1; i >= 0 && *n < 250; i--)   /* Digits were produced least-significant first. */
+	for (int i = len - 1; i >= 0 && *n < 250; i--) // Digits were produced least-significant first.
 	{
 		o[(*n)++] = t[i];
 	}
 }
 
-/* Floor division by a positive divisor (C's / truncates toward zero, which is
-   wrong for negative seconds, i.e. pre-1970 timestamps). */
+/* Floor division by a positive divisor (C's / truncates toward zero, which is wrong for negative seconds, i.e. pre-1970 timestamps). */
 static int64_t floordiv(int64_t a, int64_t b)
 {
 	int64_t q = a / b;
@@ -130,37 +125,35 @@ static int64_t floordiv(int64_t a, int64_t b)
 	return q;
 }
 
-/* Civil date (year, 1-based month, day) from a count of days since 1970-01-01.
-   Howard Hinnant's branch-free algorithm: avoids a localtime() call per format. */
+/**
+ * Civil date (year, 1-based month, day) from a count of days since 1970-01-01.
+ * Howard Hinnant's branch-free algorithm: avoids a localtime() call per format.
+ */
 static void civil_from_days(int64_t z, int *year, int *month, int *day)
 {
-	z += 719468;                                          /* Shift epoch to 0000-03-01. */
+	z += 719468; // Shift epoch to 0000-03-01.
 	int64_t era = floordiv(z, 146097);
-	unsigned doe = (unsigned)(z - era * 146097);          /* Day of era [0, 146096]. */
-	unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;   /* Year of era [0, 399]. */
+	unsigned doe = (unsigned)(z - era * 146097); // Day of era [0, 146096].
+	unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // Year of era [0, 399].
 	int64_t y = (int64_t)yoe + era * 400;
-	unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100); /* Day of year [0, 365], Mar-1 = 0. */
-	unsigned mp = (5 * doy + 2) / 153;                     /* Month [0, 11], Mar = 0. */
-	unsigned d = doy - (153 * mp + 2) / 5 + 1;             /* Day [1, 31]. */
-	unsigned m = mp < 10 ? mp + 3 : mp - 9;                /* Month [1, 12], Jan = 1. */
+	unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // Day of year [0, 365], Mar-1 = 0.
+	unsigned mp = (5 * doy + 2) / 153; // Month [0, 11], Mar = 0.
+	unsigned d = doy - (153 * mp + 2) / 5 + 1; // Day [1, 31].
+	unsigned m = mp < 10 ? mp + 3 : mp - 9; // Month [1, 12], Jan = 1.
 	*year = (int)(y + (m <= 2));
 	*month = (int)m;
 	*day = (int)d;
 }
 
-/* Local UTC offset (seconds) for the given epoch second, cached in 15-minute
-   (900 s) buckets. glibc's localtime() takes a global tzset lock and re-derives
-   the zone on every call (~890 ns each); calling it once per bucket instead cuts
-   that ~24x for the typical sub-minute timestamp stride. The bucket is safe
-   against DST: every real-world transition instant falls on a 15-minute UTC
-   boundary (the finest zone-offset granularity is 15 min and transitions occur
-   on whole local minutes), so a single bucket never straddles a transition.
-   Thread-local so concurrent breezes never race on the cache. */
+/**
+ * Local UTC offset (seconds) for the given epoch second, cached in 15-minute (900 s) buckets. glibc's localtime() takes a global tzset lock and re-derives the zone on every call (~890 ns each); calling it once per bucket instead cuts that ~24x for the typical sub-minute timestamp stride.
+ * The bucket is safe against DST: every real-world transition instant falls on a 15-minute UTC boundary (the finest zone-offset granularity is 15 min and transitions occur on whole local minutes), so a single bucket never straddles a transition.
+ * Thread-local so concurrent breezes never race on the cache.
+ */
 static int64_t local_offset(time_t secs)
 {
-	/* One __thread struct so the Windows emutls hot path pays a single
-	   __emutls_get_address per call instead of four (mirrors PoolTLS in
-	   alloc.c). Linux is unaffected: still one fs:-relative resolution. */
+	// One __thread struct so the Windows emutls hot path pays a single __emutls_get_address per call instead of four (mirrors PoolTLS in alloc.c).
+	// Linux is unaffected: still one fs:-relative resolution.
 	typedef struct
 	{
 		int64_t lo;
@@ -169,7 +162,7 @@ static int64_t local_offset(time_t secs)
 		int     valid;
 	} TzCache;
 	static __thread TzCache tz;
-	TzCache *c = &tz;   /* Resolve TLS once; all reads/writes go through c. */
+	TzCache *c = &tz; // Resolve TLS once; all reads/writes go through c.
 
 	int64_t s = (int64_t)secs;
 	if (c->valid && s >= c->lo && s < c->hi)
@@ -179,12 +172,10 @@ static int64_t local_offset(time_t secs)
 
 	struct tm tmv;
 #ifdef _WIN32
-	/* MSVCRT's localtime() returns NULL for negative (pre-1970) time_t. The
-	   Gregorian calendar and civil wall clock repeat exactly every 400 years
-	   (146097 days), so shift a negative instant up by whole cycles into the
-	   representable range; the zone offset there matches the original. */
+	// MSVCRT's localtime() returns NULL for negative (pre-1970) time_t.
+	// The Gregorian calendar and civil wall clock repeat exactly every 400 years (146097 days), so shift a negative instant up by whole cycles into the representable range; the zone offset there matches the original.
 	int64_t shifted = s;
-	const int64_t CYCLE = 12622780800LL;   /* 400 years = 146097 days, in seconds. */
+	const int64_t CYCLE = 12622780800LL; // 400 years = 146097 days, in seconds.
 	while (shifted < 0)
 	{
 		shifted += CYCLE;
@@ -193,7 +184,7 @@ static int64_t local_offset(time_t secs)
 	time_t st = (time_t)shifted;
 	struct tm *lt = localtime(&st);
 	tmv = *lt;
-	int64_t off = (int64_t)_mkgmtime(&tmv) - shifted;   /* Re-interpret the local fields as UTC -> offset. */
+	int64_t off = (int64_t)_mkgmtime(&tmv) - shifted; // Re-interpret the local fields as UTC -> offset.
 #else
 	localtime_r(&secs, &tmv);
 	int64_t off = (int64_t)timegm(&tmv) - s;
@@ -207,23 +198,24 @@ static int64_t local_offset(time_t secs)
 	return off;
 }
 
-/* Exposed to Breezy (DateTime): the local UTC offset, in seconds, for the given
-   epoch-seconds value. local = utc + offset. */
+/* Exposed to Breezy (DateTime): the local UTC offset, in seconds, for the given epoch-seconds value. local = utc + offset. */
 int64_t bzy_local_offset_secs(int64_t secs)
 {
 	return local_offset((time_t)secs);
 }
 
-/* Format millis (epoch ms) in local time using a date-format pattern. Tokens:
-   yyyy yy MM dd HH hh mm ss SSS a; any other character is copied literally. */
+/**
+ * Format millis (epoch ms) in local time using a date-format pattern.
+ * Tokens: yyyy yy MM dd HH hh mm ss SSS a; any other character is copied literally.
+ */
 static void *format_date(int64_t millis, const char *f, int fl)
 {
 	int64_t secs = floordiv(millis, 1000);
-	int ms = (int)(millis - secs * 1000);        /* Always in [0, 999], even for negative millis. */
+	int ms = (int)(millis - secs * 1000); // Always in [0, 999], even for negative millis.
 
 	int64_t local = secs + local_offset((time_t)secs);
 	int64_t days = floordiv(local, 86400);
-	int sod = (int)(local - days * 86400);        /* Second of day [0, 86399]. */
+	int sod = (int)(local - days * 86400); // Second of day [0, 86399].
 
 	int year, mon, mday;
 	civil_from_days(days, &year, &mon, &mday);

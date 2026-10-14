@@ -8,10 +8,10 @@
 #include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
 #endif
 
-/* A task is a stack node on the submitting breeze's coroutine stack (stable while
-   parked). The worker copies its fields out under the lock, runs fn(ctx), then
-   wakes the breeze — it never touches the node again, so the node may go out of
-   scope as soon as the breeze resumes. */
+/**
+ * A task is a stack node on the submitting breeze's coroutine stack (stable while parked).
+ * The worker copies its fields out under the lock, runs fn(ctx), then wakes the breeze - it never touches the node again, so the node may go out of scope as soon as the breeze resumes.
+ */
 typedef struct OffTask
 {
 	void (*fn)(void*);
@@ -55,13 +55,13 @@ static void *offload_worker(void *unused)
 		bzy_mutex_unlock(&g_lock);
 		if (!tp)
 		{
-			continue;                  /* Spurious / shutdown wake. */
+			continue; // Spurious / shutdown wake.
 		}
 
-		void (*fn)(void*) = tp->fn;    /* Copy out: tp belongs to the parked breeze. */
+		void (*fn)(void*) = tp->fn; // Copy out: tp belongs to the parked breeze.
 		void *ctx = tp->ctx;
 		void *breeze = tp->breeze;
-		fn(ctx);                       /* The blocking call: reads caller buffers, fills the result slot. */
+		fn(ctx); // The blocking call: reads caller buffers, fills the result slot.
 		bzy_sched_wake_external(breeze);
 		__atomic_sub_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST);
 	}
@@ -139,10 +139,9 @@ void bzy_offload_run(void (*fn)(void*), void *ctx)
 
 	g_tail = &t;
 	bzy_sem_post(&g_sem, 1);
-	/* Park; the scheduler releases g_lock after we switch out, so a worker cannot
-	   pop &t (and read our stack node) until we are safely off the CPU. */
+	// Park; the scheduler releases g_lock after we switch out, so a worker cannot pop &t (and read our stack node) until we are safely off the CPU.
 	bzy_sched_park_unlock(&g_lock);
-	/* Resumed: the worker ran fn(ctx) and woke us. */
+	// Resumed: the worker ran fn(ctx) and woke us.
 }
 
 int64_t bzy_offload_inflight(void)
@@ -156,7 +155,7 @@ void bzy_offload_shutdown(void)
 	if (g_started)
 	{
 		__atomic_store_n(&g_shutdown, 1, __ATOMIC_SEQ_CST);
-		bzy_sem_post(&g_sem, g_nthreads);   /* Wake every worker to exit. */
+		bzy_sem_post(&g_sem, g_nthreads); // Wake every worker to exit.
 		for (int i = 0; i < g_nthreads; i++)
 		{
 			bzy_thread_join(g_threads[i]);

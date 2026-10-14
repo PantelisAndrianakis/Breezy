@@ -15,8 +15,10 @@
 #include <stdlib.h>   /* putenv: keep the IR-region assertions off the default C route. */
 #include <string.h>
 
-/* Lex -> parse -> register -> resolve a snippet and return its first free
-   function (u->funcs[0]). Mirrors test_resolve.c's build1. */
+/**
+ * Lex -> parse -> register -> resolve a snippet and return its first free function (u->funcs[0]).
+ * Mirrors test_resolve.c's build1.
+ */
 static TypeTable g_tt;
 static const Func *parse_one_func(const char *src)
 {
@@ -96,14 +98,13 @@ static void test_eligible_rejects_call(void)
 	const Func *f = parse_one_func(
 						"int two() { return one() + one(); }\n"
 						"int one() { return 1; }\n");
-	/* funcs[0] is `two`, which contains calls -> ineligible. */
+	// funcs[0] is `two`, which contains calls -> ineligible.
 	ASSERT_INT(ir_eligible(f), 0);
 }
 
 static void test_eligible_accepts_int_array(void)
 {
-	/* Integer arrays are supported (bounds-checked): an int[] parameter indexed by
-	   a constant is eligible. */
+	// Integer arrays are supported (bounds-checked): an int[] parameter indexed by a constant is eligible.
 	const Func *f = parse_one_func(
 						"int first(int[] xs)\n"
 						"{\n"
@@ -114,8 +115,7 @@ static void test_eligible_accepts_int_array(void)
 
 static void test_eligible_accepts_double_array(void)
 {
-	/* double[] elements are in scope as of Tier 1/1a Stage 3 (xmm register class):
-	   the element load/store emits movsd and the (int) cast emits cvttsd2si. */
+	// double[] elements are in scope as of Tier 1/1a Stage 3 (xmm register class): the element load/store emits movsd and the (int) cast emits cvttsd2si.
 	const Func *f = parse_one_func(
 						"int firstd(double[] xs)\n"
 						"{\n"
@@ -126,7 +126,7 @@ static void test_eligible_accepts_double_array(void)
 
 static void test_eligible_rejects_new_array(void)
 {
-	/* Allocating an array is a managed call, excluded from the call-free IR. */
+	// Allocating an array is a managed call, excluded from the call-free IR.
 	const Func *f = parse_one_func(
 						"int mk()\n"
 						"{\n"
@@ -156,8 +156,7 @@ static void test_lower_produces_blocks_and_ret(void)
 
 static void test_lower_collatz_succeeds(void)
 {
-	/* The whole collatz kernel lowers (no NULL fallback): for/while/if/else,
-	   casts, %/ and comparisons all translate. */
+	// The whole collatz kernel lowers (no NULL fallback): for/while/if/else, casts, %/ and comparisons all translate.
 	const Func *f = parse_one_func(
 						"long collatzSum(int n)\n"
 						"{\n"
@@ -185,8 +184,7 @@ static void test_lower_collatz_succeeds(void)
 	ir_func_free(ir);
 }
 
-/* The `checked` bit of the first non-frame element load (scale 4, disp 32) in a
-   lowered function, or -1 if there is none. checked == !anno_index_safe. */
+/* The `checked` bit of the first non-frame element load (scale 4, disp 32) in a lowered function, or -1 if there is none. checked == !anno_index_safe. */
 static int first_elem_load_checked(const char *src)
 {
 	const Func *f = parse_one_func(src);
@@ -216,7 +214,7 @@ static int first_elem_load_checked(const char *src)
 
 static void test_bce_guarded_sweep_is_safe(void)
 {
-	/* for (i = 0; i < a.length; i++) a[i]  -> provably in range, no bounds check. */
+	// for (i = 0; i < a.length; i++) a[i]  -> provably in range, no bounds check.
 	ASSERT_INT(first_elem_load_checked(
 				   "long asum(int[] a)\n"
 				   "{\n"
@@ -226,11 +224,10 @@ static void test_bce_guarded_sweep_is_safe(void)
 				   "}\n"), 0);
 }
 
-/* Adversarial cases - each MUST stay bounds-checked (checked == 1); a wrong
-   anno_index_safe here is a memory-safety hole. */
+/* Adversarial cases - each MUST stay bounds-checked (checked == 1); a wrong anno_index_safe here is a memory-safety hole. */
 static void test_bce_offbyone_stays_checked(void)
 {
-	/* `<=` lets i reach a.length. */
+	// `<=` lets i reach a.length.
 	ASSERT_INT(first_elem_load_checked(
 				   "long f(int[] a)\n"
 				   "{\n"
@@ -242,7 +239,7 @@ static void test_bce_offbyone_stays_checked(void)
 
 static void test_bce_other_array_stays_checked(void)
 {
-	/* Guard is on a.length but the access is into b. */
+	// Guard is on a.length but the access is into b.
 	ASSERT_INT(first_elem_load_checked(
 				   "long f(int[] a, int[] b)\n"
 				   "{\n"
@@ -254,7 +251,7 @@ static void test_bce_other_array_stays_checked(void)
 
 static void test_bce_counter_reassigned_stays_checked(void)
 {
-	/* The body bumps i past the guarded value before the access. */
+	// The body bumps i past the guarded value before the access.
 	ASSERT_INT(first_elem_load_checked(
 				   "long f(int[] a)\n"
 				   "{\n"
@@ -279,10 +276,7 @@ static const Stmt *first_loop(const Func *f)
 	return 0;
 }
 
-/* Region variant of first_elem_load_checked: lowers the function's first loop
-   as a region (so the function may use `new` outside the loop, giving BCE a
-   numeric array length) and returns the `checked` bit of the first non-frame
-   4-byte element load, -1 if none, -2 if the region is ineligible. */
+/* Region variant of first_elem_load_checked: lowers the function's first loop as a region (so the function may use `new` outside the loop, giving BCE a numeric array length) and returns the `checked` bit of the first non-frame 4-byte element load, -1 if none, -2 if the region is ineligible. */
 static int first_region_elem_load_checked(const char *src)
 {
 	const Func *f = parse_one_func(src);
@@ -312,8 +306,7 @@ static int first_region_elem_load_checked(const char *src)
 
 static void test_bce_variable_mask_is_safe(void)
 {
-	/* mask = 65535 (a derived constant); array length 65536: h & mask is in
-	   [0, 65535] regardless of h's sign, so the access is provably safe. */
+	// mask = 65535 (a derived constant); array length 65536: h & mask is in [0, 65535] regardless of h's sign, so the access is provably safe.
 	ASSERT_INT(first_region_elem_load_checked(
 				   "long f(int h)\n"
 				   "{\n"
@@ -336,8 +329,7 @@ static void test_bce_variable_mask_is_safe(void)
 
 static void test_lower_masked_byte_load_is_movzx(void)
 {
-	/* (int)a[i] & 255 must lower to a single unsigned byte load: no IR_AND,
-	   no IR_CAST, one IR_LOAD of type TY_UBYTE (iremit emits movzx for it). */
+	// (int)a[i] & 255 must lower to a single unsigned byte load: no IR_AND, no IR_CAST, one IR_LOAD of type TY_UBYTE (iremit emits movzx for it).
 	const Func *f = parse_one_func(
 						"int f(byte[] a, int i)\n"
 						"{\n"
@@ -380,8 +372,7 @@ static void test_lower_masked_byte_load_is_movzx(void)
 
 static void test_lower_rmw_index_lowered_once(void)
 {
-	/* a[i + 1] = a[i + 1] + 2: the index expression must lower once - one
-	   IR_ADD for i+1 plus one IR_ADD for the value add, not two for i+1. */
+	// a[i + 1] = a[i + 1] + 2: the index expression must lower once - one IR_ADD for i+1 plus one IR_ADD for the value add, not two for i+1.
 	const Func *f = parse_one_func(
 						"void f(int[] a, int i)\n"
 						"{\n"
@@ -417,8 +408,7 @@ static void test_lower_rmw_index_lowered_once(void)
 
 static void test_lower_unrolls_constant_trip_loop(void)
 {
-	/* A 13-trip counted loop lowers as straight-line code: no IR_BRCOND, and
-	   the body's multiply appears 13 times. */
+	// A 13-trip counted loop lowers as straight-line code: no IR_BRCOND, and the body's multiply appears 13 times.
 	const Func *f = parse_one_func(
 						"int f(int h)\n"
 						"{\n"
@@ -458,7 +448,7 @@ static void test_lower_unrolls_constant_trip_loop(void)
 
 static void test_lower_unroll_skips_iv_reassigned_in_body(void)
 {
-	/* The body writes the counter: must lower as a real loop (1 IR_BRCOND). */
+	// The body writes the counter: must lower as a real loop (1 IR_BRCOND).
 	const Func *f = parse_one_func(
 						"int f(int h)\n"
 						"{\n"
@@ -490,8 +480,7 @@ static void test_lower_unroll_skips_iv_reassigned_in_body(void)
 
 static void test_lower_folds_constant_index_addend(void)
 {
-	/* a[i + 10] with the access BCE-proved safe: the +10 folds into the load
-	   displacement (32 + 10*4 = 72) instead of an add on the index. */
+	// a[i + 10] with the access BCE-proved safe: the +10 folds into the load displacement (32 + 10*4 = 72) instead of an add on the index.
 	const Func *f = parse_one_func(
 						"long f()\n"
 						"{\n"
@@ -528,8 +517,7 @@ static void test_lower_folds_constant_index_addend(void)
 
 static void test_lower_checked_index_addend_not_folded(void)
 {
-	/* The array length is unknown, so the access stays checked - the bounds
-	   check must compare the FULL index, so the +10 must NOT fold away. */
+	// The array length is unknown, so the access stays checked - the bounds check must compare the FULL index, so the +10 must NOT fold away.
 	const Func *f = parse_one_func(
 						"long f(int[] a)\n"
 						"{\n"
@@ -564,8 +552,7 @@ static void test_lower_checked_index_addend_not_folded(void)
 
 static void test_bce_downward_loop_is_safe(void)
 {
-	/* for (i = k-1; i >= 0; i = i - 1) over new int[k]: the exact descending
-	   range proves every a[i] in [0, k), mirroring the upward case. */
+	// for (i = k-1; i >= 0; i = i - 1) over new int[k]: the exact descending range proves every a[i] in [0, k), mirroring the upward case.
 	ASSERT_INT(first_region_elem_load_checked(
 				   "long f()\n"
 				   "{\n"
@@ -583,7 +570,7 @@ static void test_bce_downward_loop_is_safe(void)
 
 static void test_bce_downward_underflow_stays_checked(void)
 {
-	/* `>= -1` lets i reach -1: must stay checked. */
+	// `>= -1` lets i reach -1: must stay checked.
 	ASSERT_INT(first_region_elem_load_checked(
 				   "long f()\n"
 				   "{\n"
@@ -601,7 +588,7 @@ static void test_bce_downward_underflow_stays_checked(void)
 
 static void test_bce_downward_reassigned_stays_checked(void)
 {
-	/* The body rewrites the counter: the range proof is void. */
+	// The body rewrites the counter: the range proof is void.
 	ASSERT_INT(first_region_elem_load_checked(
 				   "long f(int n)\n"
 				   "{\n"
@@ -620,8 +607,7 @@ static void test_bce_downward_reassigned_stays_checked(void)
 
 static void test_lower_max_pattern_becomes_select(void)
 {
-	/* if (cand > w) { w = cand; } - a single-assignment if with a pure, cheap
-	   body lowers to IR_SEL (branchless cmov), not a BRCOND diamond. */
+	// if (cand > w) { w = cand; } - a single-assignment if with a pure, cheap body lowers to IR_SEL (branchless cmov), not a BRCOND diamond.
 	const Func *f = parse_one_func(
 						"int f(int cand, int w)\n"
 						"{\n"
@@ -659,14 +645,13 @@ static void test_lower_max_pattern_becomes_select(void)
 	}
 
 	ASSERT_INT(sels, 1);
-	ASSERT_INT(brconds, 1);   /* Only the loop's own conditional branch remains. */
+	ASSERT_INT(brconds, 1); // Only the loop's own conditional branch remains.
 	ir_func_free(irf);
 }
 
 static void test_lower_div_body_stays_branched(void)
 {
-	/* The body divides: evaluating it unconditionally could fault, so the if
-	   must stay a real branch (no IR_SEL). */
+	// The body divides: evaluating it unconditionally could fault, so the if must stay a real branch (no IR_SEL).
 	const Func *f = parse_one_func(
 						"int f(int cand, int w, int d)\n"
 						"{\n"
@@ -700,8 +685,7 @@ static void test_lower_div_body_stays_branched(void)
 
 static void test_bce_negative_mask_stays_checked(void)
 {
-	/* The mask is an unbounded parameter, possibly negative: a & b with b of
-	   unknown sign proves nothing, so the check must stay. */
+	// The mask is an unbounded parameter, possibly negative: a & b with b of unknown sign proves nothing, so the check must stay.
 	ASSERT_INT(first_region_elem_load_checked(
 				   "long f(int h, int mask)\n"
 				   "{\n"
@@ -720,8 +704,7 @@ static void test_bce_negative_mask_stays_checked(void)
 
 static void test_region_eligible_despite_call(void)
 {
-	/* The helper() call makes the whole function ineligible, but the loop subtree
-	   alone is a valid region. */
+	// The helper() call makes the whole function ineligible, but the loop subtree alone is a valid region.
 	const Func *f = parse_one_func(
 						"void k(byte[] buf, int[] tbl)\n"
 						"{\n"
@@ -740,7 +723,7 @@ static void test_region_eligible_despite_call(void)
 
 static void test_region_rejects_return(void)
 {
-	/* A region cannot run the function epilogue, so returns inside it bail. */
+	// A region cannot run the function epilogue, so returns inside it bail.
 	const Func *f = parse_one_func(
 						"int k(int[] a)\n"
 						"{\n"
@@ -758,7 +741,7 @@ static void test_region_rejects_return(void)
 
 static void test_region_rejects_managed_assign(void)
 {
-	/* Reassigning an array local inside a region would skip refcounting. */
+	// Reassigning an array local inside a region would skip refcounting.
 	const Func *f = parse_one_func(
 						"void k(int[] a, int[] b)\n"
 						"{\n"
@@ -792,15 +775,14 @@ static void test_region_lower_has_no_ret(void)
 		}
 	}
 
-	/* The fall-off block is last and empty: emission falls through it into the
-	   region epilogue. */
+	// The fall-off block is last and empty: emission falls through it into the region epilogue.
 	ASSERT_INT(irf->blocks[irf->block_count - 1].count, 0);
 	ir_func_free(irf);
 }
 
 static void test_whole_function_eligibility_unaffected(void)
 {
-	/* The region-mode flag must not leak into whole-function checks. */
+	// The region-mode flag must not leak into whole-function checks.
 	const Func *f = parse_one_func(
 						"long sum(int limit)\n"
 						"{\n"
@@ -828,7 +810,7 @@ static void emit_region_to_buf(const Func *f, const Stmt *loop, Target target, i
 	Codegen cg;
 	cg_init(&cg, out);
 	cg.target = target;
-	ir_emit_region(&cg, irf, a, spill_base, NULL);   /* NULL: exercise the scalar block emitter. */
+	ir_emit_region(&cg, irf, a, spill_base, NULL); // NULL: exercise the scalar block emitter.
 	fflush(out);
 	rewind(out);
 	size_t n = fread(g_region_asm, 1, sizeof(g_region_asm) - 1, out);
@@ -853,30 +835,27 @@ static void test_region_emit_no_prologue_no_ret(void)
 						"void helper() { }\n");
 	emit_region_to_buf(f, first_loop(f), TARGET_WINDOWS, 256);
 
-	/* A region is body-only: no frame setup, no epilogue, no return. */
+	// A region is body-only: no frame setup, no epilogue, no return.
 	ASSERT(strstr(g_region_asm, "push rbp") == NULL);
 	ASSERT(strstr(g_region_asm, "    ret") == NULL);
 	ASSERT(strstr(g_region_asm, "pop rbp") == NULL);
 	ASSERT(strstr(g_region_asm, "section .") == NULL);
 
-	/* Begin/end markers bracket the region (the Task 3 dispatch test greps them). */
+	// Begin/end markers bracket the region (the Task 3 dispatch test greps them).
 	ASSERT(strstr(g_region_asm, "; ir-region begin") != NULL);
 	ASSERT(strstr(g_region_asm, "; ir-region end") != NULL);
 
-	/* The allocation hands out rbx first (RA_REGS[0], callee-saved): the region
-	   must save it into the region area and restore it at the end. */
+	// The allocation hands out rbx first (RA_REGS[0], callee-saved): the region must save it into the region area and restore it at the end.
 	ASSERT(strstr(g_region_asm, "], rbx") != NULL);
 	ASSERT(strstr(g_region_asm, "mov rbx, [rbp - ") != NULL);
 
-	/* The loop body is register-resident: between the begin marker's local loads
-	   and the end marker's store-backs there is a .L label (the loop head). */
+	// The loop body is register-resident: between the begin marker's local loads and the end marker's store-backs there is a .L label (the loop head).
 	ASSERT(strstr(g_region_asm, ".L") != NULL);
 }
 
 static void test_region_rejects_small_constant_trip(void)
 {
-	/* A fixed 8-iteration loop is the emitter's unroller's territory; region
-	   entry/exit overhead would dominate (codec's 8x8 stage loops). */
+	// A fixed 8-iteration loop is the emitter's unroller's territory; region entry/exit overhead would dominate (codec's 8x8 stage loops).
 	const Func *f = parse_one_func(
 						"void k(int[] a)\n"
 						"{\n"
@@ -890,7 +869,7 @@ static void test_region_rejects_small_constant_trip(void)
 
 static void test_region_accepts_larger_constant_trip(void)
 {
-	/* Nine iterations is past the unroller's limit: stays a region. */
+	// Nine iterations is past the unroller's limit: stays a region.
 	const Func *f = parse_one_func(
 						"void k(int[] a)\n"
 						"{\n"
@@ -904,7 +883,7 @@ static void test_region_accepts_larger_constant_trip(void)
 
 static void test_region_lowers_bitwise_not(void)
 {
-	/* ~x lowers as x ^ -1 (one xor, no new IR op); compiler-bench solve-loop shape. */
+	// ~x lowers as x ^ -1 (one xor, no new IR op); compiler-bench solve-loop shape.
 	const Func *f = parse_one_func(
 						"void k(long[] a, long[] b)\n"
 						"{\n"
@@ -933,9 +912,10 @@ static void test_region_lowers_bitwise_not(void)
 	ir_func_free(irf);
 }
 
-/* Compile a full unit (prelude + src) through cg_program, exactly as the driver
-   does, and load the emitted asm. The test_ir process never sets BZY_IR, so the
-   IR backend and regions run with their defaults (on). */
+/**
+ * Compile a full unit (prelude + src) through cg_program, exactly as the driver does, and load the emitted asm.
+ * The test_ir process never sets BZY_IR, so the IR backend and regions run with their defaults (on).
+ */
 static char g_full_asm[1 << 16];
 static void emit_unit_asm(const char *src, Target target)
 {
@@ -954,7 +934,7 @@ static void emit_unit_asm(const char *src, Target target)
 	int total = np + 1;
 
 	{
-		Unit **gu = units;    /* Drop uninstantiated templates (Pool<T>), like main.c. */
+		Unit **gu = units; // Drop uninstantiated templates (Pool<T>), like main.c.
 		int gc = 16;
 		generics_expand(&gu, &total, &gc);
 	}
@@ -990,9 +970,8 @@ static void emit_unit_asm(const char *src, Target target)
 
 static void test_region_dispatch_in_main_shaped_function(void)
 {
-	/* A main with allocation and a print after the loop: whole-function IR is
-	   impossible, so the loop must be emitted as a region. The data-dependent
-	   index keeps it off the emitter's hoist path (hoistable loops stay there). */
+	// A main with allocation and a print after the loop: whole-function IR is impossible, so the loop must be emitted as a region.
+	// The data-dependent index keeps it off the emitter's hoist path (hoistable loops stay there).
 	emit_unit_asm(
 		"void main()\n"
 		"{\n"
@@ -1015,9 +994,7 @@ static void test_region_dispatch_in_main_shaped_function(void)
 
 static void test_region_fires_inside_plain_emitter_loop(void)
 {
-	/* The outer pass loop calls helper() (ineligible, stays on the emitter), but
-	   it holds no register state across statements, so the eligible inner array
-	   loop must still become a region - the browser/game timing-loop shape. */
+	// The outer pass loop calls helper() (ineligible, stays on the emitter), but it holds no register state across statements, so the eligible inner array loop must still become a region - the browser/game timing-loop shape.
 	emit_unit_asm(
 		"void main()\n"
 		"{\n"
@@ -1044,8 +1021,7 @@ static void test_region_fires_inside_plain_emitter_loop(void)
 
 static void test_region_skipped_in_function_with_try(void)
 {
-	/* A catch resuming in this frame would read home slots the region holds in
-	   registers: any try in the function disables regions. */
+	// A catch resuming in this frame would read home slots the region holds in registers: any try in the function disables regions.
 	emit_unit_asm(
 		"void main()\n"
 		"{\n"
@@ -1067,8 +1043,7 @@ static void test_region_skipped_in_function_with_try(void)
 
 static void test_region_bounds_check_cold_out_of_line(void)
 {
-	/* A checked access's hot path must be cmp + not-taken jae to a cold stub;
-	   the bzy_oob argument setup may no longer sit inline right after it. */
+	// A checked access's hot path must be cmp + not-taken jae to a cold stub; the bzy_oob argument setup may no longer sit inline right after it.
 	const Func *f = parse_one_func(
 						"long k(int[] a, int[] b)\n"
 						"{\n"
@@ -1086,17 +1061,17 @@ static void test_region_bounds_check_cold_out_of_line(void)
 
 	const char *jae = strstr(g_region_asm, "jae .L");
 	ASSERT(jae != NULL);
-	/* The 200 chars after the hot check are loop body, not the cold call. */
+	// The 200 chars after the hot check are loop body, not the cold call.
 	char window[201];
 	strncpy(window, jae, 200);
 	window[200] = 0;
 	ASSERT(strstr(window, "bzy_oob") == NULL);
-	ASSERT(strstr(g_region_asm, "call bzy_oob") != NULL);   /* The stub exists. */
+	ASSERT(strstr(g_region_asm, "call bzy_oob") != NULL); // The stub exists.
 }
 
 static void test_region_select_emits_cmov(void)
 {
-	/* The browser max pattern inside a region must emit a cmov. */
+	// The browser max pattern inside a region must emit a cmov.
 	const Func *f = parse_one_func(
 						"int k(int[] a, int w)\n"
 						"{\n"
@@ -1119,9 +1094,8 @@ static void test_region_select_emits_cmov(void)
 
 static void test_lower_folds_unrolled_product(void)
 {
-	/* In an unrolled loop, `u * 8` (u = the unrolled induction constant) folds to
-	   a single immediate: no IR_MUL for the stride/index arithmetic. Without the
-	   constant-product fold the four copies each emit an imul. */
+	// In an unrolled loop, `u * 8` (u = the unrolled induction constant) folds to a single immediate: no IR_MUL for the stride/index arithmetic.
+	// Without the constant-product fold the four copies each emit an imul.
 	const Func *f = parse_one_func(
 						"int f(int h)\n"
 						"{\n"
@@ -1152,7 +1126,7 @@ static void test_lower_folds_unrolled_product(void)
 
 static void test_region_eligible_c_accepts_int_switch(void)
 {
-	/* An integer switch keeps a loop off the IR region path but is plain C. */
+	// An integer switch keeps a loop off the IR region path but is plain C.
 	const Func *f = parse_one_func(
 						"long k(int n)\n"
 						"{\n"
@@ -1179,7 +1153,7 @@ static void test_region_eligible_c_accepts_int_switch(void)
 
 static void test_region_eligible_c_rejects_string_switch(void)
 {
-	/* A string subject compares through the runtime, so it stays on the emitter. */
+	// A string subject compares through the runtime, so it stays on the emitter.
 	const Func *f = parse_one_func(
 						"long k(string s, int n)\n"
 						"{\n"
@@ -1201,9 +1175,7 @@ static void test_region_eligible_c_rejects_string_switch(void)
 
 static void test_cemit_region_safe_index(void)
 {
-	/* A BCE-safe accumulation loop translates to a region function that loads
-	   its locals from the frame, runs the loop and stores them back, with no
-	   bounds check left. */
+	// A BCE-safe accumulation loop translates to a region function that loads its locals from the frame, runs the loop and stores them back, with no bounds check left.
 	cemit_reset();
 	const Func *f = parse_one_func(
 						"long k(int[] a)\n"
@@ -1220,15 +1192,14 @@ static void test_cemit_region_safe_index(void)
 	int offs[64];
 	int noffs = 0;
 	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 1);
-	ASSERT_INT(noffs, 3);   /* a, s and i. */
+	ASSERT_INT(noffs, 3); // a, s and i.
 	ASSERT(strncmp(sym, "bzy_creg_", 9) == 0);
 	const char *c = cemit_source();
 	ASSERT(c != NULL);
 	ASSERT(strstr(c, "#include <stdint.h>") != NULL);
 	ASSERT(strstr(c, "(char *fp)") != NULL);
 	ASSERT(strstr(c, "*(int64_t *)(fp - ") != NULL);
-	/* The body is compiled twice, for x86-64-v3 and for the baseline, and the
-	   exported symbol picks one at run time. */
+	// The body is compiled twice, for x86-64-v3 and for the baseline, and the exported symbol picks one at run time.
 	ASSERT(strstr(c, "__builtin_cpu_supports(\"x86-64-v3\")") != NULL);
 	ASSERT(strstr(c, "target(\"arch=x86-64-v3\")") != NULL);
 	ASSERT(strstr(c, "_v3(char *fp, char *ra)") != NULL);
@@ -1240,7 +1211,7 @@ static void test_cemit_region_safe_index(void)
 
 static void test_cemit_region_checked_index(void)
 {
-	/* An unproven index keeps a bounds check that reports through fp. */
+	// An unproven index keeps a bounds check that reports through fp.
 	cemit_reset();
 	const Func *f = parse_one_func(
 						"long k(int[] a, int n)\n"
@@ -1264,9 +1235,7 @@ static void test_cemit_region_checked_index(void)
 
 static void test_cemit_checks_against_constant_length(void)
 {
-	/* When BCE knows an array's exact length (new T[N]) but cannot prove the
-	   index, the check compares against the constant, so gcc can reason about
-	   it (and drop it when the index range is provably inside). */
+	// When BCE knows an array's exact length (new T[N]) but cannot prove the index, the check compares against the constant, so gcc can reason about it (and drop it when the index range is provably inside).
 	cemit_reset();
 	const Func *f = parse_one_func(
 						"long k(int n)\n"
@@ -1303,8 +1272,7 @@ static int count_slot_stores(const char *c)
 
 static void test_cemit_outermost_skips_inner_locals(void)
 {
-	/* An outermost region stores back only the locals that outlive it: s, not
-	   the loop counter i or the body local t. A nested region stores all three. */
+	// An outermost region stores back only the locals that outlive it: s, not the loop counter i or the body local t. A nested region stores all three.
 	const char *src =
 		"long k(int[] a)\n"
 		"{\n"
@@ -1334,8 +1302,7 @@ static void test_cemit_outermost_skips_inner_locals(void)
 
 static void test_cemit_clock_read(void)
 {
-	/* A clock read keeps a loop on the C route as a direct runtime call; the
-	   IR path still rejects it. */
+	// A clock read keeps a loop on the C route as a direct runtime call; the IR path still rejects it.
 	cemit_reset();
 	const Func *f = parse_one_func(
 						"long k(int n)\n"
@@ -1360,9 +1327,7 @@ static void test_cemit_clock_read(void)
 
 static void test_cemit_folds_constant_local_divisor(void)
 {
-	/* A local that is only ever assigned one literal is a constant to the C route
-	   too, so dividing by it is a plain constant division gcc can strength-reduce,
-	   not a call through the trapping idiv helper. */
+	// A local that is only ever assigned one literal is a constant to the C route too, so dividing by it is a plain constant division gcc can strength-reduce, not a call through the trapping idiv helper.
 	cemit_reset();
 	const Func *f = parse_one_func(
 						"long k(int[] a)\n"
@@ -1388,7 +1353,7 @@ static void test_cemit_folds_constant_local_divisor(void)
 
 static void test_cemit_rejects_call(void)
 {
-	/* A call inside the loop is outside the C route: nothing is emitted. */
+	// A call inside the loop is outside the C route: nothing is emitted.
 	cemit_reset();
 	const Func *f = parse_one_func(
 						"long k(int n)\n"
@@ -1411,9 +1376,8 @@ static void test_cemit_rejects_call(void)
 
 int main(void)
 {
-	setvbuf(stdout, NULL, _IONBF, 0);   /* Keep per-test progress visible if a test crashes under redirection. */
-	/* The C route is on by default and would take the loops these tests expect as IR regions;
-	   the cemit tests call cemit_region directly, so they do not need it on. */
+	setvbuf(stdout, NULL, _IONBF, 0); // Keep per-test progress visible if a test crashes under redirection.
+	// The C route is on by default and would take the loops these tests expect as IR regions; the cemit tests call cemit_region directly, so they do not need it on.
 	putenv("BZY_C=0");
 	RUN(test_ir_build_basic);
 	RUN(test_eligible_accepts_scalar_loop);

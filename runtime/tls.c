@@ -1,13 +1,10 @@
-/* TLS over a plain Socket via dynamically-loaded OpenSSL with memory BIOs pumped
-   through the reactor. Own TU: a program that calls no Network.tls* links none of
-   this, and OpenSSL is dlopen'd lazily so there is no link-time dependency.
-
-   Design: a TlsSocket reuses an ordinary Socket as its ciphertext transport (the
-   plain socket already does reactor-parked recv/send), so the pump never touches
-   the platform connect/accept/recv/send code directly -- it drives SSL_* over two
-   memory BIOs and moves ciphertext to/from the transport with bzy_sock_recv /
-   bzy_sock_send_all. The pump runs on the breeze; every ciphertext move parks via
-   the transport's reactor, so TLS scales like any other socket. */
+/**
+ * TLS over a plain Socket via dynamically-loaded OpenSSL with memory BIOs pumped through the reactor.
+ * Own TU: a program that calls no Network.tls* links none of this, and OpenSSL is dlopen'd lazily so there is no link-time dependency.
+ *
+ * Design: a TlsSocket reuses an ordinary Socket as its ciphertext transport (the plain socket already does reactor-parked recv/send), so the pump never touches the platform connect/accept/recv/send code directly -- it drives SSL_* over two memory BIOs and moves ciphertext to/from the transport with bzy_sock_recv / bzy_sock_send_all.
+ * The pump runs on the breeze; every ciphertext move parks via the transport's reactor, so TLS scales like any other socket.
+ */
 #include "breezy.h"
 #include "network_internal.h"
 #include <string.h>
@@ -102,8 +99,10 @@ static void *dl_sym(void *h, const char *n)
 }
 #endif
 
-/* Resolve libssl (+ libcrypto transitively) once. Returns 1 on success, 0 on
-   failure (sets the io-error). */
+/**
+ * Resolve libssl (+ libcrypto transitively) once.
+ * Returns 1 on success, 0 on failure (sets the io-error).
+ */
 static int tls_load(void)
 {
 	if (ossl.loaded == 1)
@@ -133,7 +132,7 @@ static int tls_load(void)
 		return 0;
 	}
 
-	/* SSL_* / SSL_CTX_* / TLS_*_method live in libssl; BIO_* live in libcrypto. */
+	// SSL_* / SSL_CTX_* / TLS_*_method live in libssl; BIO_* live in libcrypto.
 #define SYM(field, name) do { \
 		*(void**)(&ossl.field) = dl_sym(h, name); \
 		if (!ossl.field) { ossl.loaded = -1; bzy_io_fail("TLS unavailable: OpenSSL symbol missing."); return 0; } \
@@ -177,18 +176,22 @@ static int tls_load(void)
 	return 1;
 }
 
-/* ---- TlsSocket layout (object_size = 56):
-   0 vtable | 8 rc | 16 gcinfo | 24 transport(Socket*) | 32 SSL* | 40 SSL_CTX*
-   ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64). Leaf:
-   the finalizer frees ssl + ctx_owned and releases the transport. ---- */
+/**
+ * ---- TlsSocket layout (object_size = 56):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 transport(Socket*) | 32 SSL* | 40 SSL_CTX*
+ * ctx_owned (NULL = shared, owned by the listener) | 48 closed(int64).
+ * Leaf: the finalizer frees ssl + ctx_owned and releases the transport. ----
+ */
 #define TLS_TRANSPORT(o) (*(void**)((char*)(o) + 24))
 #define TLS_SSL(o)       (*(void**)((char*)(o) + 32))
 #define TLS_CTXOWN(o)    (*(void**)((char*)(o) + 40))
 #define TLS_CLOSED(o)    (*(int64_t*)((char*)(o) + 48))
 
-/* ---- TlsListener layout (object_size = 48):
-   0 vtable | 8 rc | 16 gcinfo | 24 listener(Listener*) | 32 SSL_CTX* ctx |
-   40 closed(int64). ---- */
+/**
+ * ---- TlsListener layout (object_size = 48):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 listener(Listener*) | 32 SSL_CTX* ctx |
+ * 40 closed(int64). ----
+ */
 #define TLL_LISTENER(o)  (*(void**)((char*)(o) + 24))
 #define TLL_CTX(o)       (*(void**)((char*)(o) + 32))
 #define TLL_CLOSED(o)    (*(int64_t*)((char*)(o) + 40))
@@ -265,7 +268,7 @@ static void *tls_list_vtable(void)
 /* Owned byte[] of n bytes copied from buf (mirrors socket.c bytes_to_array). */
 static void *tls_bytes_to_array(const char *buf, int n)
 {
-	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0);   /* Packed byte[]. */
+	void *arr = bzy_array_new_sized(n < 0 ? 0 : n, 1, 0); // Packed byte[].
 	if (n > 0)
 	{
 		memcpy((char*)arr + 32, buf, (size_t)n);
@@ -286,7 +289,7 @@ static int tls_flush(void *s)
 		int n = ossl.BIO_read(wbio, buf, (int)sizeof(buf));
 		if (n <= 0)
 		{
-			return 0;    /* Nothing pending (mem BIO). */
+			return 0; // Nothing pending (mem BIO).
 		}
 
 		if (bzy_sock_send_all(TLS_TRANSPORT(s), buf, n) < 0)
@@ -296,8 +299,7 @@ static int tls_flush(void *s)
 	}
 }
 
-/* Read one chunk of ciphertext from the network into the SSL's rbio.
-   1 ok, 0 EOF, -1 error, -2 timeout (timeout_ms >= 0 elapsed with no bytes). */
+/* Read one chunk of ciphertext from the network into the SSL's rbio. 1 ok, 0 EOF, -1 error, -2 timeout (timeout_ms >= 0 elapsed with no bytes). */
 static int tls_feed(void *s, int64_t timeout_ms)
 {
 	void *rbio = ossl.SSL_get_rbio(TLS_SSL(s));
@@ -305,7 +307,7 @@ static int tls_feed(void *s, int64_t timeout_ms)
 	int n = bzy_sock_recv(TLS_TRANSPORT(s), buf, (int)sizeof(buf), timeout_ms);
 	if (n == -2)
 	{
-		return -2;   /* No ciphertext within the deadline; SSL state is left intact to resume. */
+		return -2; // No ciphertext within the deadline; SSL state is left intact to resume.
 	}
 
 	if (n < 0)
@@ -326,12 +328,11 @@ static int tls_feed(void *s, int64_t timeout_ms)
 	return 1;
 }
 
-/* Run an SSL op to true completion, pumping ciphertext both ways and retrying
-   after each round. op_kind: 0 = handshake, 1 = read, 2 = write. For read/write
-   buf/len are the plaintext buffer. timeout_ms < 0 blocks forever; >= 0 bounds each
-   network feed, so a read that has no plaintext within the deadline returns -2 with
-   the SSL session intact (a later read resumes the same record). Returns: handshake
-   -> 1 ok / -1 fail; read -> bytes (0 EOF, -1 err, -2 timeout); write -> bytes (-1 err). */
+/**
+ * Run an SSL op to true completion, pumping ciphertext both ways and retrying after each round. op_kind: 0 = handshake, 1 = read, 2 = write.
+ * For read/write buf/len are the plaintext buffer. timeout_ms < 0 blocks forever; >= 0 bounds each network feed, so a read that has no plaintext within the deadline returns -2 with the SSL session intact (a later read resumes the same record).
+ * Returns: handshake -> 1 ok / -1 fail; read -> bytes (0 EOF, -1 err, -2 timeout); write -> bytes (-1 err).
+ */
 static int tls_run(void *s, int op_kind, void *buf, int len, int64_t timeout_ms)
 {
 	for (;;)
@@ -380,15 +381,15 @@ static int tls_run(void *s, int op_kind, void *buf, int len, int64_t timeout_ms)
 		{
 			if (op_kind == 1 && ret == 0)
 			{
-				return 0;    /* Clean EOF on read. */
+				return 0; // Clean EOF on read.
 			}
 
-			return -1;                                    /* Fatal. */
+			return -1; // Fatal.
 		}
 
 		if (tls_flush(s) < 0)
 		{
-			return -1;    /* Always push handshake bytes first. */
+			return -1; // Always push handshake bytes first.
 		}
 
 		if (err == BZ_SSL_ERROR_WANT_READ)
@@ -396,20 +397,19 @@ static int tls_run(void *s, int op_kind, void *buf, int len, int64_t timeout_ms)
 			int f = tls_feed(s, timeout_ms);
 			if (f == -2)
 			{
-				return -2;    /* Timed out waiting for ciphertext (read op only). */
+				return -2; // Timed out waiting for ciphertext (read op only).
 			}
 
 			if (f <= 0)
 			{
-				return -1;    /* Peer closed mid-op. */
+				return -1; // Peer closed mid-op.
 			}
 		}
-		/* Loop: retry the SSL op. */
+		// Loop: retry the SSL op.
 	}
 }
 
-/* Allocate a TlsSocket over an owned transport Socket + a fresh SSL. ctx_own is
-   the SSL_CTX to free on close (client) or NULL (server shares the listener's). */
+/* Allocate a TlsSocket over an owned transport Socket + a fresh SSL. ctx_own is the SSL_CTX to free on close (client) or NULL (server shares the listener's). */
 static void *tls_sock_wrap(void *transport, void *ssl, void *ctx_own)
 {
 	void *o = bzy_alloc(56);
@@ -436,13 +436,11 @@ static int tls_attach_bios(void *ssl)
 	return 0;
 }
 
-/* Establish a client TLS session over an already-connected, OWNED transport socket
-   (this consumes the transport's reference). Returns a handshaken TlsSocket, or NULL
-   on any failure -- with transport, ssl, and ctx all cleaned up and NO exception set,
-   so the caller chooses which exception to raise (IOException for tlsConnect,
-   DbException for the database drivers). `host` drives hostname verification + SNI,
-   and `caBundle` (a path, or NULL for the default trust store) the trust anchors,
-   both skipped when `insecure` (self-signed / development servers only). */
+/**
+ * Establish a client TLS session over an already-connected, OWNED transport socket (this consumes the transport's reference).
+ * Returns a handshaken TlsSocket, or NULL on any failure -- with transport, ssl, and ctx all cleaned up and NO exception set, so the caller chooses which exception to raise (IOException for tlsConnect, DbException for the database drivers).
+ * `host` drives hostname verification + SNI, and `caBundle` (a path, or NULL for the default trust store) the trust anchors, both skipped when `insecure` (self-signed / development servers only).
+ */
 static void *tls_client_session(void *transport, const char *host, const char *caBundle, int insecure)
 {
 	void *ctx = ossl.CTX_new(ossl.TLS_client_method());
@@ -481,16 +479,16 @@ static void *tls_client_session(void *transport, const char *host, const char *c
 
 	if (!insecure)
 	{
-		ossl.SSL_set1_host(ssl, host);                                                 /* Verify hostname. */
-		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)host); /* SNI. */
+		ossl.SSL_set1_host(ssl, host); // Verify hostname.
+		ossl.SSL_ctrl(ssl, BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME, BZ_TLSEXT_NAMETYPE_host_name, (void*)host); // SNI.
 	}
 
 	ossl.SSL_set_connect_state(ssl);
 
-	void *s = tls_sock_wrap(transport, ssl, ctx);   /* The TlsSocket now owns transport + ssl + ctx. */
+	void *s = tls_sock_wrap(transport, ssl, ctx); // The TlsSocket now owns transport + ssl + ctx.
 	if (tls_run(s, 0, NULL, 0, -1) != 1)
 	{
-		bzy_release(s);   /* rc 1 -> 0: the finalizer frees ssl/ctx and releases transport. */
+		bzy_release(s); // rc 1 -> 0: the finalizer frees ssl/ctx and releases transport.
 		return NULL;
 	}
 
@@ -510,7 +508,7 @@ void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
 		return NULL;
 	}
 
-	void *transport = bzy_socket_connect(host, port);   /* Owned, reactor-registered Socket. */
+	void *transport = bzy_socket_connect(host, port); // Owned, reactor-registered Socket.
 	if (!transport)
 	{
 		bzy_io_fail("Network.tlsConnect: TCP connect failed.");
@@ -528,11 +526,12 @@ void *bzy_tls_connect_ca(void *host, int64_t port, void *caBundle)
 	return s;
 }
 
-/* Upgrade an already-connected, OWNED transport socket to client TLS (consumes the
-   transport reference). Returns a handshaken TlsSocket, or NULL on failure (fully
-   cleaned up; the caller raises its own exception). Used by Postgres.connectTls /
-   Mysql.connectTls AFTER the protocol's plaintext TLS-upgrade negotiation has run on
-   the same socket. `insecure` skips certificate + hostname verification. */
+/**
+ * Upgrade an already-connected, OWNED transport socket to client TLS (consumes the transport reference).
+ * Returns a handshaken TlsSocket, or NULL on failure (fully cleaned up; the caller raises its own exception).
+ * Used by Postgres.connectTls / Mysql.connectTls AFTER the protocol's plaintext TLS-upgrade negotiation has run on the same socket.
+ * `insecure` skips certificate + hostname verification.
+ */
 void *bzy_tls_upgrade_client(void *transport, const char *host, int insecure)
 {
 	if (!tls_load())
@@ -577,7 +576,7 @@ void *bzy_tls_listen(int64_t port, void *certPath, void *keyPath)
 		return NULL;
 	}
 
-	void *listener = bzy_listener_new(port);   /* Owned Listener. */
+	void *listener = bzy_listener_new(port); // Owned Listener.
 	if (!listener)
 	{
 		ossl.CTX_free(ctx);
@@ -596,7 +595,7 @@ void *bzy_tls_listen(int64_t port, void *certPath, void *keyPath)
 
 void *bzy_tls_accept(void *l)
 {
-	void *transport = bzy_listener_accept(TLL_LISTENER(l));   /* Owned Socket; parks. */
+	void *transport = bzy_listener_accept(TLL_LISTENER(l)); // Owned Socket; parks.
 	if (!transport)
 	{
 		bzy_io_fail("TlsListener.accept: accept failed.");
@@ -618,10 +617,10 @@ void *bzy_tls_accept(void *l)
 
 	ossl.SSL_set_accept_state(ssl);
 
-	void *s = tls_sock_wrap(transport, ssl, NULL);   /* Server conn shares the listener ctx. */
+	void *s = tls_sock_wrap(transport, ssl, NULL); // Server conn shares the listener ctx.
 	if (tls_run(s, 0, NULL, 0, -1) != 1)
 	{
-		bzy_io_fail("TlsListener.accept: handshake failed.");   /* Finalizer cleans up. */
+		bzy_io_fail("TlsListener.accept: handshake failed."); // Finalizer cleans up.
 	}
 
 	return s;
@@ -636,10 +635,8 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 	}
 
 	int max = (int)(maxbytes > 0 ? maxbytes : 1);
-	/* Stage the plaintext on the stack for the common small read; only the rare
-	   large read touches the heap. The result byte[] must be sized to the actual
-	   byte count, so a staging copy is unavoidable - but the per-read malloc/free
-	   is not. */
+	// Stage the plaintext on the stack for the common small read; only the rare large read touches the heap.
+	// The result byte[] must be sized to the actual byte count, so a staging copy is unavoidable - but the per-read malloc/free is not.
 	char stackbuf[16384];
 	char *buf = (max <= (int)sizeof(stackbuf)) ? stackbuf : (char*)malloc((size_t)max);
 	if (!buf)
@@ -660,7 +657,7 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 		return NULL;
 	}
 
-	void *arr = tls_bytes_to_array(buf, n);   /* n == 0 -> empty byte[] (clean EOF). */
+	void *arr = tls_bytes_to_array(buf, n); // n == 0 -> empty byte[] (clean EOF).
 	if (buf != stackbuf)
 	{
 		free(buf);
@@ -669,12 +666,12 @@ void *bzy_tls_read(void *s, int64_t maxbytes)
 	return arr;
 }
 
-/* TlsSocket.read(max, timeoutMs): like bzy_tls_read, but returns NULL (not an
-   exception, not an empty array) when no plaintext arrives within timeoutMs. A
-   negative timeout blocks forever, matching bzy_tls_read. The deadline bounds each
-   network feed rather than the whole call, so a read interleaved with retransmits may
-   wait a little past timeoutMs; it never resolves early. The SSL session is left
-   intact on a timeout, so the next read resumes the same record. */
+/**
+ * TlsSocket.read(max, timeoutMs): like bzy_tls_read, but returns NULL (not an exception, not an empty array) when no plaintext arrives within timeoutMs.
+ * A negative timeout blocks forever, matching bzy_tls_read.
+ * The deadline bounds each network feed rather than the whole call, so a read interleaved with retransmits may wait a little past timeoutMs; it never resolves early.
+ * The SSL session is left intact on a timeout, so the next read resumes the same record.
+ */
 void *bzy_tls_read_timeout(void *s, int64_t maxbytes, int64_t ms)
 {
 	if (TLS_CLOSED(s))
@@ -704,7 +701,7 @@ void *bzy_tls_read_timeout(void *s, int64_t maxbytes, int64_t ms)
 		return NULL;
 	}
 
-	void *arr = (n == -2) ? NULL : tls_bytes_to_array(buf, n);   /* -2 -> NULL (timed out). */
+	void *arr = (n == -2) ? NULL : tls_bytes_to_array(buf, n); // -2 -> NULL (timed out).
 	if (buf != stackbuf)
 	{
 		free(buf);
@@ -722,7 +719,7 @@ int64_t bzy_tls_write(void *s, void *data)
 	}
 
 	int len = (int)bzy_array_len(data);
-	const char *bytes = (const char*)data + 32;   /* Packed byte[] payload. */
+	const char *bytes = (const char*)data + 32; // Packed byte[] payload.
 	if (len == 0)
 	{
 		return 0;
@@ -738,11 +735,10 @@ int64_t bzy_tls_write(void *s, void *data)
 	return n;
 }
 
-/* Raw-byte TLS transport, mirroring bzy_sock_recv / bzy_sock_send_all so the database
-   drivers branch plain-vs-TLS uniformly. (bzy_tls_read / bzy_tls_write are the managed
-   byte[] surface; these are the raw-buffer twins the wire codecs need.) The timeout is
-   accepted for signature symmetry but unused -- the memory-BIO pump blocks on the
-   underlying transport socket. */
+/**
+ * Raw-byte TLS transport, mirroring bzy_sock_recv / bzy_sock_send_all so the database drivers branch plain-vs-TLS uniformly.
+ * (bzy_tls_read / bzy_tls_write are the managed byte[] surface; these are the raw-buffer twins the wire codecs need.) The timeout is accepted for signature symmetry but unused -- the memory-BIO pump blocks on the underlying transport socket.
+ */
 int bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms)
 {
 	(void)timeout_ms;
@@ -751,7 +747,7 @@ int bzy_tls_recv(void *s, char *buf, int max, int64_t timeout_ms)
 		return -1;
 	}
 
-	return tls_run(s, 1, buf, max, -1);   /* >0 bytes, 0 clean EOF, -1 error. */
+	return tls_run(s, 1, buf, max, -1); // >0 bytes, 0 clean EOF, -1 error.
 }
 
 int64_t bzy_tls_send_all(void *s, const char *buf, int64_t len)

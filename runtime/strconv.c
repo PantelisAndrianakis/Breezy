@@ -1,9 +1,10 @@
 #include "breezy.h"
 #include <stdio.h>
 
-/* Scalar-to-string helpers for string concatenation (`value + string`). Each
-   returns an owned (+1) Breezy string and formats identically to the matching
-   bzy_print_* helper, so `print(x)` and `"" + x` always agree. */
+/**
+ * Scalar-to-string helpers for string concatenation (`value + string`).
+ * Each returns an owned (+1) Breezy string and formats identically to the matching bzy_print_* helper, so `print(x)` and `"" + x` always agree.
+ */
 
 void *bzy_str_from_i64(int64_t v)
 {

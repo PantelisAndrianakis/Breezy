@@ -100,10 +100,8 @@ void lexer_diag(const char *src, const char *file, int line, int col,
 
 	if (g_json_diag)
 	{
-		/* endCol = the 1-based column just past the offending token, so an editor can
-		   draw the squiggle across the whole token rather than one character. The token
-		   text is not passed in, so derive its extent from the source: an identifier /
-		   number word at `col` spans to its end; punctuation stays one character. */
+		// endCol = the 1-based column just past the offending token, so an editor can draw the squiggle across the whole token rather than one character.
+		// The token text is not passed in, so derive its extent from the source: an identifier / number word at `col` spans to its end; punctuation stays one character.
 		int endcol = col > 0 ? col + 1 : 0;
 		if (src && col > 0)
 		{
@@ -154,13 +152,13 @@ void lexer_diag(const char *src, const char *file, int line, int col,
 		fprintf(stderr, "%s:%d: %s%s\n", file, line, msg, arg ? arg : "");
 	}
 
-	/* Without a source buffer there is no line to echo. */
+	// Without a source buffer there is no line to echo.
 	if (!src)
 	{
 		exit(1);
 	}
 
-	/* Find the start of the offending line and print it with a caret. */
+	// Find the start of the offending line and print it with a caret.
 	const char *p = src;
 	for (int ln = 1; ln < line && *p; p++)
 	{
@@ -182,7 +180,7 @@ void lexer_diag(const char *src, const char *file, int line, int col,
 		fputs("  ", stderr);
 		for (int i = 1; i < col && p[i - 1]; i++)
 		{
-			/* Preserve tabs so the caret lines up under the source. */
+			// Preserve tabs so the caret lines up under the source.
 			fputc(p[i - 1] == '\t' ? '\t' : ' ', stderr);
 		}
 
@@ -213,8 +211,7 @@ static char next_ch(Lexer *l)
 	return c;
 }
 
-/* Finish a float literal whose mantissa already occupies t->text[0..i): scan an
-   optional exponent (e[+/-]?digits) and an optional 'f' suffix, then mark it. */
+/* Finish a float literal whose mantissa already occupies t->text[0..i): scan an optional exponent (e[+/-]?digits) and an optional 'f' suffix, then mark it. */
 /* True if c is a digit of the given base (10 decimal, 16 hex, 2 binary). */
 static int is_base_digit(char c, int base)
 {
@@ -231,9 +228,11 @@ static int is_base_digit(char c, int base)
 	return isdigit((unsigned char)c) != 0;
 }
 
-/* Append a run of base digits into buf starting at i, skipping `_` separators
-   that sit between two digits (so `1_000` and `0xDEAD_BEEF` read as the digits
-   alone). Returns the new length. A `_` not followed by a digit ends the run. */
+/**
+ * Append a run of base digits into buf starting at i, skipping `_` separators that sit between two digits (so `1_000` and `0xDEAD_BEEF` read as the digits alone).
+ * Returns the new length.
+ * A `_` not followed by a digit ends the run.
+ */
 static int scan_digits(Lexer *l, char *buf, int i, int base)
 {
 	while (i < 255 && (is_base_digit(peek_ch(l), base)
@@ -272,7 +271,7 @@ static Token finish_float(Lexer *l, Token *t, int i)
 	else if (peek_ch(l) == 'd' || peek_ch(l) == 'D')
 	{
 		next_ch(l);
-		t->suffix[0] = 'd';   /* Explicit double; same type a bare float literal already gets. */
+		t->suffix[0] = 'd'; // Explicit double; same type a bare float literal already gets.
 		t->suffix[1] = '\0';
 	}
 
@@ -301,24 +300,23 @@ Token lexer_next(Lexer *l)
 		}
 		else if (peek_ch(l) == '/' && l->src[l->pos+1] == '*')
 		{
-			next_ch(l);   /* Consume '/'. */
-			next_ch(l);   /* Consume '*'. */
-			/* Block comments nest: track depth so an inner block comment does not
-			   close the outer one early. An unterminated comment runs to EOF, the
-			   same as a single-level one. */
+			next_ch(l); // Consume '/'.
+			next_ch(l); // Consume '*'.
+			// Block comments nest: track depth so an inner block comment does not close the outer one early.
+			// An unterminated comment runs to EOF, the same as a single-level one.
 			int depth = 1;
 			while (peek_ch(l) && depth > 0)
 			{
 				if (peek_ch(l) == '/' && l->src[l->pos+1] == '*')
 				{
-					next_ch(l);   /* Consume '/'. */
-					next_ch(l);   /* Consume '*'. */
+					next_ch(l); // Consume '/'.
+					next_ch(l); // Consume '*'.
 					depth++;
 				}
 				else if (peek_ch(l) == '*' && l->src[l->pos+1] == '/')
 				{
-					next_ch(l);   /* Consume '*'. */
-					next_ch(l);   /* Consume '/'. */
+					next_ch(l); // Consume '*'.
+					next_ch(l); // Consume '/'.
 					depth--;
 				}
 				else
@@ -367,12 +365,14 @@ Token lexer_next(Lexer *l)
 	if (isdigit((unsigned char)c))
 	{
 		int i = 0;
-		/* Radix-prefixed literals: 0x.. (hex) and 0b.. (binary). The whole token
-		   text including the prefix is kept; the parser picks the conversion base. */
+		// Radix-prefixed literals: 0x..
+		// (hex) and 0b..
+		// (binary).
+		// The whole token text including the prefix is kept; the parser picks the conversion base.
 		if (c == '0' && (l->src[l->pos + 1] == 'x' || l->src[l->pos + 1] == 'X'))
 		{
-			t.text[i++] = next_ch(l);   /* The '0'. */
-			t.text[i++] = next_ch(l);   /* The 'x'/'X'. */
+			t.text[i++] = next_ch(l); // The '0'.
+			t.text[i++] = next_ch(l); // The 'x'/'X'.
 			i = scan_digits(l, t.text, i, 16);
 
 			t.text[i] = '\0';
@@ -383,8 +383,8 @@ Token lexer_next(Lexer *l)
 
 		if (c == '0' && (l->src[l->pos + 1] == 'b' || l->src[l->pos + 1] == 'B'))
 		{
-			t.text[i++] = next_ch(l);   /* The '0'. */
-			t.text[i++] = next_ch(l);   /* The 'b'/'B'. */
+			t.text[i++] = next_ch(l); // The '0'.
+			t.text[i++] = next_ch(l); // The 'b'/'B'.
 			i = scan_digits(l, t.text, i, 2);
 
 			t.text[i] = '\0';
@@ -407,7 +407,7 @@ Token lexer_next(Lexer *l)
 		}
 
 		t.text[i] = '\0';
-		/* Capture a trailing run of width/sign suffix letters (u/U, l/L). */
+		// Capture a trailing run of width/sign suffix letters (u/U, l/L).
 		int s = 0;
 		while ((peek_ch(l) == 'u' || peek_ch(l) == 'U'
 				|| peek_ch(l) == 'l' || peek_ch(l) == 'L') && s < 3)
@@ -422,7 +422,7 @@ Token lexer_next(Lexer *l)
 
 	if (c == '"')
 	{
-		next_ch(l);                 /* Consume the opening quote. */
+		next_ch(l); // Consume the opening quote.
 		int i = 0;
 		while (peek_ch(l) && peek_ch(l) != '"' && i < 255)
 		{
@@ -464,7 +464,7 @@ Token lexer_next(Lexer *l)
 					break;
 				case 'x':
 				{
-					/* \xHH: exactly two hex digits, one raw byte. */
+					// \xHH: exactly two hex digits, one raw byte.
 					int h1 = hex_val(next_ch(l));
 					int h2 = hex_val(next_ch(l));
 					if (h1 < 0 || h2 < 0)
@@ -483,7 +483,7 @@ Token lexer_next(Lexer *l)
 				}
 				case 'u':
 				{
-					/* \uXXXX: four hex digits, a code point, written as UTF-8. */
+					// \uXXXX: four hex digits, a code point, written as UTF-8.
 					int cp = 0;
 					for (int k = 0; k < 4; k++)
 					{
@@ -501,7 +501,7 @@ Token lexer_next(Lexer *l)
 						lexer_diag(l->src, l->file, l->line, l->col - 1, "A NUL code point (\\u0000) in a string literal is not supported.", NULL);
 					}
 
-					/* UTF-8 encode (code points up to U+FFFF: one to three bytes). */
+					// UTF-8 encode (code points up to U+FFFF: one to three bytes).
 					if (cp < 0x80 && i < 255)
 					{
 						t.text[i++] = (char)cp;
@@ -518,7 +518,7 @@ Token lexer_next(Lexer *l)
 						t.text[i++] = (char)(0x80 | (cp & 0x3F));
 					}
 
-					continue;   /* Bytes already appended; skip the single-byte store below. */
+					continue; // Bytes already appended; skip the single-byte store below.
 				}
 				default:
 				{
@@ -536,7 +536,7 @@ Token lexer_next(Lexer *l)
 			lexer_diag(l->src, l->file, t.line, t.col, "Unterminated string literal.", NULL);
 		}
 
-		next_ch(l);                 /* Consume the closing quote. */
+		next_ch(l); // Consume the closing quote.
 		t.text[i] = '\0';
 		t.type = TOKEN_STR_LIT;
 		return t;
@@ -578,7 +578,7 @@ Token lexer_next(Lexer *l)
 		else if (peek_ch(l)=='>')
 		{
 			next_ch(l);
-			t.type=TOKEN_ARROW;             /* -> function-type separator. */
+			t.type=TOKEN_ARROW; // -> function-type separator.
 		}
 		else
 		{
@@ -655,7 +655,7 @@ Token lexer_next(Lexer *l)
 	case '.':
 		if (isdigit((unsigned char)peek_ch(l)))
 		{
-			int i = 1;   /* t.text[0] already holds '.'. */
+			int i = 1; // t.text[0] already holds '.'.
 			while (isdigit((unsigned char)peek_ch(l)) && i < 255)
 			{
 				t.text[i++] = next_ch(l);
@@ -683,7 +683,7 @@ Token lexer_next(Lexer *l)
 		else if (peek_ch(l)=='>')
 		{
 			next_ch(l);
-			t.type=TOKEN_NEQ;   /* '<>' (less-or-greater) is a synonym for '!='. */
+			t.type=TOKEN_NEQ; // '<>' (less-or-greater) is a synonym for '!='.
 		}
 		else if (peek_ch(l)=='=')
 		{
@@ -730,7 +730,7 @@ Token lexer_next(Lexer *l)
 		else if (peek_ch(l)=='>')
 		{
 			next_ch(l);
-			t.type=TOKEN_FATARROW;          /* => lambda arrow. */
+			t.type=TOKEN_FATARROW; // => lambda arrow.
 		}
 		else
 		{
@@ -806,7 +806,7 @@ Token lexer_next(Lexer *l)
 	}
 	}
 
-	return t;   /* Unreachable: lexer_diag exits. */
+	return t; // Unreachable: lexer_diag exits.
 }
 
 const char *token_type_name(TokenType t)

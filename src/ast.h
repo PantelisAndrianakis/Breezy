@@ -53,14 +53,19 @@ typedef struct TypeRef
 	char class_name[64];
 	struct TypeRef *elem;    /* TY_ARRAY element, or TY_MAP key; NULL otherwise. */
 	struct TypeRef *elem2;   /* TY_MAP value; NULL otherwise. */
-	struct TypeRef **targs;  /* User-generic application args (TY_GENERIC, user class). Built once
-	                            at parse; value-copies share it read-only (typeref_deepcopy clones it). */
+	/**
+	 * User-generic application args (TY_GENERIC, user class).
+	 * Built once at parse; value-copies share it read-only (typeref_deepcopy clones it).
+	 */
+	struct TypeRef **targs;
 	int targ_count;          /* 0 for built-in templates (Box/List/...), which use elem/elem2. */
 	int targ_cap;
 } TypeRef;
 
-/* Width in bits of a scalar kind. A bool reports 1; objects/strings are
- * 64-bit pointers; void has no width and reports 0. */
+/**
+ * Width in bits of a scalar kind.
+ * A bool reports 1; objects/strings are 64-bit pointers; void has no width and reports 0.
+ */
 static inline int ty_bits(TypeKind k)
 {
 	switch (k)
@@ -156,24 +161,26 @@ static inline int ty_is_float(TypeKind k)
 	return k == TY_FLOAT || k == TY_DOUBLE;
 }
 
-/* True for the packed SIMD vector kinds: 16-byte values that live in a full xmm
-   register, NOT scalar floats. Deliberately excluded from ty_is_float so the
-   scalar double codegen (movsd, cvtss2sd, promotion) never touches them. */
+/**
+ * True for the packed SIMD vector kinds: 16-byte values that live in a full xmm register, NOT scalar floats.
+ * Deliberately excluded from ty_is_float so the scalar double codegen (movsd, cvtss2sd, promotion) never touches them.
+ */
 static inline int ty_is_simd(TypeKind k)
 {
 	return k == TY_F64X2 || k == TY_F32X4 || k == TY_I32X4
 		   || k == TY_F64X4 || k == TY_F32X8 || k == TY_I32X8;
 }
 
-/* The stack-slot / move width of a SIMD value in bytes: 16 for the SSE xmm
-   types, 32 for the 256-bit AVX ymm types. */
+/* The stack-slot / move width of a SIMD value in bytes: 16 for the SSE xmm types, 32 for the 256-bit AVX ymm types. */
 static inline int ty_simd_bytes(TypeKind k)
 {
 	return (k == TY_F64X4 || k == TY_F32X8 || k == TY_I32X8) ? 32 : 16;
 }
 
-/* True for ARC-managed, heap, 8-byte-pointer kinds (objects and strings). Use
-   this — not a bare `== TY_OBJECT` — wherever a retain/release decision is made. */
+/**
+ * True for ARC-managed, heap, 8-byte-pointer kinds (objects and strings).
+ * Use this - not a bare `== TY_OBJECT` - wherever a retain/release decision is made.
+ */
 static inline int ty_is_managed(TypeKind k)
 {
 	return k == TY_OBJECT || k == TY_STRING || k == TY_ARRAY || k == TY_MAP || k == TY_GENERIC || k == TY_ENTRY || k == TY_CHANNEL || k == TY_TIMER
@@ -182,7 +189,7 @@ static inline int ty_is_managed(TypeKind k)
 		   || k == TY_FILECHANNEL || k == TY_FILEWRITER || k == TY_MAPPEDFILE || k == TY_LOGGER
 		   || k == TY_XMLNODE || k == TY_JSONVALUE || k == TY_HTTPREQUEST || k == TY_HTTPRESPONSE
 		   || k == TY_PGCONNECTION || k == TY_MYCONNECTION || k == TY_DBRESULT || k == TY_DBROW
-		   || k == TY_FUNC;   /* A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure). */
+		   || k == TY_FUNC; // A first-class function value is a managed closure object (FFI callbacks pass a bare address via is_func_addr, never a closure).
 }
 
 /* Width rank for implicit widening: 8 < 16 < 32 < 64. Non-integers rank 0. */
@@ -191,8 +198,11 @@ static inline int ty_rank(TypeKind k)
 	return ty_is_int(k) ? ty_bits(k) : 0;
 }
 
-/* The unsigned integer kind of the same width. Unsigned and non-integer kinds
-   are returned unchanged. Used for the "unsigned wins" mixed-sign promotion. */
+/**
+ * The unsigned integer kind of the same width.
+ * Unsigned and non-integer kinds are returned unchanged.
+ * Used for the "unsigned wins" mixed-sign promotion.
+ */
 static inline TypeKind ty_to_unsigned(TypeKind k)
 {
 	switch (k)
@@ -218,9 +228,10 @@ typedef enum
 	EX_ARRAYLIT     /* `{ v, v, ... }`: a final array's literal values, in args. */
 } ExprKind;
 
-/* Lambda literal (EX_LAMBDA) side-data, kept off the Expr hot struct. A lambda
-   lowers to a synthetic function body (taking its closure environment as a hidden
-   arg0) plus a closure-object allocation at the literal site. */
+/**
+ * Lambda literal (EX_LAMBDA) side-data, kept off the Expr hot struct.
+ * A lambda lowers to a synthetic function body (taking its closure environment as a hidden arg0) plus a closure-object allocation at the literal site.
+ */
 typedef struct LambdaParam
 {
 	char    name[64];
@@ -288,8 +299,10 @@ struct Expr
 
 typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN, ST_SELECT, ST_ASM } StmtKind;
 
-/* One arm of a `select`. A receive arm binds the value (`v = ch.receive() => ...`);
-   a send arm delivers a value (`ch.send(x) => ...`). */
+/**
+ * One arm of a `select`.
+ * A receive arm binds the value (`v = ch.receive() => ...`); a send arm delivers a value (`ch.send(x) => ...`).
+ */
 typedef struct
 {
 	int      is_send;       /* 1 = send arm, 0 = receive arm. */
@@ -328,8 +341,7 @@ struct Stmt
 	Expr    *ret_val;         /* ST_RETURN (may be NULL). */
 	Expr    *expr;            /* ST_EXPR. */
 	int      is_match;        /* ST_SWITCH built from `match`: exhaustiveness enforced, arms auto-break. */
-	int      is_narrow;       /* ST_VARDECL: a match-arm tag-narrowing (base enum -> variant subclass);
-	                            skip the downcast assignability check, the matched tag guarantees it. */
+	int      is_narrow;       /* ST_VARDECL: a match-arm tag-narrowing (base enum -> variant subclass); skip the downcast assignability check, the matched tag guarantees it. */
 	int      is_final;        /* ST_VARDECL: declared `final` (a read-only literal array). */
 	int      final_id;        /* Resolver: the final array's table id + 1; the initializer is dropped. */
 	char   (*case_binds)[64]; /* ST_CASE: positional payload bind names, e.g. Circle(r) -> {"r"}. */
@@ -357,10 +369,11 @@ typedef struct
 	int offset;  /* Resolver: stack slot of this parameter (the escape summary maps an arg index to its offset). */
 } Param;
 
-/* Interprocedural escape summary: which of a function's inputs escape its body.
-   Monotone (bits are only ever set), so the call-graph fixpoint that fills it
-   always terminates. A summary is consulted at a call site only when the callee
-   is uniquely resolved; an unsolved or non-unique callee is treated as escaping. */
+/**
+ * Interprocedural escape summary: which of a function's inputs escape its body.
+ * Monotone (bits are only ever set), so the call-graph fixpoint that fills it always terminates.
+ * A summary is consulted at a call site only when the callee is uniquely resolved; an unsolved or non-unique callee is treated as escaping.
+ */
 typedef struct
 {
 	unsigned char      solved;        /* The fixpoint has computed this body at least once. */
@@ -377,9 +390,9 @@ typedef struct Func
 	int param_cap;
 	Block  *body;
 	int     is_extern;        /* FFI: declared with `extern`, no body; asm_label is the raw C symbol. */
-	int     is_blocking;      /* FFI: `extern blocking` — dispatch via the offload pool. */
-	int     is_variadic;      /* FFI: trailing `...` — a variadic C function (e.g. printf/snprintf). */
-	int     is_dynamic;       /* FFI: `extern dynamic` — address resolved at run time via the registered resolver. */
+	int     is_blocking;      /* FFI: `extern blocking` - dispatch via the offload pool. */
+	int     is_variadic;      /* FFI: trailing `...` - a variadic C function (e.g. printf/snprintf). */
+	int     is_dynamic;       /* FFI: `extern dynamic` - address resolved at run time via the registered resolver. */
 	int     is_static;        /* Static method: no `this`, called via the class name. */
 	int     is_lambda;        /* Synthesized lambda body (env arg0); kept off the IR path. */
 	int     cap_count;        /* Lambda body: captures seeded from env at entry. */
@@ -420,8 +433,11 @@ typedef struct
 	int is_record;            /* `record`: final class with compiler-synthesized hashCode/equals. */
 	char parent_name[64];
 	int has_parent;
-	struct TypeRef **parent_targs;  /* Parametric inheritance: type args on the parent, e.g.
-	                                   `extends Box<T>`. NULL/0 for a non-generic parent. */
+	/**
+	 * Parametric inheritance: type args on the parent, e.g. `extends Box<T>`.
+	 * NULL/0 for a non-generic parent.
+	 */
+	struct TypeRef **parent_targs;
 	int parent_targ_count;
 	char (*implements)[64];   /* Interface names this class implements. Grown at parse. */
 	int implements_count;
@@ -458,11 +474,10 @@ typedef struct
 	int   arg_count;
 	Func *overrides[8];       /* Per-constant method override bodies (empty if none). */
 	int   override_count;
-	/* Payload variant (sum type): the constant declares its own typed fields,
-	   e.g. `Circle(double r)`. payload_count>0 marks a constructible variant
-	   (Shape.Circle(2.0) builds a fresh instance) rather than a singleton
-	   constant. The fields become a subclass `Enum$Const` with a synthesized
-	   constructor that sets __ordinal/__name and stores the payload. */
+	/**
+	 * Payload variant (sum type): the constant declares its own typed fields, e.g. `Circle(double r)`. payload_count>0 marks a constructible variant (Shape.Circle(2.0) builds a fresh instance) rather than a singleton constant.
+	 * The fields become a subclass `Enum$Const` with a synthesized constructor that sets __ordinal/__name and stores the payload.
+	 */
 	Field payload[8];
 	int   payload_count;
 } EnumConstant;

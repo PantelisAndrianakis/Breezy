@@ -2,16 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Allocatable GP registers. rax/rcx/rdx are deliberately absent: they stay
-   scratch for idiv (rax/rdx), shift counts (cl), and spill reloads. */
-/* Indices 0..RA_NREGS-1 are the base pool; 11=rcx and 12=rdx are claimable per
-   function when no variable shift / div-mod needs them as fixed scratch. */
+/* Allocatable GP registers. rax/rcx/rdx are deliberately absent: they stay scratch for idiv (rax/rdx), shift counts (cl), and spill reloads. */
+/* Indices 0..RA_NREGS-1 are the base pool; 11=rcx and 12=rdx are claimable per function when no variable shift / div-mod needs them as fixed scratch. */
 static const char *RA_REGS[RA_MAXREGS] =
 { "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rcx", "rdx" };
 
-/* Allocatable xmm registers, indexed by (combined index - RA_XMM0). xmm0/xmm1 stay
-   scratch (immediate computation / spill staging); xmm2..xmm5 are caller-saved on
-   both Win64 and System V, matching the legacy emitter's float-promotion pool. */
+/* Allocatable xmm registers, indexed by (combined index - RA_XMM0). xmm0/xmm1 stay scratch (immediate computation / spill staging); xmm2..xmm5 are caller-saved on both Win64 and System V, matching the legacy emitter's float-promotion pool. */
 static const char *RA_XMM_REGS[RA_NXMM] = { "xmm2", "xmm3", "xmm4", "xmm5" };
 
 const char *ra_reg_name(int i)
@@ -33,19 +29,19 @@ int ra_is_callee_saved(int i, int linux_target)
 {
 	if (i >= RA_XMM0)
 	{
-		return 0;   /* xmm2..xmm5 caller-saved on both ABIs. */
+		return 0; // xmm2..xmm5 caller-saved on both ABIs.
 	}
 
 	const char *r = RA_REGS[i];
 	if (!strcmp(r, "rbx") || !strcmp(r, "r12") || !strcmp(r, "r13")
 			|| !strcmp(r, "r14") || !strcmp(r, "r15"))
 	{
-		return 1;   /* Callee-saved on both ABIs. */
+		return 1; // Callee-saved on both ABIs.
 	}
 
 	if (!linux_target && (!strcmp(r, "rsi") || !strcmp(r, "rdi")))
 	{
-		return 1;   /* Callee-saved on Win64 only. */
+		return 1; // Callee-saved on Win64 only.
 	}
 
 	return 0;
@@ -66,10 +62,10 @@ static int local_index(const IRAlloc *a, long long disp)
 	return -1;
 }
 
-/* The value defined (or -1) and the values used by one instruction. A frame
-   load reads its local and defines its dst vreg; a frame store defines its local
-   and reads the stored vreg; everything else uses a/b/c (and IR_SEL's d) and
-   defines dst. */
+/**
+ * The value defined (or -1) and the values used by one instruction.
+ * A frame load reads its local and defines its dst vreg; a frame store defines its local and reads the stored vreg; everything else uses a/b/c (and IR_SEL's d) and defines dst.
+ */
 static void instr_def_use(const IRAlloc *a, const IRInstr *in, int *def, int uses[4], int *nuse)
 {
 	*def = -1;
@@ -95,8 +91,8 @@ static void instr_def_use(const IRAlloc *a, const IRInstr *in, int *def, int use
 
 	if (in->op == IR_CALL)
 	{
-		/* Defines the result vreg (rax); uses the argument vregs (call_args, not
-		   a/b/c). Eligibility caps the arg count at 4, so uses[4] holds them all. */
+		// Defines the result vreg (rax); uses the argument vregs (call_args, not a/b/c).
+		// Eligibility caps the arg count at 4, so uses[4] holds them all.
 		*def = (in->dst != IR_NO_REG) ? in->dst : -1;
 		for (int i = 0; i < in->call_argc; i++)
 		{
@@ -235,9 +231,10 @@ static int ra_is_float_kind(TypeKind k)
 	return k == TY_DOUBLE || k == TY_FLOAT;
 }
 
-/* The kind of data a value HOLDS (its register-class driver). For most ops that is
-   the instruction's result width; a compare yields an integer 0/1 regardless of its
-   operand width; a cast yields its destination kind. */
+/**
+ * The kind of data a value HOLDS (its register-class driver).
+ * For most ops that is the instruction's result width; a compare yields an integer 0/1 regardless of its operand width; a cast yields its destination kind.
+ */
 static int ra_result_is_float(const IRInstr *in)
 {
 	if (in->op == IR_CMP)
@@ -259,17 +256,17 @@ static int uf_find(int *uf, int x)
 {
 	while (uf[x] != x)
 	{
-		uf[x] = uf[uf[x]];   /* Path halving. */
+		uf[x] = uf[uf[x]]; // Path halving.
 		x = uf[x];
 	}
 
 	return x;
 }
 
-/* A use/def at loop depth d weighs 10^d, so a value touched inside an inner loop
-   dominates a loop-invariant one - the allocator colours (keeps in a register) the
-   heaviest values first and spills the cheapest. Depth is capped so the weight sum
-   stays well inside a long long. */
+/**
+ * A use/def at loop depth d weighs 10^d, so a value touched inside an inner loop dominates a loop-invariant one - the allocator colours (keeps in a register) the heaviest values first and spills the cheapest.
+ * Depth is capped so the weight sum stays well inside a long long.
+ */
 static long long depth_weight(int d)
 {
 	if (d > 9)
@@ -286,17 +283,13 @@ static long long depth_weight(int d)
 	return w;
 }
 
-/* Assign each value a register (or a spill slot) by graph colouring with copy
-   coalescing. Interference is built precisely from per-point liveness (walking
-   each block backward from its live_out set), so a value's live range carries the
-   natural holes that hole-free intervals lose - a frame local read into a temp and
-   then recomputed does not conflict with that temp. Copies (IR_MOVE and the frame
-   IR_LOAD/IR_STORE that shuttle a local through a vreg) are recorded as coalesce
-   candidates: when the two sides do not interfere they are unioned onto one node,
-   so the load/store/move emits nothing. Colouring is greedy in live-range start
-   order over the coalesced graph; a node that finds no free register spills. This
-   is what lets `local = local*c1 + c2` update the local in place instead of
-   shuttling it through a chain of temps. */
+/**
+ * Assign each value a register (or a spill slot) by graph colouring with copy coalescing.
+ * Interference is built precisely from per-point liveness (walking each block backward from its live_out set), so a value's live range carries the natural holes that hole-free intervals lose - a frame local read into a temp and then recomputed does not conflict with that temp.
+ * Copies (IR_MOVE and the frame IR_LOAD/IR_STORE that shuttle a local through a vreg) are recorded as coalesce candidates: when the two sides do not interfere they are unioned onto one node, so the load/store/move emits nothing.
+ * Colouring is greedy in live-range start order over the coalesced graph; a node that finds no free register spills.
+ * This is what lets `local = local*c1 + c2` update the local in place instead of shuttling it through a chain of temps.
+ */
 static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 {
 	int nval = a->nval;
@@ -312,9 +305,9 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	int *cp_d = malloc((size_t)cpcap * sizeof(int));
 	int *cp_s = malloc((size_t)cpcap * sizeof(int));
 	char *live = malloc((size_t)nval);
-	long long *weight = calloc((size_t)nval, sizeof(long long));   /* Per-value spill weight. */
-	char *used_deep = calloc((size_t)nval, 1);   /* Touched in a maximum-depth block. */
-	char *crosses_call = calloc((size_t)nval, 1);   /* Live across an IR_CALL -> caller-saved-excluded. */
+	long long *weight = calloc((size_t)nval, sizeof(long long)); // Per-value spill weight.
+	char *used_deep = calloc((size_t)nval, 1); // Touched in a maximum-depth block.
+	char *crosses_call = calloc((size_t)nval, 1); // Live across an IR_CALL -> caller-saved-excluded.
 
 	int maxdepth = 0;
 	for (int b = 0; b < f->block_count; b++)
@@ -325,8 +318,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Build interference + copy lists from per-point liveness, and accumulate each
-	   value's loop-depth-weighted use/def count. */
+	// Build interference + copy lists from per-point liveness, and accumulate each value's loop-depth-weighted use/def count.
 	for (int b = 0; b < f->block_count; b++)
 	{
 		IRBlock *blk = &f->blocks[b];
@@ -342,9 +334,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			instr_def_use(a, in, &def, uses, &nuse);
 			if (in->op == IR_CALL)
 			{
-				/* `live` here is the call's live-out. Every value live after the call
-				   except its own result is live across it, so it must not occupy a
-				   caller-saved register (the call clobbers those). */
+				// `live` here is the call's live-out.
+				// Every value live after the call except its own result is live across it, so it must not occupy a caller-saved register (the call clobbers those).
 				for (int w = 0; w < nval; w++)
 				{
 					if (live[w] && w != def)
@@ -417,10 +408,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Coalesce: union a copy's two ends when no member of either group conflicts.
-	   Each group keeps a linked list of its members (head/tail by root, next per
-	   value), so a copy's conflict check visits only the two groups' members
-	   instead of rescanning every value per member. */
+	// Coalesce: union a copy's two ends when no member of either group conflicts.
+	// Each group keeps a linked list of its members (head/tail by root, next per value), so a copy's conflict check visits only the two groups' members instead of rescanning every value per member.
 	int *uf = malloc((size_t)nval * sizeof(int));
 	int *grp_head = malloc((size_t)nval * sizeof(int));
 	int *grp_tail = malloc((size_t)nval * sizeof(int));
@@ -467,7 +456,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 	free(grp_tail);
 	free(grp_next);
 
-	/* A coalesced root is live across a call if any of its members is. */
+	// A coalesced root is live across a call if any of its members is.
 	char *root_crosses = calloc((size_t)nval, 1);
 	for (int p = 0; p < nval; p++)
 	{
@@ -477,7 +466,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Interference between coalesced roots. */
+	// Interference between coalesced roots.
 	char *rintf = calloc((size_t)nval * nval, 1);
 	for (int p = 0; p < nval; p++)
 	{
@@ -496,9 +485,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Live roots, with each root's spill weight (sum of member weights) and earliest
-	   start. Colouring visits the heaviest roots first so the hottest values win
-	   registers and the cheapest spill (loop-depth-aware spilling). */
+	// Live roots, with each root's spill weight (sum of member weights) and earliest start.
+	// Colouring visits the heaviest roots first so the hottest values win registers and the cheapest spill (loop-depth-aware spilling).
 	char *root_live = calloc((size_t)nval, 1);
 	int *rstart = malloc((size_t)nval * sizeof(int));
 	long long *rweight = calloc((size_t)nval, sizeof(long long));
@@ -532,7 +520,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Sort by weight descending; ties by earliest start (deterministic). */
+	// Sort by weight descending; ties by earliest start (deterministic).
 	for (int i = 1; i < no; i++)
 	{
 		int x = order[i];
@@ -547,11 +535,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		order[j + 1] = x;
 	}
 
-	/* Claim rcx (11) / rdx (12) as extra allocatable registers when no variable
-	   shift / div-mod needs them as fixed scratch. They are only safe to hand to
-	   values when the colouring does not spill (a spill reload stages operands
-	   through rax/rcx/rdx); so colour with the extras, and if that still spills,
-	   recolour with the base 11 so the extras revert to scratch. */
+	// Claim rcx (11) / rdx (12) as extra allocatable registers when no variable shift / div-mod needs them as fixed scratch.
+	// They are only safe to hand to values when the colouring does not spill (a spill reload stages operands through rax/rcx/rdx); so colour with the extras, and if that still spills, recolour with the base 11 so the extras revert to scratch.
 	int has_divmod = 0;
 	int has_shift = 0;
 	for (int b = 0; b < f->block_count; b++)
@@ -577,11 +562,11 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		allow[r] = (r < RA_NREGS) ? 1 : 0;
 	}
 
-	allow[11] = !has_shift;    /* rcx. */
-	allow[12] = !has_divmod;   /* rdx. */
+	allow[11] = !has_shift; // rcx.
+	allow[12] = !has_divmod; // rdx.
 	for (int r = RA_XMM0; r < RA_NALL; r++)
 	{
-		allow[r] = 1;          /* xmm2..xmm5 always allocatable (no fixed-scratch role). */
+		allow[r] = 1; // xmm2..xmm5 always allocatable (no fixed-scratch role).
 	}
 
 	int *color = malloc((size_t)nval * sizeof(int));
@@ -606,13 +591,9 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				}
 			}
 
-			/* Live across a call: exclude every register the call clobbers. Only the
-			   registers callee-saved on BOTH ABIs survive (rbx, r12-r15); the
-			   ra_is_callee_saved(.,1) Linux predicate names exactly that GP set (rsi/rdi
-			   are caller-saved on Linux, and all xmm return 0), so it is the
-			   ABI-independent "safe across a call" test - conservative on Win64 (where
-			   rsi/rdi would also survive) but always sound. A cross-call value that
-			   finds no such register spills. */
+			// Live across a call: exclude every register the call clobbers.
+			// Only the registers callee-saved on BOTH ABIs survive (rbx, r12-r15); the ra_is_callee_saved(.,1) Linux predicate names exactly that GP set (rsi/rdi are caller-saved on Linux, and all xmm return 0), so it is the ABI-independent "safe across a call" test - conservative on Win64 (where rsi/rdi would also survive) but always sound.
+			// A cross-call value that finds no such register spills.
 			if (root_crosses[r])
 			{
 				for (int rr = 0; rr < RA_NALL; rr++)
@@ -624,9 +605,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				}
 			}
 
-			/* Restrict the search to the root's register class. A coalesced root's
-			   members are copy-related and so share a class; colour from that
-			   class's contiguous index sub-range. */
+			// Restrict the search to the root's register class.
+			// A coalesced root's members are copy-related and so share a class; colour from that class's contiguous index sub-range.
 			int lo = (a->val_class[r] == RC_XMM) ? RA_XMM0 : 0;
 			int hi = (a->val_class[r] == RC_XMM) ? RA_NALL : RA_MAXREGS;
 			for (int rr = lo; rr < hi; rr++)
@@ -651,19 +631,19 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 
 		if (!spilled || (!allow[11] && !allow[12]))
 		{
-			break;   /* Fits, or already on the base pool - nothing more to try. */
+			break; // Fits, or already on the base pool - nothing more to try.
 		}
 
-		allow[11] = 0;   /* Spilled with the extras: recolour without them so they */
-		allow[12] = 0;   /* stay available as spill-reload scratch. */
+		allow[11] = 0; // Spilled with the extras: recolour without them so they
+		allow[12] = 0; // stay available as spill-reload scratch.
 	}
 
-	/* Project the root colours back onto every value. */
+	// Project the root colours back onto every value.
 	for (int v = 0; v < nval; v++)
 	{
 		if (a->iend[v] < 0)
 		{
-			a->val_reg[v] = RA_SPILLED;   /* Never live: no register, no slot. */
+			a->val_reg[v] = RA_SPILLED; // Never live: no register, no slot.
 			continue;
 		}
 
@@ -679,12 +659,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Rematerializable spills: a spilled vreg defined exactly once, by a frame
-	   load of a local nothing in the function stores, reloads from the local's
-	   home slot at each use - the reload costs what the spill-slot read would,
-	   the def's slot store disappears, and no spill slot is owned. Exempt from
-	   the hot-spill gate: a remat read is no worse than the register pressure
-	   the emitter fallback would face. */
+	// Rematerializable spills: a spilled vreg defined exactly once, by a frame load of a local nothing in the function stores, reloads from the local's home slot at each use - the reload costs what the spill-slot read would, the def's slot store disappears, and no spill slot is owned.
+	// Exempt from the hot-spill gate: a remat read is no worse than the register pressure the emitter fallback would face.
 	{
 		int *defs = calloc((size_t)nval, sizeof(int));
 		long long *def_disp = malloc((size_t)nval * sizeof(long long));
@@ -696,8 +672,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			def_disp[v] = -1;
 		}
 
-		/* Linear position of each block's first instruction: the same scheme
-		   liveness used, so positions are comparable with istart/iend. */
+		// Linear position of each block's first instruction: the same scheme liveness used, so positions are comparable with istart/iend.
 		int *bfirst = malloc((size_t)(f->block_count > 0 ? f->block_count : 1) * sizeof(int));
 		int pos = 0;
 		for (int b = 0; b < f->block_count; b++)
@@ -744,17 +719,13 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 				continue;
 			}
 
-			/* The local IS stored somewhere, but a load whose uses all sit in
-			   the def's own block is still safe when no store to that local
-			   lies strictly between the def and the last use: a basic block
-			   executes linearly, so every reload observes the defining value.
-			   (A store AT the last use reads its operands first, so it is
-			   harmless.) */
+			// The local IS stored somewhere, but a load whose uses all sit in the def's own block is still safe when no store to that local lies strictly between the def and the last use: a basic block executes linearly, so every reload observes the defining value.
+			// (A store AT the last use reads its operands first, so it is harmless.)
 			int b = def_blk[v];
 			IRBlock *blk = &f->blocks[b];
 			if (a->iend[v] >= bfirst[b] + blk->count)
 			{
-				continue;   /* Live past the block: path order is not linear. */
+				continue; // Live past the block: path order is not linear.
 			}
 
 			int lastu = a->iend[v] - bfirst[b];
@@ -775,9 +746,7 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			}
 		}
 
-		/* A spilled local pseudo-value of a never-stored local is equally
-		   harmless: its reads already go to the home slot (no spill slot, no
-		   extra traffic), so it neither owns a slot nor counts as hot. */
+		// A spilled local pseudo-value of a never-stored local is equally harmless: its reads already go to the home slot (no spill slot, no extra traffic), so it neither owns a slot nor counts as hot.
 		for (int k = 0; k < a->nlocal; k++)
 		{
 			if (!lstored[k] && a->val_reg[a->vreg_count + k] == RA_SPILLED
@@ -795,9 +764,8 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		free(lstored);
 	}
 
-	/* One spill slot per spilled root, shared by its coalesced members. A
-	   rematerializing member does not force a slot (it reads the local's home
-	   slot); a non-remat member of the same class still gets one. */
+	// One spill slot per spilled root, shared by its coalesced members.
+	// A rematerializing member does not force a slot (it reads the local's home slot); a non-remat member of the same class still gets one.
 	int *root_slot = malloc((size_t)nval * sizeof(int));
 	for (int r = 0; r < nval; r++)
 	{
@@ -821,19 +789,11 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 
 	a->spill_bytes = nspill * 8;
 
-	/* Hot spill: TEMPORARIES used in the function's deepest loop had to spill,
-	   in numbers the region's other gains cannot amortize. Only meaningful when
-	   there is a loop (maxdepth >= 1). Rematerializing values are exempt (no
-	   slot, def-store gone), and so are local pseudo-values: a spilled local
-	   simply lives in its home slot, which is no worse than the emitter
-	   fallback's own treatment of locals. The tolerance is empirical: the
-	   packet pipeline's region carries 14 spilled temps and still beats the
-	   emitter 2x. The bound was 16 when high-spill regions also paid a per-copy
-	   imul tax the emitter folded away; once IR lowering folds that constant
-	   index/stride arithmetic (low_const), the codec block sweep WINS at 108
-	   spilled temps (240 vs 271 ms, both OSes, full-suite A/B), so the bound is
-	   raised to 128. codec is the only region in the suite above 16; the A/B
-	   confirmed no other kernel's routing changes. */
+	// Hot spill: TEMPORARIES used in the function's deepest loop had to spill, in numbers the region's other gains cannot amortize.
+	// Only meaningful when there is a loop (maxdepth >= 1).
+	// Rematerializing values are exempt (no slot, def-store gone), and so are local pseudo-values: a spilled local simply lives in its home slot, which is no worse than the emitter fallback's own treatment of locals.
+	// The tolerance is empirical: the packet pipeline's region carries 14 spilled temps and still beats the emitter 2x.
+	// The bound was 16 when high-spill regions also paid a per-copy imul tax the emitter folded away; once IR lowering folds that constant index/stride arithmetic (low_const), the codec block sweep WINS at 108 spilled temps (240 vs 271 ms, both OSes, full-suite A/B), so the bound is raised to 128. codec is the only region in the suite above 16; the A/B confirmed no other kernel's routing changes.
 	a->hot_spill = 0;
 	a->hot_spill_count = 0;
 	if (maxdepth >= 1)
@@ -852,12 +812,9 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 			}
 		}
 
-		/* GP spills tolerate a high count (the IR's 11-register pool plus folded
-		   addressing still beats the emitter - e.g. codec at 108). FP is different:
-		   the IR has only 4 allocatable xmm registers (xmm2-5) while the emitter's
-		   float promotion uses xmm2-11, so any xmm spill in the hottest loop means
-		   the emitter wins - fall back. (Until packed vectorization, which is what
-		   actually beats the emitter on FP.) */
+		// GP spills tolerate a high count (the IR's 11-register pool plus folded addressing still beats the emitter - e.g. codec at 108).
+		// FP is different: the IR has only 4 allocatable xmm registers (xmm2-5) while the emitter's float promotion uses xmm2-11, so any xmm spill in the hottest loop means the emitter wins - fall back.
+		// (Until packed vectorization, which is what actually beats the emitter on FP.)
 		a->hot_spill = (a->hot_spill_count > 128) || (xmm_hot > 0);
 	}
 
@@ -900,10 +857,9 @@ IRAlloc *ra_run(IRFunc *f)
 		a->val_remat[v] = -1;
 	}
 
-	/* Register class per value (RC_GP default). A value's class follows the result
-	   kind of its defining instruction; a frame local's class follows the kind of
-	   the loads/stores that touch it. (While float eligibility is off, every value
-	   is integer/RC_GP and the xmm pool is never selected.) */
+	// Register class per value (RC_GP default).
+	// A value's class follows the result kind of its defining instruction; a frame local's class follows the kind of the loads/stores that touch it.
+	// (While float eligibility is off, every value is integer/RC_GP and the xmm pool is never selected.)
 	a->val_class = calloc((size_t)nval, sizeof(int));
 	for (int b = 0; b < f->block_count; b++)
 	{
@@ -940,9 +896,9 @@ IRAlloc *ra_run(IRFunc *f)
 	}
 
 	int nb = f->block_count;
-	int bw = a->nval;   /* Bitset width in values. */
+	int bw = a->nval; // Bitset width in values.
 
-	/* Linear position of each block's first instruction, and block lengths. */
+	// Linear position of each block's first instruction, and block lengths.
 	int *first_pos = malloc((size_t)(nb > 0 ? nb : 1) * sizeof(int));
 	int pos = 0;
 	for (int b = 0; b < nb; b++)
@@ -951,7 +907,7 @@ IRAlloc *ra_run(IRFunc *f)
 		pos += f->blocks[b].count;
 	}
 
-	/* gen/kill per block (use-before-def / defined). */
+	// gen/kill per block (use-before-def / defined).
 	char *gen = calloc((size_t)(nb * bw > 0 ? nb * bw : 1), 1);
 	char *kill = calloc((size_t)(nb * bw > 0 ? nb * bw : 1), 1);
 	for (int b = 0; b < nb; b++)
@@ -969,7 +925,7 @@ IRAlloc *ra_run(IRFunc *f)
 			{
 				if (uses[u] >= 0 && !k[uses[u]])
 				{
-					g[uses[u]] = 1;   /* Used before any def in this block. */
+					g[uses[u]] = 1; // Used before any def in this block.
 				}
 			}
 
@@ -980,7 +936,7 @@ IRAlloc *ra_run(IRFunc *f)
 		}
 	}
 
-	/* Backward liveness fixpoint. */
+	// Backward liveness fixpoint.
 	char *live_in = calloc((size_t)(nb * bw > 0 ? nb * bw : 1), 1);
 	char *live_out = calloc((size_t)(nb * bw > 0 ? nb * bw : 1), 1);
 	int changed = 1;
@@ -992,7 +948,7 @@ IRAlloc *ra_run(IRFunc *f)
 			IRBlock *blk = &f->blocks[b];
 			char *lo = live_out + (size_t)b * bw;
 			char *li = live_in + (size_t)b * bw;
-			/* live_out = union of successors' live_in. */
+			// live_out = union of successors' live_in.
 			IRInstr *term = blk->count ? &blk->instrs[blk->count - 1] : NULL;
 			int succ[2];
 			int ns = 0;
@@ -1011,11 +967,8 @@ IRAlloc *ra_run(IRFunc *f)
 
 			for (int v = 0; v < bw; v++)
 			{
-				/* Region exit (the only successor-less block in a region): every
-				   frame local is potentially read after the region, so all local
-				   pseudo-values are live-out there. This keeps two live-out locals
-				   from ever sharing a register and keeps a local's updated value in
-				   its register until the region's store-back. */
+				// Region exit (the only successor-less block in a region): every frame local is potentially read after the region, so all local pseudo-values are live-out there.
+				// This keeps two live-out locals from ever sharing a register and keeps a local's updated value in its register until the region's store-back.
 				char o = (f->is_region && ns == 0 && v >= a->vreg_count) ? 1 : 0;
 				for (int s = 0; s < ns; s++)
 				{
@@ -1032,7 +985,7 @@ IRAlloc *ra_run(IRFunc *f)
 					changed = 1;
 				}
 
-				/* live_in = gen | (live_out - kill). */
+				// live_in = gen | (live_out - kill).
 				char ni = gen[(size_t)b * bw + v] || (o && !kill[(size_t)b * bw + v]);
 				if (ni != li[v])
 				{
@@ -1043,9 +996,8 @@ IRAlloc *ra_run(IRFunc *f)
 		}
 	}
 
-	/* Intervals: extend over each block where a value is live, and to every def/use
-	   position. A loop-carried value is live across the loop blocks, so its single
-	   [start,end] spans the loop. */
+	// Intervals: extend over each block where a value is live, and to every def/use position.
+	// A loop-carried value is live across the loop blocks, so its single [start,end] spans the loop.
 	for (int b = 0; b < nb; b++)
 	{
 		IRBlock *blk = &f->blocks[b];

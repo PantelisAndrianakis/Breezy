@@ -17,32 +17,32 @@ static void test_int_literal(void)
 
 static void test_equality_words(void)
 {
-	/* `a equals b` lexes `equals` as an identifier; the parser treats it as ==. */
+	// `a equals b` lexes `equals` as an identifier; the parser treats it as ==.
 	Expr *e = parse_str("a equals b");
 	ASSERT_INT(e->kind, EX_BINARY);
 	ASSERT_INT(e->op, TOKEN_EQ);
 	Expr *d = parse_str("a differs b");
 	ASSERT_INT(d->kind, EX_BINARY);
 	ASSERT_INT(d->op, TOKEN_NEQ);
-	/* The words remain usable as plain identifiers. */
+	// The words remain usable as plain identifiers.
 	Expr *id = parse_str("equals");
 	ASSERT_INT(id->kind, EX_IDENT);
 }
 
 static void test_logical_precedence(void)
 {
-	/* `or` is loosest: a or b and c  ==>  a or (b and c). */
+	// `or` is loosest: a or b and c  ==>  a or (b and c).
 	Expr *e = parse_str("a or b and c");
 	ASSERT_INT(e->kind, EX_BINARY);
 	ASSERT_INT(e->op, TOKEN_OR);
 	ASSERT_INT(e->rhs->kind, EX_BINARY);
 	ASSERT_INT(e->rhs->op, TOKEN_AND);
 
-	/* && / || are synonyms producing the same tokens. */
+	// && / || are synonyms producing the same tokens.
 	Expr *s = parse_str("a && b");
 	ASSERT_INT(s->op, TOKEN_AND);
 
-	/* not is a prefix unary. */
+	// not is a prefix unary.
 	Expr *u = parse_str("not x");
 	ASSERT_INT(u->kind, EX_UNARY);
 	ASSERT_INT(u->op, TOKEN_NOT);
@@ -50,14 +50,14 @@ static void test_logical_precedence(void)
 
 static void test_bitwise_precedence(void)
 {
-	/* `|` is loosest: a | b & c  ==>  a | (b & c). Top node is '|', rhs is '&'. */
+	// `|` is loosest: a | b & c  ==>  a | (b & c). Top node is '|', rhs is '&'.
 	Expr *e = parse_str("a | b & c");
 	ASSERT_INT(e->kind, EX_BINARY);
 	ASSERT_INT(e->op, TOKEN_PIPE);
 	ASSERT_INT(e->rhs->kind, EX_BINARY);
 	ASSERT_INT(e->rhs->op, TOKEN_AMP);
 
-	/* `~` is a prefix unary. */
+	// `~` is a prefix unary.
 	Expr *u = parse_str("~x");
 	ASSERT_INT(u->kind, EX_UNARY);
 	ASSERT_INT(u->op, TOKEN_TILDE);
@@ -216,8 +216,8 @@ static void test_generic_class_decl(void)
 	Unit *u = parse_unit_str("class Box<T> { T value; T get() { return this.value; } }");
 	ASSERT_INT(u->klasses[0]->type_param_count, 1);
 	ASSERT_STR(u->klasses[0]->type_params[0], "T");
-	ASSERT_STR(u->klasses[0]->type_param_bounds[0], "");   /* unbounded */
-	ASSERT_INT(u->klasses[0]->fields[0].type.kind, TY_OBJECT);  /* bare T parses as object "T" */
+	ASSERT_STR(u->klasses[0]->type_param_bounds[0], ""); // unbounded
+	ASSERT_INT(u->klasses[0]->fields[0].type.kind, TY_OBJECT); // bare T parses as object "T"
 	ASSERT_STR(u->klasses[0]->fields[0].type.class_name, "T");
 }
 
@@ -255,18 +255,18 @@ static void test_classdecl_clone_independent(void)
 				  "class Box<T> { T value; void set(T v) { this.value = v; } T get() { return this.value; } }");
 	ClassDecl *orig = u->klasses[0];
 	ClassDecl *copy = classdecl_clone(orig);
-	/* Distinct nodes. */
+	// Distinct nodes.
 	ASSERT_INT(copy == orig, 0);
 	ASSERT_INT(copy->methods[0] == orig->methods[0], 0);
-	ASSERT_INT(copy->fields[0].type.elem == orig->fields[0].type.elem, 1);  /* both NULL */
-	/* Mutating the copy must not touch the original. */
+	ASSERT_INT(copy->fields[0].type.elem == orig->fields[0].type.elem, 1); // both NULL
+	// Mutating the copy must not touch the original.
 	strcpy(copy->name, "Box$int");
 	copy->fields[0].type.kind = TY_INT;
 	copy->fields[0].type.class_name[0] = '\0';
 	ASSERT_STR(orig->name, "Box");
 	ASSERT_INT(orig->fields[0].type.kind, TY_OBJECT);
 	ASSERT_STR(orig->fields[0].type.class_name, "T");
-	/* Cloned body is a distinct tree. */
+	// Cloned body is a distinct tree.
 	ASSERT_INT(copy->methods[1]->body == orig->methods[1]->body, 0);
 }
 
@@ -276,8 +276,8 @@ static void test_typeref_deepcopy_nested(void)
 	TypeRef *orig = &u->funcs[0]->body->stmts[0]->decl_type;
 	TypeRef copy = typeref_deepcopy(orig);
 	ASSERT_INT(copy.targ_count, 2);
-	ASSERT_INT(copy.targs[0] == orig->targs[0], 0);              /* distinct */
-	ASSERT_INT(copy.targs[1]->kind, TY_GENERIC);                /* Box<string> preserved */
+	ASSERT_INT(copy.targs[0] == orig->targs[0], 0); // distinct
+	ASSERT_INT(copy.targs[1]->kind, TY_GENERIC); // Box<string> preserved
 	ASSERT_STR(copy.targs[1]->class_name, "Box");
 	ASSERT_INT(copy.targs[1]->elem->kind, TY_STRING);
 }
@@ -322,11 +322,11 @@ static void test_parse_static_member(void)
 	Unit *u = parse_unit_str(
 				  "class Counter { static int total = 0; int id;"
 				  " static int peek() { return Counter.total; } }");
-	ASSERT_INT(u->klasses[0]->is_static, 0);                 /* class itself not static */
-	ASSERT_INT(u->klasses[0]->fields[0].is_static, 1);       /* total */
+	ASSERT_INT(u->klasses[0]->is_static, 0); // class itself not static
+	ASSERT_INT(u->klasses[0]->fields[0].is_static, 1); // total
 	ASSERT_INT(u->klasses[0]->fields[0].init->kind, EX_INT);
-	ASSERT_INT(u->klasses[0]->fields[1].is_static, 0);       /* id */
-	ASSERT_INT(u->klasses[0]->methods[0]->is_static, 1);     /* peek */
+	ASSERT_INT(u->klasses[0]->fields[1].is_static, 0); // id
+	ASSERT_INT(u->klasses[0]->methods[0]->is_static, 1); // peek
 }
 
 static void test_parse_static_class(void)
@@ -424,7 +424,7 @@ static void test_array_type_decls(void)
 	Block *body = u->funcs[0]->body;
 	ASSERT_INT(body->stmts[0]->decl_type.kind, TY_ARRAY);
 	ASSERT_INT(body->stmts[0]->decl_type.elem->kind, TY_INT);
-	ASSERT_INT(body->stmts[1]->decl_type.kind, TY_ARRAY);   /* object array via peek2 */
+	ASSERT_INT(body->stmts[1]->decl_type.kind, TY_ARRAY); // object array via peek2
 	ASSERT_INT(body->stmts[1]->decl_type.elem->kind, TY_OBJECT);
 }
 
@@ -442,12 +442,12 @@ static void test_arrow_fn_type_decl(void)
 	Unit *u = parse_unit_str("void m() { (int,string)->bool f; }");
 	TypeRef *t = &u->funcs[0]->body->stmts[0]->decl_type;
 	ASSERT_INT(t->kind, TY_FUNC);
-	ASSERT_INT(t->elem->kind, TY_BOOL);     /* return type. */
+	ASSERT_INT(t->elem->kind, TY_BOOL); // return type.
 	ASSERT_INT(t->targ_count, 2);
 	ASSERT_INT(t->targs[0]->kind, TY_INT);
 	ASSERT_INT(t->targs[1]->kind, TY_STRING);
 
-	/* Zero-arg form. */
+	// Zero-arg form.
 	Unit *u2 = parse_unit_str("void m() { ()->int g; }");
 	TypeRef *t2 = &u2->funcs[0]->body->stmts[0]->decl_type;
 	ASSERT_INT(t2->kind, TY_FUNC);
@@ -474,7 +474,7 @@ static void test_lambda_parses(void)
 	ASSERT_INT(e3->kind, EX_LAMBDA);
 	ASSERT_INT(e3->lam->param_count, 0);
 
-	Expr *e4 = parse_str("(int n) => n + 1");      /* explicitly typed param. */
+	Expr *e4 = parse_str("(int n) => n + 1"); // explicitly typed param.
 	ASSERT_INT(e4->kind, EX_LAMBDA);
 	ASSERT_INT(e4->lam->params[0].has_type, 1);
 	ASSERT_INT(e4->lam->params[0].type.kind, TY_INT);
@@ -578,7 +578,7 @@ static void test_switch_parse(void)
 	ASSERT_INT(b->stmts[0]->value->int_val, 1);
 	ASSERT_INT(b->stmts[1]->kind, ST_CASE);
 	ASSERT_INT(b->stmts[1]->value->int_val, 2);
-	ASSERT_INT(b->stmts[2]->kind, ST_EXPR);     /* print(x) */
+	ASSERT_INT(b->stmts[2]->kind, ST_EXPR); // print(x)
 	ASSERT_INT(b->stmts[3]->kind, ST_BREAK);
 	ASSERT_INT(b->stmts[4]->kind, ST_DEFAULT);
 }
@@ -596,13 +596,13 @@ static void test_try_catch_parse(void)
 	Unit *u = parse_unit_str("void m() { try { print(1); } catch (Exception e) { print(2); } catch (Exception f) { print(3); } }");
 	Stmt *s = u->funcs[0]->body->stmts[0];
 	ASSERT_INT(s->kind, ST_TRY);
-	ASSERT_INT(s->then_blk->stmts[0]->kind, ST_EXPR);          /* try body: print(1) */
-	ASSERT_INT(s->else_blk->count, 2);                         /* two catch clauses */
+	ASSERT_INT(s->then_blk->stmts[0]->kind, ST_EXPR); // try body: print(1)
+	ASSERT_INT(s->else_blk->count, 2); // two catch clauses
 	Stmt *c0 = s->else_blk->stmts[0];
 	ASSERT_INT(c0->kind, ST_CATCH);
 	ASSERT_INT(c0->decl_type.kind, TY_OBJECT);
 	ASSERT_STR(c0->decl_name, "e");
-	ASSERT_INT(c0->then_blk->stmts[0]->kind, ST_EXPR);         /* handler: print(2) */
+	ASSERT_INT(c0->then_blk->stmts[0]->kind, ST_EXPR); // handler: print(2)
 	ASSERT_INT(s->else_blk->stmts[1]->kind, ST_CATCH);
 }
 
@@ -697,8 +697,7 @@ static void test_parse_method_with_param(void)
 
 static void test_final_array_decl(void)
 {
-	/* A final local and a static final field both parse their brace list into
-	   an EX_ARRAYLIT and carry the is_final flag. */
+	// A final local and a static final field both parse their brace list into an EX_ARRAYLIT and carry the is_final flag.
 	static Parser p;
 	parser_init(&p, "void main() { final int[] T = { 1, -2, 3 }; }\n"
 					"static class D { static final double[] W = { 0.5, 2 }; }\n");

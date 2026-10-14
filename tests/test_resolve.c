@@ -123,11 +123,11 @@ static void test_enum_lowers_to_class(void)
 	TypeTable *tt = build_program(srcs, 2);
 	ClassInfo *c = types_find_class(tt,"Color");
 	ASSERT_INT(c != NULL, 1);
-	/* Hidden fields first, then user fields. */
+	// Hidden fields first, then user fields.
 	ASSERT_INT(types_find_field(c,"__ordinal")->type.kind, TY_INT);
 	ASSERT_INT(types_find_field(c,"__name")->type.kind, TY_STRING);
 	ASSERT_INT(types_find_field(c,"r")->type.kind, TY_INT);
-	/* Registry. */
+	// Registry.
 	ASSERT_INT(enum_is("Color"), 1);
 	ASSERT_INT(enum_ordinal("Color","GREEN"), 1);
 	ASSERT_INT(enum_count_of("Color"), 3);
@@ -195,13 +195,13 @@ static void test_enum_static_access(void)
 	build_program(srcs, 2);
 	Func *m = prog_find_func("main");
 	ASSERT_INT(m != NULL, 1);
-	/* c = Color.RED -> Color (object). */
+	// c = Color.RED -> Color (object).
 	ASSERT_INT(m->body->stmts[1]->value->type.kind, TY_OBJECT);
 	ASSERT_STR(m->body->stmts[1]->value->type.class_name, "Color");
-	/* o = c.ordinal() -> int;  n = c.name() -> string. */
+	// o = c.ordinal() -> int;  n = c.name() -> string.
 	ASSERT_INT(m->body->stmts[3]->value->type.kind, TY_INT);
 	ASSERT_INT(m->body->stmts[5]->value->type.kind, TY_STRING);
-	/* all = Color.values() -> Color[];  v = Color.valueOf(..) -> Color. */
+	// all = Color.values() -> Color[];  v = Color.valueOf(..) -> Color.
 	ASSERT_INT(m->body->stmts[7]->value->type.kind, TY_ARRAY);
 	ASSERT_INT(m->body->stmts[7]->value->type.elem->kind, TY_OBJECT);
 	ASSERT_STR(m->body->stmts[7]->value->type.elem->class_name, "Color");
@@ -220,9 +220,9 @@ static void test_static_member_resolves(void)
 	build_program(srcs, 2);
 	Func *mn = prog_find_func("main");
 	ASSERT_INT(mn != NULL, 1);
-	ASSERT_INT(mn->body->stmts[3]->value->type.kind, TY_INT);   /* t = C.total */
-	ASSERT_INT(mn->body->stmts[5]->value->type.kind, TY_INT);   /* p = C.peek() */
-	/* Static access is annotated for codegen with the sentinel + class name. */
+	ASSERT_INT(mn->body->stmts[3]->value->type.kind, TY_INT); // t = C.total
+	ASSERT_INT(mn->body->stmts[5]->value->type.kind, TY_INT); // p = C.peek()
+	// Static access is annotated for codegen with the sentinel + class name.
 	ASSERT_INT(mn->body->stmts[3]->value->anno_int, -1);
 	ASSERT_STR(mn->body->stmts[3]->value->anno_str, "C");
 }
@@ -235,10 +235,10 @@ static void test_generic_lowers_to_class(void)
 		"void main() { Wrap<int> b; b = new Wrap<int>(); b.set(7); print(b.get()); }"
 	};
 	TypeTable *tt = build_generic(srcs, 2);
-	ASSERT_INT(types_find_class(tt,"Wrap$int") != NULL, 1);  /* synthesized */
-	ASSERT_INT(types_find_class(tt,"Wrap") == NULL, 1);      /* template excluded */
+	ASSERT_INT(types_find_class(tt,"Wrap$int") != NULL, 1); // synthesized
+	ASSERT_INT(types_find_class(tt,"Wrap") == NULL, 1); // template excluded
 	MethodInfo *m = types_find_method(types_find_class(tt,"Wrap$int"),"get");
-	ASSERT_INT(m->ret_type.kind, TY_INT);                    /* T -> int */
+	ASSERT_INT(m->ret_type.kind, TY_INT); // T -> int
 }
 
 static void test_generic_multi_param_lowers(void)
@@ -267,7 +267,7 @@ static void test_generic_bound_ok(void)
 	TypeTable *tt = build_generic(srcs, 4);
 	ClassInfo *c = types_find_class(tt,"Caller$Dog");
 	ASSERT_INT(c != NULL, 1);
-	/* who: T -> Dog; the substituted body this.who.speak() resolves to string. */
+	// who: T -> Dog; the substituted body this.who.speak() resolves to string.
 	ASSERT_INT(types_find_method(c,"call")->ret_type.kind, TY_STRING);
 }
 
@@ -277,10 +277,10 @@ static void test_interface_call_resolves(void)
 				   " class Dog implements Speaker { string speak() { return \"woof\"; } }"
 				   " void main() { Speaker s; s = new Dog(); string r; r = s.speak(); }");
 	Func *main=u->funcs[0];
-	Expr *call=main->body->stmts[3]->value;   /* r = s.speak() */
-	ASSERT_INT(call->type.kind, TY_STRING);   /* speak() -> string. */
-	ASSERT_INT(call->anno_int, 0);            /* Interface slot 0 (reserved [0..K), K=1). */
-	/* Dog's speak() sits at the same reserved interface slot. */
+	Expr *call=main->body->stmts[3]->value; // r = s.speak()
+	ASSERT_INT(call->type.kind, TY_STRING); // speak() -> string.
+	ASSERT_INT(call->anno_int, 0); // Interface slot 0 (reserved [0..K), K=1).
+	// Dog's speak() sits at the same reserved interface slot.
 	ClassInfo *dog=types_find_class(&g_tt,"Dog");
 	MethodInfo *sp=types_find_method(dog,"speak");
 	ASSERT_INT(sp->vtable_slot, 0);
@@ -290,8 +290,8 @@ static void test_extern_call_resolves(void)
 {
 	Func *f=build1("extern long strlen(string s); extern int abs(int n);"
 				   " void main() { long n; n = strlen(\"hi\"); int a; a = abs(-3); }")->funcs[2];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LONG);   /* strlen(string) -> long. */
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);    /* abs(int) -> int. */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LONG); // strlen(string) -> long.
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT); // abs(int) -> int.
 }
 
 static void test_extern_blocking_flag(void)
@@ -511,8 +511,8 @@ static void test_map_get_and_size_types(void)
 {
 	Func *f=build1("void main() { map<int,int> d; int x; int n; "
 				   "d = new map<int,int>(); d.put(1, 9); x = d.get(1); n = d.size; }")->funcs[0];
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);   /* d.get(1) */
-	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT);   /* d.size */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT); // d.get(1)
+	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT); // d.size
 }
 
 static void test_incdec_type(void)
@@ -570,17 +570,17 @@ static void test_box_method_types(void)
 {
 	Func *f=build1("void main() { Box<int> b; int x; bool c; "
 				   "b = new Box<int>(); b.set(7); x = b.get(); c = b.contains(7); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);    /* b.get() */
-	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_BOOL);   /* b.contains(7) */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT); // b.get()
+	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_BOOL); // b.contains(7)
 }
 
 static void test_list_method_types(void)
 {
 	Func *f=build1("void main() { List<int> l; int x; int n; bool c; "
 				   "l = new List<int>(); l.add(5); x = l.get(0); n = l.size; c = l.contains(5); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT);    /* l.get(0) */
-	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);    /* l.size */
-	ASSERT_INT(f->body->stmts[8]->value->type.kind, TY_BOOL);   /* l.contains(5) */
+	ASSERT_INT(f->body->stmts[6]->value->type.kind, TY_INT); // l.get(0)
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT); // l.size
+	ASSERT_INT(f->body->stmts[8]->value->type.kind, TY_BOOL); // l.contains(5)
 }
 
 static void test_set_string_ok(void)
@@ -594,33 +594,33 @@ static void test_math_types(void)
 {
 	Func *f=build1("void main() { double r; int a; "
 				   "r = Math.sqrt(16.0); a = Math.abs(-5); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[2]->value->type.kind, TY_DOUBLE);   /* sqrt -> double */
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);      /* abs(int) -> int */
+	ASSERT_INT(f->body->stmts[2]->value->type.kind, TY_DOUBLE); // sqrt -> double
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT); // abs(int) -> int
 }
 
 static void test_random_types(void)
 {
 	Func *f=build1("void main() { int a; double d; bool b; "
 				   "a = Random.get(10); d = Random.nextDouble(); b = Random.nextBool(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);     /* get(int) -> int */
-	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_DOUBLE);  /* nextDouble -> double */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* nextBool -> bool */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT); // get(int) -> int
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_DOUBLE); // nextDouble -> double
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL); // nextBool -> bool
 }
 
 static void test_string_method_types(void)
 {
 	Func *f=build1("void main() { string s; s = \"hi\"; bool b; b = s.contains(\"h\"); int i; i = s.indexOf(\"i\"); int n; n = s.length(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* contains -> bool */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT);    /* indexOf -> int */
-	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);    /* length -> int */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL); // contains -> bool
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_INT); // indexOf -> int
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT); // length -> int
 }
 
 static void test_regex_types(void)
 {
 	Func *f=build1("void main() { string p; string t; p = \"a+\"; t = \"aa\"; "
 				   "bool b; b = Regex.matches(p, t); string m; m = Regex.find(p, t); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL);    /* matches -> bool */
-	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_STRING);  /* find -> string */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_BOOL); // matches -> bool
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_STRING); // find -> string
 }
 
 static void test_clock_type(void)
@@ -632,16 +632,16 @@ static void test_clock_type(void)
 static void test_clock_date_types(void)
 {
 	Func *f=build1("void main() { long t; t = Clock.currentTimeMillis(); string a; a = Clock.getDateString(t); string b; b = Clock.getDateString(t, \"yyyy\"); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_STRING);   /* getDateString(t) */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING);   /* getDateString(t, fmt) */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_STRING); // getDateString(t)
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING); // getDateString(t, fmt)
 }
 
 static void test_map_contains(void)
 {
 	Func *f=build1("void main() { map<string,int> m; bool a; bool b;"
 				   " a = m.containsKey(\"x\"); b = m.containsValue(5); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* containsKey -> bool */
-	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL);   /* containsValue -> bool */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL); // containsKey -> bool
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL); // containsValue -> bool
 }
 
 static void test_map_keys_values_types(void)
@@ -660,7 +660,7 @@ static void test_foreach_pair_resolves(void)
 	Func *f=build1("void main() { map<string,int> m; foreach (string k, int v in m) { print(v); } }")->funcs[0];
 	Stmt *s=f->body->stmts[1];
 	ASSERT_INT(s->kind, ST_FOREACH);
-	ASSERT(s->fe_val_offset != 0);   /* value slot was assigned */
+	ASSERT(s->fe_val_offset != 0); // value slot was assigned
 }
 
 static void test_map_entries_types(void)
@@ -669,9 +669,9 @@ static void test_map_entries_types(void)
 				   " foreach (Entry e in m.getEntries()) { string k; int v; k = e.getKey(); v = e.getValue(); } }")->funcs[0];
 	Stmt *fe=f->body->stmts[1];
 	ASSERT_INT(fe->kind, ST_FOREACH);
-	ASSERT_INT(fe->expr->type.kind, TY_ARRAY);          /* getEntries() -> Entry[] */
+	ASSERT_INT(fe->expr->type.kind, TY_ARRAY); // getEntries() -> Entry[]
 	ASSERT_INT(fe->expr->type.elem->kind, TY_ENTRY);
-	ASSERT_INT(fe->decl_type.kind, TY_ENTRY);           /* loop var enriched to Entry<K,V> */
+	ASSERT_INT(fe->decl_type.kind, TY_ENTRY); // loop var enriched to Entry<K,V>
 }
 
 static void test_spawn_resolves(void)
@@ -686,8 +686,8 @@ static void test_channel_send_recv_types(void)
 {
 	Func *f=build1("void main() { channel<int> c; c = new channel<int>(2); int x; c.send(5); x = c.recv(); }")->funcs[0];
 	Stmt *snd=f->body->stmts[3], *rcv=f->body->stmts[4];
-	ASSERT_INT(snd->expr->type.kind, TY_VOID);    /* send -> void (ST_EXPR) */
-	ASSERT_INT(rcv->value->type.kind, TY_INT);    /* recv -> elem type */
+	ASSERT_INT(snd->expr->type.kind, TY_VOID); // send -> void (ST_EXPR)
+	ASSERT_INT(rcv->value->type.kind, TY_INT); // recv -> elem type
 }
 
 static void test_spawn_args_resolve(void)
@@ -701,16 +701,16 @@ static void test_spawn_args_resolve(void)
 static void test_file_basic_types(void)
 {
 	Func *f=build1("void main() { bool b; b = File.exists(\"x\"); File.createFile(\"y\"); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_BOOL);   /* exists -> bool */
-	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);    /* createFile -> void */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_BOOL); // exists -> bool
+	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID); // createFile -> void
 }
 
 static void test_file_attr_types(void)
 {
 	Func *f=build1("void main() { int a; a = File.READONLY; File.setAttribute(\"x\", File.HIDDEN, true); bool b; b = File.hasAttribute(\"x\", File.READONLY); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);   /* File.READONLY -> int */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT); // File.READONLY -> int
 	ASSERT_INT(f->body->stmts[1]->value->int_val, 1);
-	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL);  /* hasAttribute -> bool */
+	ASSERT_INT(f->body->stmts[4]->value->type.kind, TY_BOOL); // hasAttribute -> bool
 }
 
 static void test_switch_resolves(void)
@@ -782,9 +782,9 @@ static void test_method_call_slot_and_class(void)
 
 static void test_shared_set_inference(void)
 {
-	/* worker takes a channel<Player>, so Player can cross cores -> shared.
-	   Player has an Inventory field, so Inventory is shared too (transitive).
-	   Loner is never channel-reachable -> not shared. */
+	// worker takes a channel<Player>, so Player can cross cores -> shared.
+	// Player has an Inventory field, so Inventory is shared too (transitive).
+	// Loner is never channel-reachable -> not shared.
 	static Parser ps[4];
 	static Unit *units[4];
 	const char *s[]= {"class Inventory { int n; }",
@@ -819,13 +819,12 @@ static void test_shared_set_inference(void)
 
 static void test_schedule_after_returns_timer(void)
 {
-	/* tick: a named zero-arg void function; scheduleAfter returns a Timer, and
-	   Timer.cancel() resolves to void. */
+	// tick: a named zero-arg void function; scheduleAfter returns a Timer, and Timer.cancel() resolves to void.
 	Unit *u = build1("void tick() {} void main() { Timer t; t = scheduleAfter(tick, 100); t.cancel(); }");
 	Func *mn = u->funcs[1];
-	ASSERT_INT(mn->body->stmts[0]->decl_type.kind, TY_TIMER);    /* Timer t; */
-	ASSERT_INT(mn->body->stmts[1]->value->type.kind, TY_TIMER);  /* scheduleAfter(...) -> Timer. */
-	ASSERT_INT(mn->body->stmts[2]->expr->type.kind, TY_VOID);    /* t.cancel() -> void. */
+	ASSERT_INT(mn->body->stmts[0]->decl_type.kind, TY_TIMER); // Timer t;
+	ASSERT_INT(mn->body->stmts[1]->value->type.kind, TY_TIMER); // scheduleAfter(...) -> Timer.
+	ASSERT_INT(mn->body->stmts[2]->expr->type.kind, TY_VOID); // t.cancel() -> void.
 }
 
 static void test_schedule_every_returns_timer(void)
@@ -837,51 +836,51 @@ static void test_schedule_every_returns_timer(void)
 static void test_getclassname_resolves_string(void)
 {
 	Func *f=build1("class Player { int x; } void main() { Player p; p = new Player(); string n; n = p.getClassName(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_STRING);   /* obj.getClassName() -> string. */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_STRING); // obj.getClassName() -> string.
 }
 
 static void test_system_shell_resolves_int(void)
 {
 	Func *f=build1("void main() { int p; p = System.shell(\"dir\"); int c; c = System.shell(\"dir\", true); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT);   /* Async form -> int (pid). */
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT);   /* Wait form -> int (exit code). */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_INT); // Async form -> int (pid).
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_INT); // Wait form -> int (exit code).
 }
 
 static void test_network_tcp_resolves(void)
 {
 	Func *f=build1("void main() { Listener l; l = Network.listen(0); Socket s; s = l.accept();"
 				   " byte[] b; b = s.read(64); int n; n = s.write(b); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LISTENER);   /* Network.listen -> Listener. */
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_SOCKET);     /* listener.accept -> Socket. */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_ARRAY);      /* socket.read -> byte[]. */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LISTENER); // Network.listen -> Listener.
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_SOCKET); // listener.accept -> Socket.
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_ARRAY); // socket.read -> byte[].
 	ASSERT_INT(f->body->stmts[5]->value->type.elem->kind, TY_BYTE);
-	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* socket.write -> int. */
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT); // socket.write -> int.
 }
 
 static void test_filechannel_resolves(void)
 {
 	Func *f=build1("void main() { FileChannel c; c = File.openChannel(\"db.dat\");"
 				   " byte[] b; b = c.readAt(0, 16); long s; s = c.size(); c.sync(); c.close(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_FILECHANNEL);   /* File.openChannel -> FileChannel. */
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_ARRAY);         /* readAt -> byte[]. */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_FILECHANNEL); // File.openChannel -> FileChannel.
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_ARRAY); // readAt -> byte[].
 	ASSERT_INT(f->body->stmts[3]->value->type.elem->kind, TY_BYTE);
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_LONG);          /* size -> long. */
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_LONG); // size -> long.
 }
 
 static void test_filewriter_resolves(void)
 {
 	Func *f=build1("void main() { FileWriter w; w = File.openWrite(\"out.txt\");"
 				   " w.write(\"hi\"); w.writeLine(\"x\"); w.flush(); w.close(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_FILEWRITER);   /* File.openWrite -> FileWriter. */
-	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);          /* w.write(...) -> void. */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_FILEWRITER); // File.openWrite -> FileWriter.
+	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID); // w.write(...) -> void.
 }
 
 static void test_logger_resolves(void)
 {
 	Func *f=build1("void main() { Logger g; g = Log.open(\"app.log\");"
 				   " g.log(\"hi\"); g.close(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LOGGER);   /* Log.open -> Logger. */
-	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID);      /* g.log(...) -> void. */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_LOGGER); // Log.open -> Logger.
+	ASSERT_INT(f->body->stmts[2]->expr->type.kind, TY_VOID); // g.log(...) -> void.
 }
 
 static void test_string_parse_types(void)
@@ -898,34 +897,33 @@ static void test_null_resolves(void)
 {
 	Func *f=build1("void main() { Socket s; s = Network.connect(\"127.0.0.1\", 1); bool b; b = (s == null);"
 				   " byte[] x; x = null; }")->funcs[0];
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL);   /* (s == null) -> bool. */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_NULL);   /* null assigns to a managed byte[]. */
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_BOOL); // (s == null) -> bool.
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_NULL); // null assigns to a managed byte[].
 }
 
 static void test_network_udp_resolves(void)
 {
 	Func *f=build1("void main() { UdpSocket u; u = Network.udp(0); Datagram d; d = u.receive();"
 				   " string h; h = d.host(); int p; p = d.port(); }")->funcs[0];
-	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_UDPSOCKET);  /* Network.udp -> UdpSocket. */
-	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_DATAGRAM);   /* udp.receive -> Datagram. */
-	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING);     /* datagram.host -> string. */
-	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT);        /* datagram.port -> int. */
+	ASSERT_INT(f->body->stmts[1]->value->type.kind, TY_UDPSOCKET); // Network.udp -> UdpSocket.
+	ASSERT_INT(f->body->stmts[3]->value->type.kind, TY_DATAGRAM); // udp.receive -> Datagram.
+	ASSERT_INT(f->body->stmts[5]->value->type.kind, TY_STRING); // datagram.host -> string.
+	ASSERT_INT(f->body->stmts[7]->value->type.kind, TY_INT); // datagram.port -> int.
 }
 
 static void test_lambda_resolve_capture(void)
 {
-	/* base is captured by value; x is the parameter, its type inferred from the
-	   (int)->int target. */
+	// base is captured by value; x is the parameter, its type inferred from the (int)->int target.
 	Func *f = build1("void m() { int base = 10; (int)->int g = x => x + base; }")->funcs[0];
 	Expr *lam = f->body->stmts[1]->decl_init;
 	ASSERT_INT(lam->kind, EX_LAMBDA);
 	ASSERT_INT(lam->type.kind, TY_FUNC);
 	ASSERT_INT(lam->lam->param_count, 1);
-	ASSERT_INT(lam->lam->params[0].type.kind, TY_INT);   /* inferred from the target. */
+	ASSERT_INT(lam->lam->params[0].type.kind, TY_INT); // inferred from the target.
 	ASSERT_INT(lam->lam->cap_count, 1);
 	ASSERT_STR(lam->lam->caps[0].name, "base");
 	ASSERT_INT(lam->lam->caps[0].type.kind, TY_INT);
-	ASSERT_INT(lam->lam->caps[0].env_offset, 32);        /* first capture sits past the 32-byte header. */
+	ASSERT_INT(lam->lam->caps[0].env_offset, 32); // first capture sits past the 32-byte header.
 }
 
 int main(void)

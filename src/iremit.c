@@ -6,18 +6,17 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Emit a function body from IR, consulting the linear-scan allocation: each value
-   (temporary or frame local) lives in a physical register for its live range, or
-   in a frame spill slot when the 11-register pool is exhausted. Operands are
-   staged through rax/rcx/rdx scratch - cheap when the source is a register (the
-   whole point: no stack traffic in the hot loop). The function is a call-free
-   leaf; only callee-saved registers it actually uses are saved/restored.
-
-   Frame layout (downward from rbp):
-     [rbp - 8 .. rbp - lbase]      function locals/params at their resolver offsets
-                                   (used only for locals the allocator spilled)
-     [rbp - (lbase+8) ..]          spill slots for spilled temporaries
-     [rbp - cs_base ..]            saved callee-saved registers */
+/**
+ * Emit a function body from IR, consulting the linear-scan allocation: each value (temporary or frame local) lives in a physical register for its live range, or in a frame spill slot when the 11-register pool is exhausted.
+ * Operands are staged through rax/rcx/rdx scratch - cheap when the source is a register (the whole point: no stack traffic in the hot loop).
+ * The function is a call-free leaf; only callee-saved registers it actually uses are saved/restored.
+ *
+ * Frame layout (downward from rbp):
+ *   [rbp - 8 .. rbp - lbase]      function locals/params at their resolver offsets
+ *                                 (used only for locals the allocator spilled)
+ *   [rbp - (lbase+8) ..]          spill slots for spilled temporaries
+ *   [rbp - cs_base ..]            saved callee-saved registers
+ */
 
 typedef struct
 {
@@ -32,11 +31,8 @@ typedef struct
 	long long *cval;              /* [vreg_count] that constant's value. */
 	char      *cdead;            /* [vreg_count] 1 if the const folds into every use (skip emit). */
 	char      *nn;               /* [vreg_count] 1 if the vreg's value is provably >= 0. */
-	char      *mclean;          /* [vreg_count] 1 if some use observes the value's high 32
-	                               bits, so a narrow-int result must be re-extended (clean). */
-	/* Cold bounds-failure stubs, buffered so the hot path is a single not-taken
-	   jae: each records the label and the registers holding base/index at the
-	   check (still live at the stub - the jump leaves them untouched). */
+	char      *mclean;          /* [vreg_count] 1 if some use observes the value's high 32 bits, so a narrow-int result must be re-extended (clean). */
+	/* Cold bounds-failure stubs, buffered so the hot path is a single not-taken jae: each records the label and the registers holding base/index at the check (still live at the stub - the jump leaves them untouched). */
 	struct
 	{
 		int  lbl;
@@ -64,8 +60,10 @@ static int pow2_log(long long v, int *k)
 	return 1;
 }
 
-/* Is this instruction's result provably >= 0, given current vreg/local facts?
-   Conservative: any op not listed is assumed possibly-negative. */
+/**
+ * Is this instruction's result provably >= 0, given current vreg/local facts?
+ * Conservative: any op not listed is assumed possibly-negative.
+ */
 static int val_nonneg(IRFunc *f, IRAlloc *a, const IRInstr *in, const char *nn, const char *nnl)
 {
 	IRReg av = in->a;
@@ -79,7 +77,7 @@ static int val_nonneg(IRFunc *f, IRAlloc *a, const IRInstr *in, const char *nn, 
 	case IR_MOVE:
 		return na;
 	case IR_CAST:
-		return na && ty_bits(in->to_kind) >= 64;   /* Widening keeps the sign; narrowing might not. */
+		return na && ty_bits(in->to_kind) >= 64; // Widening keeps the sign; narrowing might not.
 	case IR_LOAD:
 		if (in->is_frame)
 		{
@@ -106,22 +104,23 @@ static int val_nonneg(IRFunc *f, IRAlloc *a, const IRInstr *in, const char *nn, 
 	case IR_MOD:
 		return na && nb;
 	case IR_CMP:
-		return 1;   /* 0 or 1. */
+		return 1; // 0 or 1.
 	default:
-		return 0;   /* SUB, NEG, SHL: may be negative. */
+		return 0; // SUB, NEG, SHL: may be negative.
 	}
 }
 
-/* Fill nn[0..vreg_count) with "provably >= 0". A local is non-negative only if
-   every store to it stores a non-negative value (greatest fixpoint on locals,
-   least fixpoint on vregs). */
+/**
+ * Fill nn[0..vreg_count) with "provably >= 0".
+ * A local is non-negative only if every store to it stores a non-negative value (greatest fixpoint on locals, least fixpoint on vregs).
+ */
 static void compute_nonneg(IRFunc *f, IRAlloc *a, char *nn)
 {
 	int nl = a->nlocal;
 	char *nnl = malloc((size_t)(nl > 0 ? nl : 1));
 	for (int k = 0; k < nl; k++)
 	{
-		nnl[k] = 1;   /* Optimistic; refuted below. */
+		nnl[k] = 1; // Optimistic; refuted below.
 	}
 
 	int outer = 1;
@@ -153,7 +152,7 @@ static void compute_nonneg(IRFunc *f, IRAlloc *a, char *nn)
 			}
 		}
 
-		/* Refute any local that receives a not-proven-non-negative store. */
+		// Refute any local that receives a not-proven-non-negative store.
 		for (int b = 0; b < f->block_count; b++)
 		{
 			IRBlock *blk = &f->blocks[b];
@@ -189,10 +188,11 @@ static const char *iremit_iarg(Codegen *cg, int i)
 	return (cg->target == TARGET_LINUX) ? sysv[i] : win[i];
 }
 
-/* The xmm register an FP argument arrives in. Valid for pure-double signatures on
-   both ABIs: Win64 passes the i-th arg (any type) by position in xmm(i) for i<4;
-   System V uses a separate FP sequence, which coincides with the position when every
-   parameter is FP. Mixed int/FP signatures are gated out until Stage 3. */
+/**
+ * The xmm register an FP argument arrives in.
+ * Valid for pure-double signatures on both ABIs: Win64 passes the i-th arg (any type) by position in xmm(i) for i<4; System V uses a separate FP sequence, which coincides with the position when every parameter is FP.
+ * Mixed int/FP signatures are gated out until Stage 3.
+ */
 static const char *iremit_farg(int i)
 {
 	static const char *xr[8] = { "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7" };
@@ -281,10 +281,10 @@ static int cmp_invert(int cmp_op)
 	}
 }
 
-/* Emit a two-way branch (true -> tblk, else -> fblk), using fallthrough when one
-   target is the next block in layout: drop the unconditional jmp, inverting the
-   condition when it is the true side that falls through. `next` is the next block
-   index, or -1. */
+/**
+ * Emit a two-way branch (true -> tblk, else -> fblk), using fallthrough when one target is the next block in layout: drop the unconditional jmp, inverting the condition when it is the true side that falls through.
+ * `next` is the next block index, or -1.
+ */
 static void emit_two_way(Emit *e, const char *jcc, int cmp_op_for_inv, int uns,
 						 int tblk, int fblk, int next)
 {
@@ -322,9 +322,10 @@ static const char *mov_for(Emit *e, IRReg v)
 	return vreg_is_fp(e, v) ? "movsd" : "mov";
 }
 
-/* The operand string for vreg v: its physical register name, or, if spilled, the
-   value loaded into `scratch` (returned). Register-resident values are used in
-   place, so no value bounces through rax unless it was spilled. */
+/**
+ * The operand string for vreg v: its physical register name, or, if spilled, the value loaded into `scratch` (returned).
+ * Register-resident values are used in place, so no value bounces through rax unless it was spilled.
+ */
 static const char *vreg_in(Emit *e, IRReg v, const char *scratch)
 {
 	int r = ra_vreg_reg(e->a, v);
@@ -333,9 +334,7 @@ static const char *vreg_in(Emit *e, IRReg v, const char *scratch)
 		return ra_reg_name(r);
 	}
 
-	/* Rematerialize: the value is a read-only local's load, so read the local
-	   where it lives (its register if it got one, else its home slot) instead
-	   of a spill slot the def would have had to fill. */
+	// Rematerialize: the value is a read-only local's load, so read the local where it lives (its register if it got one, else its home slot) instead of a spill slot the def would have had to fill.
 	long long rd = ra_vreg_remat(e->a, v);
 	if (rd >= 0)
 	{
@@ -353,16 +352,14 @@ static const char *vreg_in(Emit *e, IRReg v, const char *scratch)
 	return scratch;
 }
 
-/* The register an op should write its result into: dst's physical register, or
-   rax when dst is spilled (finish_dst then stores it). */
+/* The register an op should write its result into: dst's physical register, or rax when dst is spilled (finish_dst then stores it). */
 static const char *dst_reg(Emit *e, IRReg v)
 {
 	int r = ra_vreg_reg(e->a, v);
 	return (r >= 0) ? ra_reg_name(r) : scratch_for(e, v);
 }
 
-/* After computing into dst_reg(v): store the scratch to the spill slot if v is
-   spilled (xmm0/movsd for an FP value, rax/mov for a GP value). */
+/* After computing into dst_reg(v): store the scratch to the spill slot if v is spilled (xmm0/movsd for an FP value, rax/mov for a GP value). */
 static void finish_dst(Emit *e, IRReg v)
 {
 	if (ra_vreg_reg(e->a, v) < 0)
@@ -385,15 +382,17 @@ static const char *local_in(Emit *e, long long disp, char *buf)
 	return buf;
 }
 
-/* Move the value in `src` into frame local `disp` (its register, or home slot).
-   `fp` selects movsd (double) over mov (integer/pointer). */
+/**
+ * Move the value in `src` into frame local `disp` (its register, or home slot).
+ * `fp` selects movsd (double) over mov (integer/pointer).
+ */
 static void store_local_from(Emit *e, long long disp, const char *src, int fp)
 {
 	const char *mv = fp ? "movsd" : "mov";
 	int r = ra_local_reg(e->a, disp);
 	if (r >= 0)
 	{
-		if (strcmp(ra_reg_name(r), src))   /* Coalesced: source already in the local's register. */
+		if (strcmp(ra_reg_name(r), src)) // Coalesced: source already in the local's register.
 		{
 			cg_emit(e->cg, "    %s %s, %s", mv, ra_reg_name(r), src);
 		}
@@ -404,8 +403,10 @@ static void store_local_from(Emit *e, long long disp, const char *src, int fp)
 	}
 }
 
-/* The `bytes`-wide sub-register of a 64-bit register name (for narrow array
-   element loads/stores). Falls back to the 64-bit name for an unknown register. */
+/**
+ * The `bytes`-wide sub-register of a 64-bit register name (for narrow array element loads/stores).
+ * Falls back to the 64-bit name for an unknown register.
+ */
 static const char *reg_low(const char *r, int bytes)
 {
 	static const struct
@@ -432,9 +433,11 @@ static const char *reg_low(const char *r, int bytes)
 	return r;
 }
 
-/* Sign/zero-extend `Ra` to width `to` directly into `Rd` (one instruction), instead
-   of staging through rax. For a 32-bit unsigned target a plain 32-bit mov suffices
-   (it zero-extends to 64). Rd == Ra is fine (re-extends in place). */
+/**
+ * Sign/zero-extend `Ra` to width `to` directly into `Rd` (one instruction), instead of staging through rax.
+ * For a 32-bit unsigned target a plain 32-bit mov suffices (it zero-extends to 64).
+ * Rd == Ra is fine (re-extends in place).
+ */
 static void norm_reg(Codegen *cg, const char *Rd, const char *Ra, TypeKind to)
 {
 	switch (ty_bits(to))
@@ -466,24 +469,21 @@ static void norm_reg(Codegen *cg, const char *Rd, const char *Ra, TypeKind to)
 	}
 }
 
-/* Emit a runtime bounds check for index `Ridx` against array `Rbase`'s length at
-   [base + 24]: in range -> fall through; out of range -> call bzy_oob (no return).
-   The check is the only hot-path cost (cmp + jb); the oob argument setup and call
-   are reached only on the failing path, so clobbering arg/scratch registers there
-   is harmless. The order loads length into rax before overwriting any arg register
-   so an array base or index that happens to be allocated to an arg register is not
-   destroyed before it is read. The pc passed to bzy_oob is a label inside this
-   function's recorded PC range, so the unwinder finds its exception record. */
+/**
+ * Emit a runtime bounds check for index `Ridx` against array `Rbase`'s length at [base + 24]: in range -> fall through; out of range -> call bzy_oob (no return).
+ * The check is the only hot-path cost (cmp + jb); the oob argument setup and call are reached only on the failing path, so clobbering arg/scratch registers there is harmless.
+ * The order loads length into rax before overwriting any arg register so an array base or index that happens to be allocated to an arg register is not destroyed before it is read.
+ * The pc passed to bzy_oob is a label inside this function's recorded PC range, so the unwinder finds its exception record.
+ */
 static void emit_bounds_check(Emit *e, const char *Rbase, const char *Ridx)
 {
 	Codegen *cg = e->cg;
 	if (e->noob < (int)(sizeof e->oob / sizeof e->oob[0]))
 	{
-		/* Hot path: one not-taken branch to a cold stub emitted after the
-		   body (emit_oob_stubs). The registers named here still hold base and
-		   index at the stub: the jump leaves them untouched. */
+		// Hot path: one not-taken branch to a cold stub emitted after the body (emit_oob_stubs).
+		// The registers named here still hold base and index at the stub: the jump leaves them untouched.
 		int cold = cg_label(cg);
-		cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase);   /* Unsigned: catches negative and >= length. */
+		cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase); // Unsigned: catches negative and >= length.
 		cg_emit(cg, "    jae .L%d", cold);
 		e->oob[e->noob].lbl = cold;
 		snprintf(e->oob[e->noob].base, sizeof e->oob[e->noob].base, "%s", Rbase);
@@ -492,14 +492,14 @@ static void emit_bounds_check(Emit *e, const char *Rbase, const char *Ridx)
 		return;
 	}
 
-	/* Stub table full: fall back to the inline form. */
+	// Stub table full: fall back to the inline form.
 	int ok = cg_label(cg);
 	int pc = cg_label(cg);
-	cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase);   /* Unsigned: catches negative and >= length. */
+	cg_emit(cg, "    cmp %s, [%s + 24]", Ridx, Rbase); // Unsigned: catches negative and >= length.
 	cg_emit(cg, "    jb .L%d", ok);
-	cg_emit(cg, "    mov rax, [%s + 24]", Rbase);         /* Length into rax (rax is never an arg register). */
-	cg_emit(cg, "    mov %s, %s", iremit_iarg(cg, 0), Ridx);   /* index. */
-	cg_emit(cg, "    mov %s, rax", iremit_iarg(cg, 1));        /* length. */
+	cg_emit(cg, "    mov rax, [%s + 24]", Rbase); // Length into rax (rax is never an arg register).
+	cg_emit(cg, "    mov %s, %s", iremit_iarg(cg, 0), Ridx); // index.
+	cg_emit(cg, "    mov %s, rax", iremit_iarg(cg, 1)); // length.
 	cg_emit(cg, "    lea %s, [rel .L%d]", iremit_iarg(cg, 2), pc);
 	cg_emit(cg, ".L%d:", pc);
 	cg_emit(cg, "    mov %s, rbp", iremit_iarg(cg, 3));
@@ -507,10 +507,10 @@ static void emit_bounds_check(Emit *e, const char *Rbase, const char *Ridx)
 	cg_emit(cg, ".L%d:", ok);
 }
 
-/* Emit the buffered cold bounds-failure stubs. The caller guarantees control
-   cannot fall into them (after a ret, or behind a skip jump for regions).
-   bzy_oob never returns; the pc label keeps the unwinder inside this
-   function's recorded range. */
+/**
+ * Emit the buffered cold bounds-failure stubs.
+ * The caller guarantees control cannot fall into them (after a ret, or behind a skip jump for regions). bzy_oob never returns; the pc label keeps the unwinder inside this function's recorded range.
+ */
 static void emit_oob_stubs(Emit *e)
 {
 	Codegen *cg = e->cg;
@@ -518,7 +518,7 @@ static void emit_oob_stubs(Emit *e)
 	{
 		int pc = cg_label(cg);
 		cg_emit(cg, ".L%d:", e->oob[i].lbl);
-		cg_emit(cg, "    mov rax, [%s + 24]", e->oob[i].base);     /* Length (rax is never an arg register). */
+		cg_emit(cg, "    mov rax, [%s + 24]", e->oob[i].base); // Length (rax is never an arg register).
 		cg_emit(cg, "    mov %s, %s", iremit_iarg(cg, 0), e->oob[i].idx);
 		cg_emit(cg, "    mov %s, rax", iremit_iarg(cg, 1));
 		cg_emit(cg, "    lea %s, [rel .L%d]", iremit_iarg(cg, 2), pc);
@@ -530,8 +530,7 @@ static void emit_oob_stubs(Emit *e)
 	e->noob = 0;
 }
 
-/* Format the element address [base + index*scale + disp] (or [base + disp] with no
-   index) into buf, from already-fetched base/index register names. */
+/* Format the element address [base + index*scale + disp] (or [base + disp] with no index) into buf, from already-fetched base/index register names. */
 static void elem_addr(const IRInstr *in, const char *Rbase, const char *Ridx, char *buf, size_t n)
 {
 	if (Ridx)
@@ -544,10 +543,10 @@ static void elem_addr(const IRInstr *in, const char *Rbase, const char *Ridx, ch
 	}
 }
 
-/* dst = a / 2^k or a % 2^k via shifts/masks, signed-correct (matches idiv's
-   truncate-toward-zero), avoiding the ~20-40 cycle idiv. The bias-correcting
-   signed cases stage through rax/rdx; the single-op unsigned/non-negative cases
-   work directly on Rd so an in-place x = x / 2^k stays one instruction. */
+/**
+ * dst = a / 2^k or a % 2^k via shifts/masks, signed-correct (matches idiv's truncate-toward-zero), avoiding the ~20-40 cycle idiv.
+ * The bias-correcting signed cases stage through rax/rdx; the single-op unsigned/non-negative cases work directly on Rd so an in-place x = x / 2^k stays one instruction.
+ */
 static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
 {
 	Codegen *cg = e->cg;
@@ -555,9 +554,8 @@ static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
 	int nonneg = (in->a >= 0 && in->a < e->a->vreg_count && e->nn[in->a]);
 	long long mask = (1LL << k) - 1;
 
-	/* No sign bias to correct: a single shift (DIV) or mask (MOD). Emit it on Rd
-	   directly - when the allocator coalesced Rd with the source (x = x / 2^k),
-	   this is one in-place instruction instead of a mov/op/mov round-trip. */
+	// No sign bias to correct: a single shift (DIV) or mask (MOD).
+	// Emit it on Rd directly - when the allocator coalesced Rd with the source (x = x / 2^k), this is one in-place instruction instead of a mov/op/mov round-trip.
 	if (uns || nonneg)
 	{
 		const char *Ra = vreg_in(e, in->a, "rax");
@@ -613,25 +611,23 @@ static void emit_divmod_pow2(Emit *e, const IRInstr *in, int k)
 	finish_dst(e, in->dst);
 }
 
-/* 1 if a DIV/MOD by the constant d should use the magic-multiply lowering instead
-   of idiv: a signed, positive, non-power-of-two divisor in [3, 2^31] (bounded so the
-   remainder's `imul r, r, d` stays an imm32). Power-of-two divisors take the shift
-   path; unsigned, negative, and runtime divisors keep idiv. Mirrors the emitter
-   (cg_binary), so both backends lower constant division identically. */
+/**
+ * 1 if a DIV/MOD by the constant d should use the magic-multiply lowering instead of idiv: a signed, positive, non-power-of-two divisor in [3, 2^31] (bounded so the remainder's `imul r, r, d` stays an imm32).
+ * Power-of-two divisors take the shift path; unsigned, negative, and runtime divisors keep idiv.
+ * Mirrors the emitter (cg_binary), so both backends lower constant division identically.
+ */
 static int magic_div_ok(IROp op, TypeKind type, long long d)
 {
-	(void)type;   /* Signed and unsigned both lower via magic; emit_divmod_magic branches. */
+	(void)type; // Signed and unsigned both lower via magic; emit_divmod_magic branches.
 	return (op == IR_DIV || op == IR_MOD)
 		   && d >= 3 && d <= 0x7FFFFFFFLL && (d & (d - 1)) != 0;
 }
 
-/* dst = a / d or a % d for a positive non-power-of-two constant d, via a
-   Granlund-Montgomery magic multiply rather than idiv (~5 vs 20-40 cycles). Uses
-   only rax and rdx - the registers idiv already clobbers - plus the dividend's own
-   home, which survives the imul: its register (a div-bearing function does not
-   allocate rdx, and rax is never allocatable, so the dividend's register is neither)
-   or its spill slot, read back via a memory operand. So no extra scratch register is
-   needed and the allocator's clobber model is unchanged. */
+/**
+ * dst = a / d or a % d for a positive non-power-of-two constant d, via a Granlund-Montgomery magic multiply rather than idiv (~5 vs 20-40 cycles).
+ * Uses only rax and rdx - the registers idiv already clobbers - plus the dividend's own home, which survives the imul: its register (a div-bearing function does not allocate rdx, and rax is never allocatable, so the dividend's register is neither) or its spill slot, read back via a memory operand.
+ * So no extra scratch register is needed and the allocator's clobber model is unchanged.
+ */
 static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
 {
 	Codegen *cg = e->cg;
@@ -654,15 +650,15 @@ static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
 		int s;
 		int add;
 		cg_magic_unsigned((unsigned long long)d, &M, &s, &add);
-		cg_emit(cg, "    mov rax, %s", nloc);          /* n -> rax. */
-		cg_emit(cg, "    mov rdx, %llu", M);           /* Magic multiplier. */
-		cg_emit(cg, "    mul rdx");                     /* rdx:rax = n * M (unsigned); high half -> rdx (= q). */
+		cg_emit(cg, "    mov rax, %s", nloc); // n -> rax.
+		cg_emit(cg, "    mov rdx, %llu", M); // Magic multiplier.
+		cg_emit(cg, "    mul rdx"); // rdx:rax = n * M (unsigned); high half -> rdx (= q).
 		if (add)
 		{
 			cg_emit(cg, "    mov rax, %s", nloc);
-			cg_emit(cg, "    sub rax, rdx");           /* n - q. */
-			cg_emit(cg, "    shr rax, 1");             /* (n - q) >> 1. */
-			cg_emit(cg, "    add rdx, rax");           /* + q. */
+			cg_emit(cg, "    sub rax, rdx"); // n - q.
+			cg_emit(cg, "    shr rax, 1"); // (n - q) >> 1.
+			cg_emit(cg, "    add rdx, rax"); // + q.
 			if (s > 1)
 			{
 				cg_emit(cg, "    shr rdx, %d", s - 1);
@@ -670,7 +666,7 @@ static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
 		}
 		else if (s > 0)
 		{
-			cg_emit(cg, "    shr rdx, %d", s);         /* q >>= s. */
+			cg_emit(cg, "    shr rdx, %d", s); // q >>= s.
 		}
 	}
 	else
@@ -678,36 +674,36 @@ static void emit_divmod_magic(Emit *e, const IRInstr *in, long long d)
 		long long M;
 		int s;
 		cg_magic_signed(d, &M, &s);
-		cg_emit(cg, "    mov rax, %s", nloc);          /* n -> rax. */
-		cg_emit(cg, "    mov rdx, %lld", M);           /* Magic multiplier. */
-		cg_emit(cg, "    imul rdx");                    /* rdx:rax = n * M (signed); high half -> rdx. */
+		cg_emit(cg, "    mov rax, %s", nloc); // n -> rax.
+		cg_emit(cg, "    mov rdx, %lld", M); // Magic multiplier.
+		cg_emit(cg, "    imul rdx"); // rdx:rax = n * M (signed); high half -> rdx.
 		if (M < 0)
 		{
-			cg_emit(cg, "    add rdx, %s", nloc);      /* M < 0: q += n. */
+			cg_emit(cg, "    add rdx, %s", nloc); // M < 0: q += n.
 		}
 
 		if (s > 0)
 		{
-			cg_emit(cg, "    sar rdx, %d", s);         /* q >>= s. */
+			cg_emit(cg, "    sar rdx, %d", s); // q >>= s.
 		}
 
-		cg_emit(cg, "    mov rax, %s", nloc);          /* n. */
-		cg_emit(cg, "    shr rax, 63");                /* Sign bit of n. */
-		cg_emit(cg, "    add rdx, rax");               /* q += sign bit -> truncate toward zero. */
+		cg_emit(cg, "    mov rax, %s", nloc); // n.
+		cg_emit(cg, "    shr rax, 63"); // Sign bit of n.
+		cg_emit(cg, "    add rdx, rax"); // q += sign bit -> truncate toward zero.
 	}
 
 	if (in->op == IR_MOD)
 	{
-		cg_emit(cg, "    imul rdx, rdx, %lld", d);  /* q * d (low 64 bits = exact for the remainder). */
+		cg_emit(cg, "    imul rdx, rdx, %lld", d); // q * d (low 64 bits = exact for the remainder).
 		cg_emit(cg, "    mov rax, %s", nloc);
-		cg_emit(cg, "    sub rax, rdx");             /* n - q*d = remainder. */
+		cg_emit(cg, "    sub rax, rdx"); // n - q*d = remainder.
 	}
 
 	const char *Rd = dst_reg(e, in->dst);
-	const char *res = (in->op == IR_MOD) ? "rax" : "rdx";   /* Quotient in rdx, remainder in rax. */
+	const char *res = (in->op == IR_MOD) ? "rax" : "rdx"; // Quotient in rdx, remainder in rax.
 	if (ty_is_int(in->type) && ty_bits(in->type) <= 32)
 	{
-		norm_reg(cg, Rd, res, in->type);   /* Re-extend the 32-bit result, like the idiv path. */
+		norm_reg(cg, Rd, res, in->type); // Re-extend the 32-bit result, like the idiv path.
 	}
 	else if (strcmp(Rd, res))
 	{
@@ -730,17 +726,13 @@ static int const_imm32(Emit *e, IRReg v, long long *out)
 	return 0;
 }
 
-/* 32-bit-native integer model: an `int` value is correct only in its low 32 bits;
-   the high 32 are don't-care unless a consumer observes them (see compute_must_clean
-   and `e->mclean`). Re-extend a narrow-int arithmetic/bitwise result with `movsxd`
-   ONLY when some use observes its high bits. This drops the per-op re-extension on
-   loop-carried chains (e.g. the packet FNV `imul`/`xor` hash) while keeping it at the
-   indexing/shift/compare/widen sites that need a clean 64-bit register.
-
-   add/sub/mul/shl/neg always carry into the high bits, so they re-extend whenever the
-   result is observed. and/or/xor leave the high bits a combination of their operands'
-   high bits (possibly dirty under this model), so they too re-extend when observed -
-   sound, at worst a redundant movsxd on a clean-input bitwise result that is indexed. */
+/**
+ * 32-bit-native integer model: an `int` value is correct only in its low 32 bits; the high 32 are don't-care unless a consumer observes them (see compute_must_clean and `e->mclean`).
+ * Re-extend a narrow-int arithmetic/bitwise result with `movsxd` ONLY when some use observes its high bits.
+ * This drops the per-op re-extension on loop-carried chains (e.g. the packet FNV `imul`/`xor` hash) while keeping it at the indexing/shift/compare/widen sites that need a clean 64-bit register.
+ *
+ * add/sub/mul/shl/neg always carry into the high bits, so they re-extend whenever the result is observed. and/or/xor leave the high bits a combination of their operands' high bits (possibly dirty under this model), so they too re-extend when observed - sound, at worst a redundant movsxd on a clean-input bitwise result that is indexed.
+ */
 static int needs_reext(Emit *e, const IRInstr *in)
 {
 	if (!ty_is_int(in->type) || ty_bits(in->type) >= 64)
@@ -769,10 +761,11 @@ static int needs_reext(Emit *e, const IRInstr *in)
 	}
 }
 
-/* Scalar double: dst = a <op> b (opc = addsd/subsd/mulsd/divsd). Values are
-   xmm-class; spilled operands stage through xmm0/xmm1 (the reserved FP scratch,
-   never allocated). Guards the dst==rhs aliasing hazard: writing a into dst would
-   clobber a still-needed rhs, so preserve rhs in xmm1 first. */
+/**
+ * Scalar double: dst = a <op> b (opc = addsd/subsd/mulsd/divsd).
+ * Values are xmm-class; spilled operands stage through xmm0/xmm1 (the reserved FP scratch, never allocated).
+ * Guards the dst==rhs aliasing hazard: writing a into dst would clobber a still-needed rhs, so preserve rhs in xmm1 first.
+ */
 static void emit_bin_fp(Emit *e, const IRInstr *in, const char *opc)
 {
 	const char *Ra = vreg_in(e, in->a, "xmm0");
@@ -805,8 +798,7 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 	IRReg bv = in->b;
 	long long imm;
 
-	/* For a commutative op, prefer the constant as the folded immediate (so
-	   `3 * m` becomes `imul Rd, Rm, 3` rather than materializing 3). */
+	// For a commutative op, prefer the constant as the folded immediate (so `3 * m` becomes `imul Rd, Rm, 3` rather than materializing 3).
 	if (commutative && !const_imm32(e, bv, &imm) && const_imm32(e, av, &imm))
 	{
 		IRReg t = av;
@@ -814,19 +806,15 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 		bv = t;
 	}
 
-	/* Fold a fits-imm32 constant rhs into the instruction instead of a register. */
+	// Fold a fits-imm32 constant rhs into the instruction instead of a register.
 	if (const_imm32(e, bv, &imm))
 	{
 		const char *Ra = vreg_in(e, av, "rax");
 		const char *Rd = dst_reg(e, in->dst);
 		if (!strcmp(opc, "imul"))
 		{
-			/* Strength-reduce a small constant multiply to a single LEA: the
-			   address unit computes Ra*{2,3,5,9} as base+index*scale in one
-			   1-cycle op, off the 3-cycle imul latency that would otherwise sit
-			   on a loop-carried chain (e.g. collatz's odd step 3*n+1). LEA's
-			   low-64 result equals imul's (both wrap mod 2^64), so the
-			   32-bit-native re-extension below stays valid. */
+			// Strength-reduce a small constant multiply to a single LEA: the address unit computes Ra*{2,3,5,9} as base+index*scale in one 1-cycle op, off the 3-cycle imul latency that would otherwise sit on a loop-carried chain (e.g. collatz's odd step 3*n+1).
+			// LEA's low-64 result equals imul's (both wrap mod 2^64), so the 32-bit-native re-extension below stays valid.
 			int sc = (imm == 3) ? 2 : (imm == 5) ? 4 : (imm == 9) ? 8 : 0;
 			if (sc)
 			{
@@ -866,7 +854,7 @@ static void emit_bin(Emit *e, const IRInstr *in, const char *opc, int commutativ
 
 	if (!strcmp(Rd, Rb) && strcmp(Rd, Ra))
 	{
-		/* dst aliases the second operand. */
+		// dst aliases the second operand.
 		if (commutative)
 		{
 			cg_emit(cg, "    %s %s, %s", opc, Rd, Ra);
@@ -909,8 +897,7 @@ static void emit_epilogue(Emit *e)
 	cg_emit(cg, "    ret");
 }
 
-/* A compare immediately followed by a branch on its result: emit cmp + a single
-   conditional jump, skipping the setcc/movzx/test the two would otherwise need. */
+/* A compare immediately followed by a branch on its result: emit cmp + a single conditional jump, skipping the setcc/movzx/test the two would otherwise need. */
 static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br, int next)
 {
 	Codegen *cg = e->cg;
@@ -930,17 +917,17 @@ static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br, in
 	emit_two_way(e, jcc_op(cmp->cmp_op, uns), cmp->cmp_op, uns, br->blk_true, br->blk_false, next);
 }
 
-/* (x % 2^k) == 0 (or != 0) feeding a branch: divisibility is just the low k bits,
-   so emit `test x, mask` + jz/jnz - no signed remainder, no compare. Sign-correct
-   because evenness/divisibility by a power of two is independent of sign. */
+/**
+ * (x % 2^k) == 0 (or != 0) feeding a branch: divisibility is just the low k bits, so emit `test x, mask` + jz/jnz - no signed remainder, no compare.
+ * Sign-correct because evenness/divisibility by a power of two is independent of sign.
+ */
 static void emit_divisibility_branch(Emit *e, const IRInstr *mod, const IRInstr *cmp, const IRInstr *br, int k, int next)
 {
 	Codegen *cg = e->cg;
 	const char *Rx = vreg_in(e, mod->a, "rax");
 	long long mask = (1LL << k) - 1;
 	cg_emit(cg, "    test %s, %lld", Rx, mask);
-	/* je/jne are encoding-identical to jz/jnz, so the generic two-way helper (and
-	   its condition inversion for fallthrough) applies to the divisibility test. */
+	// je/jne are encoding-identical to jz/jnz, so the generic two-way helper (and its condition inversion for fallthrough) applies to the divisibility test.
 	const char *j = (cmp->cmp_op == TOKEN_EQ) ? "je" : "jne";
 	emit_two_way(e, j, cmp->cmp_op, 0, br->blk_true, br->blk_false, next);
 }
@@ -954,13 +941,12 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	case IR_CONST:
 		if (in->dst >= 0 && in->dst < e->a->vreg_count && e->cdead[in->dst])
 		{
-			break;   /* Folds into every use; no register needed. */
+			break; // Folds into every use; no register needed.
 		}
 
 		if (vreg_is_fp(e, in->dst))
 		{
-			/* Materialize the double bit pattern via a GP scratch, then move it
-			   into the xmm dst (SSE2 movq GP->xmm; no data section needed). */
+			// Materialize the double bit pattern via a GP scratch, then move it into the xmm dst (SSE2 movq GP->xmm; no data section needed).
 			const char *Rd = dst_reg(e, in->dst);
 			cg_emit(cg, "    mov rax, %lld", in->imm);
 			cg_emit(cg, "    movq %s, rax", Rd);
@@ -987,8 +973,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	{
 		if (in->is_frame)
 		{
-			/* A rematerializing dst needs no def at all: every use reads the
-			   (never-stored) local directly. */
+			// A rematerializing dst needs no def at all: every use reads the (never-stored) local directly.
 			if (in->dst >= 0 && ra_vreg_remat(e->a, in->dst) >= 0)
 			{
 				break;
@@ -1005,7 +990,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			break;
 		}
 
-		/* Array element / header load: [base + index*scale + disp]. */
+		// Array element / header load: [base + index*scale + disp].
 		const char *Rbase = vreg_in(e, in->a, "rax");
 		const char *Ridx = (in->b != IR_NO_REG) ? vreg_in(e, in->b, "rcx") : NULL;
 		if (in->checked && Ridx)
@@ -1016,7 +1001,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		char addr[64];
 		elem_addr(in, Rbase, Ridx, addr, sizeof addr);
 		const char *Rd = dst_reg(e, in->dst);
-		int bytes = in->scale ? in->scale : 8;   /* scale 0 = a .length (8-byte) load. */
+		int bytes = in->scale ? in->scale : 8; // scale 0 = a .length (8-byte) load.
 		int sgn = ty_is_signed(in->type);
 		if (bytes == 8)
 		{
@@ -1048,8 +1033,8 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			break;
 		}
 
-		/* Array element store: [base + index*scale + disp] = value (natural width).
-		   Base/index/value take distinct scratch (rax/rcx/rdx) when spilled. */
+		// Array element store: [base + index*scale + disp] = value (natural width).
+		// Base/index/value take distinct scratch (rax/rcx/rdx) when spilled.
 		const char *Rbase = vreg_in(e, in->a, "rax");
 		const char *Ridx = (in->b != IR_NO_REG) ? vreg_in(e, in->b, "rcx") : NULL;
 		if (in->checked && Ridx)
@@ -1063,7 +1048,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		int bytes = in->scale ? in->scale : 8;
 		if (ty_is_float(in->type))
 		{
-			cg_emit(cg, "    movsd %s, %s", addr, Rc);   /* double element (stride 8). */
+			cg_emit(cg, "    movsd %s, %s", addr, Rc); // double element (stride 8).
 		}
 		else if (bytes == 1)
 		{
@@ -1122,7 +1107,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	{
 		if (ty_is_float(in->type))
 		{
-			emit_bin_fp(e, in, "divsd");    /* IR_MOD never float. */
+			emit_bin_fp(e, in, "divsd"); // IR_MOD never float.
 			break;
 		}
 
@@ -1144,13 +1129,11 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		const char *Ra = vreg_in(e, in->a, "rax");
 		if (strcmp(Ra, "rax"))
 		{
-			cg_emit(cg, "    mov rax, %s", Ra);   /* Dividend must be in rax. */
+			cg_emit(cg, "    mov rax, %s", Ra); // Dividend must be in rax.
 		}
 
-		/* A 32-bit-result divide uses the 32-bit form (cdq/idiv r32): roughly half
-		   the latency of a 64-bit idiv, and a clean operand's low 32 bits are the
-		   int value - mirrors the emitter's int divide exactly. */
-		const char *Rb = vreg_in(e, in->b, "rcx");   /* Divisor (never rax/rdx). */
+		// A 32-bit-result divide uses the 32-bit form (cdq/idiv r32): roughly half the latency of a 64-bit idiv, and a clean operand's low 32 bits are the int value - mirrors the emitter's int divide exactly.
+		const char *Rb = vreg_in(e, in->b, "rcx"); // Divisor (never rax/rdx).
 		int narrow = ty_is_int(in->type) && ty_bits(in->type) <= 32;
 		if (ty_is_unsigned(in->type))
 		{
@@ -1172,7 +1155,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		const char *res = (in->op == IR_MOD) ? "rdx" : "rax";
 		if (narrow)
 		{
-			norm_reg(cg, Rd, res, in->type);   /* Re-extend the 32-bit result: clean invariant. */
+			norm_reg(cg, Rd, res, in->type); // Re-extend the 32-bit result: clean invariant.
 		}
 		else if (in->op == IR_MOD)
 		{
@@ -1189,8 +1172,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	case IR_SHL:
 	case IR_SHR:
 	{
-		/* Constant shift count (irlower folded it: b == IR_NO_REG, imm holds the
-		   count): a single immediate-form shift, no cl load. */
+		// Constant shift count (irlower folded it: b == IR_NO_REG, imm holds the count): a single immediate-form shift, no cl load.
 		if (in->b == IR_NO_REG)
 		{
 			const char *Ra = vreg_in(e, in->a, "rax");
@@ -1217,11 +1199,8 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			break;
 		}
 
-		/* Count into cl FIRST: the count's register may be the same as dst (the
-		   count dies at this instruction, so the allocator may reuse its register
-		   for the result) and writing Rd before reading Rb would clobber it. Rd
-		   and Ra can never be rcx themselves: rcx is not allocatable while any
-		   shift exists (regalloc's claim guard). */
+		// Count into cl FIRST: the count's register may be the same as dst (the count dies at this instruction, so the allocator may reuse its register for the result) and writing Rd before reading Rb would clobber it.
+		// Rd and Ra can never be rcx themselves: rcx is not allocatable while any shift exists (regalloc's claim guard).
 		const char *Rb = vreg_in(e, in->b, "rcx");
 		if (strcmp(Rb, "rcx"))
 		{
@@ -1275,21 +1254,20 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		int to_fp = ty_is_float(in->to_kind);
 		if (from_fp || to_fp)
 		{
-			/* Source staged through its own class's scratch (xmm0 for a double
-			   source, rax for an int source) - never a hardcoded GP register. */
+			// Source staged through its own class's scratch (xmm0 for a double source, rax for an int source) - never a hardcoded GP register.
 			const char *Ra = vreg_in(e, in->a, scratch_for(e, in->a));
 			const char *Rd = dst_reg(e, in->dst);
 			if (from_fp && !to_fp)
 			{
-				cg_emit(cg, "    cvttsd2si %s, %s", Rd, Ra);   /* double -> int (truncate). */
+				cg_emit(cg, "    cvttsd2si %s, %s", Rd, Ra); // double -> int (truncate).
 			}
 			else if (!from_fp && to_fp)
 			{
-				cg_emit(cg, "    cvtsi2sd %s, %s", Rd, Ra);     /* int -> double. */
+				cg_emit(cg, "    cvtsi2sd %s, %s", Rd, Ra); // int -> double.
 			}
 			else if (strcmp(Rd, Ra))
 			{
-				cg_emit(cg, "    movaps %s, %s", Rd, Ra);        /* double -> double. */
+				cg_emit(cg, "    movaps %s, %s", Rd, Ra); // double -> double.
 			}
 
 			finish_dst(e, in->dst);
@@ -1300,14 +1278,14 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		const char *Rd = dst_reg(e, in->dst);
 		if (ty_bits(in->to_kind) >= 64 || ty_bits(in->to_kind) == 0)
 		{
-			if (strcmp(Rd, Ra))   /* Widening to 64 bits is a plain move. */
+			if (strcmp(Rd, Ra)) // Widening to 64 bits is a plain move.
 			{
 				cg_emit(cg, "    mov %s, %s", Rd, Ra);
 			}
 		}
 		else
 		{
-			norm_reg(cg, Rd, Ra, in->to_kind);   /* Extend straight into Rd, no rax round-trip. */
+			norm_reg(cg, Rd, Ra, in->to_kind); // Extend straight into Rd, no rax round-trip.
 		}
 
 		finish_dst(e, in->dst);
@@ -1340,10 +1318,9 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 	case IR_SEL:
 	{
-		/* dst = (a <cmp_op> b) ? c : d, branchless. The false side moves into
-		   dst first; mov preserves flags, so a spilled true side may reload
-		   between the cmp and the cmov. Scratches dodge dst's register (which
-		   can be the claimable rcx/rdx, or rax when dst spilled). */
+		// dst = (a <cmp_op> b) ? c : d, branchless.
+		// The false side moves into dst first; mov preserves flags, so a spilled true side may reload between the cmp and the cmov.
+		// Scratches dodge dst's register (which can be the claimable rcx/rdx, or rax when dst spilled).
 		const char *Rd = dst_reg(e, in->dst);
 		const char *s1 = strcmp(Rd, "rax") ? "rax" : "rcx";
 		const char *s2 = strcmp(Rd, "rdx") ? "rdx" : "rcx";
@@ -1365,14 +1342,14 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			cg_emit(cg, "    cmp %s, %s", Ra, Rb);
 		}
 
-		const char *Rc = vreg_in(e, in->c, s2);   /* After the cmp: mov keeps flags. */
+		const char *Rc = vreg_in(e, in->c, s2); // After the cmp: mov keeps flags.
 		cg_emit(cg, "    cmov%s %s, %s",
 				jcc_op(in->cmp_op, ty_is_unsigned(in->type)) + 1, Rd, Rc);
 		finish_dst(e, in->dst);
 		break;
 	}
 	case IR_BR:
-		if (in->blk_true != next)   /* Fall through when the target is the next block. */
+		if (in->blk_true != next) // Fall through when the target is the next block.
 		{
 			cg_emit(cg, "    jmp .L%d", e->blabel[in->blk_true]);
 		}
@@ -1382,7 +1359,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	{
 		const char *Ra = vreg_in(e, in->a, "rax");
 		cg_emit(cg, "    cmp %s, 0", Ra);
-		/* a != 0 -> true; TOKEN_NEQ gives jne, its inverse je. */
+		// a != 0 -> true; TOKEN_NEQ gives jne, its inverse je.
 		emit_two_way(e, "jne", TOKEN_NEQ, 0, in->blk_true, in->blk_false, next);
 		break;
 	}
@@ -1411,18 +1388,12 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 		break;
 	case IR_CALL:
 	{
-		/* Marshal the integer arguments into the ABI registers. To avoid a
-		   parallel-move conflict (an argument currently in a later argument's target
-		   register), stage every argument through the reserved outgoing area, then
-		   load the argument registers from it. [rsp, rsp+32) is the Win64 shadow /
-		   the outgoing-arg bottom, always reserved by the region's enclosing frame;
-		   a <=4-arg callee reads no stack args, so this scratch is free until the
-		   call, and rsp is fixed across the region. v1 is integer args/return only
-		   and region-only, so the frame and alignment are already in place. */
+		// Marshal the integer arguments into the ABI registers.
+		// To avoid a parallel-move conflict (an argument currently in a later argument's target register), stage every argument through the reserved outgoing area, then load the argument registers from it. [rsp, rsp+32) is the Win64 shadow / the outgoing-arg bottom, always reserved by the region's enclosing frame; a <=4-arg callee reads no stack args, so this scratch is free until the call, and rsp is fixed across the region. v1 is integer args/return only and region-only, so the frame and alignment are already in place.
 		int argc = in->call_argc;
 		for (int i = 0; i < argc; i++)
 		{
-			const char *src = vreg_in(e, in->call_args[i], "rax");   /* rax: never an allocatable reg. */
+			const char *src = vreg_in(e, in->call_args[i], "rax"); // rax: never an allocatable reg.
 			cg_emit(cg, "    mov [rsp + %d], %s", i * 8, src);
 		}
 
@@ -1435,7 +1406,7 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 
 		if (in->dst != IR_NO_REG)
 		{
-			const char *Rd = dst_reg(e, in->dst);   /* Result returns in rax. */
+			const char *Rd = dst_reg(e, in->dst); // Result returns in rax.
 			if (strcmp(Rd, "rax"))
 			{
 				cg_emit(cg, "    mov %s, rax", Rd);
@@ -1474,23 +1445,17 @@ static int local_of_disp(IRAlloc *a, long long disp)
 	return -1;
 }
 
-/* Compute `must_clean[v]`: a narrow-int result is re-extended only when some use
-   observes its high 32 bits. Three passes (32-bit-native model):
-
-   A. Mark the operands of every instruction that reads the full 64-bit register
-      (array index, right shift, div/mod, compare/select/brcond, widen-to-long cast,
-      8-byte store value, move/ret). NOT marked: add/sub/mul/and/or/xor/neg operands
-      and shift counts - those are correct from the low 32 bits alone.
-   B. A frame local needs clean stores iff it has a high-32-observed LOAD inside this
-      IR body, or (in a region) it is memory-resident: the region exit store-back
-      re-extends register-allocated narrow-int locals, but a spilled local has no such
-      fixup, so its stores must already be clean for the emitter that reads it.
-   C. Mark a frame-store's value operand clean iff its target local needs clean stores.
-      A local whose loads are all low-32-safe (e.g. the FNV hash, read only by xor/imul
-      and a final masking AND) carries dirty intermediate values - no re-extension. */
+/**
+ * Compute `must_clean[v]`: a narrow-int result is re-extended only when some use observes its high 32 bits.
+ * Three passes (32-bit-native model):
+ *
+ * A. Mark the operands of every instruction that reads the full 64-bit register (array index, right shift, div/mod, compare/select/brcond, widen-to-long cast, 8-byte store value, move/ret). NOT marked: add/sub/mul/and/or/xor/neg operands and shift counts - those are correct from the low 32 bits alone.
+ * B. A frame local needs clean stores iff it has a high-32-observed LOAD inside this IR body, or (in a region) it is memory-resident: the region exit store-back re-extends register-allocated narrow-int locals, but a spilled local has no such fixup, so its stores must already be clean for the emitter that reads it.
+ * C. Mark a frame-store's value operand clean iff its target local needs clean stores. A local whose loads are all low-32-safe (e.g. the FNV hash, read only by xor/imul and a final masking AND) carries dirty intermediate values - no re-extension.
+ */
 static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 {
-	/* Pass A: direct high-32 observers. */
+	// Pass A: direct high-32 observers.
 	for (int b = 0; b < f->block_count; b++)
 	{
 		IRBlock *blk = &f->blocks[b];
@@ -1502,10 +1467,10 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 			case IR_LOAD:
 				if (!in->is_frame)
 				{
-					mc_mark(mc, nv, in->a);                 /* Array base pointer. */
+					mc_mark(mc, nv, in->a); // Array base pointer.
 					if (in->scale)
 					{
-						mc_mark(mc, nv, in->b);             /* Index (full 64-bit reg). */
+						mc_mark(mc, nv, in->b); // Index (full 64-bit reg).
 					}
 				}
 
@@ -1516,26 +1481,26 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 					mc_mark(mc, nv, in->a);
 					if (in->scale)
 					{
-						mc_mark(mc, nv, in->b);             /* Index. */
+						mc_mark(mc, nv, in->b); // Index.
 					}
 
 					if ((in->scale ? in->scale : 8) == 8)
 					{
-						mc_mark(mc, nv, in->c);             /* 8-byte store writes the full reg. */
+						mc_mark(mc, nv, in->c); // 8-byte store writes the full reg.
 					}
 				}
 
-				break;                                      /* Frame-store value handled in Pass C. */
+				break; // Frame-store value handled in Pass C.
 			case IR_SHR:
-				mc_mark(mc, nv, in->a);                     /* Right shift pulls high bits down. */
+				mc_mark(mc, nv, in->a); // Right shift pulls high bits down.
 				break;
 			case IR_DIV:
 			case IR_MOD:
-				mc_mark(mc, nv, in->a);                     /* Pow2 path uses the sign bit. */
+				mc_mark(mc, nv, in->a); // Pow2 path uses the sign bit.
 				mc_mark(mc, nv, in->b);
 				break;
 			case IR_CMP:
-				mc_mark(mc, nv, in->a);                     /* 64-bit cmp. */
+				mc_mark(mc, nv, in->a); // 64-bit cmp.
 				mc_mark(mc, nv, in->b);
 				break;
 			case IR_SEL:
@@ -1545,33 +1510,33 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 				mc_mark(mc, nv, in->d);
 				break;
 			case IR_BRCOND:
-				mc_mark(mc, nv, in->a);                     /* cmp a, 0 (full reg). */
+				mc_mark(mc, nv, in->a); // cmp a, 0 (full reg).
 				break;
 			case IR_CAST:
 				if (ty_bits(in->to_kind) >= 64 || ty_bits(in->to_kind) == 0)
 				{
-					mc_mark(mc, nv, in->a);                 /* Widen to long is a full-reg mov. */
+					mc_mark(mc, nv, in->a); // Widen to long is a full-reg mov.
 				}
 
 				break;
 			case IR_MOVE:
 			case IR_RET:
-				mc_mark(mc, nv, in->a);                     /* Copies/returns the full register. */
+				mc_mark(mc, nv, in->a); // Copies/returns the full register.
 				break;
 			case IR_CALL:
 				for (int i = 0; i < in->call_argc; i++)
 				{
-					mc_mark(mc, nv, in->call_args[i]);      /* Each arg passes the full 64-bit register. */
+					mc_mark(mc, nv, in->call_args[i]); // Each arg passes the full 64-bit register.
 				}
 
 				break;
 			default:
-				break;                                      /* add/sub/mul/and/or/xor/shl/neg/const: low-32 safe. */
+				break; // add/sub/mul/and/or/xor/shl/neg/const: low-32 safe.
 			}
 		}
 	}
 
-	/* Pass B: per-local "stores must be clean". */
+	// Pass B: per-local "stores must be clean".
 	char *lnc = calloc((size_t)(a->nlocal > 0 ? a->nlocal : 1), 1);
 	for (int b = 0; b < f->block_count; b++)
 	{
@@ -1584,7 +1549,7 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 				int k = local_of_disp(a, in->disp);
 				if (k >= 0)
 				{
-					lnc[k] = 1;                             /* High-32-observed load of this local. */
+					lnc[k] = 1; // High-32-observed load of this local.
 				}
 			}
 		}
@@ -1596,12 +1561,12 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 		{
 			if (ra_local_reg(a, a->local_disp[k]) < 0)
 			{
-				lnc[k] = 1;                                 /* Memory-resident: no exit re-extension. */
+				lnc[k] = 1; // Memory-resident: no exit re-extension.
 			}
 		}
 	}
 
-	/* Pass C: a frame-store to a needs-clean local forces its value clean. */
+	// Pass C: a frame-store to a needs-clean local forces its value clean.
 	for (int b = 0; b < f->block_count; b++)
 	{
 		IRBlock *blk = &f->blocks[b];
@@ -1622,12 +1587,11 @@ static void compute_must_clean(IRFunc *f, IRAlloc *a, char *mc, int nv)
 	free(lnc);
 }
 
-/* The narrow-int TypeKind a frame local is accessed as (≤32-bit int), or TY_VOID if it
-   is not a narrow int. A register-resident narrow-int local may be dirty at a region
-   exit (the 32-bit-native model leaves its intra-region results un-extended), so it
-   must be re-normalized to its declared width before the emitter reads its home slot.
-   Returns the access kind so unsigned narrow locals zero-extend and signed sign-extend,
-   matching the emitter's own load convention. */
+/**
+ * The narrow-int TypeKind a frame local is accessed as (≤32-bit int), or TY_VOID if it is not a narrow int.
+ * A register-resident narrow-int local may be dirty at a region exit (the 32-bit-native model leaves its intra-region results un-extended), so it must be re-normalized to its declared width before the emitter reads its home slot.
+ * Returns the access kind so unsigned narrow locals zero-extend and signed sign-extend, matching the emitter's own load convention.
+ */
 static TypeKind local_narrow_int_kind(IRFunc *f, long long disp)
 {
 	for (int b = 0; b < f->block_count; b++)
@@ -1651,9 +1615,7 @@ static TypeKind local_narrow_int_kind(IRFunc *f, long long disp)
 	return TY_VOID;
 }
 
-/* Allocate and fill the per-emission tables shared by the whole-function and
-   region paths: block labels, the constant/dead-constant tables, and the
-   non-negativity facts. e->cg and e->a must be set. */
+/* Allocate and fill the per-emission tables shared by the whole-function and region paths: block labels, the constant/dead-constant tables, and the non-negativity facts. e->cg and e->a must be set. */
 static void emit_tables_init(Emit *e, IRFunc *f)
 {
 	Codegen *cg = e->cg;
@@ -1666,8 +1628,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 		e->blabel[i] = cg_label(cg);
 	}
 
-	/* Constant table: each vreg is defined once; a vreg defined by IR_CONST holds
-	   that constant (used to strength-reduce div/mod by a power of two). */
+	// Constant table: each vreg is defined once; a vreg defined by IR_CONST holds that constant (used to strength-reduce div/mod by a power of two).
 	int nv = f->vreg_count > 0 ? f->vreg_count : 1;
 	e->cis = calloc((size_t)nv, 1);
 	e->cval = calloc((size_t)nv, sizeof(long long));
@@ -1685,9 +1646,8 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 		}
 	}
 
-	/* Dead constants: a const vreg whose every use folds into an immediate never
-	   needs a register, so its IR_CONST is not emitted. A use folds when it is the
-	   immediate operand of an arithmetic/compare op, or a power-of-two divisor. */
+	// Dead constants: a const vreg whose every use folds into an immediate never needs a register, so its IR_CONST is not emitted.
+	// A use folds when it is the immediate operand of an arithmetic/compare op, or a power-of-two divisor.
 	e->cdead = calloc((size_t)nv, 1);
 	for (int v = 0; v < f->vreg_count; v++)
 	{
@@ -1708,7 +1668,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 
 			if (in->a != IR_NO_REG && in->a < f->vreg_count && e->cis[in->a])
 			{
-				if (!(comm && a_imm && !b_imm))   /* Folds only when swapped to the immediate. */
+				if (!(comm && a_imm && !b_imm)) // Folds only when swapped to the immediate.
 				{
 					e->cdead[in->a] = 0;
 				}
@@ -1729,12 +1689,12 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 
 			if (in->c != IR_NO_REG && in->c < f->vreg_count && e->cis[in->c])
 			{
-				e->cdead[in->c] = 0;   /* A stored value is read, never folded. */
+				e->cdead[in->c] = 0; // A stored value is read, never folded.
 			}
 
 			if (op == IR_SEL && in->d != IR_NO_REG && in->d < f->vreg_count && e->cis[in->d])
 			{
-				e->cdead[in->d] = 0;   /* The false side is read, never folded. */
+				e->cdead[in->d] = 0; // The false side is read, never folded.
 			}
 
 			if (op == IR_CALL)
@@ -1744,7 +1704,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 					IRReg av = in->call_args[ai];
 					if (av != IR_NO_REG && av < f->vreg_count && e->cis[av])
 					{
-						e->cdead[av] = 0;   /* An argument is materialized into a register, never folded. */
+						e->cdead[av] = 0; // An argument is materialized into a register, never folded.
 					}
 				}
 			}
@@ -1768,10 +1728,10 @@ static void emit_tables_free(Emit *e)
 	free(e->mclean);
 }
 
-/* A block is terminated when its last instruction transfers control explicitly
-   (return or branch). A non-terminated block — including an empty one — falls
-   through to the next block in CREATION order; the region epilogue relies on
-   the final empty block doing exactly this, and empty merge blocks do too. */
+/**
+ * A block is terminated when its last instruction transfers control explicitly (return or branch).
+ * A non-terminated block - including an empty one - falls through to the next block in CREATION order; the region epilogue relies on the final empty block doing exactly this, and empty merge blocks do too.
+ */
 static int blk_is_terminated(const IRFunc *f, int b)
 {
 	const IRBlock *blk = &f->blocks[b];
@@ -1784,17 +1744,16 @@ static int blk_is_terminated(const IRFunc *f, int b)
 	return op == IR_RET || op == IR_BR || op == IR_BRCOND;
 }
 
-/* The per-block emission loop with the mod/cmp/branch fusion windows. Shared by
-   the whole-function and region paths. */
+/**
+ * The per-block emission loop with the mod/cmp/branch fusion windows.
+ * Shared by the whole-function and region paths.
+ */
 static void emit_blocks(Emit *e, IRFunc *f)
 {
 	Codegen *cg = e->cg;
-	/* A block targeted by a branch from itself or a later block is a loop
-	   header. Align those to 32 bytes: a hot loop straddling a 32-byte
-	   boundary pays a fetch penalty that dwarfs the one-time nop padding
-	   (measured ~20% on the collatz kernel), and placement luck otherwise
-	   differs per platform. NASM's align pads code sections with nops, so
-	   falling through into the header stays safe. */
+	// A block targeted by a branch from itself or a later block is a loop header.
+	// Align those to 32 bytes: a hot loop straddling a 32-byte boundary pays a fetch penalty that dwarfs the one-time nop padding (measured ~20% on the collatz kernel), and placement luck otherwise differs per platform.
+	// NASM's align pads code sections with nops, so falling through into the header stays safe.
 	char *lhead = calloc((size_t)(f->block_count > 0 ? f->block_count : 1), 1);
 	for (int b = 0; b < f->block_count; b++)
 	{
@@ -1816,15 +1775,10 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			}
 		}
 	}
-	/* Greedy chain placement over "glue units" to turn taken branches into
-	   fall-throughs. A non-terminated block must stay immediately before its
-	   creation-order successor (its implicit fall-through), so maximal runs of
-	   such blocks form atomic units placed in index order. Units are chained by
-	   following each terminating branch's TRUE target: on a loop header that
-	   keeps the body adjacent (the false/exit arm stays out of line), and on an
-	   in-body if/else it makes the taken arm fall through (e.g. collatz's even
-	   step). A region's final block is empty and falls off into the epilogue, so
-	   when that last block is non-terminated it is pinned last. */
+	// Greedy chain placement over "glue units" to turn taken branches into fall-throughs.
+	// A non-terminated block must stay immediately before its creation-order successor (its implicit fall-through), so maximal runs of such blocks form atomic units placed in index order.
+	// Units are chained by following each terminating branch's TRUE target: on a loop header that keeps the body adjacent (the false/exit arm stays out of line), and on an in-body if/else it makes the taken arm fall through (e.g. collatz's even step).
+	// A region's final block is empty and falls off into the epilogue, so when that last block is non-terminated it is pinned last.
 	int N = f->block_count;
 	int *eord = malloc((size_t)(N > 0 ? N : 1) * sizeof(int));
 	int nord = 0;
@@ -1837,9 +1791,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 		}
 
 		char *placed = calloc((size_t)N, 1);
-		/* Pin the final fall-off unit last only when the last block has no
-		   terminator (region epilogue fall-through); whole-function blocks all
-		   end in a terminator, so their last block is placed by the greedy. */
+		// Pin the final fall-off unit last only when the last block has no terminator (region epilogue fall-through); whole-function blocks all end in a terminator, so their last block is placed by the greedy.
 		int pin_last = !blk_is_terminated(f, N - 1);
 		int last_head = pin_last ? unit_head[N - 1] : -1;
 		for (int seed = 0; seed < N; seed++)
@@ -1870,7 +1822,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 						break;
 					}
 
-					bb++;   /* Non-terminated: glue to the next block (same unit). */
+					bb++; // Non-terminated: glue to the next block (same unit).
 				}
 				u = (nxt_head >= 0 && !placed[nxt_head] && nxt_head != last_head) ? nxt_head : -1;
 			}
@@ -1906,9 +1858,8 @@ static void emit_blocks(Emit *e, IRFunc *f)
 			IRInstr *in = &blk->instrs[i];
 			int k;
 			long long zero;
-			/* Fuse (x % 2^k) == 0 / != 0 feeding a branch into test + jz/jnz. The
-			   compare's constant rhs is emitted between the mod and the compare, so
-			   skip any constant defs in between (they fold to the immediate 0). */
+			// Fuse (x % 2^k) == 0 / != 0 feeding a branch into test + jz/jnz.
+			// The compare's constant rhs is emitted between the mod and the compare, so skip any constant defs in between (they fold to the immediate 0).
 			int j = i + 1;
 			while (j < blk->count && blk->instrs[j].op == IR_CONST)
 			{
@@ -1926,7 +1877,7 @@ static void emit_blocks(Emit *e, IRFunc *f)
 				emit_divisibility_branch(e, in, &blk->instrs[j], &blk->instrs[j + 1], k, next);
 				i = j + 2;
 			}
-			/* Fuse a compare feeding the very next branch into cmp + jcc. */
+			// Fuse a compare feeding the very next branch into cmp + jcc.
 			else if (in->op == IR_CMP && i + 1 < blk->count
 					 && blk->instrs[i + 1].op == IR_BRCOND
 					 && blk->instrs[i + 1].a == in->dst)
@@ -1966,7 +1917,7 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	e.spill_base = lbase + 8;
 	int cs_base = e.spill_base + a->spill_bytes;
 
-	/* Which callee-saved registers the allocation actually used. */
+	// Which callee-saved registers the allocation actually used.
 	e.ncs = 0;
 	for (int i = 0; i < RA_NREGS; i++)
 	{
@@ -1982,26 +1933,22 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 
 	emit_tables_init(&e, f);
 
-	cg_emit(cg, "section .text");   /* A preceding function's exception record left .data active. */
+	cg_emit(cg, "section .text"); // A preceding function's exception record left .data active.
 	cg_emit(cg, "global %s", label);
 	cg_emit(cg, "%s:", label);
 	cg_emit(cg, "    push rbp");
 	cg_emit(cg, "    mov rbp, rsp");
 	cg_emit(cg, "    sub rsp, %d", frame);
 
-	/* Save the caller's callee-saved registers we will use. */
+	// Save the caller's callee-saved registers we will use.
 	for (int j = 0; j < e.ncs; j++)
 	{
 		cg_emit(cg, "    mov [rbp - %d], %s", cs_base + j * 8, ra_reg_name(e.cs_regs[j]));
 	}
 
-	/* Load parameters in two phases. The allocator may assign a parameter's local
-	   to a register that is also a LATER parameter's incoming argument register
-	   (e.g. param 0 -> r8, which on Win64 carries param 2); distributing args one at
-	   a time would overwrite an argument before it is read. So first dump every
-	   incoming argument register to its home stack slot, then load each from its
-	   slot into its allocated register (or back to the slot), sign/zero-extending
-	   narrow ints so the high bits are well-defined. */
+	// Load parameters in two phases.
+	// The allocator may assign a parameter's local to a register that is also a LATER parameter's incoming argument register (e.g. param 0 -> r8, which on Win64 carries param 2); distributing args one at a time would overwrite an argument before it is read.
+	// So first dump every incoming argument register to its home stack slot, then load each from its slot into its allocated register (or back to the slot), sign/zero-extending narrow ints so the high bits are well-defined.
 	for (int i = 0; i < src->param_count; i++)
 	{
 		if (ty_is_float(src->params[i].type.kind))
@@ -2039,14 +1986,9 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	}
 
 	emit_blocks(&e, f);
-	emit_oob_stubs(&e);   /* Cold bounds-failure stubs; every block ends in ret/jmp, so nothing falls in. */
+	emit_oob_stubs(&e); // Cold bounds-failure stubs; every block ends in ret/jmp, so nothing falls in.
 
-	/* Emit this function's exception record so a bounds error thrown from it is
-	   unwindable: the throw site's PC resolves to this record, which has no try
-	   region (eligibility rejects try) and no object locals (guarded in
-	   ir_eligible), so the unwinder walks straight through to the caller's handler.
-	   cur_try_count is zeroed because the early IR dispatch skips the emitter's
-	   per-function reset, and the helper leaves .text active for the next function. */
+	// Emit this function's exception record so a bounds error thrown from it is unwindable: the throw site's PC resolves to this record, which has no try region (eligibility rejects try) and no object locals (guarded in ir_eligible), so the unwinder walks straight through to the caller's handler. cur_try_count is zeroed because the early IR dispatch skips the emitter's per-function reset, and the helper leaves .text active for the next function.
 	cg->cur_try_count = 0;
 	cg_emit_exception_record(cg, label, frame, (Func *)src);
 
@@ -2054,12 +1996,11 @@ void ir_emit_func(Codegen *cg, IRFunc *f, const char *label)
 	ra_free(a);
 }
 
-/* ---- Element-wise int[] auto-vectorization ----
-   A strict analysis recognizes a counted, unit-stride int[] element-wise loop
-   whose stored value is an op tree over +,-,* of same-index loads, and records
-   that tree; the packed-emission path lowers it to a 4-lane body (movdqu +
-   paddd/psubd/pmulld) plus a scalar remainder. Every other loop is left to the
-   scalar block emitter unchanged, so non-qualifying code is byte-identical. */
+/**
+ * ---- Element-wise int[] auto-vectorization ----
+ * A strict analysis recognizes a counted, unit-stride int[] element-wise loop whose stored value is an op tree over +,-,* of same-index loads, and records that tree; the packed-emission path lowers it to a 4-lane body (movdqu + paddd/psubd/pmulld) plus a scalar remainder.
+ * Every other loop is left to the scalar block emitter unchanged, so non-qualifying code is byte-identical.
+ */
 
 typedef enum { VN_LOAD, VN_BINOP, VN_SCALAR } VecNodeKind;
 
@@ -2072,9 +2013,10 @@ struct VecNode
 	VecNode     *l, *r;   /* VN_BINOP operands. */
 };
 
-/* Node pool for one analyzed loop. A reduction tree is the largest shape: the
-   matrix fold is acc + 16 products = 16*(load+scalar+mul) + 15 adds + 1 acc = 64
-   nodes, so the pool is sized well above that. */
+/**
+ * Node pool for one analyzed loop.
+ * A reduction tree is the largest shape: the matrix fold is acc + 16 products = 16*(load+scalar+mul) + 15 adds + 1 acc = 64 nodes, so the pool is sized well above that.
+ */
 #define VEC_MAX_NODES 128
 
 typedef struct
@@ -2093,8 +2035,10 @@ typedef struct
 	const char *reason;     /* Verdict text, for BZY_SIMD_REPORT triage. */
 } VecLoop;
 
-/* arr[i]: an EX_INDEX over an int[] with a BCE-proved induction index. Returns
-   the array's frame slot, or -1 if the shape does not match. */
+/**
+ * arr[i]: an EX_INDEX over an int[] with a BCE-proved induction index.
+ * Returns the array's frame slot, or -1 if the shape does not match.
+ */
 static int vec_idx_slot(const Expr *e, int slot_i)
 {
 	if (!e || e->kind != EX_INDEX || !e->lhs || !e->rhs)
@@ -2132,9 +2076,10 @@ static VecNode *vec_node(VecLoop *v, VecNodeKind k)
 	return n;
 }
 
-/* Build the stored value's op tree: an int leaf is a same-index load arr[i]; an
-   internal node is +,-,* over int subtrees. Anything else (a scalar leaf, a
-   call, a non-int op, a foreign or non-induction index) fails the gate. */
+/**
+ * Build the stored value's op tree: an int leaf is a same-index load arr[i]; an internal node is +,-,* over int subtrees.
+ * Anything else (a scalar leaf, a call, a non-int op, a foreign or non-induction index) fails the gate.
+ */
 static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 {
 	if (!e)
@@ -2154,10 +2099,8 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 		return n;
 	}
 
-	/* A loop-invariant scalar double leaf: a plain double local/param read (not the
-	   induction var, which is TY_INT, and not an array, which is TY_ARRAY). The
-	   single-store loop shape guarantees the body writes nothing but out[i], so this
-	   scalar is invariant across the loop and can be broadcast into both lanes. */
+	// A loop-invariant scalar double leaf: a plain double local/param read (not the induction var, which is TY_INT, and not an array, which is TY_ARRAY).
+	// The single-store loop shape guarantees the body writes nothing but out[i], so this scalar is invariant across the loop and can be broadcast into both lanes.
 	if (e->kind == EX_IDENT && e->type.kind == TY_DOUBLE)
 	{
 		VecNode *n = vec_node(v, VN_SCALAR);
@@ -2194,9 +2137,10 @@ static VecNode *vec_build_tree(VecLoop *v, const Expr *e, int slot_i)
 	return NULL;
 }
 
-/* One product term of a sum-of-products: scalar(k_slot) * load(ld_slot). Defined
-   here (ahead of vec_analyze, which validates the reduction shape) and used by the
-   flatteners below. */
+/**
+ * One product term of a sum-of-products: scalar(k_slot) * load(ld_slot).
+ * Defined here (ahead of vec_analyze, which validates the reduction shape) and used by the flatteners below.
+ */
 typedef struct
 {
 	int k_slot;
@@ -2204,18 +2148,20 @@ typedef struct
 } VecTerm;
 static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *nt, int *nacc, int max);
 
-/* The strict vectorizability gate. Fills `v` and returns v->ok. Pure over the
-   AST. The eight conditions:
-     1. counted loop: single induction i, init 0, step +1, bound i < C;
-     2. unit-stride, induction-only indexing (vec_idx_slot: index vreg == i);
-     3. exactly one store, out[i] (the single body statement);
-     4. no loop-carried dependence (a unit-stride i never revisits an index, and
-        every load is at the current i, so even out[i] = f(out[i], ...) is safe;
-        a prior-iteration index like out[i-1] is rejected by (2));
-     5. the stored value is an op tree over +,-,* of same-index int loads;
-     6. int (4-byte) element kind only (vec_idx_slot / the EX_BINARY type check);
-     7. no control flow, call, or side effect in the body (single assignment);
-     8. indices already BCE-proved in range (anno_index_safe in vec_idx_slot). */
+/**
+ * The strict vectorizability gate.
+ * Fills `v` and returns v->ok.
+ * Pure over the AST.
+ * The eight conditions:
+ *   1. counted loop: single induction i, init 0, step +1, bound i < C;
+ *   2. unit-stride, induction-only indexing (vec_idx_slot: index vreg == i);
+ *   3. exactly one store, out[i] (the single body statement);
+ *   4. no loop-carried dependence (a unit-stride i never revisits an index, and every load is at the current i, so even out[i] = f(out[i], ...) is safe; a prior-iteration index like out[i-1] is rejected by (2));
+ *   5. the stored value is an op tree over +,-,* of same-index int loads;
+ *   6. int (4-byte) element kind only (vec_idx_slot / the EX_BINARY type check);
+ *   7. no control flow, call, or side effect in the body (single assignment);
+ *   8. indices already BCE-proved in range (anno_index_safe in vec_idx_slot).
+ */
 static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 {
 	v->ok = 0;
@@ -2230,7 +2176,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* (1) init: int i = 0  (or  i = 0). */
+	// (1) init: int i = 0  (or  i = 0).
 	int slot_i;
 	const Stmt *in = s->for_init;
 	if (in->kind == ST_VARDECL && in->decl_init
@@ -2249,7 +2195,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* (1) bound: i < C (constant) or i < n (a runtime int local). */
+	// (1) bound: i < C (constant) or i < n (a runtime int local).
 	const Expr *c = s->cond;
 	if (c->kind != EX_BINARY || c->op != TOKEN_LT
 			|| !c->lhs || c->lhs->kind != EX_IDENT || c->lhs->anno_int != slot_i || !c->rhs)
@@ -2267,8 +2213,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	else if (c->rhs->kind == EX_IDENT && c->rhs->type.kind == TY_INT
 			 && fn && ir_func_const_local(fn, c->rhs->anno_int, &bound))
 	{
-		/* `i < n` where n is a function-level constant local (e.g. matrix `verts`):
-		   the IR folds it to an immediate, so treat it as a constant bound. */
+		// `i < n` where n is a function-level constant local (e.g. matrix `verts`): the IR folds it to an immediate, so treat it as a constant bound.
 		bound_from_ident = 1;
 	}
 	else
@@ -2277,7 +2222,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* (1) step: i = i + 1. */
+	// (1) step: i = i + 1.
 	const Stmt *po = s->for_post;
 	if (po->kind != ST_ASSIGN || po->target->kind != EX_IDENT || po->target->anno_int != slot_i
 			|| po->value->kind != EX_BINARY || po->value->op != TOKEN_PLUS
@@ -2288,7 +2233,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* (3,7) body: exactly one assignment statement, no control flow or calls. */
+	// (3,7) body: exactly one assignment statement, no control flow or calls.
 	if (!s->then_blk || s->then_blk->count != 1)
 	{
 		v->reason = "body";
@@ -2302,7 +2247,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* (2,3,6,8) store target out[i], OR a loop-carried scalar reduction acc = acc + sop. */
+	// (2,3,6,8) store target out[i], OR a loop-carried scalar reduction acc = acc + sop.
 	int out_slot = vec_idx_slot(as->target, slot_i);
 	int is_reduce = 0;
 	int reduce_slot = -1;
@@ -2310,7 +2255,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 
 	if (out_slot >= 0)
 	{
-		/* (5) the stored value's op tree. */
+		// (5) the stored value's op tree.
 		root = vec_build_tree(v, as->value, slot_i);
 		if (!root)
 		{
@@ -2320,11 +2265,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	}
 	else if (as->target->kind == EX_IDENT && as->target->type.kind == TY_DOUBLE)
 	{
-		/* Reduction: acc = acc + (sum of broadcast-scalar * unit-stride-load products),
-		   where acc is a scalar double local not indexed by i. The accumulator is a
-		   recognized, legal loop-carried dependence (a commutative running sum); a
-		   2-lane packed accumulator with one horizontal sum at loop exit reassociates
-		   the additions, so the differential samples use exactly-summable values. */
+		// Reduction: acc = acc + (sum of broadcast-scalar * unit-stride-load products), where acc is a scalar double local not indexed by i. The accumulator is a recognized, legal loop-carried dependence (a commutative running sum); a 2-lane packed accumulator with one horizontal sum at loop exit reassociates the additions, so the differential samples use exactly-summable values.
 		int acc_slot = as->target->anno_int;
 		root = vec_build_tree(v, as->value, slot_i);
 		if (!root)
@@ -2346,7 +2287,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		{
 			if (rterms[t].k_slot == acc_slot)
 			{
-				v->reason = "reduce-dep";   /* acc used as a multiplier - nonlinear, not a sum. */
+				v->reason = "reduce-dep"; // acc used as a multiplier - nonlinear, not a sum.
 				return 0;
 			}
 		}
@@ -2360,8 +2301,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 		return 0;
 	}
 
-	/* Need a few full vector iterations to be worth replacing a loop the emitter
-	   already unrolls well at tiny trip counts. */
+	// Need a few full vector iterations to be worth replacing a loop the emitter already unrolls well at tiny trip counts.
 	if (bound < 8)
 	{
 		v->reason = "tiny";
@@ -2374,7 +2314,7 @@ static int vec_analyze(const Stmt *s, VecLoop *v, const Func *fn)
 	v->out_slot = out_slot;
 	v->is_reduce = is_reduce;
 	v->reduce_slot = reduce_slot;
-	/* A reduction's element kind is the loads' (double); a store's is the target's. */
+	// A reduction's element kind is the loads' (double); a store's is the target's.
 	v->elem = is_reduce ? TY_DOUBLE : as->target->type.kind;
 	v->root = root;
 	v->ok = 1;
@@ -2446,8 +2386,11 @@ static const char *vec_scalar_op_fp(int tok)
 	}
 }
 
-/* A single scalar*load (or load*scalar) product. Returns 1 and fills *t, else 0.
-   (VecTerm is declared ahead of vec_analyze, which validates the reduction shape.) */
+/**
+ * A single scalar*load (or load*scalar) product.
+ * Returns 1 and fills *t, else 0.
+ * (VecTerm is declared ahead of vec_analyze, which validates the reduction shape.)
+ */
 static int vec_sop_term(const VecNode *n, VecTerm *t)
 {
 	if (n->kind != VN_BINOP || n->op != TOKEN_STAR)
@@ -2472,9 +2415,11 @@ static int vec_sop_term(const VecNode *n, VecTerm *t)
 	return 0;
 }
 
-/* Flatten  (s*l) + (s*l) + …  into terms[0..*nt). The root is a left-leaning ADD
-   chain whose every operand is a scalar*load product. Returns 1 on that exact shape
-   (the caller then emits a packed sum-of-products), else 0. */
+/**
+ * Flatten (s*l) + (s*l) + … into terms[0..*nt).
+ * The root is a left-leaning ADD chain whose every operand is a scalar*load product.
+ * Returns 1 on that exact shape (the caller then emits a packed sum-of-products), else 0.
+ */
 static int vec_sop(const VecNode *n, VecTerm *terms, int *nt, int max)
 {
 	if (n->kind == VN_BINOP && n->op == TOKEN_PLUS)
@@ -2502,12 +2447,12 @@ static int vec_sop(const VecNode *n, VecTerm *terms, int *nt, int max)
 	return 1;
 }
 
-/* Flatten a reduction value tree  acc + p0 + p1 + …  where the accumulator scalar
-   (a VN_SCALAR whose slot is acc_slot) appears as a leaf and every other leaf is a
-   scalar*load product. Recurses both sides of each PLUS so acc may sit anywhere in
-   the chain; counts acc occurrences in *nacc and collects the products in terms.
-   Returns 1 on that exact shape (the caller then requires *nacc == 1, *nt >= 1, and
-   no product scaled by acc itself), else 0. */
+/**
+ * Flatten a reduction value tree  acc + p0 + p1 + …  where the accumulator scalar
+ * (a VN_SCALAR whose slot is acc_slot) appears as a leaf and every other leaf is a scalar*load product.
+ * Recurses both sides of each PLUS so acc may sit anywhere in the chain; counts acc occurrences in *nacc and collects the products in terms.
+ * Returns 1 on that exact shape (the caller then requires *nacc == 1, *nt >= 1, and no product scaled by acc itself), else 0.
+ */
 static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *nt, int *nacc, int max)
 {
 	if (n->kind == VN_SCALAR && n->slot == acc_slot)
@@ -2531,14 +2476,12 @@ static int vec_sop_reduce(const VecNode *n, int acc_slot, VecTerm *terms, int *n
 	return 1;
 }
 
-/* Flatten a left-leaning op tree whose every right operand is a leaf load into an
-   ordered chain: base = slots[0], then result = result <ops[k]> slots[k+1] for k
-   in [0, *nops). Returns 1 on success. Such a chain evaluates in two xmm
-   registers (an accumulator plus one freshly-loaded operand), which keeps the
-   packed body on xmm0/xmm1 - the only registers both caller-saved on the two
-   ABIs and outside the xmm2-5 range float promotion uses. A node whose right
-   child is not a leaf would need a third register, so it fails here and the loop
-   stays scalar (still correct). */
+/**
+ * Flatten a left-leaning op tree whose every right operand is a leaf load into an ordered chain: base = slots[0], then result = result <ops[k]> slots[k+1] for k in [0, *nops).
+ * Returns 1 on success.
+ * Such a chain evaluates in two xmm registers (an accumulator plus one freshly-loaded operand), which keeps the packed body on xmm0/xmm1 - the only registers both caller-saved on the two ABIs and outside the xmm2-5 range float promotion uses.
+ * A node whose right child is not a leaf would need a third register, so it fails here and the loop stays scalar (still correct).
+ */
 static int vec_chain(const VecNode *n, int *slots, int *ops, int *nops)
 {
 	if (n->kind == VN_LOAD)
@@ -2564,12 +2507,11 @@ static int vec_chain(const VecNode *n, int *slots, int *ops, int *nops)
 	return 0;
 }
 
-/* If the region is the recognized loop, its op tree flattens to a two-register
-   chain, and every base/index local is register-resident, emit the packed body
-   (movdqu + paddd/psubd/pmulld per the chain) plus a matching scalar remainder
-   and return 1. Otherwise return 0 and let the scalar block emitter run. The
-   packed temporaries use xmm0/xmm1, outside the xmm2-5 range float promotion
-   claims, so nothing live across the region is clobbered. */
+/**
+ * If the region is the recognized loop, its op tree flattens to a two-register chain, and every base/index local is register-resident, emit the packed body (movdqu + paddd/psubd/pmulld per the chain) plus a matching scalar remainder and return 1.
+ * Otherwise return 0 and let the scalar block emitter run.
+ * The packed temporaries use xmm0/xmm1, outside the xmm2-5 range float promotion claims, so nothing live across the region is clobbered.
+ */
 static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 {
 	VecLoop v;
@@ -2584,13 +2526,10 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		return 0;
 	}
 
-	/* Stage 4: a loop-carried scalar reduction  acc = acc + m0*A[i] + m1*B[i] + …
-	   (the matrix transform's per-frame fold). The four outputs never reach memory:
-	   each product accumulates straight into a 2-lane packed accumulator, with one
-	   horizontal sum at loop exit. The invariant scalars are broadcast from their
-	   home slots (loaded-but-unmodified across the region, and the float-promotion
-	   flush keeps promoted ones fresh), so an arbitrary count of scalars needs no
-	   register residency - only the array bases and acc's own xmm register do. */
+	// Stage 4: a loop-carried scalar reduction  acc = acc + m0*A[i] + m1*B[i] + …
+	// (the matrix transform's per-frame fold).
+	// The four outputs never reach memory: each product accumulates straight into a 2-lane packed accumulator, with one horizontal sum at loop exit.
+	// The invariant scalars are broadcast from their home slots (loaded-but-unmodified across the region, and the float-promotion flush keeps promoted ones fresh), so an arbitrary count of scalars needs no register residency - only the array bases and acc's own xmm register do.
 	if (v.is_reduce)
 	{
 		VecTerm terms[16];
@@ -2605,7 +2544,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		int ri2 = ra_local_reg(e->a, v.slot_i);
 		if (r_acc < 0 || !ra_reg_is_xmm(r_acc) || ri2 < 0)
 		{
-			return 0;   /* acc must hold an xmm register; the index a GP register. */
+			return 0; // acc must hold an xmm register; the index a GP register.
 		}
 
 		const char *lds[16];
@@ -2614,7 +2553,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 			int rl = ra_local_reg(e->a, terms[t].ld_slot);
 			if (rl < 0)
 			{
-				return 0;   /* an array base spilled: stay scalar. */
+				return 0; // an array base spilled: stay scalar.
 			}
 
 			lds[t] = ra_reg_name(rl);
@@ -2630,7 +2569,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		int Ldone = cg_label(cg);
 
 		cg_emit(cg, "    ; ir-region vectorized: double2 reduction sum-of-%d-products", nt);
-		cg_emit(cg, "    xorpd %s, %s", Racc, Racc);   /* packed accumulator = {0.0, 0.0}. */
+		cg_emit(cg, "    xorpd %s, %s", Racc, Racc); // packed accumulator = {0.0, 0.0}.
 		cg_emit(cg, "    xor %s, %s", Ri, Ri);
 		cg_emit(cg, ".L%d:", Lvec);
 		cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
@@ -2638,7 +2577,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		for (int t = 0; t < nt; t++)
 		{
 			cg_emit(cg, "    movupd xmm0, [%s + %s*8 + 32]", lds[t], Ri);
-			cg_emit(cg, "    movsd xmm1, [rbp - %d]", terms[t].k_slot);   /* broadcast scalar from home. */
+			cg_emit(cg, "    movsd xmm1, [rbp - %d]", terms[t].k_slot); // broadcast scalar from home.
 			cg_emit(cg, "    unpcklpd xmm1, xmm1");
 			cg_emit(cg, "    mulpd xmm0, xmm1");
 			cg_emit(cg, "    addpd %s, xmm0", Racc);
@@ -2646,11 +2585,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 
 		cg_emit(cg, "    add %s, 2", Ri);
 		cg_emit(cg, "    jmp .L%d", Lvec);
-		cg_emit(cg, ".L%d:", Lhs);                     /* Horizontal sum: low lane = low + high. */
+		cg_emit(cg, ".L%d:", Lhs); // Horizontal sum: low lane = low + high.
 		cg_emit(cg, "    movapd xmm0, %s", Racc);
 		cg_emit(cg, "    unpckhpd xmm0, xmm0");
 		cg_emit(cg, "    addsd %s, xmm0", Racc);
-		cg_emit(cg, ".L%d:", Lrem);                    /* Scalar remainder, folding into the low lane. */
+		cg_emit(cg, ".L%d:", Lrem); // Scalar remainder, folding into the low lane.
 		cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 		cg_emit(cg, "    jge .L%d", Ldone);
 		for (int t = 0; t < nt; t++)
@@ -2663,14 +2602,15 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 
 		cg_emit(cg, "    add %s, 1", Ri);
 		cg_emit(cg, "    jmp .L%d", Lrem);
-		cg_emit(cg, ".L%d:", Ldone);                   /* Fold in the entry accumulator value. */
+		cg_emit(cg, ".L%d:", Ldone); // Fold in the entry accumulator value.
 		cg_emit(cg, "    addsd %s, [rbp - %d]", Racc, v.reduce_slot);
 		return 1;
 	}
 
-	/* 1b.3a: a single scaled load  out[i] = k * a[i]  (k a loop-invariant double
-	   local). Broadcast k into both lanes once, then packed-multiply each pair. Other
-	   VN_SCALAR shapes (a sum of products) are 1b.3b. */
+	// 1b.3a: a single scaled load  out[i] = k * a[i]  (k a loop-invariant double
+	// local).
+	// Broadcast k into both lanes once, then packed-multiply each pair.
+	// Other VN_SCALAR shapes (a sum of products) are 1b.3b.
 	if (v.root->kind == VN_BINOP && v.root->op == TOKEN_STAR && v.elem == TY_DOUBLE)
 	{
 		VecNode *ln = v.root->l;
@@ -2690,8 +2630,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 
 		if (k_slot >= 0)
 		{
-			/* Scalar and all bases must be register-resident (the region loaded them
-			   from current home slots at entry; a spilled scalar's slot may be stale). */
+			// Scalar and all bases must be register-resident (the region loaded them from current home slots at entry; a spilled scalar's slot may be stale).
 			int rk = ra_local_reg(e->a, k_slot);
 			int rl = ra_local_reg(e->a, ld_slot);
 			int ri2 = ra_local_reg(e->a, v.slot_i);
@@ -2711,8 +2650,8 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 			int Ldone = cg_label(cg);
 
 			cg_emit(cg, "    ; ir-region vectorized: double2 scaled-load (k * a[i])");
-			cg_emit(cg, "    movsd xmm1, %s", ra_reg_name(rk));   /* low lane = k. */
-			cg_emit(cg, "    unpcklpd xmm1, xmm1");                /* broadcast k to both lanes (SSE2). */
+			cg_emit(cg, "    movsd xmm1, %s", ra_reg_name(rk)); // low lane = k.
+			cg_emit(cg, "    unpcklpd xmm1, xmm1"); // broadcast k to both lanes (SSE2).
 			cg_emit(cg, "    xor %s, %s", Ri, Ri);
 			cg_emit(cg, ".L%d:", Lvec);
 			cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
@@ -2722,11 +2661,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 			cg_emit(cg, "    movupd [%s + %s*8 + 32], xmm0", Rc, Ri);
 			cg_emit(cg, "    add %s, 2", Ri);
 			cg_emit(cg, "    jmp .L%d", Lvec);
-			cg_emit(cg, ".L%d:", Lrem);                            /* Scalar tail. */
+			cg_emit(cg, ".L%d:", Lrem); // Scalar tail.
 			cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 			cg_emit(cg, "    jge .L%d", Ldone);
 			cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", Rl, Ri);
-			cg_emit(cg, "    mulsd xmm0, xmm1");                   /* xmm1 low lane is k. */
+			cg_emit(cg, "    mulsd xmm0, xmm1"); // xmm1 low lane is k.
 			cg_emit(cg, "    movsd [%s + %s*8 + 32], xmm0", Rc, Ri);
 			cg_emit(cg, "    add %s, 1", Ri);
 			cg_emit(cg, "    jmp .L%d", Lrem);
@@ -2735,9 +2674,8 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		}
 	}
 
-	/* 1b.3b: a sum of broadcast-scalar products  out[i] = m0*A[i] + m1*B[i] + …
-	   Broadcast each loop-invariant scalar in place (once, before the loop), then a
-	   packed load/mulpd/addpd per term. */
+	// 1b.3b: a sum of broadcast-scalar products  out[i] = m0*A[i] + m1*B[i] + …
+	// Broadcast each loop-invariant scalar in place (once, before the loop), then a packed load/mulpd/addpd per term.
 	if (v.elem == TY_DOUBLE && v.root->kind == VN_BINOP && v.root->op == TOKEN_PLUS)
 	{
 		VecTerm terms[8];
@@ -2751,15 +2689,15 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 				return 0;
 			}
 
-			const char *ksr[8];   /* scalar registers (xmm). */
-			const char *lds[8];   /* load base registers (GP). */
+			const char *ksr[8]; // scalar registers (xmm).
+			const char *lds[8]; // load base registers (GP).
 			for (int t = 0; t < nt; t++)
 			{
 				int rk = ra_local_reg(e->a, terms[t].k_slot);
 				int rl = ra_local_reg(e->a, terms[t].ld_slot);
 				if (rk < 0 || rl < 0)
 				{
-					return 0;   /* a scalar or base spilled: stay scalar. */
+					return 0; // a scalar or base spilled: stay scalar.
 				}
 
 				ksr[t] = ra_reg_name(rk);
@@ -2775,9 +2713,8 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 			int Ldone = cg_label(cg);
 
 			cg_emit(cg, "    ; ir-region vectorized: double2 sum-of-%d-products", nt);
-			/* Broadcast each loop-invariant scalar into both lanes, in place. The
-			   region's flush/reload of xmm2-5 makes clobbering safe, and unpcklpd
-			   preserves the low lane so the region's store-back stays correct. */
+			// Broadcast each loop-invariant scalar into both lanes, in place.
+			// The region's flush/reload of xmm2-5 makes clobbering safe, and unpcklpd preserves the low lane so the region's store-back stays correct.
 			for (int t = 0; t < nt; t++)
 			{
 				cg_emit(cg, "    unpcklpd %s, %s", ksr[t], ksr[t]);
@@ -2799,11 +2736,11 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 			cg_emit(cg, "    movupd [%s + %s*8 + 32], xmm0", Rc, Ri);
 			cg_emit(cg, "    add %s, 2", Ri);
 			cg_emit(cg, "    jmp .L%d", Lvec);
-			cg_emit(cg, ".L%d:", Lrem);                                  /* Scalar tail. */
+			cg_emit(cg, ".L%d:", Lrem); // Scalar tail.
 			cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 			cg_emit(cg, "    jge .L%d", Ldone);
 			cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", lds[0], Ri);
-			cg_emit(cg, "    mulsd xmm0, %s", ksr[0]);                    /* low lane = m0 (unpcklpd-preserved). */
+			cg_emit(cg, "    mulsd xmm0, %s", ksr[0]); // low lane = m0 (unpcklpd-preserved).
 			for (int t = 1; t < nt; t++)
 			{
 				cg_emit(cg, "    movsd xmm1, [%s + %s*8 + 32]", lds[t], Ri);
@@ -2819,7 +2756,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		}
 	}
 
-	/* Flatten the op tree into a two-register left-leaning chain. */
+	// Flatten the op tree into a two-register left-leaning chain.
 	int slots[VEC_MAX_NODES];
 	int ops[VEC_MAX_NODES];
 	int nops = 0;
@@ -2828,8 +2765,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		return 0;
 	}
 
-	/* The index, the output base, and every input base must be register-resident:
-	   the packed body addresses them directly. */
+	// The index, the output base, and every input base must be register-resident: the packed body addresses them directly.
 	int ri = ra_local_reg(e->a, v.slot_i);
 	int rc = ra_local_reg(e->a, v.out_slot);
 	if (ri < 0 || rc < 0)
@@ -2858,9 +2794,9 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 
 	if (v.elem == TY_DOUBLE)
 	{
-		long long vbound = v.bound & ~1LL;   /* 2 lanes. */
+		long long vbound = v.bound & ~1LL; // 2 lanes.
 		cg_emit(cg, "    ; ir-region vectorized: double2 element-wise op chain");
-		cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
+		cg_emit(cg, "    xor %s, %s", Ri, Ri); // i = 0.
 		cg_emit(cg, ".L%d:", Lvec);
 		cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
 		cg_emit(cg, "    jge .L%d", Lrem);
@@ -2874,7 +2810,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 		cg_emit(cg, "    movupd [%s + %s*8 + 32], xmm0", Rc, Ri);
 		cg_emit(cg, "    add %s, 2", Ri);
 		cg_emit(cg, "    jmp .L%d", Lvec);
-		cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail. */
+		cg_emit(cg, ".L%d:", Lrem); // Scalar tail.
 		cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 		cg_emit(cg, "    jge .L%d", Ldone);
 		cg_emit(cg, "    movsd xmm0, [%s + %s*8 + 32]", base[0], Ri);
@@ -2892,12 +2828,12 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 
 	if (v.bound_from_ident)
 	{
-		return 0;   /* Int path stays literal-bound-only (byte-identical); ident-resolved bounds are double-only. */
+		return 0; // Int path stays literal-bound-only (byte-identical); ident-resolved bounds are double-only.
 	}
 
 	long long vbound = v.bound & ~3LL;
 	cg_emit(cg, "    ; ir-region vectorized: int4 element-wise op chain");
-	cg_emit(cg, "    xor %s, %s", Ri, Ri);                          /* i = 0. */
+	cg_emit(cg, "    xor %s, %s", Ri, Ri); // i = 0.
 	cg_emit(cg, ".L%d:", Lvec);
 	cg_emit(cg, "    cmp %s, %lld", Ri, vbound);
 	cg_emit(cg, "    jge .L%d", Lrem);
@@ -2911,7 +2847,7 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 	cg_emit(cg, "    movdqu [%s + %s*4 + 32], xmm0", Rc, Ri);
 	cg_emit(cg, "    add %s, 4", Ri);
 	cg_emit(cg, "    jmp .L%d", Lvec);
-	cg_emit(cg, ".L%d:", Lrem);                                     /* Scalar tail [vbound, bound). */
+	cg_emit(cg, ".L%d:", Lrem); // Scalar tail [vbound, bound).
 	cg_emit(cg, "    cmp %s, %lld", Ri, v.bound);
 	cg_emit(cg, "    jge .L%d", Ldone);
 	cg_emit(cg, "    mov eax, dword [%s + %s*4 + 32]", base[0], Ri);
@@ -2927,10 +2863,10 @@ static int ir_try_vectorize_region(Emit *e, const Stmt *region, const Func *fn)
 	return 1;
 }
 
-/* See iremit.h. Restricted to reductions because they are the only vectorizable
-   shape with enough invariant-scalar pressure to trip the hot-spill heuristic;
-   the residency checks below mirror the reduction branch of ir_try_vectorize_region
-   exactly, so a 1 here guarantees that branch will fire (no scalar-IR fallback). */
+/**
+ * See iremit.h.
+ * Restricted to reductions because they are the only vectorizable shape with enough invariant-scalar pressure to trip the hot-spill heuristic; the residency checks below mirror the reduction branch of ir_try_vectorize_region exactly, so a 1 here guarantees that branch will fire (no scalar-IR fallback).
+ */
 int ir_region_vectorizable(const Func *f, const Stmt *s, IRAlloc *a)
 {
 	VecLoop v;
@@ -2973,9 +2909,7 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 	e.spill_base = spill_base;
 	e.cs_base = spill_base + a->spill_bytes;
 
-	/* Which callee-saved registers the allocation actually used. rcx/rdx (the
-	   claimable indices past RA_NREGS) are caller-saved on both ABIs, so the
-	   base pool covers every save candidate. */
+	// Which callee-saved registers the allocation actually used. rcx/rdx (the claimable indices past RA_NREGS) are caller-saved on both ABIs, so the base pool covers every save candidate.
 	e.ncs = 0;
 	for (int i = 0; i < RA_NREGS; i++)
 	{
@@ -2988,9 +2922,7 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 	emit_tables_init(&e, f);
 	cg_emit(cg, "    ; ir-region begin");
 
-	/* Entry: save the callee-saved registers the allocation uses, then load each
-	   register-allocated frame local from its home slot (a local first written
-	   inside the region loads garbage here and is then overwritten - harmless). */
+	// Entry: save the callee-saved registers the allocation uses, then load each register-allocated frame local from its home slot (a local first written inside the region loads garbage here and is then overwritten - harmless).
 	for (int j = 0; j < e.ncs; j++)
 	{
 		cg_emit(cg, "    mov [rbp - %d], %s", e.cs_base + j * 8, ra_reg_name(e.cs_regs[j]));
@@ -3011,11 +2943,8 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 		emit_blocks(&e, f);
 	}
 
-	/* Exit (the final lowered block is empty and falls through here): store the
-	   register-allocated locals back to their home slots, restore callee-saved. A
-	   register-resident narrow-int local may hold a dirty value under the 32-bit-native
-	   model (its intra-region stores were not forced clean); re-extend it once here so
-	   the emitter that reads its home slot sees a sign-extended int. */
+	// Exit (the final lowered block is empty and falls through here): store the register-allocated locals back to their home slots, restore callee-saved.
+	// A register-resident narrow-int local may hold a dirty value under the 32-bit-native model (its intra-region stores were not forced clean); re-extend it once here so the emitter that reads its home slot sees a sign-extended int.
 	for (int k = 0; k < a->nlocal; k++)
 	{
 		int r = ra_local_reg(a, a->local_disp[k]);
@@ -3024,7 +2953,7 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 			TypeKind lk = local_narrow_int_kind(f, a->local_disp[k]);
 			if (lk != TY_VOID)
 			{
-				norm_reg(cg, ra_reg_name(r), ra_reg_name(r), lk);   /* GP narrow-int only. */
+				norm_reg(cg, ra_reg_name(r), ra_reg_name(r), lk); // GP narrow-int only.
 			}
 
 			cg_emit(cg, ra_reg_is_xmm(r) ? "    movsd [rbp - %lld], %s" : "    mov [rbp - %lld], %s",
@@ -3037,9 +2966,8 @@ void ir_emit_region(Codegen *cg, IRFunc *f, IRAlloc *a, int spill_base, const St
 		cg_emit(cg, "    mov %s, [rbp - %d]", ra_reg_name(e.cs_regs[j]), e.cs_base + j * 8);
 	}
 
-	/* Cold bounds-failure stubs live behind a skip jump: the fall-through path
-	   above continues into the enclosing function, so they need a fence. The
-	   jump costs one taken branch per region ENTRY, not per iteration. */
+	// Cold bounds-failure stubs live behind a skip jump: the fall-through path above continues into the enclosing function, so they need a fence.
+	// The jump costs one taken branch per region ENTRY, not per iteration.
 	if (e.noob > 0)
 	{
 		int skip = cg_label(cg);

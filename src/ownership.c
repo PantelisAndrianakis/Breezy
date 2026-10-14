@@ -7,8 +7,8 @@ static void walk_stmt(Func *f, Stmt *s)
 	switch (s->kind)
 	{
 	case ST_VARDECL:
-		/* Record managed (object/string) locals; their slots need release at scope
-		   exit. A final array points at a read-only table and owns nothing. */
+		// Record managed (object/string) locals; their slots need release at scope exit.
+		// A final array points at a read-only table and owns nothing.
 		if (ty_is_managed(s->decl_type.kind) && !s->is_final && f->obj_local_count < 64)
 		{
 			f->obj_local_offsets[f->obj_local_count++] = s->decl_offset;
@@ -38,9 +38,7 @@ static void walk_stmt(Func *f, Stmt *s)
 		for (int i = 0; i < s->sel_arm_count; i++)
 		{
 			SelectArm *a = &s->sel_arms[i];
-			/* A managed receive bind is an object local: zeroed at the prologue
-			   (so an unready arm's untouched slot releases safely) and released at
-			   function exit, like a catch variable. */
+			// A managed receive bind is an object local: zeroed at the prologue (so an unready arm's untouched slot releases safely) and released at function exit, like a catch variable.
 			if (!a->is_send && a->bind[0] && ty_is_managed(a->bind_type.kind)
 					&& f->obj_local_count < 64)
 			{
@@ -61,8 +59,7 @@ static void walk_stmt(Func *f, Stmt *s)
 		walk_block(f, s->else_blk);
 		break;
 	case ST_CATCH:
-		/* The catch variable is an object local: zeroed at the prologue and
-		   released at function exit, like any managed local. */
+		// The catch variable is an object local: zeroed at the prologue and released at function exit, like any managed local.
 		if (ty_is_managed(s->decl_type.kind) && f->obj_local_count < 64)
 		{
 			f->obj_local_offsets[f->obj_local_count++] = s->decl_offset;

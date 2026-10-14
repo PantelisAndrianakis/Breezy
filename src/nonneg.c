@@ -44,8 +44,7 @@ static void nn_remove(NonNeg *s, int off)
 	}
 }
 
-/* If `cond` is `v REL C` (or `C REL v`) that guarantees v >= 0, return v's offset,
-   else -1. v > C needs C >= -1; v >= C needs C >= 0. */
+/* If `cond` is `v REL C` (or `C REL v`) that guarantees v >= 0, return v's offset, else -1. v > C needs C >= -1; v >= C needs C >= 0. */
 static int nn_guard_var(Expr *cond)
 {
 	if (!cond || cond->kind != EX_BINARY)
@@ -65,7 +64,7 @@ static int nn_guard_var(Expr *cond)
 	{
 		var = cond->rhs;
 		lit = cond->lhs;
-		/* Flip the operator so it reads var REL lit. */
+		// Flip the operator so it reads var REL lit.
 		if (op==TOKEN_LT)
 		{
 			op = TOKEN_GT;
@@ -146,20 +145,20 @@ static void nn_stmt(Stmt *st, NonNeg *s)
 			added = 1;
 		}
 
-		nn_block(st->then_blk, s);   /* guard holds in the then/while body. */
+		nn_block(st->then_blk, s); // guard holds in the then/while body.
 		if (added)
 		{
 			nn_remove(s, g);
 		}
 
-		nn_block(st->else_blk, s);   /* guard does NOT hold in else. */
+		nn_block(st->else_blk, s); // guard does NOT hold in else.
 		break;
 	}
 	case ST_ASSIGN:
 		nn_mark_expr(st->value, s);
 		if (st->target->kind==EX_IDENT)
 		{
-			nn_remove(s, st->target->anno_int);   /* Conservative: any write clears the fact. */
+			nn_remove(s, st->target->anno_int); // Conservative: any write clears the fact.
 		}
 
 		break;

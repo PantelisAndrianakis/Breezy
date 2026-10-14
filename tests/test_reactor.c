@@ -1,6 +1,7 @@
-/* Unit test of the PollDesc state machine (no epoll, no scheduler). Models the
-   three actors - owner (arm/reset), reactor (unblock_ready), timer
-   (unblock_timer) - asserting no lost wakeup and no double-grab. */
+/**
+ * Unit test of the PollDesc state machine (no epoll, no scheduler).
+ * Models the three actors - owner (arm/reset), reactor (unblock_ready), timer (unblock_timer) - asserting no lost wakeup and no double-grab.
+ */
 #include "pollstate.h"
 #include <stdio.h>
 #include <string.h>
@@ -45,7 +46,7 @@ static void test_reset(void)
 {
 	PollDesc pd;
 	bzy_poll_init(&pd);
-	(void)bzy_poll_unblock_ready(&pd, BZY_POLL_READ);   /* set PD_READY */
+	(void)bzy_poll_unblock_ready(&pd, BZY_POLL_READ); // set PD_READY
 	bzy_poll_reset(&pd, BZY_POLL_READ);
 	Waiter w;
 	memset(&w, 0, sizeof(w));
@@ -65,8 +66,8 @@ static void test_timer_vs_edge(void)
 	w.breeze = (void*)0x1;
 	bzy_mutex_init(&w.lock);
 	(void)bzy_poll_arm(&pd, BZY_POLL_READ, &w);
-	Waiter *e = bzy_poll_unblock_ready(&pd, BZY_POLL_READ);   /* edge grabs it */
-	int t = bzy_poll_unblock_timer(&pd, BZY_POLL_READ, &w);   /* timer loses */
+	Waiter *e = bzy_poll_unblock_ready(&pd, BZY_POLL_READ); // edge grabs it
+	int t = bzy_poll_unblock_timer(&pd, BZY_POLL_READ, &w); // timer loses
 	CHECK(e == &w, "edge grabbed the waiter");
 	CHECK(t == 0, "timer did not double-grab");
 }

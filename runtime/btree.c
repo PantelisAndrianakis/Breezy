@@ -1,26 +1,19 @@
-/* TreeMap<K,V> / TreeSet<T>: a B-tree (min degree BT_B). Two storage modes keep
-   the common case fast and the object case cycle-safe:
-
-   - PRIMITIVE mode (int/long/double key, primitive/absent value): nodes are raw
-     allocations, keys/values are bit patterns, the tree is freed by a recursive
-     walk. No ARC, no cycle tracing -- primitives cannot form cycles. This is the
-     hot path (the perf gate runs here).
-   - MANAGED mode (object/string key, or managed value): nodes are managed objects
-     whose type descriptor declares their key/value/child-pointer slots, so ARC
-     and the cycle collector reach every key/value/subtree exactly as the vector
-     reaches its elements. Releasing the tree handle releases the root, which
-     recursively releases the whole tree; an object cycle through the map is
-     reclaimed. Keys/values are ARC-retained on insert (the slot owns a ref) and
-     released automatically when their node is freed.
-
-   Ordering: bzy_order_cmp_for by key kind for primitives/strings; bzy_obj_compare
-   at the compareTo vtable slot for object keys. TreeSet is a TreeMap with no value
-   column (has_values = 0). Own TU: a program using neither container drops it.
-
-   Node layout (header present so a managed node IS the object; raw nodes leave the
-   header unused): vtable | rc | gcinfo | n | leaf | key[BT_MAX] | val[BT_MAX] |
-   kid[BT_MAX+1]. Handle layout (object_size 80): vtable | rc | gcinfo | 24 root |
-   32 count | 40 kkind | 48 has_values | 56 vman | 64 obj_slot | 72 cmp. */
+/**
+ * TreeMap<K,V> / TreeSet<T>: a B-tree (min degree BT_B).
+ * Two storage modes keep the common case fast and the object case cycle-safe:
+ *
+ * - PRIMITIVE mode (int/long/double key, primitive/absent value): nodes are raw allocations, keys/values are bit patterns, the tree is freed by a recursive walk. No ARC, no cycle tracing -- primitives cannot form cycles. This is the hot path (the perf gate runs here).
+ * - MANAGED mode (object/string key, or managed value): nodes are managed objects whose type descriptor declares their key/value/child-pointer slots, so ARC and the cycle collector reach every key/value/subtree exactly as the vector reaches its elements. Releasing the tree handle releases the root, which recursively releases the whole tree; an object cycle through the map is reclaimed. Keys/values are ARC-retained on insert (the slot owns a ref) and released automatically when their node is freed.
+ *
+ * Ordering: bzy_order_cmp_for by key kind for primitives/strings; bzy_obj_compare at the compareTo vtable slot for object keys.
+ * TreeSet is a TreeMap with no value column (has_values = 0).
+ * Own TU: a program using neither container drops it.
+ *
+ * Node layout (header present so a managed node IS the object; raw nodes leave the
+ * header unused): vtable | rc | gcinfo | n | leaf | key[BT_MAX] | val[BT_MAX] |
+ * kid[BT_MAX+1]. Handle layout (object_size 80): vtable | rc | gcinfo | 24 root |
+ * 32 count | 40 kkind | 48 has_values | 56 vman | 64 obj_slot | 72 cmp.
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -114,10 +107,10 @@ static int bt_int_keys(void *o)
 	return *HKIND(o) == 0;
 }
 
-/* Index of the first key in x not less than k, for int/long/bool keys: a
-   branchless count of the smaller keys, with no comparator calls and no
-   hard-to-predict branches. It reads the keys in order, which beats a binary
-   search that jumps between the node's cache lines. */
+/**
+ * Index of the first key in x not less than k, for int/long/bool keys: a branchless count of the smaller keys, with no comparator calls and no hard-to-predict branches.
+ * It reads the keys in order, which beats a binary search that jumps between the node's cache lines.
+ */
 static int bt_lower_int(const BTNode *x, int64_t k)
 {
 	int c = 0;
@@ -142,10 +135,10 @@ static void *node_vtable(int kman, int vman)
 	{
 		int64_t *ti = g_node_ti[combo];
 		int cnt = 0;
-		ti[0] = 0;   /* No finalizer; ARC releases declared children. */
+		ti[0] = 0; // No finalizer; ARC releases declared children.
 		for (int j = 0; j <= BT_MAX; j++)
 		{
-			ti[2 + cnt++] = KID_OFF + (int64_t)j * 8;   /* Child node pointers (always, in managed mode). */
+			ti[2 + cnt++] = KID_OFF + (int64_t)j * 8; // Child node pointers (always, in managed mode).
 		}
 
 		if (kman)
@@ -177,7 +170,7 @@ static BTNode *bt_node_new(void *o, int leaf)
 	BTNode *x;
 	if (bt_managed(o))
 	{
-		x = (BTNode*)bzy_alloc(sizeof(BTNode));   /* Zeroed; rc=1; gcinfo set by alloc. */
+		x = (BTNode*)bzy_alloc(sizeof(BTNode)); // Zeroed; rc=1; gcinfo set by alloc.
 		x->vtable = node_vtable(bt_kman(o), (int)*HVMAN(o));
 	}
 	else
@@ -247,7 +240,7 @@ void *bzy_btree_new(int64_t kkind, int64_t has_values, int64_t vman, int64_t obj
 	*HSLOT(o) = obj_slot;
 	*HCMP(o) = obj_slot >= 0 ? (bzy_cmp_fn)0 : bzy_order_cmp_for(kkind);
 	*HCOUNT(o) = 0;
-	*HROOT(o) = (int64_t)(intptr_t)bt_node_new(o, 1);   /* Empty root leaf (owned by the handle). */
+	*HROOT(o) = (int64_t)(intptr_t)bt_node_new(o, 1); // Empty root leaf (owned by the handle).
 	return o;
 }
 
@@ -321,8 +314,7 @@ static void bt_set_val(void *o, BTNode *x, int i, int64_t v)
 	x->val[i] = v;
 }
 
-/* Insert (k,v) into the non-full subtree rooted at x. Returns 1 if a new key was
-   added (vs an overwrite of an existing key). */
+/* Insert (k,v) into the non-full subtree rooted at x. Returns 1 if a new key was added (vs an overwrite of an existing key). */
 static int bt_insert_nonfull(void *o, BTNode *x, int64_t k, int64_t v)
 {
 	int has_values = (int)*HHV(o);
@@ -337,7 +329,7 @@ static int bt_insert_nonfull(void *o, BTNode *x, int64_t k, int64_t v)
 			return 0;
 		}
 
-		i = lb - 1;   /* The last key below k, as the general scan leaves it. */
+		i = lb - 1; // The last key below k, as the general scan leaves it.
 	}
 	else
 	{
@@ -412,7 +404,7 @@ static void bt_put_impl(void *o, int64_t k, int64_t v)
 	if (r->n == BT_MAX)
 	{
 		BTNode *s = bt_node_new(o, 0);
-		s->kid[0] = (int64_t)(intptr_t)r;      /* Transfer the old root under the new root. */
+		s->kid[0] = (int64_t)(intptr_t)r; // Transfer the old root under the new root.
 		*HROOT(o) = (int64_t)(intptr_t)s;
 		bt_split(o, s, 0, (int)*HHV(o));
 		*HCOUNT(o) += bt_insert_nonfull(o, s, k, v);
@@ -610,7 +602,7 @@ static int64_t bt_bound(void *o, int64_t k, int want_floor, int *found)
 			return x->key[i];
 		}
 
-		/* x->key[i] is the first key > k; x->key[i-1] is the last key < k. */
+		// x->key[i] is the first key > k; x->key[i-1] is the last key < k.
 		if (want_floor)
 		{
 			if (i > 0)
@@ -682,16 +674,13 @@ int64_t bzy_btree_ceiling(void *o, int64_t k)
 	return bt_bound_owned(o, k, 0);
 }
 
-/* ---- delete (CLRS min-degree deletion) ----
-   Structural rebalancing (borrow / merge) moves keys, values, and child pointers
-   as raw bit patterns -- pure relocation, never ARC. Exactly one genuine removal
-   happens per call: the (key,value) that actually leaves the tree is released once
-   (managed key / managed value), at the leaf where it finally lands. Internal
-   deletions replace the separator with an EXTRACTED predecessor/successor (removed
-   from the descendant without releasing, so it is never double-referenced) and
-   release only the old separator. A node whose contents are relocated into a
-   sibling has its slots zeroed before the shell is freed, so freeing it cannot
-   release the relocated children. */
+/**
+ * ---- delete (CLRS min-degree deletion) ----
+ * Structural rebalancing (borrow / merge) moves keys, values, and child pointers as raw bit patterns -- pure relocation, never ARC.
+ * Exactly one genuine removal happens per call: the (key,value) that actually leaves the tree is released once (managed key / managed value), at the leaf where it finally lands.
+ * Internal deletions replace the separator with an EXTRACTED predecessor/successor (removed from the descendant without releasing, so it is never double-referenced) and release only the old separator.
+ * A node whose contents are relocated into a sibling has its slots zeroed before the shell is freed, so freeing it cannot release the relocated children.
+ */
 
 static void bt_release_entry(void *o, BTNode *x, int i)
 {
@@ -706,8 +695,7 @@ static void bt_release_entry(void *o, BTNode *x, int i)
 	}
 }
 
-/* Free a node shell whose contents have already been relocated out (managed mode
-   releases the object -- its declared key/val/kid slots must be zeroed first). */
+/* Free a node shell whose contents have already been relocated out (managed mode releases the object -- its declared key/val/kid slots must be zeroed first). */
 static void bt_free_node(void *o, BTNode *x)
 {
 	if (bt_managed(o))
@@ -817,7 +805,7 @@ static void bt_merge(void *o, BTNode *x, int i)
 	BTNode *y = (BTNode*)x->kid[i];
 	BTNode *z = (BTNode*)x->kid[i + 1];
 	int t = BT_B;
-	y->key[t - 1] = x->key[i];               /* Separator sinks into y. */
+	y->key[t - 1] = x->key[i]; // Separator sinks into y.
 	y->val[t - 1] = x->val[i];
 	for (int j = 0; j < z->n; j++)
 	{
@@ -834,7 +822,7 @@ static void bt_merge(void *o, BTNode *x, int i)
 	}
 
 	y->n += z->n + 1;
-	for (int j = i + 1; j < x->n; j++)       /* Drop separator + right child from x. */
+	for (int j = i + 1; j < x->n; j++) // Drop separator + right child from x.
 	{
 		x->key[j - 1] = x->key[j];
 		x->val[j - 1] = x->val[j];
@@ -849,7 +837,7 @@ static void bt_merge(void *o, BTNode *x, int i)
 	x->val[x->n - 1] = 0;
 	x->kid[x->n] = 0;
 	x->n--;
-	for (int j = 0; j < BT_MAX; j++)         /* z relocated into y: zero before free. */
+	for (int j = 0; j < BT_MAX; j++) // z relocated into y: zero before free.
 	{
 		z->key[j] = 0;
 		z->val[j] = 0;
@@ -883,8 +871,10 @@ static void bt_fill(void *o, BTNode *x, int i)
 	}
 }
 
-/* Remove and return the greatest key/value of the subtree (no release: relocated
-   up to the caller). Fills thin children on the way down to keep the invariant. */
+/**
+ * Remove and return the greatest key/value of the subtree (no release: relocated up to the caller).
+ * Fills thin children on the way down to keep the invariant.
+ */
 static void bt_extract_max(void *o, BTNode *x, int64_t *ok, int64_t *ov)
 {
 	while (!x->leaf)
@@ -893,7 +883,7 @@ static void bt_extract_max(void *o, BTNode *x, int64_t *ok, int64_t *ov)
 		if (((BTNode*)x->kid[last])->n < BT_B)
 		{
 			bt_fill(o, x, last);
-			last = (int)x->n;                /* A merge shrinks n; re-read the rightmost. */
+			last = (int)x->n; // A merge shrinks n; re-read the rightmost.
 		}
 
 		x = (BTNode*)x->kid[last];
@@ -931,8 +921,10 @@ static void bt_extract_min(void *o, BTNode *x, int64_t *ok, int64_t *ov)
 	x->n--;
 }
 
-/* Delete k from the subtree rooted at x (which holds >= BT_B keys unless it is the
-   tree root). Returns 1 if k existed, 0 otherwise. */
+/**
+ * Delete k from the subtree rooted at x (which holds >= BT_B keys unless it is the tree root).
+ * Returns 1 if k existed, 0 otherwise.
+ */
 static int bt_remove(void *o, BTNode *x, int64_t k)
 {
 	int t = BT_B;
@@ -954,8 +946,8 @@ static int bt_remove(void *o, BTNode *x, int64_t k)
 		if (y->n >= t)
 		{
 			int64_t pk, pv;
-			bt_extract_max(o, y, &pk, &pv);  /* Predecessor (relocated, not released). */
-			bt_release_entry(o, x, i);       /* Old separator is the genuine leave. */
+			bt_extract_max(o, y, &pk, &pv); // Predecessor (relocated, not released).
+			bt_release_entry(o, x, i); // Old separator is the genuine leave.
 			x->key[i] = pk;
 			x->val[i] = pv;
 			return 1;
@@ -964,20 +956,20 @@ static int bt_remove(void *o, BTNode *x, int64_t k)
 		if (z->n >= t)
 		{
 			int64_t sk, sv;
-			bt_extract_min(o, z, &sk, &sv);  /* Successor. */
+			bt_extract_min(o, z, &sk, &sv); // Successor.
 			bt_release_entry(o, x, i);
 			x->key[i] = sk;
 			x->val[i] = sv;
 			return 1;
 		}
 
-		bt_merge(o, x, i);                   /* k sinks into y; released at a leaf below. */
+		bt_merge(o, x, i); // k sinks into y; released at a leaf below.
 		return bt_remove(o, y, k);
 	}
 
 	if (x->leaf)
 	{
-		return 0;                            /* Not present. */
+		return 0; // Not present.
 	}
 
 	int last = (i == x->n);
@@ -988,7 +980,7 @@ static int bt_remove(void *o, BTNode *x, int64_t k)
 
 	if (last && i > x->n)
 	{
-		return bt_remove(o, (BTNode*)x->kid[i - 1], k);   /* The last child merged left. */
+		return bt_remove(o, (BTNode*)x->kid[i - 1], k); // The last child merged left.
 	}
 
 	return bt_remove(o, (BTNode*)x->kid[i], k);
@@ -998,11 +990,11 @@ static int bt_remove_impl(void *o, int64_t k)
 {
 	BTNode *r = bt_root(o);
 	int removed = bt_remove(o, r, k);
-	if (r->n == 0 && !r->leaf)              /* Root emptied: its only child becomes root. */
+	if (r->n == 0 && !r->leaf) // Root emptied: its only child becomes root.
 	{
 		BTNode *nr = (BTNode*)r->kid[0];
 		*HROOT(o) = (int64_t)(intptr_t)nr;
-		r->kid[0] = 0;                       /* Detach so freeing r does not release nr. */
+		r->kid[0] = 0; // Detach so freeing r does not release nr.
 		bt_free_node(o, r);
 	}
 
@@ -1027,9 +1019,7 @@ int64_t bzy_btree_remove(void *o, int64_t k)
 	return bt_remove_impl(o, k);
 }
 
-/* Write a 64-bit value into a packed output buffer at offset (n * esize),
-   truncating to esize bytes -- keys/values pack at their natural element width
-   (a long[] at 8 bytes, an int[] at 4, etc.); managed elements are 8-byte ptrs. */
+/* Write a 64-bit value into a packed output buffer at offset (n * esize), truncating to esize bytes -- keys/values pack at their natural element width (a long[] at 8 bytes, an int[] at 4, etc.); managed elements are 8-byte ptrs. */
 static void bt_pack(char *base, int64_t n, int64_t esize, int64_t v)
 {
 	char *p = base + n * esize;
@@ -1093,7 +1083,7 @@ static void bt_collect(void *o, BTNode *x, BtCollect *c)
 		}
 		else
 		{
-			void *e = bzy_entry_new(x->key[i], x->val[i], bt_kman(o), (int)*HVMAN(o));   /* Owned Entry. */
+			void *e = bzy_entry_new(x->key[i], x->val[i], bt_kman(o), (int)*HVMAN(o)); // Owned Entry.
 			bt_pack(c->out, c->n++, c->esize, (int64_t)(intptr_t)e);
 		}
 	}

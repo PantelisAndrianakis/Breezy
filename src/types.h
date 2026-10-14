@@ -70,8 +70,8 @@ typedef struct
 	int param_types_cap;
 	int is_extern;            /* FFI: asm_label is the raw C symbol; no body emitted. */
 	int is_blocking;          /* FFI: dispatch via the offload pool (parks the breeze). */
-	int is_variadic;          /* FFI: trailing `...` — a variadic C function. */
-	int is_dynamic;           /* FFI: `extern dynamic` — address resolved at run time. */
+	int is_variadic;          /* FFI: trailing `...` - a variadic C function. */
+	int is_dynamic;           /* FFI: `extern dynamic` - address resolved at run time. */
 } FuncInfo;
 typedef struct
 {

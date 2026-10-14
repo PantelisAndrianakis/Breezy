@@ -71,9 +71,11 @@ static int is_a(void *obj_vt, void *catch_vt)
 	return 0;
 }
 
-/* Restore the handler frame and jump to its landing pad with the exception in
-   rax. Uses only volatile registers (r8-r11) for the operands so setting rsp/rbp
-   never invalidates an operand still to be read. Never returns. */
+/**
+ * Restore the handler frame and jump to its landing pad with the exception in rax.
+ * Uses only volatile registers (r8-r11) for the operands so setting rsp/rbp never invalidates an operand still to be read.
+ * Never returns.
+ */
 __attribute__((noreturn))
 static void exception_resume(void *exc, int64_t newrbp, int64_t newrsp, int64_t pad)
 {
@@ -107,9 +109,10 @@ static BzyExceptionFunc *exception_find(int64_t pc)
 	return NULL;
 }
 
-/* The source line of the largest PC->line entry at or before pc (0 if none).
-   A one-entry table always returns that entry; a per-call-site table resolves
-   the nearest preceding marker. */
+/**
+ * The source line of the largest PC->line entry at or before pc (0 if none).
+ * A one-entry table always returns that entry; a per-call-site table resolves the nearest preceding marker.
+ */
 static int64_t line_for(BzyExceptionFunc *f, int64_t pc)
 {
 	int64_t best_line = 0;
@@ -131,8 +134,8 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 {
 	if (bzy_in_callback())
 	{
-		/* bzy_throw matches a caller return address to find the handler; it cannot
-		   unwind the foreign C frame a callback runs inside. Fail loud. */
+		// bzy_throw matches a caller return address to find the handler; it cannot unwind the foreign C frame a callback runs inside.
+		// Fail loud.
 		fprintf(stderr, "A foreign callback may not throw across the C boundary.\n");
 		abort();
 	}
@@ -142,14 +145,13 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 	int64_t trace_line[256];
 	int n = 0;
 
-	/* The thrown object arrives owned (+1), so releasing frame locals below
-	   (one of which may be the thrown object) never frees it. */
+	// The thrown object arrives owned (+1), so releasing frame locals below (one of which may be the thrown object) never frees it.
 	for (;;)
 	{
 		BzyExceptionFunc *f = exception_find(pc);
 		if (!f)
 		{
-			break;                               /* Off the top -> uncaught. */
+			break; // Off the top -> uncaught.
 		}
 
 		if (n < 256)
@@ -159,15 +161,13 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 			trace[n++] = f->name;
 		}
 
-		/* If this frame has a try-region covering the PC whose catch type matches
-		   the thrown object's vtable exactly, resume into its landing pad without
-		   releasing this frame's locals (the handler frame keeps executing). */
+		// If this frame has a try-region covering the PC whose catch type matches the thrown object's vtable exactly, resume into its landing pad without releasing this frame's locals (the handler frame keeps executing).
 		for (int64_t t = 0; t < f->ntry; t++)
 		{
 			BzyExceptionTry *tr = &((BzyExceptionTry*)f->tryptr)[t];
 			if (pc >= tr->start && pc < tr->end && is_a(*(void**)exc, tr->catch_vtable))
 			{
-				exception_resume(exc, frame, frame - f->frame, tr->pad);   /* Never returns. */
+				exception_resume(exc, frame, frame - f->frame, tr->pad); // Never returns.
 			}
 		}
 
@@ -176,22 +176,19 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 			bzy_release(*(void**)((char*)(uintptr_t)frame - f->objs[j]));
 		}
 
-		/* The caller's return address points just past its `call`. Look it up as
-		   (return address - 1) so it lands inside the call instruction: a call that
-		   is the last instruction of a try would otherwise leave the return address
-		   exactly equal to the try-region's exclusive end and miss the handler. The
-		   throw-site PC of the first frame is an in-body label, so it is not walked
-		   through here and needs no adjustment. (This is the standard DWARF/Itanium
-		   return-address-minus-one rule.) */
-		pc = *(int64_t*)((char*)(uintptr_t)frame + 8) - 1;   /* Return address into the caller, biased into the call. */
-		frame = *(int64_t*)((char*)(uintptr_t)frame);        /* Caller's saved rbp. */
+		// The caller's return address points just past its `call`.
+		// Look it up as (return address - 1) so it lands inside the call instruction: a call that is the last instruction of a try would otherwise leave the return address exactly equal to the try-region's exclusive end and miss the handler.
+		// The throw-site PC of the first frame is an in-body label, so it is not walked through here and needs no adjustment.
+		// (This is the standard DWARF/Itanium return-address-minus-one rule.)
+		pc = *(int64_t*)((char*)(uintptr_t)frame + 8) - 1; // Return address into the caller, biased into the call.
+		frame = *(int64_t*)((char*)(uintptr_t)frame); // Caller's saved rbp.
 		if (frame == 0)
 		{
 			break;
 		}
 	}
 
-	void *msg = *(void**)((char*)exc + 24);              /* Exception.message at offset 24. */
+	void *msg = *(void**)((char*)exc + 24); // Exception.message at offset 24.
 	fprintf(stderr, "Uncaught exception");
 	if (msg)
 	{
@@ -213,29 +210,30 @@ void bzy_throw(void *exc, int64_t pc, int64_t frame)
 
 	if (bzy_sched_current())
 	{
-		/* Inside a breeze: survive it. The unwind loop above already released every
-		   frame's object locals; the breeze's stack is abandoned and its fiber freed,
-		   so we must not longjmp across those NASM frames. The Exception object itself
-		   is left unreleased (a small, rare per-crash leak — see the 6a-4 limitations). */
-		__atomic_add_fetch(&g_uncaught, 1, __ATOMIC_RELAXED);   /* The process will exit non-zero. */
-		bzy_sched_breeze_uncaught();   /* End this breeze; resume the scheduler. Never returns. */
+		// Inside a breeze: survive it.
+		// The unwind loop above already released every frame's object locals; the breeze's stack is abandoned and its fiber freed, so we must not longjmp across those NASM frames.
+		// The Exception object itself is left unreleased (a small, rare per-crash leak - see the 6a-4 limitations).
+		__atomic_add_fetch(&g_uncaught, 1, __ATOMIC_RELAXED); // The process will exit non-zero.
+		bzy_sched_breeze_uncaught(); // End this breeze; resume the scheduler. Never returns.
 	}
 
-	abort();   /* No breeze context (unit test / pre-scheduler): preserve the original behavior. */
+	abort(); // No breeze context (unit test / pre-scheduler): preserve the original behavior.
 }
 
-/* Array index out of bounds: build an IndexOutOfBounds and unwind from the
-   access site (pc/frame passed by codegen). Catchable; uncaught -> trace+abort. */
+/**
+ * Array index out of bounds: build an IndexOutOfBounds and unwind from the access site (pc/frame passed by codegen).
+ * Catchable; uncaught -> trace+abort.
+ */
 void bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame)
 {
 	char buf[96];
 	int len = snprintf(buf, sizeof(buf), "Array index %lld out of bounds for length %lld.",
 					   (long long)index, (long long)length);
 	void *msg = bzy_str_new(buf, len);
-	void *exc = bzy_alloc(32);                       /* Owned (+1); fields zeroed. */
+	void *exc = bzy_alloc(32); // Owned (+1); fields zeroed.
 	*(void**)exc = (void*)__vtable_IndexOutOfBounds;
-	*(void**)((char*)exc + 24) = msg;                /* Exception.message. */
-	bzy_throw(exc, pc, frame);                       /* Never returns. */
+	*(void**)((char*)exc + 24) = msg; // Exception.message.
+	bzy_throw(exc, pc, frame); // Never returns.
 }
 
 /* Thrown by Enum.valueOf(name) when no constant matches the given name. */
@@ -254,8 +252,8 @@ void bzy_enum_no_constant(void *name, int64_t pc, int64_t frame)
 	}
 
 	void *msg = bzy_str_new(buf, len);
-	void *exc = bzy_alloc(32);                       /* Owned (+1); fields zeroed. */
+	void *exc = bzy_alloc(32); // Owned (+1); fields zeroed.
 	*(void**)exc = (void*)__vtable_NumberFormatException;
-	*(void**)((char*)exc + 24) = msg;                /* Exception.message. */
-	bzy_throw(exc, pc, frame);                       /* Never returns. */
+	*(void**)((char*)exc + 24) = msg; // Exception.message.
+	bzy_throw(exc, pc, frame); // Never returns.
 }

@@ -1,13 +1,10 @@
-/* Software pixel surface over SDL2, loaded dynamically at run time (no link-time
-   dependency). Own TU: a program that never references Graphics/Surface pulls this
-   object only if its prelude names bzy_surface_*, and even then needs no SDL2 to
-   link -- SDL2 is dlopen'd lazily, so absence degrades to a clean IOException.
-
-   Threading: SDL video init, the window, the event pump, and rendering all run on
-   one dedicated render thread (mirrors runtime/desktop.c's GTK-thread model). The
-   owning breeze never calls SDL -- present() hands a framebuffer over a mutexed
-   double-buffer, pollEvent() drains a single-producer/single-consumer event ring --
-   so the breeze may migrate across scheduler workers freely. */
+/**
+ * Software pixel surface over SDL2, loaded dynamically at run time (no link-time dependency).
+ * Own TU: a program that never references Graphics/Surface pulls this object only if its prelude names bzy_surface_*, and even then needs no SDL2 to link -- SDL2 is dlopen'd lazily, so absence degrades to a clean IOException.
+ *
+ * Threading: SDL video init, the window, the event pump, and rendering all run on one dedicated render thread (mirrors runtime/desktop.c's GTK-thread model).
+ * The owning breeze never calls SDL -- present() hands a framebuffer over a mutexed double-buffer, pollEvent() drains a single-producer/single-consumer event ring -- so the breeze may migrate across scheduler workers freely.
+ */
 #include "breezy.h"
 #include "platform.h"
 #include <string.h>
@@ -164,9 +161,11 @@ typedef struct
 	int64_t ring[256];
 } SurfaceCtrl;
 
-/* ---- Surface handle layout (object_size = 40):
-   0 vtable | 8 rc | 16 gcinfo | 24 ctrl(SurfaceCtrl*) | 32 closed(int64). Leaf:
-   the finalizer tears the render thread down and frees the ctrl. ---- */
+/**
+ * ---- Surface handle layout (object_size = 40):
+ * 0 vtable | 8 rc | 16 gcinfo | 24 ctrl(SurfaceCtrl*) | 32 closed(int64). Leaf:
+ * the finalizer tears the render thread down and frees the ctrl. ----
+ */
 #define SURF_CTRL(o)   (*(SurfaceCtrl**)((char*)(o) + 24))
 #define SURF_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
 
@@ -229,9 +228,9 @@ static void *surface_thread(void *p)
 	}
 
 	c->open = 1;
-	bzy_sem_post(&c->open_sem, 1);   /* Handshake: window ready. */
+	bzy_sem_post(&c->open_sem, 1); // Handshake: window ready.
 
-	char ev[64];   /* >= sizeof(SDL_Event) (56). */
+	char ev[64]; // >= sizeof(SDL_Event) (56).
 	while (!c->stop)
 	{
 		while (sdl.PollEvent(ev))
@@ -281,7 +280,7 @@ static void *surface_thread(void *p)
 			sdl.RenderPresent(c->ren);
 		}
 
-		bzy_sem_wait_ms(&c->frame_sem, 2);   /* Wake on present, else pump events every ~2ms. */
+		bzy_sem_wait_ms(&c->frame_sem, 2); // Wake on present, else pump events every ~2ms.
 	}
 
 	sdl.DestroyTexture(c->tex);
@@ -377,7 +376,7 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 
 	bzy_thread_start(&c->thread, surface_thread, c);
 	c->started = 1;
-	bzy_offload_run(surface_wait_open, c);   /* Park the breeze until the window is ready or failed. */
+	bzy_offload_run(surface_wait_open, c); // Park the breeze until the window is ready or failed.
 
 	if (c->init_failed)
 	{
@@ -390,7 +389,7 @@ void *bzy_surface_open(int64_t w, int64_t h, void *title)
 	*(void**)o = surface_vtable();
 	SURF_CTRL(o) = c;
 	SURF_CLOSED(o) = 0;
-	bzy_share_crosscore(o);   /* The handle is used from a breeze that may migrate cores. */
+	bzy_share_crosscore(o); // The handle is used from a breeze that may migrate cores.
 	return o;
 }
 
@@ -411,7 +410,7 @@ void bzy_surface_present(void *s, void *pixels)
 	}
 
 	bzy_mutex_lock(&c->lock);
-	memcpy(c->back, (char*)pixels + 32, (size_t)c->w * (size_t)c->h * 4);   /* Packed int[] payload at +32. */
+	memcpy(c->back, (char*)pixels + 32, (size_t)c->w * (size_t)c->h * 4); // Packed int[] payload at +32.
 	c->frame_ready = 1;
 	bzy_mutex_unlock(&c->lock);
 	bzy_sem_post(&c->frame_sem, 1);

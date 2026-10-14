@@ -11,8 +11,7 @@
 #include <curl/curl.h>
 #endif
 
-/* readUrl context: the worker thread fills body/err; the breeze wraps body in a
-   managed string after it resumes (no cross-thread ARC allocation). */
+/* readUrl context: the worker thread fills body/err; the breeze wraps body in a managed string after it resumes (no cross-thread ARC allocation). */
 typedef struct
 {
 	char  url[2048];   /* In: the request URL (UTF-8/ASCII). */
@@ -118,7 +117,7 @@ static void url_fetch(void *vp)
 
 		if (avail == 0)
 		{
-			break;   /* End of response. */
+			break; // End of response.
 		}
 
 		if (len + (int)avail > CAP_MAX)
@@ -158,13 +157,15 @@ static void url_fetch(void *vp)
 }
 
 #else
-/* ===== POSIX: libcurl fetch (http + https; TLS, redirects, chunked handled by
-   libcurl). Runs on an offload thread; curl_easy_perform blocks. ===== */
+/**
+ * ===== POSIX: libcurl fetch (http + https; TLS, redirects, chunked handled by libcurl).
+ * Runs on an offload thread; curl_easy_perform blocks. =====
+ */
 
 static pthread_once_t g_curl_once = PTHREAD_ONCE_INIT;
 static void curl_global_setup(void)
 {
-	curl_global_init(CURL_GLOBAL_DEFAULT);   /* Once, before any worker uses curl. */
+	curl_global_init(CURL_GLOBAL_DEFAULT); // Once, before any worker uses curl.
 }
 
 /* A growing body buffer with a 64 MiB cap (matches the WinHTTP path). */
@@ -238,11 +239,11 @@ static void url_fetch(void *vp)
 	a.over = 0;
 
 	curl_easy_setopt(h, CURLOPT_URL, c->url);
-	curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L);   /* Follow redirects (matches WinHTTP). */
+	curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L); // Follow redirects (matches WinHTTP).
 	curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, curl_write_cb);
 	curl_easy_setopt(h, CURLOPT_WRITEDATA, &a);
 	curl_easy_setopt(h, CURLOPT_USERAGENT, "breezy/1.0");
-	curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);          /* Thread-safe: no SIGALRM-based timeouts. */
+	curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L); // Thread-safe: no SIGALRM-based timeouts.
 	CURLcode rc = curl_easy_perform(h);
 	curl_easy_cleanup(h);
 
@@ -265,9 +266,10 @@ static void url_fetch(void *vp)
 }
 #endif
 
-/* Breeze-side: park on the offload pool while the worker fetches, then wrap the
-   body in a managed string. On failure, io_fail sets the thread-local error that
-   the codegen-emitted bzy_io_check turns into a catchable IOException. */
+/**
+ * Breeze-side: park on the offload pool while the worker fetches, then wrap the body in a managed string.
+ * On failure, io_fail sets the thread-local error that the codegen-emitted bzy_io_check turns into a catchable IOException.
+ */
 void *bzy_net_read_url(void *url)
 {
 	UrlCtx c;
@@ -278,11 +280,11 @@ void *bzy_net_read_url(void *url)
 
 	if (bzy_sched_current())
 	{
-		bzy_offload_run(url_fetch, &c);   /* Parks the breeze. */
+		bzy_offload_run(url_fetch, &c); // Parks the breeze.
 	}
 	else
 	{
-		url_fetch(&c);                    /* No breeze (unit/pre-scheduler): run inline. */
+		url_fetch(&c); // No breeze (unit/pre-scheduler): run inline.
 	}
 
 	if (c.err[0] != '\0')

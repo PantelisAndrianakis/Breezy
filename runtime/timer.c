@@ -3,10 +3,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-/* Timer object (object_size = 56), same managed-leaf idiom as channel:
-   0 vtable | 8 rc | 16 gcinfo | 24 deadline | 32 period | 40 entry | 48 cancelled.
-   period 0 => one-shot. Zero traceable children, so the cycle collector treats it
-   as a leaf and ARC frees it directly. */
+/**
+ * Timer object (object_size = 56), same managed-leaf idiom as channel:
+ * 0 vtable | 8 rc | 16 gcinfo | 24 deadline | 32 period | 40 entry | 48 cancelled.
+ * period 0 => one-shot.
+ * Zero traceable children, so the cycle collector treats it as a leaf and ARC frees it directly.
+ */
 #define T_DEADLINE(t)  (*(int64_t*)((char*)(t) + 24))
 #define T_PERIOD(t)    (*(int64_t*)((char*)(t) + 32))
 #define T_ENTRY(t)     (*(void(**)(void))((char*)(t) + 40))
@@ -109,20 +111,20 @@ void *bzy_timer_schedule(void (*entry)(void), int64_t first_deadline, int64_t pe
 	T_ENTRY(t) = entry;
 	T_CANCELLED(t) = 0;
 
-	bzy_retain(t);                 /* The heap's own reference (caller keeps the alloc +1). */
+	bzy_retain(t); // The heap's own reference (caller keeps the alloc +1).
 	bzy_mutex_lock(&g_lock);
 	heap_push(t);
 	bzy_mutex_unlock(&g_lock);
 
-	bzy_sched_nudge();             /* A worker may be idle-parked; let it re-arm its timer wait. */
-	return t;                      /* Owned (+1) to the caller. */
+	bzy_sched_nudge(); // A worker may be idle-parked; let it re-arm its timer wait.
+	return t; // Owned (+1) to the caller.
 }
 
 void *bzy_timer_after(void (*entry)(void), int64_t delay_ms)
 {
 	if (delay_ms < 0)
 	{
-		delay_ms = 0;              /* Clamp (validateDelay analog): never schedule into the past as negative. */
+		delay_ms = 0; // Clamp (validateDelay analog): never schedule into the past as negative.
 	}
 
 	return bzy_timer_schedule(entry, bzy_clock_millis() + delay_ms, 0);
@@ -137,7 +139,7 @@ void *bzy_timer_every(void (*entry)(void), int64_t delay_ms, int64_t period_ms)
 
 	if (period_ms < 1)
 	{
-		period_ms = 1;             /* A non-positive period would spin; floor at 1ms. */
+		period_ms = 1; // A non-positive period would spin; floor at 1ms.
 	}
 
 	return bzy_timer_schedule(entry, bzy_clock_millis() + delay_ms, period_ms);
@@ -151,7 +153,7 @@ void bzy_timer_cancel(void *t)
 	}
 
 	bzy_mutex_lock(&g_lock);
-	T_CANCELLED(t) = 1;            /* Lazy: the heap evicts cancelled entries when it reaches them. */
+	T_CANCELLED(t) = 1; // Lazy: the heap evicts cancelled entries when it reaches them.
 	bzy_mutex_unlock(&g_lock);
 }
 
@@ -162,7 +164,7 @@ static void drop_cancelled_root(void)
 	{
 		void *root = g_heap[0];
 		heap_pop_root();
-		bzy_release(root);        /* Heap's reference. */
+		bzy_release(root); // Heap's reference.
 	}
 }
 
@@ -188,7 +190,7 @@ void *bzy_timer_pop_due(int64_t now)
 	void *root = g_heap[0];
 	heap_pop_root();
 	bzy_mutex_unlock(&g_lock);
-	return root;                  /* Heap ref transferred to the caller (the scheduler). */
+	return root; // Heap ref transferred to the caller (the scheduler).
 }
 
 void bzy_timer_reinsert(void *t, int64_t now)
@@ -196,12 +198,12 @@ void bzy_timer_reinsert(void *t, int64_t now)
 	int64_t d = T_DEADLINE(t) + T_PERIOD(t);
 	while (d <= now)
 	{
-		d += T_PERIOD(t);         /* Fixed-rate, coalesce: jump to the next future slot in one step. */
+		d += T_PERIOD(t); // Fixed-rate, coalesce: jump to the next future slot in one step.
 	}
 
 	T_DEADLINE(t) = d;
 	bzy_mutex_lock(&g_lock);
-	heap_push(t);                 /* The caller's transferred ref becomes the heap's ref again. */
+	heap_push(t); // The caller's transferred ref becomes the heap's ref again.
 	bzy_mutex_unlock(&g_lock);
 }
 
@@ -218,7 +220,7 @@ void bzy_timer_reset(void)
 	bzy_mutex_lock(&g_lock);
 	for (int64_t i = 0; i < g_n; i++)
 	{
-		bzy_release(g_heap[i]);   /* Drop every heap reference. */
+		bzy_release(g_heap[i]); // Drop every heap reference.
 	}
 
 	g_n = 0;

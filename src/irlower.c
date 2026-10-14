@@ -4,16 +4,16 @@
 #include <string.h>  /* strcmp for the arr.length field name. */
 #include <stdlib.h>  /* malloc for the IR_CALL argument-vreg array. */
 
-/* A scalar integer kind the v1 IR backend can hold in a register: any integer,
-   bool, or void (for void-returning functions). Floats and managed kinds are out
-   of scope (the naive emitter is integer-only); arrays are handled separately. */
+/**
+ * A scalar integer kind the v1 IR backend can hold in a register: any integer, bool, or void (for void-returning functions).
+ * Floats and managed kinds are out of scope (the naive emitter is integer-only); arrays are handled separately.
+ */
 static int elig_type(TypeKind k)
 {
 	return ty_is_int(k) || k == TY_BOOL || k == TY_VOID || k == TY_DOUBLE;
 }
 
-/* An element kind the array path supports: integer or bool (no float arrays in
-   Plan 3 - that is Plan 3b / xmm). */
+/* An element kind the array path supports: integer or bool (no float arrays in Plan 3 - that is Plan 3b / xmm). */
 static int elig_elem_kind(TypeKind k)
 {
 	return ty_is_int(k) || k == TY_BOOL || k == TY_DOUBLE;
@@ -25,10 +25,11 @@ static int elig_arrayref(const TypeRef *t)
 	return t && t->kind == TY_ARRAY && t->elem && elig_elem_kind(t->elem->kind);
 }
 
-/* TypeTable for the current codegen run, set once by ir_set_tt before lowering.
-   Resolves a direct call's callee (FuncInfo + asm_label) during eligibility and
-   lowering. NULL when the IR functions run outside codegen (unit tests), where
-   call eligibility is therefore off. */
+/**
+ * TypeTable for the current codegen run, set once by ir_set_tt before lowering.
+ * Resolves a direct call's callee (FuncInfo + asm_label) during eligibility and lowering.
+ * NULL when the IR functions run outside codegen (unit tests), where call eligibility is therefore off.
+ */
 static TypeTable *g_ir_tt = NULL;
 
 void ir_set_tt(TypeTable *tt)
@@ -36,15 +37,17 @@ void ir_set_tt(TypeTable *tt)
 	g_ir_tt = tt;
 }
 
-/* Region mode (Plan 4): eligibility for a loop subtree emitted inline inside an
-   emitter function. Regions additionally reject ST_RETURN (a region cannot run the
-   function epilogue) and managed assignment targets; v1 also confines IR calls to
-   regions. Set only during the region eligibility scan. */
+/**
+ * Region mode (Plan 4): eligibility for a loop subtree emitted inline inside an emitter function.
+ * Regions additionally reject ST_RETURN (a region cannot run the function epilogue) and managed assignment targets; v1 also confines IR calls to regions.
+ * Set only during the region eligibility scan.
+ */
 static int elig_region_mode = 0;
 
-/* C route: an integer or bool `switch`, a static final array base and a clock
-   read are accepted on top of the region rules. Set only inside
-   ir_region_eligible_c; the IR lowering itself handles none of them. */
+/**
+ * C route: an integer or bool `switch`, a static final array base and a clock read are accepted on top of the region rules.
+ * Set only inside ir_region_eligible_c; the IR lowering itself handles none of them.
+ */
 static int elig_allow_switch = 0;
 
 int ir_is_clock_read(const Expr *e)
@@ -69,8 +72,10 @@ static int elig_case_label(const Expr *e)
 	return e->kind == EX_UNARY && e->op == TOKEN_MINUS && e->lhs && e->lhs->kind == EX_INT;
 }
 
-/* The callee FuncInfo of a direct IR-lowerable call, or NULL. Defined after
-   elig_expr (it validates each argument with it). */
+/**
+ * The callee FuncInfo of a direct IR-lowerable call, or NULL.
+ * Defined after elig_expr (it validates each argument with it).
+ */
 static FuncInfo *elig_call_target(const Expr *e);
 
 static int elig_expr(const Expr *e)
@@ -83,10 +88,8 @@ static int elig_expr(const Expr *e)
 	switch (e->kind)
 	{
 	case EX_CALL:
-		/* Region-only in v1: a region shares the emitter function's frame, whose
-		   Win64 shadow + 16-alignment are always reserved, so a <=4-arg call needs
-		   no frame surgery. A whole IR function would need its own frame work first,
-		   so whole-function eligibility (elig_region_mode == 0) keeps rejecting calls. */
+		// Region-only in v1: a region shares the emitter function's frame, whose Win64 shadow + 16-alignment are always reserved, so a <=4-arg call needs no frame surgery.
+		// A whole IR function would need its own frame work first, so whole-function eligibility (elig_region_mode == 0) keeps rejecting calls.
 		if (elig_allow_switch && ir_is_clock_read(e))
 		{
 			return 1;
@@ -98,23 +101,21 @@ static int elig_expr(const Expr *e)
 	case EX_FLOAT:
 		return elig_type(e->type.kind);
 	case EX_IDENT:
-		/* A scalar local/param, or an array reference (its pointer is a register
-		   value like any other 64-bit local). */
+		// A scalar local/param, or an array reference (its pointer is a register value like any other 64-bit local).
 		return (e->type.kind == TY_ARRAY) ? elig_arrayref(&e->type) : elig_type(e->type.kind);
 	case EX_INDEX:
-		/* arr[i]: a BCE-proved access skips the check; otherwise a runtime bounds
-		   check + bzy_oob is emitted (the function carries an exception record). The
-		   element must be an integer/bool. */
+		// arr[i]: a BCE-proved access skips the check; otherwise a runtime bounds check + bzy_oob is emitted (the function carries an exception record).
+		// The element must be an integer/bool.
 		return elig_arrayref(&e->lhs->type) && elig_elem_kind(e->type.kind)
 			   && elig_expr(e->lhs) && elig_expr(e->rhs);
 	case EX_FIELD:
-		/* A final array (C route only: cemit indexes its table directly). */
+		// A final array (C route only: cemit indexes its table directly).
 		if (elig_allow_switch && e->anno_final)
 		{
 			return 1;
 		}
 
-		/* arr.length only (a load of the array header's length field). */
+		// arr.length only (a load of the array header's length field).
 		return e->lhs && e->lhs->type.kind == TY_ARRAY
 			   && strcmp(e->name, "length") == 0 && elig_expr(e->lhs);
 	case EX_BINARY:
@@ -124,18 +125,16 @@ static int elig_expr(const Expr *e)
 	case EX_CAST:
 		return elig_type(e->type.kind) && elig_type(e->lhs->type.kind) && elig_expr(e->lhs);
 	default:
-		/* EX_STR, EX_METHOD_CALL, EX_NEW*, EX_THIS, EX_NULL, EX_INCDEC. */
+		// EX_STR, EX_METHOD_CALL, EX_NEW*, EX_THIS, EX_NULL, EX_INCDEC.
 		return 0;
 	}
 }
 
-/* The callee of a direct, IR-lowerable call: a non-indirect call to a user
-   function (a Breezy body, standard ABI) with <= 4 scalar arguments of one register
-   class and a scalar-or-void return. NULL when the call is not IR-eligible - a
-   closure call, a builtin/intrinsic (not in the function table, or namespaced like
-   `Math.`/`Clock.`), an extern/blocking/variadic/dynamic FFI function, an
-   array/managed arg, a mixed int/fp arg sequence, or > 4 args. Gated by the
-   default-off BZY_IR_CALLS flag, so the default build never widens here. */
+/**
+ * The callee of a direct, IR-lowerable call: a non-indirect call to a user function (a Breezy body, standard ABI) with <= 4 scalar arguments of one register class and a scalar-or-void return.
+ * NULL when the call is not IR-eligible - a closure call, a builtin/intrinsic (not in the function table, or namespaced like `Math.`/`Clock.`), an extern/blocking/variadic/dynamic FFI function, an array/managed arg, a mixed int/fp arg sequence, or > 4 args.
+ * Gated by the default-off BZY_IR_CALLS flag, so the default build never widens here.
+ */
 static FuncInfo *elig_call_target(const Expr *e)
 {
 	if (!bzy_ir_calls_enabled() || !g_ir_tt || e->anno_indirect)
@@ -145,13 +144,13 @@ static FuncInfo *elig_call_target(const Expr *e)
 
 	if (strchr(e->name, '.'))
 	{
-		return NULL;   /* A namespaced builtin (Math., Clock., File., ...). */
+		return NULL; // A namespaced builtin (Math., Clock., File., ...).
 	}
 
 	FuncInfo *fi = types_find_func_idx(g_ir_tt, e->name, e->anno_overload);
 	if (!fi || !fi->ast || fi->is_extern || fi->is_dynamic || fi->is_blocking || fi->is_variadic)
 	{
-		return NULL;   /* A codegen intrinsic (print/input/...), or a special-ABI FFI. */
+		return NULL; // A codegen intrinsic (print/input/...), or a special-ABI FFI.
 	}
 
 	if (fi->param_count > 4 || e->arg_count != fi->param_count)
@@ -161,7 +160,7 @@ static FuncInfo *elig_call_target(const Expr *e)
 
 	if (!(e->type.kind == TY_VOID || (elig_type(e->type.kind) && !ty_is_float(e->type.kind))))
 	{
-		return NULL;   /* Return: integer/bool scalar or void (fp returns are a follow-up). */
+		return NULL; // Return: integer/bool scalar or void (fp returns are a follow-up).
 	}
 
 	for (int i = 0; i < fi->param_count; i++)
@@ -169,7 +168,7 @@ static FuncInfo *elig_call_target(const Expr *e)
 		TypeKind pk = fi->param_types[i].kind;
 		if (!elig_type(pk) || ty_is_float(pk))
 		{
-			return NULL;   /* Integer/bool scalar args only in v1 (no fp/arrays/managed). */
+			return NULL; // Integer/bool scalar args only in v1 (no fp/arrays/managed).
 		}
 	}
 
@@ -235,7 +234,7 @@ static int elig_stmt(const Stmt *s)
 	case ST_DEFAULT:
 		return elig_allow_switch;
 	default:
-		/* ST_FOREACH, ST_THROW, ST_TRY/CATCH, ST_SPAWN, and switches outside the C route. */
+		// ST_FOREACH, ST_THROW, ST_TRY/CATCH, ST_SPAWN, and switches outside the C route.
 		return 0;
 	}
 }
@@ -272,15 +271,13 @@ int ir_eligible(const Func *f)
 
 	if (f->param_count > 4)
 	{
-		return 0;   /* v1 spills register args only (<= 4 covers Win64 and System V). */
+		return 0; // v1 spills register args only (<= 4 covers Win64 and System V).
 	}
 
 	if (f->obj_local_count > 0)
 	{
-		/* Owned managed locals are released on unwind at frame offsets the emitter
-		   assigns; the IR allocates its own layout, so a thrown bounds error would
-		   release garbage. IR-eligible functions never `new`, so this is normally 0;
-		   bail to the emitter if any exist. */
+		// Owned managed locals are released on unwind at frame offsets the emitter assigns; the IR allocates its own layout, so a thrown bounds error would release garbage.
+		// IR-eligible functions never `new`, so this is normally 0; bail to the emitter if any exist.
 		return 0;
 	}
 
@@ -307,19 +304,19 @@ int ir_eligible(const Func *f)
 
 	if (any_fp && any_nonfp)
 	{
-		/* Mixed int/FP params: the arg-register sequence differs on System V (a
-		   separate FP counter) vs Win64 (by position), which the pure-double homing
-		   does not yet model. Deferred to Stage 3. */
+		// Mixed int/FP params: the arg-register sequence differs on System V (a separate FP counter) vs Win64 (by position), which the pure-double homing does not yet model.
+		// Deferred to Stage 3.
 		return 0;
 	}
 
 	return elig_block(f->body);
 }
 
-/* Lowering state. `cur` is the block instructions are appended to; it moves as
-   control flow forks. break/cont hold the current loop's exit/continue targets.
-   `ok` clears if an unsupported construct is reached -> the whole lowering aborts
-   and the caller falls back to the emitter. */
+/**
+ * Lowering state.
+ * `cur` is the block instructions are appended to; it moves as control flow forks. break/cont hold the current loop's exit/continue targets.
+ * `ok` clears if an unsupported construct is reached -> the whole lowering aborts and the caller falls back to the emitter.
+ */
 typedef struct
 {
 	IRFunc *f;
@@ -329,16 +326,18 @@ typedef struct
 	int     cont_blk;
 	int     ok;
 	int     depth;   /* Current loop-nesting depth, stamped on new blocks for spill weighting. */
-	/* Unrolled-loop induction constants: reads of slot cc_off[i] lower to
-	   IR_CONST cc_val[i] instead of a frame load. Stack-shaped (nesting). */
+	/**
+	 * Unrolled-loop induction constants: reads of slot cc_off[i] lower to IR_CONST cc_val[i] instead of a frame load.
+	 * Stack-shaped (nesting).
+	 */
 	int       cc_n;
 	int       cc_off[8];
 	long long cc_val[8];
-	/* Function-level constant locals: a local every assignment to which is the
-	   same integer literal. Reads of kl_off[i] lower to IR_CONST kl_val[i], so the
-	   value folds to an immediate and never occupies a register or an inner-loop
-	   reload. Scanned over the whole function (a region's invariants are assigned in
-	   the enclosing emitter prologue, outside the region subtree). */
+	/**
+	 * Function-level constant locals: a local every assignment to which is the same integer literal.
+	 * Reads of kl_off[i] lower to IR_CONST kl_val[i], so the value folds to an immediate and never occupies a register or an inner-loop reload.
+	 * Scanned over the whole function (a region's invariants are assigned in the enclosing emitter prologue, outside the region subtree).
+	 */
 	int       kl_n;
 	int       kl_off[64];
 	long long kl_val[64];
@@ -385,13 +384,15 @@ static IROp tok_arith_op(int t, int *ok)
 		return IR_SHR;
 	default:
 		*ok = 0;
-		return IR_ADD;   /* &&, ||, etc. - not in v1. */
+		return IR_ADD; // &&, ||, etc. - not in v1.
 	}
 }
 
-/* Bytes per array element (a valid x86 index scale). Mirrors codegen.c's
-   cg_elem_stride exactly: 8-bit widths and bool pack to one byte; managed
-   elements are 8-byte pointers. The address mode must agree with the emitter. */
+/**
+ * Bytes per array element (a valid x86 index scale).
+ * Mirrors codegen.c's cg_elem_stride exactly: 8-bit widths and bool pack to one byte; managed elements are 8-byte pointers.
+ * The address mode must agree with the emitter.
+ */
 static int elem_stride(TypeKind k)
 {
 	if (ty_is_managed(k))
@@ -418,9 +419,10 @@ static int elem_stride(TypeKind k)
 	return 8;
 }
 
-/* Structural equality for the side-effect-free expression subset regions
-   lower (idents, literals, casts, unary/binary arithmetic, indexing,
-   .length). Used to recognise arr[X] = arr[X] op V so X lowers once. */
+/**
+ * Structural equality for the side-effect-free expression subset regions lower (idents, literals, casts, unary/binary arithmetic, indexing, .length).
+ * Used to recognise arr[X] = arr[X] op V so X lowers once.
+ */
 static int expr_eq(const Expr *a, const Expr *b)
 {
 	if (!a || !b)
@@ -472,8 +474,7 @@ static int kl_const(Low *L, int off, long long *out)
 	return 0;
 }
 
-/* The compile-time value of e, if it is an integer literal, an unrolled loop's
-   induction constant, or a function-level constant local. */
+/* The compile-time value of e, if it is an integer literal, an unrolled loop's induction constant, or a function-level constant local. */
 static int low_const(Low *L, const Expr *e, long long *out)
 {
 	if (e->kind == EX_INT)
@@ -499,10 +500,7 @@ static int low_const(Low *L, const Expr *e, long long *out)
 		}
 	}
 
-	/* Constant arithmetic over the above (an unrolled loop's `u * 8`, `u * 8 + k`,
-	   ...): fold to a single compile-time value so an index/address built from an
-	   unrolled induction variable becomes a displacement instead of a materialized
-	   imul/add - matching the emitter's copy-constant unrolling. */
+	// Constant arithmetic over the above (an unrolled loop's `u * 8`, `u * 8 + k`, ...): fold to a single compile-time value so an index/address built from an unrolled induction variable becomes a displacement instead of a materialized imul/add - matching the emitter's copy-constant unrolling.
 	if (e->kind == EX_UNARY && e->op == TOKEN_MINUS)
 	{
 		long long v;
@@ -539,11 +537,11 @@ static int low_const(Low *L, const Expr *e, long long *out)
 	return 0;
 }
 
-/* Lower an array-access index, folding a constant addend into the byte
-   displacement when the access is BCE-proved safe: arr[x + K] -> index x,
-   *disp += K*scale. A checked access must compare the full index against the
-   length, so it never folds. K may be a literal or an unrolled induction
-   constant, on either side of the +, or the rhs of a -. */
+/**
+ * Lower an array-access index, folding a constant addend into the byte displacement when the access is BCE-proved safe: arr[x + K] -> index x, *disp += K*scale.
+ * A checked access must compare the full index against the length, so it never folds.
+ * K may be a literal or an unrolled induction constant, on either side of the +, or the rhs of a -.
+ */
 static IRReg low_index(Low *L, const Expr *ix, int safe, int scale, long long *disp)
 {
 	long long k;
@@ -595,12 +593,11 @@ static IRReg low_expr(Low *L, const Expr *e)
 	{
 		if (e->type.kind != TY_DOUBLE)
 		{
-			L->ok = 0;            /* TY_FLOAT (32-bit) literals are Stage 3. */
+			L->ok = 0; // TY_FLOAT (32-bit) literals are Stage 3.
 			return IR_NO_REG;
 		}
 
-		/* Carry the raw 64-bit double bit pattern in imm; the emitter materializes
-		   it via a GP scratch + movq into xmm. */
+		// Carry the raw 64-bit double bit pattern in imm; the emitter materializes it via a GP scratch + movq into xmm.
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
 		in->dst = r;
@@ -616,8 +613,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 	}
 	case EX_IDENT:
 	{
-		/* An unrolled loop's induction variable is a compile-time constant for
-		   the current copy: lower the read as that constant. */
+		// An unrolled loop's induction variable is a compile-time constant for the current copy: lower the read as that constant.
 		for (int i = L->cc_n - 1; i >= 0; i--)
 		{
 			if (L->cc_off[i] == e->anno_int)
@@ -631,7 +627,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 			}
 		}
 
-		/* A function-level constant local reads as that constant (no frame load). */
+		// A function-level constant local reads as that constant (no frame load).
 		long long kv;
 		if (kl_const(L, e->anno_int, &kv))
 		{
@@ -643,7 +639,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 			return cr;
 		}
 
-		/* A local/param read: load from its frame slot at -anno_int. */
+		// A local/param read: load from its frame slot at -anno_int.
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, e->type.kind);
 		in->dst = r;
@@ -665,8 +661,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 	}
 	case EX_INDEX:
 	{
-		/* a[i] -> load [base + i*stride + 32]; a safe constant addend in the
-		   index folds into the displacement. */
+		// a[i] -> load [base + i*stride + 32]; a safe constant addend in the index folds into the displacement.
 		IRReg base = low_expr(L, e->lhs);
 		int scale = elem_stride(e->type.kind);
 		long long disp = 32;
@@ -685,7 +680,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 	}
 	case EX_FIELD:
 	{
-		/* arr.length -> load the 8-byte length at [base + 24]. */
+		// arr.length -> load the 8-byte length at [base + 24].
 		IRReg base = low_expr(L, e->lhs);
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_LOAD, TY_LONG);
@@ -712,9 +707,8 @@ static IRReg low_expr(Low *L, const Expr *e)
 
 		if (e->op == TOKEN_TILDE)
 		{
-			/* ~x == x ^ -1: one xor with a folded immediate, no new IR op. A clean
-			   sign-extended narrow int stays clean (all high bits flip together with
-			   bit 31), so no re-extension is needed. */
+			// ~x == x ^ -1: one xor with a folded immediate, no new IR op.
+			// A clean sign-extended narrow int stays clean (all high bits flip together with bit 31), so no re-extension is needed.
 			IRReg s = low_expr(L, e->lhs);
 			IRReg m = ir_reg(L->f);
 			IRInstr *kc = ir_emit(L->f, L->cur, IR_CONST, e->type.kind);
@@ -734,9 +728,8 @@ static IRReg low_expr(Low *L, const Expr *e)
 		return IR_NO_REG;
 	case EX_BINARY:
 	{
-		/* (int)bytearr[i] & 255 is an unsigned byte load: the masked value is
-		   exactly the zero-extension the hardware movzx produces, so the cast
-		   and the mask fold away. The canonical byte-parsing idiom. */
+		// (int)bytearr[i] & 255 is an unsigned byte load: the masked value is exactly the zero-extension the hardware movzx produces, so the cast and the mask fold away.
+		// The canonical byte-parsing idiom.
 		if (e->op == TOKEN_AMP && e->rhs->kind == EX_INT && e->rhs->int_val == 255
 				&& e->lhs->kind == EX_CAST && ty_is_int(e->lhs->type.kind)
 				&& e->lhs->lhs->kind == EX_INDEX
@@ -773,9 +766,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 			return r;
 		}
 
-		/* Constant-foldable arithmetic (an unrolled iv times a stride, etc.) lowers
-		   to a single immediate, eliminating the materialized imul/add the emitter
-		   would otherwise win by folding. */
+		// Constant-foldable arithmetic (an unrolled iv times a stride, etc.) lowers to a single immediate, eliminating the materialized imul/add the emitter would otherwise win by folding.
 		long long kfold;
 		if (low_const(L, e, &kfold))
 		{
@@ -795,10 +786,8 @@ static IRReg low_expr(Low *L, const Expr *e)
 			return IR_NO_REG;
 		}
 
-		/* Constant shift count: fold the immediate onto the instruction (b = NO_REG,
-		   imm = count) so emission is a single `shl/shr/sar Rd, imm` -- no count vreg,
-		   no cl load, and one fewer value for the allocator. The hardware masks the
-		   count to 6 bits, so [0, 63] matches the variable form exactly. */
+		// Constant shift count: fold the immediate onto the instruction (b = NO_REG, imm = count) so emission is a single `shl/shr/sar Rd, imm` -- no count vreg, no cl load, and one fewer value for the allocator.
+		// The hardware masks the count to 6 bits, so [0, 63] matches the variable form exactly.
 		if ((op == IR_SHL || op == IR_SHR) && e->rhs->kind == EX_INT
 				&& e->rhs->int_val >= 0 && e->rhs->int_val <= 63)
 		{
@@ -828,14 +817,12 @@ static IRReg low_expr(Low *L, const Expr *e)
 		FuncInfo *fi = elig_call_target(e);
 		if (!fi)
 		{
-			L->ok = 0;          /* Re-validate (eligibility already passed; defensive). */
+			L->ok = 0; // Re-validate (eligibility already passed; defensive).
 			return IR_NO_REG;
 		}
 
-		/* Lower each argument to a vreg left-to-right (appending its IR to the
-		   current block), then emit the call. The arg vregs live in an arena-owned
-		   array freed by ir_func_free. ir_emit's pointer is taken AFTER the args are
-		   lowered, so no intervening append invalidates it. */
+		// Lower each argument to a vreg left-to-right (appending its IR to the current block), then emit the call.
+		// The arg vregs live in an arena-owned array freed by ir_func_free. ir_emit's pointer is taken AFTER the args are lowered, so no intervening append invalidates it.
 		IRReg *args = NULL;
 		if (e->arg_count > 0)
 		{
@@ -849,7 +836,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 		IRReg dst = (e->type.kind == TY_VOID) ? IR_NO_REG : ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, IR_CALL, e->type.kind);
 		in->dst = dst;
-		in->call_label = fi->asm_label;   /* Stable: FuncInfo outlives the IR (whole compile). */
+		in->call_label = fi->asm_label; // Stable: FuncInfo outlives the IR (whole compile).
 		in->call_args = args;
 		in->call_argc = e->arg_count;
 		in->line = e->line;
@@ -893,8 +880,7 @@ static void low_block(Low *L, const Block *b);
 static int const_int(const Expr *e, long long *out);
 static long long const_trip_count(const Stmt *s);
 
-/* True if the subtree contains a break/continue that would target THIS loop
-   (does not descend into nested loops, which own their own targets). */
+/* True if the subtree contains a break/continue that would target THIS loop (does not descend into nested loops, which own their own targets). */
 static int block_has_breakcont(const Block *b);
 
 static int stmt_has_breakcont(const Stmt *s)
@@ -935,8 +921,7 @@ static int block_has_breakcont(const Block *b)
 	return 0;
 }
 
-/* True if the subtree assigns local slot `off` (the unroll guard: a body that
-   rewrites its own counter cannot be constant-folded). */
+/* True if the subtree assigns local slot `off` (the unroll guard: a body that rewrites its own counter cannot be constant-folded). */
 static int block_writes_off(const Block *b, int off);
 
 static int stmt_writes_off(const Stmt *s, int off)
@@ -1009,10 +994,10 @@ static int block_stmt_count(const Block *b)
 	return n;
 }
 
-/* An expression that is safe and cheap to evaluate UNCONDITIONALLY: pure
-   arithmetic over locals, literals, and BCE-proved loads. Excludes division
-   and remainder (can fault) and checked loads (can throw); capped in size so
-   a select never computes more speculative work than the branch it removes. */
+/**
+ * An expression that is safe and cheap to evaluate UNCONDITIONALLY: pure arithmetic over locals, literals, and BCE-proved loads.
+ * Excludes division and remainder (can fault) and checked loads (can throw); capped in size so a select never computes more speculative work than the branch it removes.
+ */
 static int sel_expr_ok(const Expr *e, int *budget)
 {
 	if (!e || --(*budget) < 0)
@@ -1076,9 +1061,7 @@ static void low_stmt(Low *L, const Stmt *s)
 		}
 		else if (s->target->kind == EX_INDEX)
 		{
-			/* arr[X] = arr[X] op V (or V op arr[X], commutative op): lower the
-			   base and X once and reuse the vregs for the inner load and the
-			   store - the duplicated index expression is the costly part. */
+			// arr[X] = arr[X] op V (or V op arr[X], commutative op): lower the base and X once and reuse the vregs for the inner load and the store - the duplicated index expression is the costly part.
 			const Expr *t = s->target;
 			const Expr *inner = NULL;
 			if (s->value->kind == EX_BINARY)
@@ -1138,15 +1121,13 @@ static void low_stmt(Low *L, const Stmt *s)
 				st->c = nv;
 				st->scale = scale;
 				st->disp = disp;
-				/* The load above already proved (or checked) the same base and
-				   index in range; a second check would be pure overhead. */
+				// The load above already proved (or checked) the same base and index in range; a second check would be pure overhead.
 				st->checked = 0;
 				st->line = s->line;
 				break;
 			}
 
-			/* a[i] = v -> store [base + i*stride + 32]; a safe constant addend
-			   in the index folds into the displacement. */
+			// a[i] = v -> store [base + i*stride + 32]; a safe constant addend in the index folds into the displacement.
 			IRReg base = low_expr(L, s->target->lhs);
 			int scale = elem_stride(s->target->type.kind);
 			long long disp = 32;
@@ -1163,7 +1144,7 @@ static void low_stmt(Low *L, const Stmt *s)
 		}
 		else
 		{
-			L->ok = 0;   /* Field store targets are not in v1. */
+			L->ok = 0; // Field store targets are not in v1.
 		}
 
 		break;
@@ -1202,9 +1183,9 @@ static void low_stmt(Low *L, const Stmt *s)
 		break;
 	case ST_IF:
 	{
-		/* if (A <cmp> B) { x = EXPR; } with a pure, cheap EXPR lowers to a
-		   branchless select: x = cmp ? EXPR : x via cmov. Kills the data-
-		   dependent misprediction the max/min/clamp patterns otherwise pay. */
+		// if (A <cmp> B) { x = EXPR; } with a pure, cheap EXPR lowers to a branchless select: x = cmp ?
+		// EXPR : x via cmov.
+		// Kills the data-dependent misprediction the max/min/clamp patterns otherwise pay.
 		if (!s->else_blk && s->then_blk && s->then_blk->count == 1
 				&& s->cond->kind == EX_BINARY && tok_is_cmp(s->cond->op)
 				&& ty_is_int(s->cond->lhs->type.kind))
@@ -1224,7 +1205,7 @@ static void low_stmt(Low *L, const Stmt *s)
 					IRReg bv = low_expr(L, s->cond->rhs);
 					IRReg tv = low_expr(L, as->value);
 
-					/* The current value of the target (the false side). */
+					// The current value of the target (the false side).
 					IRReg fv = ir_reg(L->f);
 					IRInstr *ld = ir_emit(L->f, L->cur, IR_LOAD, as->target->type.kind);
 					ld->dst = fv;
@@ -1279,7 +1260,7 @@ static void low_stmt(Low *L, const Stmt *s)
 	}
 	case ST_WHILE:
 	{
-		int head = low_block_at(L, L->depth + 1);   /* Condition runs every iteration: hot. */
+		int head = low_block_at(L, L->depth + 1); // Condition runs every iteration: hot.
 		int body = low_block_at(L, L->depth + 1);
 		int exit = low_block_at(L, L->depth);
 		low_br(L, L->cur, head);
@@ -1312,10 +1293,8 @@ static void low_stmt(Low *L, const Stmt *s)
 	}
 	case ST_FOR:
 	{
-		/* A small constant-trip loop lowers as straight-line copies with the
-		   induction variable folded to a constant per copy: no counter, no
-		   compare, no branch. The body must not rewrite the counter and must
-		   not break/continue; the trip and size caps bound code growth. */
+		// A small constant-trip loop lowers as straight-line copies with the induction variable folded to a constant per copy: no counter, no compare, no branch.
+		// The body must not rewrite the counter and must not break/continue; the trip and size caps bound code growth.
 		long long trips = const_trip_count(s);
 		if (trips >= 2 && trips <= 16 && L->cc_n < 8
 				&& trips * (long long)block_stmt_count(s->then_blk) <= 96
@@ -1332,7 +1311,7 @@ static void low_stmt(Low *L, const Stmt *s)
 						  ? s->for_init->decl_init : s->for_init->value, &c0);
 				const_int(s->for_post->value->rhs, &c2);
 
-				low_stmt(L, s->for_init);   /* Keeps the slot's value truthful. */
+				low_stmt(L, s->for_init); // Keeps the slot's value truthful.
 
 				L->cc_off[L->cc_n] = iv_off;
 				L->cc_n++;
@@ -1344,8 +1323,7 @@ static void low_stmt(Low *L, const Stmt *s)
 
 				L->cc_n--;
 
-				/* The counter's final value (the first failing the guard), for
-				   any read after the loop - regions keep every local live. */
+				// The counter's final value (the first failing the guard), for any read after the loop - regions keep every local live.
 				IRReg fr = ir_reg(L->f);
 				IRInstr *kc = ir_emit(L->f, L->cur, IR_CONST, TY_INT);
 				kc->dst = fr;
@@ -1361,7 +1339,7 @@ static void low_stmt(Low *L, const Stmt *s)
 			low_stmt(L, s->for_init);
 		}
 
-		int head = low_block_at(L, L->depth + 1);   /* Condition + increment run every iteration. */
+		int head = low_block_at(L, L->depth + 1); // Condition + increment run every iteration.
 		int body = low_block_at(L, L->depth + 1);
 		int post = low_block_at(L, L->depth + 1);
 		int exit = low_block_at(L, L->depth);
@@ -1408,7 +1386,7 @@ static void low_stmt(Low *L, const Stmt *s)
 		break;
 	}
 	default:
-		L->ok = 0;   /* ST_FOREACH, ST_SWITCH, ST_THROW, ST_TRY, ST_SPAWN. */
+		L->ok = 0; // ST_FOREACH, ST_SWITCH, ST_THROW, ST_TRY, ST_SPAWN.
 		break;
 	}
 }
@@ -1426,10 +1404,11 @@ static void low_block(Low *L, const Block *b)
 	}
 }
 
-/* Scan the whole function for constant locals: a local every assignment to which
-   is the same integer literal. Tracked per offset (state 0 unknown / 1 const C /
-   2 varies); the const ones are copied into L->kl_. INCDEC and foreach bindings
-   count as non-constant writes. */
+/**
+ * Scan the whole function for constant locals: a local every assignment to which is the same integer literal.
+ * Tracked per offset (state 0 unknown / 1 const C / 2 varies); the const ones are copied into L->kl_.
+ * INCDEC and foreach bindings count as non-constant writes.
+ */
 typedef struct
 {
 	int       n;
@@ -1439,8 +1418,7 @@ typedef struct
 	long long val[64];
 } ClcState;
 
-/* Find or create the entry for frame offset `off`; returns its index, or -1 if the
-   table is full or off is the no-slot sentinel 0. */
+/* Find or create the entry for frame offset `off`; returns its index, or -1 if the table is full or off is the no-slot sentinel 0. */
 static int clc_touch(ClcState *c, int off)
 {
 	if (off == 0)
@@ -1491,7 +1469,7 @@ static void clc_note(ClcState *c, int off, const Expr *e)
 	}
 	else
 	{
-		c->st[idx] = 2;   /* A non-literal (or unknown) store: the local varies. */
+		c->st[idx] = 2; // A non-literal (or unknown) store: the local varies.
 	}
 }
 
@@ -1509,7 +1487,7 @@ static void clc_stmt(ClcState *c, const Stmt *s)
 		int idx = clc_touch(c, s->decl_offset);
 		if (idx >= 0)
 		{
-			c->decl[idx] = 1;   /* A genuine local declaration (excludes params). */
+			c->decl[idx] = 1; // A genuine local declaration (excludes params).
 		}
 
 		if (s->decl_init)
@@ -1576,7 +1554,7 @@ static void collect_const_locals(const Func *f, Low *L)
 int ir_func_const_local(const Func *f, int slot, long long *out)
 {
 	Low low;
-	collect_const_locals(f, &low);   /* Fills low.kl_*; the rest of Low is unused here. */
+	collect_const_locals(f, &low); // Fills low.kl_*; the rest of Low is unused here.
 	return kl_const(&low, slot, out);
 }
 
@@ -1607,7 +1585,7 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt)
 		return 0;
 	}
 
-	/* A void function that ran off the end needs an explicit return. */
+	// A void function that ran off the end needs an explicit return.
 	if (!blk_terminated(irf, L.cur))
 	{
 		IRInstr *in = ir_emit(irf, L.cur, IR_RET, TY_VOID);
@@ -1629,8 +1607,7 @@ static int const_int(const Expr *e, long long *out)
 	return 0;
 }
 
-/* The trip count of a canonical counted for-loop (`int i = C0; i </<= C1;
-   i = i + C2`, all integer literals, C2 > 0), or -1 when not of that shape. */
+/* The trip count of a canonical counted for-loop (`int i = C0; i </<= C1; i = i + C2`, all integer literals, C2 > 0), or -1 when not of that shape. */
 static long long const_trip_count(const Stmt *s)
 {
 	if (s->kind != ST_FOR || !s->for_init || !s->cond || !s->for_post)
@@ -1686,10 +1663,7 @@ int ir_region_eligible(const Stmt *s)
 		return 0;
 	}
 
-	/* Small fixed-trip loops belong to the emitter: its unroller handles them,
-	   and the region's once-per-entry save/load/store-back overhead would
-	   dominate a body that runs only a handful of times (codec's 8x8 stage
-	   loops enter hundreds of thousands of times). */
+	// Small fixed-trip loops belong to the emitter: its unroller handles them, and the region's once-per-entry save/load/store-back overhead would dominate a body that runs only a handful of times (codec's 8x8 stage loops enter hundreds of thousands of times).
 	long long trips = const_trip_count(s);
 	if (trips >= 0 && trips <= 8)
 	{
@@ -1737,9 +1711,7 @@ IRFunc *ir_lower_region(const Func *f, const Stmt *s)
 		return 0;
 	}
 
-	/* Terminate into a final empty block (created last, so laid out last): the
-	   region has no IR_RET, and emission falls off this block into the region
-	   epilogue the codegen appends. */
+	// Terminate into a final empty block (created last, so laid out last): the region has no IR_RET, and emission falls off this block into the region epilogue the codegen appends.
 	int done = low_block_at(&L, 0);
 	if (!blk_terminated(irf, L.cur))
 	{

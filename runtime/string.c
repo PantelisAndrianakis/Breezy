@@ -4,17 +4,16 @@
 #include <stdlib.h>
 #include <errno.h>
 
-/* Immutable string layout (one allocation):
-   0: vtable ptr  8: refcount  16: gcinfo  24: length  32: bytes[length+1]
-   then an 8-byte cached-hash slot immediately after the NUL terminator.
-   The data offset stays +32 (assumed across the runtime and the codegen FFI
-   marshalling); the hash slot is appended so nothing else moves. It is zeroed at
-   allocation (bzy_alloc zero-fills) and 0 means "not yet computed"; since strings
-   are immutable, a once-computed content hash is valid forever. The map uses it to
-   skip rehashing a reused key (see bzy_str_hashslot / map.c hash_key).
-   The runtime owns the string's vtable/descriptor in C, since codegen never
-   emits one. The descriptor has no finalizer and no object fields, so a string
-   is reclaimed by a plain free and is invisible to the cycle collector. */
+/**
+ * Immutable string layout (one allocation):
+ * 0: vtable ptr  8: refcount  16: gcinfo  24: length  32: bytes[length+1]
+ * then an 8-byte cached-hash slot immediately after the NUL terminator.
+ * The data offset stays +32 (assumed across the runtime and the codegen FFI marshalling); the hash slot is appended so nothing else moves.
+ * It is zeroed at allocation (bzy_alloc zero-fills) and 0 means "not yet computed"; since strings are immutable, a once-computed content hash is valid forever.
+ * The map uses it to skip rehashing a reused key (see bzy_str_hashslot / map.c hash_key).
+ * The runtime owns the string's vtable/descriptor in C, since codegen never emits one.
+ * The descriptor has no finalizer and no object fields, so a string is reclaimed by a plain free and is invisible to the cycle collector.
+ */
 
 static int64_t g_string_typeinfo[2] = { 0 /* Finalizer. */, 0 /* Object-field count. */ };
 static int64_t g_string_vtable[2];   /* [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused. */
@@ -27,7 +26,7 @@ static void *string_vtable(void)
 
 void *bzy_str_new(const char *bytes, int64_t len)
 {
-	void *s = bzy_alloc(32 + len + 1 + 8);   /* +8: cached-hash slot after the NUL (zeroed by bzy_alloc). */
+	void *s = bzy_alloc(32 + len + 1 + 8); // +8: cached-hash slot after the NUL (zeroed by bzy_alloc).
 	*(void**)s = string_vtable();
 	*(int64_t*)((char*)s + 24) = len;
 	char *data = (char*)s + 32;
@@ -50,9 +49,11 @@ const char *bzy_str_data(void *s)
 	return (const char*)s + 32;
 }
 
-/* Address of the 8-byte cached content-hash slot (immediately after the NUL).
-   Zeroed at allocation; 0 = not yet computed. Read/written via memcpy by the map,
-   so no alignment is assumed. */
+/**
+ * Address of the 8-byte cached content-hash slot (immediately after the NUL).
+ * Zeroed at allocation; 0 = not yet computed.
+ * Read/written via memcpy by the map, so no alignment is assumed.
+ */
 void *bzy_str_hashslot(void *s)
 {
 	return (char*)s + 32 + bzy_str_len(s) + 1;
@@ -69,9 +70,11 @@ void *bzy_str_concat(void *a, void *b)
 	return c;
 }
 
-/* Copy a NUL-terminated C string into a fresh owned Breezy string. A NULL pointer
-   yields the Breezy null reference (so an absent C value is distinguishable from
-   an empty string). The copy is independent of the C buffer's lifetime. */
+/**
+ * Copy a NUL-terminated C string into a fresh owned Breezy string.
+ * A NULL pointer yields the Breezy null reference (so an absent C value is distinguishable from an empty string).
+ * The copy is independent of the C buffer's lifetime.
+ */
 void *bzy_str_from_cstring(const char *p)
 {
 	if (!p)
@@ -82,8 +85,10 @@ void *bzy_str_from_cstring(const char *p)
 	return bzy_str_new(p, (int64_t)strlen(p));
 }
 
-/* Copy exactly len bytes (embedded NULs preserved) into a fresh owned Breezy
-   string. A NULL pointer yields the Breezy null reference regardless of len. */
+/**
+ * Copy exactly len bytes (embedded NULs preserved) into a fresh owned Breezy string.
+ * A NULL pointer yields the Breezy null reference regardless of len.
+ */
 void *bzy_str_from_cbytes(const char *p, int64_t len)
 {
 	if (!p)
@@ -99,12 +104,15 @@ void *bzy_str_from_cbytes(const char *p, int64_t len)
 	return bzy_str_new(p, len);
 }
 
-/* Copy a Breezy string's UTF-8 bytes into a fresh owned byte[] (stride-1 value
-   array). Empty string -> empty array. The result does not alias the string. */
+/**
+ * Copy a Breezy string's UTF-8 bytes into a fresh owned byte[] (stride-1 value array).
+ * Empty string -> empty array.
+ * The result does not alias the string.
+ */
 void *bzy_str_to_bytes(void *s)
 {
 	int64_t n = bzy_str_len(s);
-	void *a = bzy_array_new_sized(n, 1, 0);   /* Unmanaged elements, zeroed. */
+	void *a = bzy_array_new_sized(n, 1, 0); // Unmanaged elements, zeroed.
 	if (n)
 	{
 		memcpy((char*)a + 32, (char*)s + 32, (size_t)n);
@@ -113,8 +121,10 @@ void *bzy_str_to_bytes(void *s)
 	return a;
 }
 
-/* Build a fresh owned string from a byte[]/ubyte[]'s raw element bytes (stride 1).
-   NULL array -> the Breezy null string (mirrors bzy_str_from_cbytes). */
+/**
+ * Build a fresh owned string from a byte[]/ubyte[]'s raw element bytes (stride 1).
+ * NULL array -> the Breezy null string (mirrors bzy_str_from_cbytes).
+ */
 void *bzy_str_from_bytes(void *arr)
 {
 	if (!arr)
@@ -125,9 +135,10 @@ void *bzy_str_from_bytes(void *arr)
 	return bzy_str_new((const char*)arr + 32, bzy_array_len(arr));
 }
 
-/* Join n strings into one owned (+1) result with a single allocation: sum the
-   lengths, allocate once, then memcpy each piece. Replaces a chain of pairwise
-   bzy_str_concat calls (O(n) allocations, O(n^2) copying) with O(n) copying. */
+/**
+ * Join n strings into one owned (+1) result with a single allocation: sum the lengths, allocate once, then memcpy each piece.
+ * Replaces a chain of pairwise bzy_str_concat calls (O(n) allocations, O(n^2) copying) with O(n) copying.
+ */
 void *bzy_str_concat_n(void **parts, int64_t n)
 {
 	int64_t total = 0;
@@ -136,7 +147,7 @@ void *bzy_str_concat_n(void **parts, int64_t n)
 		total += bzy_str_len(parts[i]);
 	}
 
-	void *c = bzy_str_new(NULL, total);            /* Allocates total + 1, already NUL-terminated. */
+	void *c = bzy_str_new(NULL, total); // Allocates total + 1, already NUL-terminated.
 	char *d = (char*)c + 32;
 	for (int64_t i = 0; i < n; i++)
 	{
@@ -168,8 +179,10 @@ int64_t bzy_str_eq(void *a, void *b)
 	return (la == lb && memcmp(bzy_str_data(a), bzy_str_data(b), (size_t)la) == 0) ? 1 : 0;
 }
 
-/* A 32-bit FNV-1a content hash, NULL-safe. Used by synthesized record hashCode
-   for string fields so value-equal strings always hash the same. */
+/**
+ * A 32-bit FNV-1a content hash, NULL-safe.
+ * Used by synthesized record hashCode for string fields so value-equal strings always hash the same.
+ */
 int64_t bzy_str_hashcode(void *s)
 {
 	if (!s)
@@ -254,7 +267,7 @@ void *bzy_str_substring(void *s, int64_t start, int64_t end)
 
 	if (start == 0 && end == sl)
 	{
-		bzy_retain(s);   /* Full-range slice: reuse the immutable original. */
+		bzy_retain(s); // Full-range slice: reuse the immutable original.
 		return s;
 	}
 
@@ -271,7 +284,7 @@ void *bzy_str_replace(void *s, void *from, void *to)
 	int64_t rl = bzy_str_len(to);
 	if (fl == 0)
 	{
-		return bzy_str_new(t, tl);                 /* Empty needle: no-op (avoid looping). */
+		return bzy_str_new(t, tl); // Empty needle: no-op (avoid looping).
 	}
 
 	int64_t cap = tl + 16, n = 0;
@@ -314,7 +327,7 @@ void *bzy_str_replace(void *s, void *from, void *to)
 		buf = realloc(buf, (size_t)cap);
 	}
 
-	memcpy(buf + n, t + pos, (size_t)tail);        /* Trailing bytes after the last match. */
+	memcpy(buf + n, t + pos, (size_t)tail); // Trailing bytes after the last match.
 	n += tail;
 	void *out = bzy_str_new(buf, n);
 	free(buf);
@@ -342,7 +355,7 @@ void *bzy_str_trim(void *s)
 
 	if (a == 0 && b == sl)
 	{
-		bzy_retain(s);   /* Nothing to trim: reuse the original. */
+		bzy_retain(s); // Nothing to trim: reuse the original.
 		return s;
 	}
 
@@ -361,7 +374,7 @@ void *bzy_str_to_upper(void *s)
 
 	if (i == sl)
 	{
-		bzy_retain(s);   /* Already upper-case: no copy needed. */
+		bzy_retain(s); // Already upper-case: no copy needed.
 		return s;
 	}
 
@@ -389,7 +402,7 @@ void *bzy_str_to_lower(void *s)
 
 	if (i == sl)
 	{
-		bzy_retain(s);   /* Already lower-case: no copy needed. */
+		bzy_retain(s); // Already lower-case: no copy needed.
 		return s;
 	}
 
@@ -544,10 +557,12 @@ void *bzy_str_repeat(void *s, int64_t n)
 	return o;
 }
 
-/* Split core. When is_set, each byte of `delim` is its own separator (split on
-   any one of them); otherwise `delim` is a single substring separator. With
-   skip_empty, empty fields are dropped. An empty delimiter yields the whole
-   string as one field (subject to skip_empty). */
+/**
+ * Split core.
+ * When is_set, each byte of `delim` is its own separator (split on any one of them); otherwise `delim` is a single substring separator.
+ * With skip_empty, empty fields are dropped.
+ * An empty delimiter yields the whole string as one field (subject to skip_empty).
+ */
 static void *split_core(void *s, void *delim, int is_set, int64_t skip_empty)
 {
 	const char *t = bzy_str_data(s);
@@ -606,12 +621,12 @@ static void *split_core(void *s, void *delim, int is_set, int64_t skip_empty)
 			}
 		}
 
-		SPLIT_PUSH(t + start, tl - start);   /* Final field. */
+		SPLIT_PUSH(t + start, tl - start); // Final field.
 	}
 
 #undef SPLIT_PUSH
 
-	void *arr = bzy_array_new(count, 1);             /* Managed string elements. */
+	void *arr = bzy_array_new(count, 1); // Managed string elements.
 	void **elems = (void**)((char*)arr + 32);
 	for (int64_t k = 0; k < count; k++)
 	{
@@ -622,9 +637,10 @@ static void *split_core(void *s, void *delim, int is_set, int64_t skip_empty)
 	return arr;
 }
 
-/* Pad s to at least `width` bytes with `pad`, on the left or right. width and
-   pad count bytes, not runes - fine for the ASCII pad characters ('0', ' ')
-   these are used with. A string already at or over width is returned as is. */
+/**
+ * Pad s to at least `width` bytes with `pad`, on the left or right. width and pad count bytes, not runes - fine for the ASCII pad characters ('0', ' ') these are used with.
+ * A string already at or over width is returned as is.
+ */
 static void *pad_core(void *s, int64_t width, char pad, int on_left)
 {
 	const char *t = bzy_str_data(s);
@@ -703,10 +719,11 @@ void bzy_print_str(void *s)
 	fputc('\n', stdout);
 }
 
-/* StringBuilder layout (one object; owns a separate doubling buffer):
-   0: vtable  8: refcount  16: gcinfo  24: length  32: capacity  40: buf ptr.
-   The descriptor carries a finalizer that frees buf before the object is freed;
-   it has no object fields (buf is raw bytes), so the cycle collector ignores it. */
+/**
+ * StringBuilder layout (one object; owns a separate doubling buffer):
+ * 0: vtable  8: refcount  16: gcinfo  24: length  32: capacity  40: buf ptr.
+ * The descriptor carries a finalizer that frees buf before the object is freed; it has no object fields (buf is raw bytes), so the cycle collector ignores it.
+ */
 
 static int64_t *SB_LEN(void *sb)
 {
@@ -740,7 +757,7 @@ static void *sb_vtable(void)
 
 void *bzy_sb_new(void)
 {
-	void *sb = bzy_alloc(48);   /* Length/capacity/buf are zeroed by bzy_alloc. */
+	void *sb = bzy_alloc(48); // Length/capacity/buf are zeroed by bzy_alloc.
 	*(void**)sb = sb_vtable();
 	return sb;
 }
@@ -784,9 +801,10 @@ void *bzy_sb_to_string(void *sb)
 	return bzy_str_new(*SB_BUF(sb), *SB_LEN(sb));
 }
 
-/* String -> number parsing. A parse op sets g_parse_error on malformed input; the
-   codegen-emitted bzy_number_check then throws NumberFormatException, locating the
-   call site with pc/frame (the bzy_io_check / bzy_oob pattern). */
+/**
+ * String -> number parsing.
+ * A parse op sets g_parse_error on malformed input; the codegen-emitted bzy_number_check then throws NumberFormatException, locating the call site with pc/frame (the bzy_io_check / bzy_oob pattern).
+ */
 
 extern char __vtable_NumberFormatException[];   /* Emitted per-program by codegen. */
 
@@ -794,7 +812,7 @@ static __thread const char *g_parse_error;       /* Set by a parse op; consumed 
 
 static void parse_fail(const char *msg)
 {
-	g_parse_error = msg;                          /* Static strings only (stable lifetime). */
+	g_parse_error = msg; // Static strings only (stable lifetime).
 }
 
 void bzy_number_check(int64_t pc, int64_t frame)
@@ -808,12 +826,14 @@ void bzy_number_check(int64_t pc, int64_t frame)
 	g_parse_error = NULL;
 	void *exc = bzy_alloc(32);
 	*(void**)exc = (void*)__vtable_NumberFormatException;
-	*(void**)((char*)exc + 24) = msg;             /* Exception.message. */
-	bzy_throw(exc, pc, frame);                     /* Never returns. */
+	*(void**)((char*)exc + 24) = msg; // Exception.message.
+	bzy_throw(exc, pc, frame); // Never returns.
 }
 
-/* Parse the whole string as a base-10 long. *ok=0 on failure (empty / trailing
-   garbage / overflow). Leading whitespace is skipped by strtoll. */
+/**
+ * Parse the whole string as a base-10 long. *ok=0 on failure (empty / trailing garbage / overflow).
+ * Leading whitespace is skipped by strtoll.
+ */
 static long long parse_ll(void *s, int *ok)
 {
 	const char *d = bzy_str_data(s);

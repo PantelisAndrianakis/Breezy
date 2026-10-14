@@ -1,9 +1,8 @@
-/* runtime/crypto.c -- the few libcrypto primitives the database drivers need for
-   authentication (SCRAM-SHA-256 and MD5). Own TU: only a program that authenticates
-   to a database references these symbols, and libcrypto is dlopen'd lazily at first
-   use, so a trust-auth connection loads nothing. Distinct from tls.c's binding (TLS
-   resolves its own libssl+libcrypto symbol set); the OS loader dedups the shared
-   library when both are present. */
+/**
+ * runtime/crypto.c -- the few libcrypto primitives the database drivers need for authentication (SCRAM-SHA-256 and MD5).
+ * Own TU: only a program that authenticates to a database references these symbols, and libcrypto is dlopen'd lazily at first use, so a trust-auth connection loads nothing.
+ * Distinct from tls.c's binding (TLS resolves its own libssl+libcrypto symbol set); the OS loader dedups the shared library when both are present.
+ */
 #include "breezy.h"
 #include <stdint.h>
 #include <stddef.h>
