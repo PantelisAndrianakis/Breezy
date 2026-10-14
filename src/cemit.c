@@ -204,6 +204,7 @@ typedef struct
 	int         nlocal;
 	int         local_off[CEMIT_MAX_LOCALS];  /* Frame offset of each referenced local. */
 	TypeKind    local_kind[CEMIT_MAX_LOCALS]; /* Its type. */
+	int         loops;                        /* Depth of enclosing loops at the statement being emitted. */
 } CUnit;
 
 /* The C type holding a Breezy scalar or array reference, or NULL. */
@@ -1018,9 +1019,152 @@ static void c_for(CUnit *u, const Stmt *s, int depth)
 	}
 
 	cbuf_printf(&u->out, ")\n");
+	u->loops++;
 	c_block(u, s->then_blk, depth + 1);
+	u->loops--;
 	c_indent(u, depth);
 	cbuf_printf(&u->out, "}\n");
+}
+
+/**
+ * 1 when integer expression e is cheap and can never trap, so it may be evaluated even on the path that would not have run it.
+ * Array reads (bounds checks), calls and division by anything but a constant other than 0 and -1 are excluded; *budget caps the size.
+ */
+/* 1 when expression e reads the local at frame offset off. */
+static int c_reads_local(const Expr *e, int off)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	if (e->kind == EX_IDENT)
+	{
+		return !e->anno_capture && e->anno_int == off;
+	}
+
+	return c_reads_local(e->lhs, off) || c_reads_local(e->rhs, off);
+}
+
+static int c_pure(CUnit *u, const Expr *e, int *budget)
+{
+	if (!e || --*budget < 0 || !(ty_is_int(e->type.kind) || e->type.kind == TY_BOOL))
+	{
+		return 0;
+	}
+
+	long long d = 0;
+	switch (e->kind)
+	{
+	case EX_INT:
+	case EX_BOOL:
+		return 1;
+	case EX_IDENT:
+		return !e->anno_capture && e->anno_int > 0;
+	case EX_CAST:
+		return c_pure(u, e->lhs, budget);
+	case EX_UNARY:
+		return (e->op == TOKEN_MINUS || e->op == TOKEN_TILDE || e->op == TOKEN_NOT) && c_pure(u, e->lhs, budget);
+	case EX_BINARY:
+		if (e->op == TOKEN_SLASH || e->op == TOKEN_PERCENT)
+		{
+			return c_const_value(u, e->rhs, &d) && d != 0 && d != -1 && c_pure(u, e->lhs, budget);
+		}
+
+		if (e->op == TOKEN_PLUS || e->op == TOKEN_MINUS || e->op == TOKEN_STAR || e->op == TOKEN_AMP || e->op == TOKEN_PIPE
+				|| e->op == TOKEN_CARET || e->op == TOKEN_SHL || e->op == TOKEN_SHR || e->op == TOKEN_EQ || e->op == TOKEN_NEQ
+				|| e->op == TOKEN_LT || e->op == TOKEN_GT || e->op == TOKEN_LTE || e->op == TOKEN_GTE)
+		{
+			return c_pure(u, e->lhs, budget) && c_pure(u, e->rhs, budget);
+		}
+
+		return 0;
+	default:
+		return 0;
+	}
+}
+
+/**
+ * Emits value v of a select arm.
+ * `n * 3 + c` (likewise 5 or 9, either operand order) is split by an empty asm barrier after the multiply, so gcc emits a two-part lea and an add instead of one three-part lea, whose three-cycle latency would sit on the loop-carried chain.
+ */
+static void c_select_value(CUnit *u, const Expr *v, const char *t)
+{
+	long long c = 0;
+	long long k = 0;
+	if (v->kind == EX_BINARY && v->op == TOKEN_PLUS)
+	{
+		const Expr *mul = v->lhs->kind == EX_BINARY && v->lhs->op == TOKEN_STAR ? v->lhs : v->rhs;
+		const Expr *add = mul == v->lhs ? v->rhs : v->lhs;
+		if (mul->kind == EX_BINARY && mul->op == TOKEN_STAR && c_const_value(u, add, &c)
+				&& ((c_const_value(u, mul->lhs, &k) && !c_const_value(u, mul->rhs, &c)) || (c_const_value(u, mul->rhs, &k) && !c_const_value(u, mul->lhs, &c)))
+				&& (k == 3 || k == 5 || k == 9))
+		{
+			c_const_value(u, add, &c);
+			int n = u->tmp++;
+			cbuf_printf(&u->out, "({ %s m%d_ = (%s)(", t, n, t);
+			c_expr(u, mul);
+			cbuf_printf(&u->out, "); __asm__(\"\" : \"+r\"(m%d_)); (%s)(m%d_ + (%s)0x%llxULL); })", n, t, n, t, (unsigned long long)c);
+			return;
+		}
+	}
+
+	cbuf_printf(&u->out, "(%s)", t);
+	c_expr(u, v);
+}
+
+/**
+ * `if (c) { x = a; } else { x = b; }` inside a loop, x an integer local and a, b cheap and trap-free, becomes a branch-free mask select: both values are computed and the condition picks one.
+ * A data-dependent branch mispredicts often; the select costs a few always-taken ALU ops instead.
+ * gcc does not form this select itself. Returns 1 when it emitted the select.
+ */
+static int c_select(CUnit *u, const Stmt *s, int depth)
+{
+	if (!u->loops || !s->else_blk || !s->then_blk || s->then_blk->count != 1 || s->else_blk->count != 1)
+	{
+		return 0;
+	}
+
+	const Stmt *ts = s->then_blk->stmts[0];
+	const Stmt *es = s->else_blk->stmts[0];
+	if (ts->kind != ST_ASSIGN || es->kind != ST_ASSIGN || ts->target->kind != EX_IDENT || es->target->kind != EX_IDENT
+			|| ts->target->anno_capture || es->target->anno_capture || ts->target->anno_int <= 0
+			|| ts->target->anno_int != es->target->anno_int || !ty_is_int(ts->target->type.kind))
+	{
+		return 0;
+	}
+
+	// Only a recurrence step (both arms compute x from x) gains: a mispredict there stalls the loop-carried chain, while a min or a clamp is cheap or predictable as a branch.
+	int budget = 16;
+	if (!c_pure(u, ts->value, &budget) || !c_pure(u, es->value, &budget)
+			|| !c_reads_local(ts->value, ts->target->anno_int) || !c_reads_local(es->value, ts->target->anno_int))
+	{
+		return 0;
+	}
+
+	const char *t = c_type(ts->target->type.kind);
+	int x = ts->target->anno_int;
+	int n = u->tmp++;
+	note_local(u, x, ts->target->type.kind);
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "{\n");
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "%s a%d_ = ", t, n);
+	c_select_value(u, es->value, t);
+	cbuf_printf(&u->out, ";\n");
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "%s b%d_ = ", t, n);
+	c_select_value(u, ts->value, t);
+	cbuf_printf(&u->out, ";\n");
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "%s k%d_ = (%s)-(%s)((", t, n, t, t);
+	c_expr(u, s->cond);
+	cbuf_printf(&u->out, ") != 0);\n");
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "l%d = (%s)(a%d_ ^ ((a%d_ ^ b%d_) & k%d_));\n", x, t, n, n, n, n);
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "}\n");
+	return 1;
 }
 
 static void c_stmt(CUnit *u, const Stmt *s, int depth)
@@ -1069,6 +1213,11 @@ static void c_stmt(CUnit *u, const Stmt *s, int depth)
 		cbuf_printf(&u->out, ");\n");
 		break;
 	case ST_IF:
+		if (c_select(u, s, depth))
+		{
+			break;
+		}
+
 		c_indent(u, depth);
 		cbuf_printf(&u->out, "if (");
 		c_expr(u, s->cond);
@@ -1087,7 +1236,9 @@ static void c_stmt(CUnit *u, const Stmt *s, int depth)
 		cbuf_printf(&u->out, "while (");
 		c_expr(u, s->cond);
 		cbuf_printf(&u->out, ")\n");
+		u->loops++;
 		c_block(u, s->then_blk, depth);
+		u->loops--;
 		break;
 	case ST_FOR:
 		c_for(u, s, depth);

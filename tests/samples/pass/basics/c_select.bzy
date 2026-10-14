@@ -1,0 +1,78 @@
+// An if/else that assigns one integer local from two cheap values inside a loop becomes a branch-free select on the C route.
+// Each loop folds every step into a checksum, so the C route must print exactly what the assembly path prints.
+
+long collatz(long n)
+{
+	long steps;
+	steps = 0;
+	while (n > 1)
+	{
+		if (n % 2 == 0)
+		{
+			n = n / 2;
+		}
+		else
+		{
+			n = 3 * n + 1;
+		}
+		steps = steps + 1;
+	}
+	return steps;
+}
+
+long mixed(int count)
+{
+	long sum;
+	sum = 0;
+	int x;
+	x = -7;
+	uint u;
+	u = 3u;
+	for (int i = 0; i < count; i = i + 1)
+	{
+		if ((i & 3) == 1)
+		{
+			x = x * 5 + 2147483000;
+		}
+		else
+		{
+			x = (x / -3) ^ (i << 2);
+		}
+
+		if (u > 1000000u)
+		{
+			u = u >> 3;
+		}
+		else
+		{
+			u = u * 9 + 7u;
+		}
+
+		long v;
+		v = (long)i - 50;
+		if (v < 0)
+		{
+			v = -v % 7;
+		}
+		else
+		{
+			v = v * 3 + 1;
+		}
+
+		sum = sum * 31 + (long)x + (long)u + v;
+	}
+	return sum;
+}
+
+void main()
+{
+	long total;
+	total = 0;
+	for (long n = 1; n <= 3000; n = n + 1)
+	{
+		total = total + collatz(n);
+	}
+
+	print(total);
+	print(mixed(1000));
+}
