@@ -1219,7 +1219,7 @@ static void test_cemit_region_safe_index(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 1);
 	ASSERT_INT(noffs, 3);   /* a, s and i. */
 	ASSERT(strncmp(sym, "bzy_creg_", 9) == 0);
 	const char *c = cemit_source();
@@ -1256,7 +1256,7 @@ static void test_cemit_region_checked_index(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 1);
 	ASSERT(strstr(cemit_source(), "bzy_oob(i0_") != NULL);
 	ASSERT(strstr(cemit_source(), "(int64_t)fp") != NULL);
 	cemit_reset();
@@ -1284,8 +1284,77 @@ static void test_cemit_checks_against_constant_length(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 1);
 	ASSERT(strstr(cemit_source(), "n0_ = (int64_t)64LL;") != NULL);
+	cemit_reset();
+}
+
+/* Counts the frame-slot stores in the generated C. */
+static int count_slot_stores(const char *c)
+{
+	int n = 0;
+	for (const char *p = c; (p = strstr(p, ") = (int64_t)l")) != NULL; p++)
+	{
+		n++;
+	}
+
+	return n;
+}
+
+static void test_cemit_outermost_skips_inner_locals(void)
+{
+	/* An outermost region stores back only the locals that outlive it: s, not
+	   the loop counter i or the body local t. A nested region stores all three. */
+	const char *src =
+		"long k(int[] a)\n"
+		"{\n"
+		"	long s;\n"
+		"	s = 0;\n"
+		"	for (int i = 0; i < a.length; i = i + 1)\n"
+		"	{\n"
+		"		long t;\n"
+		"		t = (long)a[i] * 3;\n"
+		"		s = s + t;\n"
+		"	}\n"
+		"	return s;\n"
+		"}\n";
+	char sym[64];
+	int offs[64];
+	int noffs = 0;
+	cemit_reset();
+	const Func *f = parse_one_func(src);
+	ASSERT_INT(cemit_region(f, first_loop(f), 1, sym, offs, 64, &noffs), 1);
+	ASSERT_INT(count_slot_stores(cemit_source()), 1);
+	cemit_reset();
+	f = parse_one_func(src);
+	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 1);
+	ASSERT_INT(count_slot_stores(cemit_source()), 3);
+	cemit_reset();
+}
+
+static void test_cemit_clock_read(void)
+{
+	/* A clock read keeps a loop on the C route as a direct runtime call; the
+	   IR path still rejects it. */
+	cemit_reset();
+	const Func *f = parse_one_func(
+						"long k(int n)\n"
+						"{\n"
+						"	long t;\n"
+						"	t = 0;\n"
+						"	for (int i = 0; i < n; i = i + 1)\n"
+						"	{\n"
+						"		t = t + Clock.currentTimeNanos();\n"
+						"	}\n"
+						"	return t;\n"
+						"}\n");
+	ASSERT_INT(ir_region_eligible_c(first_loop(f)), 1);
+	ASSERT_INT(ir_region_eligible(first_loop(f)), 0);
+	char sym[64];
+	int offs[64];
+	int noffs = 0;
+	ASSERT_INT(cemit_region(f, first_loop(f), 1, sym, offs, 64, &noffs), 1);
+	ASSERT(strstr(cemit_source(), "bzy_clock_nanos()") != NULL);
 	cemit_reset();
 }
 
@@ -1311,7 +1380,7 @@ static void test_cemit_folds_constant_local_divisor(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 1);
+	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 1);
 	ASSERT(strstr(cemit_source(), "bzy_c_sdiv32((") == NULL);
 	ASSERT(strstr(cemit_source(), "0x40ULL") != NULL);
 	cemit_reset();
@@ -1336,7 +1405,7 @@ static void test_cemit_rejects_call(void)
 	char sym[64];
 	int offs[64];
 	int noffs = 0;
-	ASSERT_INT(cemit_region(f, first_loop(f), sym, offs, 64, &noffs), 0);
+	ASSERT_INT(cemit_region(f, first_loop(f), 0, sym, offs, 64, &noffs), 0);
 	ASSERT(cemit_source() == NULL);
 }
 
@@ -1392,6 +1461,8 @@ int main(void)
 	RUN(test_cemit_region_safe_index);
 	RUN(test_cemit_region_checked_index);
 	RUN(test_cemit_checks_against_constant_length);
+	RUN(test_cemit_outermost_skips_inner_locals);
+	RUN(test_cemit_clock_read);
 	RUN(test_cemit_folds_constant_local_divisor);
 	RUN(test_cemit_rejects_call);
 	SUMMARY();

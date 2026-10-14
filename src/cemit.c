@@ -64,6 +64,8 @@ static const char *C_PRELUDE =
 	"#include <stdint.h>\n"
 	"\n"
 	"void bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame) __attribute__((noreturn));\n"
+	"int64_t bzy_clock_nanos(void);\n"
+	"int64_t bzy_clock_millis(void);\n"
 	"\n"
 	"/* 1 when the running CPU has the x86-64-v3 feature level (AVX2, BMI1/2, FMA,\n"
 	"   MOVBE). Decided on first use; a racing first call stores the same value. */\n"
@@ -738,6 +740,15 @@ static void c_expr(CUnit *u, const Expr *e)
 		}
 
 		break;
+	case EX_CALL:
+		if (!ir_is_clock_read(e))
+		{
+			u->ok = 0;   /* Clock reads are the only calls generated C makes. */
+			break;
+		}
+
+		cbuf_printf(&u->out, "bzy_clock_%s()", strcmp(e->name, "Clock.currentTimeNanos") == 0 ? "nanos" : "millis");
+		break;
 	default:
 		u->ok = 0;   /* Calls, strings, objects, closures, ++/--. */
 		break;
@@ -1036,7 +1047,43 @@ static void c_region_dispatch(const char *sym)
 	cbuf_printf(&g_src, "\tif (bzy_c_has_v3())\n\t{\n\t\t%s_v3(fp, ra);\n\t}\n\telse\n\t{\n\t\t%s_base(fp, ra);\n\t}\n}\n", sym, sym);
 }
 
-int cemit_region(const Func *f, const Stmt *s, char *sym, int *offs, int cap, int *noffs)
+static int c_declares_in_block(const Block *b, int off);
+
+/* 1 when statement s (or anything nested in it) declares the local at off. */
+static int c_declares(const Stmt *s, int off)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	if (s->kind == ST_VARDECL && s->decl_offset == off)
+	{
+		return 1;
+	}
+
+	return c_declares(s->for_init, off) || c_declares_in_block(s->then_blk, off) || c_declares_in_block(s->else_blk, off);
+}
+
+static int c_declares_in_block(const Block *b, int off)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (c_declares(b->stmts[i], off))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *offs, int cap, int *noffs)
 {
 	CUnit u;
 	memset(&u, 0, sizeof(u));
@@ -1073,6 +1120,15 @@ int cemit_region(const Func *f, const Stmt *s, char *sym, int *offs, int cap, in
 	cbuf_printf(&g_src, "%s", u.out.n ? u.out.p : "");
 	for (int i = 0; i < u.nlocal; i++)
 	{
+		/* A local declared inside an outermost region is out of scope once the
+		   region ends and its declaration never runs again (slots are never
+		   shared), so its final value is dead. Skipping the store frees gcc from
+		   keeping it live across the loop. */
+		if (outermost && c_declares(s, u.local_off[i]))
+		{
+			continue;
+		}
+
 		c_store_slot(u.local_off[i], u.local_kind[i]);
 	}
 

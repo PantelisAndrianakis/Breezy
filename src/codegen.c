@@ -12275,7 +12275,7 @@ static int cg_region_ir_vectorizes(Func *f, const Stmt *s)
 	return vec;
 }
 
-static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
+static void cg_scan_regions(Codegen *cg, Func *f, const Block *b, int depth)
 {
 	if (!b)
 	{
@@ -12294,7 +12294,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 				char sym[64];
 				int offs[256];
 				int noffs = 0;
-				if (cemit_region(f, s, sym, offs, 256, &noffs))
+				if (cemit_region(f, s, depth == 0, sym, offs, 256, &noffs))
 				{
 					cg_region_record(cg, s, NULL, NULL, sym, offs, noffs);
 					if (cg_region_debug())
@@ -12345,14 +12345,14 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b)
 				fprintf(stderr, "ir-region: %s line %d: %s\n", f->name, s->line, verdict);
 			}
 
-			cg_scan_regions(cg, f, s->then_blk);   /* Inner loops may region on their own. */
+			cg_scan_regions(cg, f, s->then_blk, depth + 1);   /* Inner loops may region on their own. */
 			continue;
 		}
 
 		if (s->kind == ST_IF)
 		{
-			cg_scan_regions(cg, f, s->then_blk);
-			cg_scan_regions(cg, f, s->else_blk);
+			cg_scan_regions(cg, f, s->then_blk, depth);
+			cg_scan_regions(cg, f, s->else_blk, depth);
 		}
 	}
 }
@@ -12544,7 +12544,7 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 	int region_area = 0;
 	if (bzy_ir_regions_enabled() && this_class == NULL && !block_has_try(f->body))
 	{
-		cg_scan_regions(cg, f, f->body);
+		cg_scan_regions(cg, f, f->body, 0);
 		for (int i = 0; i < cg->region_count; i++)
 		{
 			IRAlloc *a = cg->region_alloc[i];

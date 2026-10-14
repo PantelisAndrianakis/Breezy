@@ -29,8 +29,12 @@ IRFunc *ir_lower_func(const Func *f, TypeTable *tt);
 int ir_region_eligible(const Stmt *s);
 
 /* Region eligibility for the C route: the same rules plus an integer or bool
-   `switch` with literal case labels. */
+   `switch` with literal case labels, static final arrays and clock reads. */
 int ir_region_eligible_c(const Stmt *s);
+
+/* 1 for Clock.currentTimeNanos() or Clock.currentTimeMillis(): a runtime read
+   that never throws and touches no Breezy state, so generated C may call it. */
+int ir_is_clock_read(const Expr *e);
 
 /* Lower an eligible region to IR with no IR_RET: the final block is empty and
    emission falls off it into the region epilogue. NULL when ineligible. Caller

@@ -42,10 +42,16 @@ void ir_set_tt(TypeTable *tt)
    regions. Set only during the region eligibility scan. */
 static int elig_region_mode = 0;
 
-/* C route: an integer or bool `switch` and a static final array base are
-   accepted on top of the region rules. Set only inside ir_region_eligible_c;
-   the IR lowering itself handles neither. */
+/* C route: an integer or bool `switch`, a static final array base and a clock
+   read are accepted on top of the region rules. Set only inside
+   ir_region_eligible_c; the IR lowering itself handles none of them. */
 static int elig_allow_switch = 0;
+
+int ir_is_clock_read(const Expr *e)
+{
+	return e->kind == EX_CALL && e->arg_count == 0
+		   && (strcmp(e->name, "Clock.currentTimeNanos") == 0 || strcmp(e->name, "Clock.currentTimeMillis") == 0);
+}
 
 /* An integer case label: a literal, a negated literal or a bool literal. */
 static int elig_case_label(const Expr *e)
@@ -81,6 +87,11 @@ static int elig_expr(const Expr *e)
 		   Win64 shadow + 16-alignment are always reserved, so a <=4-arg call needs
 		   no frame surgery. A whole IR function would need its own frame work first,
 		   so whole-function eligibility (elig_region_mode == 0) keeps rejecting calls. */
+		if (elig_allow_switch && ir_is_clock_read(e))
+		{
+			return 1;
+		}
+
 		return elig_region_mode && elig_call_target(e) != NULL;
 	case EX_INT:
 	case EX_BOOL:

@@ -26,7 +26,7 @@ source.bzy → Breezy compiler → output.asm → NASM → output.o ─┐
 
 One step sits between the compiler and the link. The compiler picks out **pure numeric code** and hands it to GCC's optimizer instead of emitting assembly for it:
 
-- **hot loops** whose bodies use only integer, `bool` and `double` locals, arrays of those, [final arrays](../types/arrays.md#final-arrays), plain control flow and integer `switch`;
+- **hot loops** whose bodies use only integer, `bool` and `double` locals, arrays of those, [final arrays](../types/arrays.md#final-arrays), plain control flow, integer `switch` and `Clock.currentTimeNanos()` / `Clock.currentTimeMillis()` reads;
 - **leaf functions** of the same kind that call nothing and can never throw.
 
 That code is written to `out_c.c` next to `out.asm`, compiled with `gcc -O3` into `out_c.obj` and linked into the same binary. Each hot loop is compiled twice, once for the **x86-64-v3** feature level (AVX2, BMI1/2, FMA) and once for the baseline x86-64 that every 64-bit CPU runs; the first time the loop runs, the program checks the CPU and uses the v3 copy whenever it is supported, so the same binary runs everywhere. Everything else (objects, strings, calls, exceptions, breezes) stays on the assembly path, and the two halves share the same frames, bounds checks and exceptions, so a program prints exactly the same results either way. A loop the built-in path already vectorizes stays on that path.
