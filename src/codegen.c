@@ -12275,6 +12275,33 @@ static int cg_region_ir_vectorizes(Func *f, const Stmt *s)
 	return vec;
 }
 
+/* 1 if a loop nested anywhere in b would be vectorized by the IR path. A loop
+   containing one stays off the C route, so the scan reaches the inner loop. */
+static int cg_block_ir_vectorizes(Func *f, const Block *b)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		const Stmt *s = b->stmts[i];
+		if ((s->kind == ST_FOR || s->kind == ST_WHILE) && cg_region_ir_vectorizes(f, s))
+		{
+			return 1;
+		}
+
+		if ((s->kind == ST_FOR || s->kind == ST_WHILE || s->kind == ST_IF)
+				&& (cg_block_ir_vectorizes(f, s->then_blk) || cg_block_ir_vectorizes(f, s->else_blk)))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void cg_scan_regions(Codegen *cg, Func *f, const Block *b, int depth)
 {
 	if (!b)
@@ -12289,7 +12316,7 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b, int depth)
 		{
 			const char *verdict = "ineligible";
 			if (bzy_c_enabled() && !cg->cur_unit_prelude && ir_region_eligible_c(s) && cg_region_line_allowed(s->line)
-					&& !cg_region_ir_vectorizes(f, s))
+					&& !cg_region_ir_vectorizes(f, s) && !cg_block_ir_vectorizes(f, s->then_blk))
 			{
 				char sym[64];
 				int offs[256];

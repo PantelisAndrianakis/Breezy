@@ -1971,6 +1971,30 @@ static void test_c_route_leaves_vector_reduction_to_ir(void)
 	c_route_off();
 }
 
+static void test_c_route_leaves_outer_of_vector_loop(void)
+{
+	/* A timed outer loop around a vectorizable reduction stays off the C route,
+	   so the inner loop still reaches the vectorizing IR path. */
+	c_route_on();
+	emit("void main() {"
+		 " int n; n = 4096;"
+		 " double[] xs; xs = new double[n];"
+		 " double[] ys; ys = new double[n];"
+		 " double a; a = 1.5;"
+		 " double b; b = 2.5;"
+		 " double acc; acc = 0.0;"
+		 " long t; t = 0;"
+		 " for (int f = 0; f < 10; f = f + 1)"
+		 " {"
+		 "  t = t + Clock.currentTimeNanos();"
+		 "  for (int v = 0; v < n; v = v + 1) { acc = acc + a * xs[v] + b * ys[v]; }"
+		 " }"
+		 " print(acc); print(t); }", TARGET_WINDOWS);
+	ASSERT(strstr(g_asm, "mulpd") != NULL);
+	ASSERT(strstr(g_asm, "call bzy_creg_") == NULL);
+	c_route_off();
+}
+
 static void test_final_array_tables(void)
 {
 	/* Each final array is one unmanaged object in read-only data; a final local
@@ -2115,6 +2139,7 @@ int main(void)
 	RUN(test_c_whole_function);
 	RUN(test_c_region_reloads_each_register_once);
 	RUN(test_c_route_leaves_vector_reduction_to_ir);
+	RUN(test_c_route_leaves_outer_of_vector_loop);
 	RUN(test_c_route_off_with_zero);
 	RUN(test_c_route_skips_prelude);
 	RUN(test_final_array_tables);

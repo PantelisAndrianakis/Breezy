@@ -39,14 +39,48 @@ static int recv_spin_probes(void)
 	return cached;
 }
 
+/* Per-socket adaptive spin. The spin pays off when the peer replies within the
+   window (one connection doing request/response) and wastes the core when it
+   does not (many connections, where the reply needs a breeze that is not yet
+   running). A socket whose spins keep missing stops spinning for a while, then
+   tries again. State > 0: skip the spin for that many more reads; state <= 0:
+   spin, with -state the run of consecutive misses. */
+#define BZY_SPIN_MISS_LIMIT 8
+#define BZY_SPIN_BACKOFF    32
+
+static int spin_budget(int64_t *st)
+{
+	if (*st > 0)
+	{
+		(*st)--;
+		return 0;
+	}
+
+	return recv_spin_probes();
+}
+
+/* Records whether a spin that ran found data (hit) or fell through to a park. */
+static void spin_outcome(int64_t *st, int hit)
+{
+	if (hit)
+	{
+		*st = 0;
+	}
+	else if (--*st <= -BZY_SPIN_MISS_LIMIT)
+	{
+		*st = BZY_SPIN_BACKOFF;
+	}
+}
+
 #ifdef _WIN32
 #include <mswsock.h>     /* AcceptEx / ConnectEx / GetAcceptExSockaddrs. */
 
-/* Socket/Listener share this layout (object_size = 40):
-   0 vtable | 8 rc | 16 gcinfo | 24 SOCKET fd | 32 closed(int64). Leaf object
-   (num_obj_fields = 0); the finalizer closesocket()s an unclosed fd. */
+/* Socket/Listener share this layout (object_size = 48):
+   0 vtable | 8 rc | 16 gcinfo | 24 SOCKET fd | 32 closed(int64) | 40 spin state.
+   Leaf object (num_obj_fields = 0); the finalizer closesocket()s an unclosed fd. */
 #define SK_FD(o)     (*(SOCKET*)((char*)(o) + 24))
 #define SK_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
+#define SK_SPIN(o)   ((int64_t*)((char*)(o) + 40))
 
 static void bzy_socket_finalize(void *o)
 {
@@ -70,7 +104,7 @@ static void *sock_vtable(void)
 /* Allocate a managed socket-handle object wrapping fd. Shared with udp.c. */
 void *bzy_sock_wrap(SOCKET fd)
 {
-	void *o = bzy_alloc(40);
+	void *o = bzy_alloc(48);
 	*(void**)o = sock_vtable();
 	SK_FD(o) = fd;
 	SK_CLOSED(o) = 0;
@@ -359,12 +393,18 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 	   read only; a timed read keeps its exact budget. */
 	if (timeout_ms < 0)
 	{
-		int spin = recv_spin_probes();
-		for (int i = 0; i < spin && !bzy_sched_local_runnable(); i++)
+		int spin = spin_budget(SK_SPIN(s));
+		int i = 0;
+		for (; i < spin && !bzy_sched_local_runnable(); i++)
 		{
 			int pn = recv(SK_FD(s), buf, max, 0);
 			if (pn > 0)
 			{
+				if (i > 0)
+				{
+					spin_outcome(SK_SPIN(s), 1);   /* Data arrived during the spin. */
+				}
+
 				return pn;
 			}
 
@@ -382,6 +422,11 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 			{
 				bzy_sock_pause();
 			}
+		}
+
+		if (spin > 0 && i == spin)
+		{
+			spin_outcome(SK_SPIN(s), 0);   /* The whole spin found nothing. */
 		}
 	}
 
@@ -618,7 +663,8 @@ void bzy_listener_close(void *l)
 #define SK_FD(o)     (*(int64_t*)((char*)(o) + 24))
 #define SK_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
 #define SK_POLL(o)   ((PollDesc*)((char*)(o) + 40))   /* Embedded after fd/closed. */
-#define SK_OBJSIZE   (40 + (int)sizeof(PollDesc))      /* Grown handle (was 40). */
+#define SK_SPIN(o)   ((int64_t*)((char*)(o) + 40 + (int)sizeof(PollDesc)))   /* Adaptive spin state. */
+#define SK_OBJSIZE   (48 + (int)sizeof(PollDesc))      /* Grown handle (was 40). */
 
 static void bzy_socket_finalize(void *o)
 {
@@ -845,13 +891,19 @@ void *bzy_socket_connect(void *host, int64_t port)
 static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 {
 	PollDesc *pd = SK_POLL(s);
-	int spin = (timeout_ms < 0) ? recv_spin_probes() : 0;   /* Spin only the infinite-blocking ping-pong read. */
+	int spin = (timeout_ms < 0) ? spin_budget(SK_SPIN(s)) : 0;   /* Spin only the infinite-blocking ping-pong read. */
+	int spun = 0;   /* 1 while a spin is running and its outcome is not yet recorded. */
 	for (;;)
 	{
 		bzy_poll_reset(pd, BZY_POLL_READ);            /* Clear stale readiness first. */
 		ssize_t n = recv((int)SK_FD(s), buf, (size_t)max, 0);
 		if (n > 0)
 		{
+			if (spun)
+			{
+				spin_outcome(SK_SPIN(s), 1);   /* Data arrived during the spin. */
+			}
+
 			return (int)n;
 		}
 
@@ -875,6 +927,7 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 			   (e.g. the peer handler whose CPU work produces our reply), spinning
 			   would starve them, so park immediately and let them run. */
 			spin--;
+			spun = 1;
 			for (int p = 0; p < BZY_RECV_SPIN_PAUSES; p++)
 			{
 				bzy_sock_pause();
@@ -882,6 +935,12 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 			continue;
 		}
 
+		if (spun && spin == 0)
+		{
+			spin_outcome(SK_SPIN(s), 0);   /* The whole spin found nothing. */
+		}
+
+		spun = 0;
 		int r = bzy_poll_wait(pd, (int)SK_FD(s), BZY_POLL_READ, timeout_ms);
 		if (r == 0)
 		{
