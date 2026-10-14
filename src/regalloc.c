@@ -417,11 +417,20 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 	}
 
-	/* Coalesce: union a copy's two ends when no member of either group conflicts. */
+	/* Coalesce: union a copy's two ends when no member of either group conflicts.
+	   Each group keeps a linked list of its members (head/tail by root, next per
+	   value), so a copy's conflict check visits only the two groups' members
+	   instead of rescanning every value per member. */
 	int *uf = malloc((size_t)nval * sizeof(int));
+	int *grp_head = malloc((size_t)nval * sizeof(int));
+	int *grp_tail = malloc((size_t)nval * sizeof(int));
+	int *grp_next = malloc((size_t)nval * sizeof(int));
 	for (int i = 0; i < nval; i++)
 	{
 		uf[i] = i;
+		grp_head[i] = i;
+		grp_tail[i] = i;
+		grp_next[i] = -1;
 	}
 
 	for (int c = 0; c < ncp; c++)
@@ -434,16 +443,11 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		}
 
 		int bad = 0;
-		for (int p = 0; p < nval && !bad; p++)
+		for (int p = grp_head[A]; p >= 0 && !bad; p = grp_next[p])
 		{
-			if (uf_find(uf, p) != A)
+			for (int q = grp_head[B]; q >= 0; q = grp_next[q])
 			{
-				continue;
-			}
-
-			for (int q = 0; q < nval; q++)
-			{
-				if (uf_find(uf, q) == B && interf[(size_t)p * nval + q])
+				if (interf[(size_t)p * nval + q])
 				{
 					bad = 1;
 					break;
@@ -454,8 +458,14 @@ static void ra_color(IRFunc *f, IRAlloc *a, const char *live_out, int bw)
 		if (!bad)
 		{
 			uf[A] = B;
+			grp_next[grp_tail[B]] = grp_head[A];
+			grp_tail[B] = grp_tail[A];
 		}
 	}
+
+	free(grp_head);
+	free(grp_tail);
+	free(grp_next);
 
 	/* A coalesced root is live across a call if any of its members is. */
 	char *root_crosses = calloc((size_t)nval, 1);
