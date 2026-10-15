@@ -220,6 +220,11 @@ static __thread int           t_wid;         /* This thread's worker index. */
 static __thread void         *t_park_unlock; /* bzy_mutex* the scheduler releases after a parking switch. */
 /* bzy_yield sets this; the scheduler re-enqueues the breeze after the switch, when it is safely off its own CPU. */
 static __thread int           t_requeue;
+/**
+ * A finishing breeze sets this on its own thread just before its last switch; the scheduler reads it instead of b->done.
+ * A parked breeze can be woken, resumed on another worker and finish there before this worker has looked at it, so b->done read after the switch can belong to that later run and retire the breeze twice.
+ */
+static __thread int           t_finished;
 /* 1 on a scheduler worker thread (and the main thread acting as worker 0); 0 on offload/reactor/foreign threads. */
 static __thread int           t_is_worker;
 /**
@@ -336,6 +341,7 @@ static void breeze_run(void *p)
 	}
 
 	b->done = 1;
+	t_finished = 1;
 	bzy_coroutine_switch(t_sched); // TLS: the scheduler of whatever thread runs us now.
 }
 
@@ -351,6 +357,7 @@ void bzy_sched_breeze_uncaught(void)
 		t_running->done = 1;
 	}
 
+	t_finished = 1;
 	bzy_coroutine_switch(t_sched);
 }
 
@@ -732,6 +739,8 @@ run:
 		b->home = t_wid; // Cache-affine wake target for the reactor.
 		bzy_coroutine_switch(b->coroutine);
 		t_running = NULL;
+		int finished = t_finished; // Set by b on this thread; b->done could already belong to a later run elsewhere.
+		t_finished = 0;
 
 		if (t_park_unlock)
 		{
@@ -744,7 +753,7 @@ run:
 			t_requeue = 0;
 			enqueue_on(t_wid, b); // Yielded: b is off-CPU now, so it is safe to make it stealable.
 		}
-		else if (b->done)
+		else if (finished)
 		{
 			bzy_coroutine_delete(b->coroutine); // Pools the coroutine AND its attached Breeze; do not free b.
 			if (__atomic_sub_fetch(&g_live, 1, __ATOMIC_SEQ_CST) == 0 && bzy_timer_next_deadline() < 0)
