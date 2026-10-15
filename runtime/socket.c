@@ -262,7 +262,11 @@ void *bzy_listener_accept(void *l)
 		return NULL;
 	}
 
-	bzy_iocp_park(op); // Completion packet wakes us (posted even on immediate success).
+	if (!bzy_iocp_done_now(op, ok, got))
+	{
+		bzy_iocp_park(op); // The completion packet wakes us.
+	}
+
 	if (bzy_iocp_op_err(op))
 	{
 		closesocket(acc);
@@ -312,17 +316,20 @@ void *bzy_listener_accept_timeout(void *l, int64_t ms)
 		return NULL;
 	}
 
-	HANDLE timer = NULL;
-	CancelCtx cc = { SK_FD(l), ov }; // AcceptEx is issued on the listener fd; cancel that.
-	if (ms >= 0)
+	if (!bzy_iocp_done_now(op, ok, got))
 	{
-		CreateTimerQueueTimer(&timer, NULL, cancel_cb, &cc, (DWORD)ms, 0, WT_EXECUTEONLYONCE);
-	}
+		HANDLE timer = NULL;
+		CancelCtx cc = { SK_FD(l), ov }; // AcceptEx is issued on the listener fd; cancel that.
+		if (ms >= 0)
+		{
+			CreateTimerQueueTimer(&timer, NULL, cancel_cb, &cc, (DWORD)ms, 0, WT_EXECUTEONLYONCE);
+		}
 
-	bzy_iocp_park(op);
-	if (timer)
-	{
-		DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE);
+		bzy_iocp_park(op);
+		if (timer)
+		{
+			DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE);
+		}
 	}
 
 	if (bzy_iocp_op_err(op))
@@ -388,7 +395,11 @@ void *bzy_socket_connect(void *host, int64_t port)
 		return NULL;
 	}
 
-	bzy_iocp_park(op);
+	if (!bzy_iocp_done_now(op, ok, got))
+	{
+		bzy_iocp_park(op);
+	}
+
 	if (bzy_iocp_op_err(op))
 	{
 		closesocket(fd);
@@ -459,17 +470,20 @@ static int sock_recv(void *s, char *buf, int max, int64_t timeout_ms)
 		return -1;
 	}
 
-	HANDLE timer = NULL;
-	CancelCtx cc = { SK_FD(s), ov };
-	if (timeout_ms >= 0)
+	if (!bzy_iocp_done_now(op, rc == 0, got))
 	{
-		CreateTimerQueueTimer(&timer, NULL, cancel_cb, &cc, (DWORD)timeout_ms, 0, WT_EXECUTEONLYONCE);
-	}
+		HANDLE timer = NULL;
+		CancelCtx cc = { SK_FD(s), ov };
+		if (timeout_ms >= 0)
+		{
+			CreateTimerQueueTimer(&timer, NULL, cancel_cb, &cc, (DWORD)timeout_ms, 0, WT_EXECUTEONLYONCE);
+		}
 
-	bzy_iocp_park(op);
-	if (timer)
-	{
-		DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE); // Waits for any running callback.
+		bzy_iocp_park(op);
+		if (timer)
+		{
+			DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE); // Waits for any running callback.
+		}
 	}
 
 	int e = bzy_iocp_op_err(op);
@@ -629,7 +643,11 @@ static int64_t sock_send_all(void *s, const char *buf, int64_t len)
 			break;
 		}
 
-		bzy_iocp_park(op);
+		if (!bzy_iocp_done_now(op, rc == 0, got))
+		{
+			bzy_iocp_park(op);
+		}
+
 		if (bzy_iocp_op_err(op) || bzy_iocp_op_bytes(op) == 0)
 		{
 			break;

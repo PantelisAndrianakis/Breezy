@@ -502,9 +502,10 @@ void *bzy_sched_current(void)      /* Opaque handle to the running breeze (for w
 }
 
 /**
- * True if the current worker already has other runnable breezes on its own deque.
+ * True if the current worker already has other runnable breezes: on its deque, in its hand-off slot or in its injection queue.
  * A spin-before-park caller (socket recv) consults this: when ready work exists - e.g. a peer handler that must run to produce our reply - hogging the core with a spin starves it, so the caller should park immediately and yield.
- * A racy read of top/bottom is fine; this is a scheduling hint, not a barrier.
+ * The injection queue matters most: a breeze woken by an I/O completion thread waits there, and on a lone worker a spin would hold it off until the spin ends.
+ * Racy reads are fine; this is a scheduling hint, not a barrier.
  */
 int bzy_sched_local_runnable(void)
 {
@@ -513,8 +514,8 @@ int bzy_sched_local_runnable(void)
 		return 0;
 	}
 
-	Deque *d = &g_workers[t_wid].dq;
-	return (d->bottom - d->top) > 0;
+	Worker *w = &g_workers[t_wid];
+	return (w->dq.bottom - w->dq.top) > 0 || w->runnext != NULL || __atomic_load_n(&w->inj_head, __ATOMIC_RELAXED) != NULL;
 }
 
 /**

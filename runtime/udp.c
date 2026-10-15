@@ -199,7 +199,11 @@ static int64_t udp_send_bytes(void *u, void *host, int64_t port, const char *buf
 		return 0;
 	}
 
-	bzy_iocp_park(op);
+	if (!bzy_iocp_done_now(op, rc == 0, got))
+	{
+		bzy_iocp_park(op);
+	}
+
 	if (bzy_iocp_op_err(op))
 	{
 		return 0;
@@ -242,17 +246,20 @@ static int udp_recv(void *u, char *buf, int max, int64_t timeout_ms,
 		return -1;
 	}
 
-	HANDLE timer = NULL;
-	CancelCtx cc = { U_FD(u), ov };
-	if (timeout_ms >= 0)
+	if (!bzy_iocp_done_now(op, rc == 0, got))
 	{
-		CreateTimerQueueTimer(&timer, NULL, cancel_cb, &cc, (DWORD)timeout_ms, 0, WT_EXECUTEONLYONCE);
-	}
+		HANDLE timer = NULL;
+		CancelCtx cc = { U_FD(u), ov };
+		if (timeout_ms >= 0)
+		{
+			CreateTimerQueueTimer(&timer, NULL, cancel_cb, &cc, (DWORD)timeout_ms, 0, WT_EXECUTEONLYONCE);
+		}
 
-	bzy_iocp_park(op);
-	if (timer)
-	{
-		DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE);
+		bzy_iocp_park(op);
+		if (timer)
+		{
+			DeleteTimerQueueTimer(NULL, timer, INVALID_HANDLE_VALUE);
+		}
 	}
 
 	int e = bzy_iocp_op_err(op);

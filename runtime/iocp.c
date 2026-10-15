@@ -1,4 +1,5 @@
 #include "breezy.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #define WIN32_LEAN_AND_MEAN
@@ -27,6 +28,7 @@ static volatile LONG g_inflight;      /* Breezes parked on a network op. */
 static int     g_started;             /* Guarded by g_start_lock. */
 static SRWLOCK g_start_lock = SRWLOCK_INIT;
 static int     g_wsa_started;
+static int     g_skip;                /* 1 when sockets complete inline without a packet (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS). */
 
 /* Test hook: lets the unit test post a fake completion to the real port. */
 void *bzy_iocp_test_port(void)
@@ -70,6 +72,36 @@ static DWORD WINAPI completion_thread(void *unused)
 	return 0;
 }
 
+/**
+ * Inline completion is only reliable when every TCP and UDP provider hands out real kernel handles.
+ * A layered provider can report success inline and still queue a packet, which would wake a breeze whose op is gone.
+ */
+static int ifs_handles_only(void)
+{
+	INT protos[3] = { IPPROTO_TCP, IPPROTO_UDP, 0 };
+	DWORD len = 0;
+	WSAEnumProtocolsW(protos, NULL, &len); // Fails with WSAENOBUFS and sets the size needed.
+	if (len == 0)
+	{
+		return 0;
+	}
+
+	WSAPROTOCOL_INFOW *info = malloc(len);
+	int n = WSAEnumProtocolsW(protos, info, &len);
+	int ok = n > 0;
+	for (int i = 0; i < n; i++)
+	{
+		if (!(info[i].dwServiceFlags1 & XP1_IFS_HANDLES))
+		{
+			ok = 0;
+			break;
+		}
+	}
+
+	free(info);
+	return ok;
+}
+
 void bzy_iocp_ensure(void)
 {
 	AcquireSRWLockExclusive(&g_start_lock);
@@ -80,6 +112,7 @@ void bzy_iocp_ensure(void)
 			WSADATA wsa;
 			WSAStartup(MAKEWORD(2, 2), &wsa);
 			g_wsa_started = 1;
+			g_skip = ifs_handles_only();
 		}
 
 		g_port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
@@ -112,6 +145,12 @@ void bzy_iocp_ensure(void)
 void bzy_iocp_associate(void *handle)
 {
 	CreateIoCompletionPort((HANDLE)handle, g_port, 0, 0); // Key unused: we recover the op from ov.
+	if (g_skip && !SetFileCompletionNotificationModes((HANDLE)handle, FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE))
+	{
+		// Every issue site trusts inline completion once skip mode is on; a handle left in the other mode would queue a packet for an op that no longer exists.
+		fprintf(stderr, "Could not switch a socket to inline completions.\n");
+		abort();
+	}
 }
 
 void bzy_iocp_op_reset(IocpOp *op)
@@ -140,6 +179,20 @@ void bzy_iocp_park(IocpOp *op)
 	// o->lock is already held (taken in bzy_iocp_op_reset, before the overlapped post); the scheduler releases it after the parking switch.
 	bzy_sched_park_unlock(&o->lock);
 	// Resumed: the completion thread filled bytes/err and woke us.
+}
+
+int bzy_iocp_done_now(IocpOp *op, int ok, unsigned long bytes)
+{
+	if (!ok || !g_skip)
+	{
+		return 0; // Pending, or packets are queued even on inline success: park for the completion.
+	}
+
+	struct IocpOp *o = (struct IocpOp*)op;
+	o->bytes = (DWORD)bytes;
+	o->err = 0;
+	ReleaseSRWLockExclusive(&o->lock); // Taken in bzy_iocp_op_reset; no completion will ever wait on it.
+	return 1;
 }
 
 unsigned long bzy_iocp_op_bytes(IocpOp *op)

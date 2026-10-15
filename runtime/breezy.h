@@ -263,6 +263,7 @@ void  bzy_iocp_associate(void *handle);  /* Associate a SOCKET (as void*) with t
 void  bzy_iocp_op_reset(IocpOp *op);     /* Zero the OVERLAPPED, init the hand-off lock, set the breeze. */
 void *bzy_iocp_op_overlapped(IocpOp *op);/* &op->ov, to pass to WSARecv/WSASend/etc. */
 void  bzy_iocp_park(IocpOp *op);         /* Park until the completion thread wakes this op. */
+int   bzy_iocp_done_now(IocpOp *op, int ok, unsigned long bytes); /* After issuing: 1 if the op finished inline and queued no packet (result filled, do not park); 0 = park. */
 unsigned long bzy_iocp_op_bytes(IocpOp *op);  /* Bytes transferred (valid after resume). */
 int   bzy_iocp_op_err(IocpOp *op);            /* 0 on success else a Winsock error (valid after resume). */
 int64_t bzy_iocp_inflight(void);         /* Breezes parked on a network op (Windows: iocp.c; Linux: reactor_epoll.c). */

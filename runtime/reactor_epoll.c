@@ -48,10 +48,11 @@ static void wake_waiter(Waiter *w)
 
 /**
  * Resolve a batch of epoll events to parked Waiters and wake them.
- * An entry with a NULL data.ptr is a break on the eventfd and is drained.
+ * An entry with a NULL data.ptr is a break on the eventfd; only a blocking poll (`blocking` set) drains it.
+ * A non-blocking poll that drained it would steal the wakeup from the blocked poller, which the kernel then puts back to sleep with the break already spent.
  * Returns the number of breezes woken.
  */
-static int reactor_dispatch(struct epoll_event *evs, int n)
+static int reactor_dispatch(struct epoll_event *evs, int n, int blocking)
 {
 	int woken = 0;
 	for (int i = 0; i < n; i++)
@@ -59,9 +60,13 @@ static int reactor_dispatch(struct epoll_event *evs, int n)
 		void *p = evs[i].data.ptr;
 		if (!p)
 		{
-			uint64_t v;
-			ssize_t rd = read(g_evfd, &v, sizeof(v)); // A break: drain it so the next poll can block again.
-			(void)rd;
+			if (blocking)
+			{
+				uint64_t v;
+				ssize_t rd = read(g_evfd, &v, sizeof(v)); // Drain it so the next blocking poll can sleep again.
+				(void)rd;
+			}
+
 			continue;
 		}
 
@@ -122,7 +127,7 @@ int bzy_netpoll(int64_t timeout_ms)
 		return 0; // Timed out, or interrupted (EINTR): the caller loops back anyway.
 	}
 
-	return reactor_dispatch(evs, n);
+	return reactor_dispatch(evs, n, timeout_ms != 0);
 }
 
 void bzy_netpoll_break(void)
