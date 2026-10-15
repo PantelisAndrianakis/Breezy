@@ -183,3 +183,22 @@ void bzy_iocp_shutdown(void)
 
 	ReleaseSRWLockExclusive(&g_start_lock);
 }
+
+/**
+ * The scheduler's network poll hooks.
+ * Completions are still drained by the completion thread above, so workers have nothing to poll.
+ */
+int bzy_netpoll(int64_t timeout_ms)
+{
+	(void)timeout_ms;
+	return 0;
+}
+
+void bzy_netpoll_break(void)
+{
+}
+
+int64_t bzy_netpoll_pending(void)
+{
+	return 0;
+}

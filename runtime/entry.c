@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 #ifdef _WIN32
 	bzy_iocp_shutdown(); // Join the IOCP completion thread (Windows sockets).
 #else
-	bzy_reactor_shutdown(); // Join the epoll reactor thread (Linux sockets).
+	bzy_reactor_shutdown(); // Close the epoll instance (Linux sockets).
 #endif
 
 	// A breeze that died from an uncaught exception is survived (the scheduler keeps running other breezes), but the process still reports failure.

@@ -212,7 +212,7 @@ client echoes it, so a spoofed-source flood cannot make the server do real work.
 ## Rules & gotchas
 
 - **Every I/O call looks blocking but parks the breeze**, not the OS thread.
-- **Network uses the OS completion/readiness mechanism**; files and blocking C calls use the offload pool.
+- **Network uses the OS completion/readiness mechanism, drained by the scheduler's own workers on Linux**: an idle worker polls for ready sockets and runs the woken breeze itself, with no extra thread hop (Windows still drains its completion port on one dedicated thread). Files and blocking C calls use the offload pool.
 - **`Network.listen` / `accept` / `readText` / `writeText` / `close`** are the core TCP surface.
 - **Listeners are dual-stack** (accept IPv6 and IPv4); `Network.connect` takes an IPv6 literal, IPv4 literal, or hostname - no API change.
 - **`Network.readUrl` is one-call HTTP/HTTPS GET**, returns the body, and throws `IOException` on failure.

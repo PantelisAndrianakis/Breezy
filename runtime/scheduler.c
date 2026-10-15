@@ -19,6 +19,15 @@
  */
 #define SCHED_SPIN 1024
 
+#define POLL_SPIN_EVERY   64  /* Idle-spin rounds between non-blocking network polls. */
+#define POLL_TICK_EVERY   61  /* Dispatches between non-blocking network polls on a busy worker. */
+#define POLL_SPINNERS_MAX 4   /* Workers polling without blocking at once; more only contend on the poll's own lock. */
+
+/* The one worker that may sleep in a blocking network poll. */
+#define POLL_NONE    0
+#define POLL_BLOCKED 1
+#define POLL_BROKEN  2
+
 /* Hint the CPU we are in a spin-wait: lets a hyperthread sibling proceed and avoids a memory-order-violation pipeline flush when the value finally changes. */
 static inline void bzy_cpu_relax(void)
 {
@@ -213,6 +222,8 @@ static int     g_live;              /* Breezes created but not finished (accesse
 static int     g_shutdown;          /* Set when g_live hits 0; unblocks idle workers so they exit. */
 /* Workers blocked (or about to block) on g_work_sem. enqueue_on only posts the semaphore when this is > 0, so a spawn/wake onto a busy pool costs no syscall: the work is found by polling. */
 static int     g_idle;
+static int     g_poll_state;        /* POLL_NONE / POLL_BLOCKED / POLL_BROKEN (a break is already on its way). */
+static int     g_poll_spinners;     /* Workers inside a non-blocking poll right now. */
 
 static __thread BzyCoroutine *t_sched;       /* This thread's scheduler coroutine. */
 static __thread Breeze       *t_running;     /* Breeze currently on this CPU (NULL = scheduler). */
@@ -227,6 +238,7 @@ static __thread int           t_requeue;
 static __thread int           t_finished;
 /* 1 on a scheduler worker thread (and the main thread acting as worker 0); 0 on offload/reactor/foreign threads. */
 static __thread int           t_is_worker;
+static __thread int           t_ticks;       /* Dispatches since this worker last polled the network. */
 /**
  * FFI: depth of foreign (C) callbacks running on this thread.
  * A callback runs synchronously inside a C stack frame, so it must not park/yield (would unwind the C frame) or throw across the C boundary.
@@ -260,16 +272,31 @@ int bzy_on_worker(void)
 	return t_is_worker; // Distinguishes a real worker context from a foreign thread.
 }
 
+/* Break the blocked poller out of its poll, once: later kicks see POLL_BROKEN and skip the syscall. */
+static void poll_kick(void)
+{
+	int expected = POLL_BLOCKED;
+	if (__atomic_compare_exchange_n(&g_poll_state, &expected, POLL_BROKEN, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED))
+	{
+		bzy_netpoll_break();
+	}
+}
+
 /**
- * Wake an idle worker if any is parked on the semaphore.
+ * Make an idle worker look for the work just enqueued.
+ * A worker sleeping on the semaphore is posted; failing that, the worker sleeping in the network poll is broken out of it.
  * A busy worker finds new work by polling/stealing, so a spawn or wake onto a running pool pays no syscall.
- * The matching re-poll in worker_loop (after it bumps g_idle) closes the race.
+ * The matching re-polls in worker_loop (after it bumps g_idle, and after it claims the poller role) close the race.
  */
 static void wake_one(void)
 {
 	if (__atomic_load_n(&g_idle, __ATOMIC_SEQ_CST) > 0)
 	{
 		bzy_sem_post(&g_work_sem, 1);
+	}
+	else if (__atomic_load_n(&g_poll_state, __ATOMIC_SEQ_CST) == POLL_BLOCKED)
+	{
+		poll_kick();
 	}
 }
 
@@ -551,11 +578,28 @@ void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread
 	inject_to(wid, b); // Not a worker thread: target the home worker's injection queue.
 }
 
-void bzy_sched_nudge(void)   /* Release one semaphore count so an idle worker re-checks timers. */
+/**
+ * Make a breeze woken by network I/O runnable.
+ * On a worker that polled the network itself, the breeze goes on that worker's own deque with no nudge: the poller nudges once per batch.
+ * Off a worker (a backend helper thread), it goes to its home worker's injection queue.
+ */
+void bzy_sched_ready(void *breeze)
+{
+	if (t_is_worker)
+	{
+		cl_push(&g_workers[t_wid].dq, (Breeze*)breeze);
+		return;
+	}
+
+	bzy_sched_wake_external(breeze);
+}
+
+void bzy_sched_nudge(void)   /* Wake an idle worker to re-check timers: one semaphore count, and the poller if one is blocked. */
 {
 	if (g_sem_ready)
 	{
 		bzy_sem_post(&g_work_sem, 1);
+		poll_kick();
 	}
 }
 
@@ -572,6 +616,45 @@ void bzy_yield(void)
 	// Defer the re-enqueue to the scheduler, which runs it once b is off-CPU.
 	t_requeue = 1;
 	bzy_coroutine_switch(t_sched);
+}
+
+/**
+ * Poll the network without blocking; woken breezes land on this worker's deque.
+ * Skipped when nothing is parked on network I/O, or when POLL_SPINNERS_MAX workers are already polling.
+ */
+static void poll_now(void)
+{
+	if (bzy_netpoll_pending() == 0 || __atomic_load_n(&g_poll_spinners, __ATOMIC_RELAXED) >= POLL_SPINNERS_MAX)
+	{
+		return;
+	}
+
+	__atomic_add_fetch(&g_poll_spinners, 1, __ATOMIC_ACQ_REL);
+	int n = bzy_netpoll(0);
+	__atomic_sub_fetch(&g_poll_spinners, 1, __ATOMIC_ACQ_REL);
+	if (n > 1)
+	{
+		wake_one(); // Several breezes landed here; let a sleeping sibling steal some.
+	}
+}
+
+/* Take the blocking-poller role. Returns 0 when another worker holds it. */
+static int poll_claim(void)
+{
+	int expected = POLL_NONE;
+	return __atomic_compare_exchange_n(&g_poll_state, &expected, POLL_BLOCKED, 0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
+}
+
+/**
+ * Called by a network backend when a breeze parks on I/O while none was parked before.
+ * Workers that went to sleep with nothing pending sleep on the semaphore, not in the poll, so wake one to take the poller role.
+ */
+void bzy_sched_io_parked(void)
+{
+	if (__atomic_load_n(&g_poll_state, __ATOMIC_SEQ_CST) == POLL_NONE && __atomic_load_n(&g_idle, __ATOMIC_SEQ_CST) > 0)
+	{
+		bzy_sem_post(&g_work_sem, 1);
+	}
 }
 
 /**
@@ -675,6 +758,11 @@ static void worker_loop(void)
 			// (Capping the number of spinners was tried and is worse here: the parked workers then need a wake syscall, which is the very churn we are avoiding.)
 			for (int spun = 0; spun < SCHED_SPIN; spun++)
 			{
+				if (spun % POLL_SPIN_EVERY == 0)
+				{
+					poll_now(); // A socket that became ready is picked up here instead of waking a sleeping worker.
+				}
+
 				b = find_work();
 				if (b)
 				{
@@ -696,9 +784,10 @@ static void worker_loop(void)
 			}
 
 			int64_t nd = bzy_timer_next_deadline();
+			int64_t wait = -1; // Milliseconds to the next timer; -1 when none is pending.
 			if (nd >= 0)
 			{
-				int64_t wait = nd - bzy_clock_millis();
+				wait = nd - bzy_clock_millis();
 				if (wait < 1)
 				{
 					wait = 1;
@@ -708,12 +797,41 @@ static void worker_loop(void)
 				{
 					wait = 0x7fffffff;
 				}
+			}
 
+			if (bzy_netpoll_pending() > 0 && poll_claim())
+			{
+				// This worker sleeps in the network poll instead of on the semaphore.
+				// It leaves the idle count, so a new enqueue breaks the poll rather than posting the semaphore.
+				__atomic_sub_fetch(&g_idle, 1, __ATOMIC_SEQ_CST);
+				b = find_work(); // Catch an enqueue that posted the semaphore before the claim.
+				int n = 0;
+				if (!b && !__atomic_load_n(&g_shutdown, __ATOMIC_SEQ_CST))
+				{
+					n = bzy_netpoll(wait); // Returns on I/O, the next timer, or a break.
+				}
+
+				__atomic_store_n(&g_poll_state, POLL_NONE, __ATOMIC_SEQ_CST);
+				if (b)
+				{
+					goto run;
+				}
+
+				if (n > 1)
+				{
+					wake_one(); // Several breezes landed here; let a sleeping sibling steal some.
+				}
+
+				continue;
+			}
+
+			if (nd >= 0)
+			{
 				bzy_sem_wait_ms(&g_work_sem, wait); // Sleep until the next deadline (or an enqueue).
 			}
 			else if (bzy_offload_inflight() > 0 || bzy_iocp_inflight() > 0)
 			{
-				// A breeze is parked on an offload or network op; a worker or the completion thread will wake it.
+				// A breeze is parked on an offload or network op; a worker, the poller or the completion thread will wake it.
 				// Wait instead of declaring deadlock.
 				bzy_sem_wait(&g_work_sem);
 			}
@@ -762,7 +880,14 @@ run:
 				// A pending timer keeps the program alive - workers fall into the timer wait.
 				__atomic_store_n(&g_shutdown, 1, __ATOMIC_SEQ_CST);
 				bzy_sem_post(&g_work_sem, g_nworkers); // Wake every idle worker to exit.
+				poll_kick(); // And the one sleeping in the network poll.
 			}
+		}
+
+		if (++t_ticks == POLL_TICK_EVERY)
+		{
+			t_ticks = 0;
+			poll_now(); // A busy worker still polls now and then, so ready sockets are not left waiting while every worker runs.
 		}
 	}
 }

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
@@ -14,10 +15,9 @@
  * Linux readiness reactor (edge-triggered, register-once).
  * Each fd is ADDed to the shared epoll instance exactly once (EPOLLIN|EPOLLOUT|EPOLLET, data.ptr = its PollDesc) on the breeze's first park; never re-armed, never DELeted per op (the kernel drops it on close).
  * Edges are dispatched into the PollDesc, whose sticky readiness guarantees no wakeup is lost across the reset->syscall->wait window.
- * A pool of threads drains the one epoll fd; EPOLLET + the PollDesc atomics make concurrent drain safe (each edge resolves to at most one Waiter per direction).
+ * The scheduler's workers drain the one epoll fd themselves through bzy_netpoll; EPOLLET + the PollDesc atomics make concurrent drain safe (each edge resolves to at most one Waiter per direction).
+ * An eventfd (data.ptr NULL, level-triggered) breaks a worker out of a blocking poll.
  */
-
-#define REACTOR_MAX_THREADS 8
 
 /* epoll data.ptr low-bit tag: 0 = a PollDesc (socket edge), 1 = a TimerReg. */
 #define TAG_TIMER 1u
@@ -33,84 +33,111 @@ typedef struct
 
 static int        g_ep = -1;
 static int        g_evfd = -1;
-static bzy_thread g_threads[REACTOR_MAX_THREADS];
-static int        g_nthreads;
 static int        g_started;
-static int        g_inflight;                       /* Parked breezes (deadlock gate). */
+static int        g_inflight;                       /* Parked breezes (deadlock gate and poll gate). */
 static bzy_mutex  g_start_lock = BZY_MUTEX_INIT;
 
-/* Wake `w`'s breeze after the park handshake: take w->lock (blocks until the breeze released it post-switch) then inject it. w->result must already be set. */
+/* Wake `w`'s breeze after the park handshake: take w->lock (blocks until the breeze released it post-switch) then make it runnable. w->result must already be set. */
 static void wake_waiter(Waiter *w)
 {
 	bzy_mutex_lock(&w->lock);
 	bzy_mutex_unlock(&w->lock);
-	bzy_sched_wake_external(w->breeze);
+	bzy_sched_ready(w->breeze);
 	__atomic_sub_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST);
 }
 
-static void *reactor_loop(void *unused)
+/**
+ * Resolve a batch of epoll events to parked Waiters and wake them.
+ * An entry with a NULL data.ptr is a break on the eventfd and is drained.
+ * Returns the number of breezes woken.
+ */
+static int reactor_dispatch(struct epoll_event *evs, int n)
 {
-	(void)unused;
-	struct epoll_event evs[64];
-	for (;;)
+	int woken = 0;
+	for (int i = 0; i < n; i++)
 	{
-		int n = epoll_wait(g_ep, evs, 64, -1);
-		if (n < 0)
+		void *p = evs[i].data.ptr;
+		if (!p)
 		{
-			if (errno == EINTR)
-			{
-				continue;
-			}
-
-			break;
+			uint64_t v;
+			ssize_t rd = read(g_evfd, &v, sizeof(v)); // A break: drain it so the next poll can block again.
+			(void)rd;
+			continue;
 		}
 
-		for (int i = 0; i < n; i++)
+		if ((uintptr_t)p & TAG_TIMER)
 		{
-			void *p = evs[i].data.ptr;
-			if (!p)
+			TimerReg *tr = (TimerReg*)((uintptr_t)p & ~(uintptr_t)TAG_TIMER);
+			if (bzy_poll_unblock_timer(tr->pd, tr->dir, tr->w))
 			{
-				return NULL; // Shutdown eventfd (data.ptr == NULL).
+				tr->w->result = 0; // Timed out.
+				wake_waiter(tr->w);
+				woken++;
 			}
 
-			if ((uintptr_t)p & TAG_TIMER)
-			{
-				TimerReg *tr = (TimerReg*)((uintptr_t)p & ~(uintptr_t)TAG_TIMER);
-				if (bzy_poll_unblock_timer(tr->pd, tr->dir, tr->w))
-				{
-					tr->w->result = 0; // Timed out.
-					wake_waiter(tr->w);
-				}
+			continue;
+		}
 
-				continue;
+		PollDesc *pd = (PollDesc*)p;
+		uint32_t ev = evs[i].events;
+		// A half-closed/errored fd reports HUP/ERR; treat as both directions ready so the parked side wakes and the syscall surfaces the real errno/EOF.
+		if (ev & (EPOLLIN | EPOLLHUP | EPOLLERR))
+		{
+			Waiter *w = bzy_poll_unblock_ready(pd, BZY_POLL_READ);
+			if (w)
+			{
+				w->result = 1;
+				wake_waiter(w);
+				woken++;
 			}
+		}
 
-			PollDesc *pd = (PollDesc*)p;
-			uint32_t ev = evs[i].events;
-			// A half-closed/errored fd reports HUP/ERR; treat as both directions ready so the parked side wakes and the syscall surfaces the real errno/EOF.
-			if (ev & (EPOLLIN | EPOLLHUP | EPOLLERR))
+		if (ev & (EPOLLOUT | EPOLLHUP | EPOLLERR))
+		{
+			Waiter *w = bzy_poll_unblock_ready(pd, BZY_POLL_WRITE);
+			if (w)
 			{
-				Waiter *w = bzy_poll_unblock_ready(pd, BZY_POLL_READ);
-				if (w)
-				{
-					w->result = 1;
-					wake_waiter(w);
-				}
-			}
-
-			if (ev & (EPOLLOUT | EPOLLHUP | EPOLLERR))
-			{
-				Waiter *w = bzy_poll_unblock_ready(pd, BZY_POLL_WRITE);
-				if (w)
-				{
-					w->result = 1;
-					wake_waiter(w);
-				}
+				w->result = 1;
+				wake_waiter(w);
+				woken++;
 			}
 		}
 	}
 
-	return NULL;
+	return woken;
+}
+
+int bzy_netpoll(int64_t timeout_ms)
+{
+	if (!__atomic_load_n(&g_started, __ATOMIC_ACQUIRE))
+	{
+		return 0;
+	}
+
+	struct epoll_event evs[64];
+	int to = timeout_ms < 0 ? -1 : (timeout_ms > INT_MAX ? INT_MAX : (int)timeout_ms);
+	int n = epoll_wait(g_ep, evs, 64, to);
+	if (n <= 0)
+	{
+		return 0; // Timed out, or interrupted (EINTR): the caller loops back anyway.
+	}
+
+	return reactor_dispatch(evs, n);
+}
+
+void bzy_netpoll_break(void)
+{
+	if (__atomic_load_n(&g_started, __ATOMIC_ACQUIRE))
+	{
+		uint64_t one = 1;
+		ssize_t wr = write(g_evfd, &one, sizeof(one));
+		(void)wr;
+	}
+}
+
+int64_t bzy_netpoll_pending(void)
+{
+	return (int64_t)__atomic_load_n(&g_inflight, __ATOMIC_SEQ_CST);
 }
 
 void bzy_reactor_ensure(void)
@@ -118,32 +145,14 @@ void bzy_reactor_ensure(void)
 	bzy_mutex_lock(&g_start_lock);
 	if (!g_started)
 	{
-		g_ep = epoll_create1(0);
-		g_evfd = eventfd(0, 0);
+		g_ep = epoll_create1(EPOLL_CLOEXEC);
+		g_evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 		struct epoll_event ev;
 		memset(&ev, 0, sizeof(ev));
-		ev.events = EPOLLIN;
-		ev.data.ptr = NULL; // The shutdown sentinel.
+		ev.events = EPOLLIN; // Level-triggered: every poll sees a pending break until one drains it.
+		ev.data.ptr = NULL;
 		epoll_ctl(g_ep, EPOLL_CTL_ADD, g_evfd, &ev);
-
-		int nt = (int)sysconf(_SC_NPROCESSORS_ONLN);
-		if (nt < 1)
-		{
-			nt = 1;
-		}
-
-		if (nt > REACTOR_MAX_THREADS)
-		{
-			nt = REACTOR_MAX_THREADS;
-		}
-
-		g_nthreads = nt;
-		for (int i = 0; i < g_nthreads; i++)
-		{
-			bzy_thread_start(&g_threads[i], reactor_loop, NULL);
-		}
-
-		g_started = 1;
+		__atomic_store_n(&g_started, 1, __ATOMIC_RELEASE);
 	}
 
 	bzy_mutex_unlock(&g_start_lock);
@@ -200,7 +209,7 @@ int bzy_poll_wait(PollDesc *pd, int fd, int dir, int64_t timeout_ms)
 	w.breeze = bzy_sched_current();
 	w.result = 0;
 	bzy_mutex_init(&w.lock);
-	bzy_mutex_lock(&w.lock); // Held across the park; reactor blocks on it to wake.
+	bzy_mutex_lock(&w.lock); // Held across the park; the waking worker blocks on it.
 
 	if (!bzy_poll_arm(pd, dir, &w))
 	{
@@ -233,10 +242,14 @@ int bzy_poll_wait(PollDesc *pd, int fd, int dir, int64_t timeout_ms)
 		epoll_ctl(g_ep, EPOLL_CTL_ADD, tr.tfd, &tev);
 	}
 
-	__atomic_add_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST);
+	if (__atomic_add_fetch(&g_inflight, 1, __ATOMIC_SEQ_CST) == 1)
+	{
+		bzy_sched_io_parked(); // The first parked I/O: make sure some worker will poll for it.
+	}
+
 	bzy_sched_park_unlock(&w.lock); // Released by the scheduler after the switch.
 
-	// Resumed: a reactor thread set w.result; the fd stays registered.
+	// Resumed: a polling worker set w.result; the fd stays registered.
 	// Tear down the per-wait timer registration (if any).
 	if (tr.tfd >= 0)
 	{
@@ -267,20 +280,11 @@ void bzy_reactor_shutdown(void)
 	bzy_mutex_lock(&g_start_lock);
 	if (g_started)
 	{
-		uint64_t one = 1;
-		ssize_t wr = write(g_evfd, &one, sizeof(one)); // Wake the reactors to exit.
-		(void)wr;
-		for (int i = 0; i < g_nthreads; i++)
-		{
-			bzy_thread_join(g_threads[i]);
-		}
-
-		g_nthreads = 0;
 		close(g_evfd);
 		close(g_ep);
 		g_evfd = -1;
 		g_ep = -1;
-		g_started = 0;
+		__atomic_store_n(&g_started, 0, __ATOMIC_RELEASE);
 	}
 
 	bzy_mutex_unlock(&g_start_lock);

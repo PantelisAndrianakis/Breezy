@@ -248,6 +248,7 @@ void    bzy_offload_run(void (*fn)(void*), void *ctx);   /* Submit + park; retur
 int64_t bzy_offload_inflight(void);   /* Breezes currently parked on an offload task. */
 void    bzy_offload_shutdown(void);   /* Drain/join the pool (no-op if never started). */
 void    bzy_sched_wake_external(void *breeze);   /* Wake a breeze from a non-scheduler thread. */
+void    bzy_sched_ready(void *breeze);           /* Make a breeze woken by I/O runnable: the caller's own deque on a worker, its home worker's queue elsewhere. */
 
 /**
  * IOCP core (6b-2).
@@ -265,6 +266,10 @@ void  bzy_iocp_park(IocpOp *op);         /* Park until the completion thread wak
 unsigned long bzy_iocp_op_bytes(IocpOp *op);  /* Bytes transferred (valid after resume). */
 int   bzy_iocp_op_err(IocpOp *op);            /* 0 on success else a Winsock error (valid after resume). */
 int64_t bzy_iocp_inflight(void);         /* Breezes parked on a network op (Windows: iocp.c; Linux: reactor_epoll.c). */
+int     bzy_netpoll(int64_t timeout_ms);  /* Poll network I/O on this worker (0 = no wait, -1 = until an event or a break); woken breezes go on this worker. Returns how many were woken. */
+void    bzy_netpoll_break(void);          /* Make a worker blocked in bzy_netpoll return now. */
+int64_t bzy_netpoll_pending(void);        /* Breezes parked on I/O that bzy_netpoll can wake (0 = workers need not poll). */
+void    bzy_sched_io_parked(void);        /* The backend's first parked I/O: make sure some worker will poll for it. */
 void  bzy_iocp_shutdown(void);           /* Stop the completion thread + close the port (no-op if unused). */
 /* Linux epoll reactor (the IOCP counterpart): readiness-park primitives for sockets live in pollstate.h (bzy_poll_wait / bzy_reactor_deregister); the lifecycle hooks stay here so non-socket runtime code can drive shutdown. */
 void  bzy_reactor_ensure(void);          /* Lazily create the epoll instance + reactor threads. */

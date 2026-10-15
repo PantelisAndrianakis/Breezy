@@ -458,6 +458,18 @@ else
 fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
+# One worker: with no helper thread, that worker must sleep in the network poll itself and still honor socket timeouts.
+check_one_worker() {
+    local name="$1" target="$2" expected="$3"
+    bzy_build "$target"
+    if [ $? -ne 0 ]; then echo "  $name: COMPILE FAILED"; fail=1; return; fi
+    local got; got="$(BZY_WORKERS=1 timeout 20 ./out.exe)"
+    got="${got//$'\r'/}"
+    if [ "$got" == "$expected" ]; then echo "  $name: OK"
+    else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
+}
+check_one_worker tcp_echo_one_worker       tests/samples/pass/net/tcp_echo.bzy       $'4'
+check_one_worker socket_timeout_one_worker tests/samples/pass/net/socket_timeout.bzy $'2'
 check close_wakes_peer tests/samples/pass/net/close_wakes_peer.bzy "ok"
 check filechannel   tests/samples/pass/io/filechannel.bzy    $'10'
 check filelock      tests/samples/pass/io/filelock.bzy       $'true\n10'
