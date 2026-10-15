@@ -238,7 +238,6 @@ static __thread int           t_requeue;
 static __thread int           t_finished;
 /* 1 on a scheduler worker thread (and the main thread acting as worker 0); 0 on offload/reactor/foreign threads. */
 static __thread int           t_is_worker;
-static __thread int           t_ticks;       /* Dispatches since this worker last polled the network. */
 /**
  * FFI: depth of foreign (C) callbacks running on this thread.
  * A callback runs synchronously inside a C stack frame, so it must not park/yield (would unwind the C frame) or throw across the C boundary.
@@ -714,6 +713,7 @@ static Breeze *find_work(void)
 /* The scheduler loop, run by every worker thread. */
 static void worker_loop(void)
 {
+	int ticks = 0; // Dispatches since this worker last polled the network.
 	for (;;)
 	{
 		Breeze *b = find_work();
@@ -884,9 +884,9 @@ run:
 			}
 		}
 
-		if (++t_ticks == POLL_TICK_EVERY)
+		if (++ticks == POLL_TICK_EVERY)
 		{
-			t_ticks = 0;
+			ticks = 0;
 			poll_now(); // A busy worker still polls now and then, so ready sockets are not left waiting while every worker runs.
 		}
 	}
