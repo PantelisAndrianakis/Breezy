@@ -77,6 +77,16 @@ static const char *C_PRELUDE =
 	"void bzy_btree_put(void *t, int64_t key, int64_t val);\n"
 	"int64_t bzy_pq_poll(void *q);\n"
 	"int64_t bzy_pq_peek(void *q);\n"
+	"int64_t bzy_rnd_long(void);\n"
+	"int64_t bzy_rnd_int(void);\n"
+	"int64_t bzy_rnd_bool(void);\n"
+	"double bzy_rnd_double(void);\n"
+	"int64_t bzy_rnd_get_i(int64_t bound);\n"
+	"int64_t bzy_rnd_get_ii(int64_t origin, int64_t bound);\n"
+	"int64_t bzy_rnd_get_l(int64_t bound);\n"
+	"int64_t bzy_rnd_get_ll(int64_t origin, int64_t bound);\n"
+	"double bzy_rnd_get_d(double bound);\n"
+	"double bzy_rnd_get_dd(double origin, double bound);\n"
 	"\n"
 	"/* List/Stack/Queue/Deque push of an integer: store into the ring when there is room and the vector is not shared across cores (gcinfo bit 3), else the runtime grows or locks. Layout: len@24 cap@32 head@40 data@48. */\n"
 	"static inline void bzy_c_vec_add(char *v, int64_t x)\n"
@@ -746,6 +756,29 @@ static void c_expr(CUnit *u, const Expr *e)
 
 	if (e->kind == EX_CALL && !ir_is_clock_read(e))
 	{
+		// A Random builtin: the runtime function itself, double bounds as doubles and integer bounds widened to 64 bits.
+		const char *rfn = ir_c_rnd(e);
+		if (rfn)
+		{
+			const char *rt = c_type(e->type.kind);
+			if (!rt)
+			{
+				u->ok = 0;
+				return;
+			}
+
+			cbuf_printf(&u->out, "((%s)%s(", rt, rfn);
+			for (int i = 0; i < e->arg_count; i++)
+			{
+				cbuf_printf(&u->out, "%s(%s)(", i ? ", " : "", e->args[i]->type.kind == TY_DOUBLE ? "double" : "int64_t");
+				c_expr(u, e->args[i]);
+				cbuf_printf(&u->out, ")");
+			}
+
+			cbuf_printf(&u->out, "))");
+			return;
+		}
+
 		c_user_call(u, e);
 		return;
 	}

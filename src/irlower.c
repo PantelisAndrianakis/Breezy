@@ -165,6 +165,52 @@ FuncInfo *ir_c_callee(const Expr *e)
 	return ok && cemit_func_ok(fi->ast) ? fi : NULL;
 }
 
+/**
+ * C route: a Random builtin the runtime serves without ever throwing (a bad bound yields 0).
+ * nextLong, nextInt, nextBool and nextDouble, and get with integer or double bounds; float results stay on the emitter.
+ * Returns the runtime function's name, or NULL.
+ */
+const char *ir_c_rnd(const Expr *e)
+{
+	if (e->kind != EX_CALL || strncmp(e->name, "Random.", 7) != 0)
+	{
+		return NULL;
+	}
+
+	const char *m = e->name + 7;
+	if (e->arg_count == 0)
+	{
+		return strcmp(m, "nextLong") == 0 ? "bzy_rnd_long"
+			   : strcmp(m, "nextInt") == 0 ? "bzy_rnd_int"
+			   : strcmp(m, "nextBool") == 0 ? "bzy_rnd_bool"
+			   : strcmp(m, "nextDouble") == 0 ? "bzy_rnd_double" : NULL;
+	}
+
+	if (strcmp(m, "get") != 0 || e->arg_count > 2)
+	{
+		return NULL;
+	}
+
+	TypeKind k = e->args[0]->type.kind;
+	int two = e->arg_count == 2;
+	if (k == TY_DOUBLE)
+	{
+		return two ? "bzy_rnd_get_dd" : "bzy_rnd_get_d";
+	}
+
+	if (k == TY_LONG)
+	{
+		return two ? "bzy_rnd_get_ll" : "bzy_rnd_get_l";
+	}
+
+	if (ty_is_int(k))
+	{
+		return two ? "bzy_rnd_get_ii" : "bzy_rnd_get_i";
+	}
+
+	return NULL;
+}
+
 /* 1 when expression e, or any sub-expression, names the local at off. */
 static int expr_names_off(const Expr *e, int off)
 {
@@ -322,8 +368,8 @@ static int elig_expr(const Expr *e)
 			return 1;
 		}
 
-		// C route: a call to a function that is itself compiled whole to C.
-		if (elig_allow_switch && ir_c_callee(e))
+		// C route: a non-throwing Random builtin, or a call to a function that is itself compiled whole to C.
+		if (elig_allow_switch && (ir_c_rnd(e) || ir_c_callee(e)))
 		{
 			for (int i = 0; i < e->arg_count; i++)
 			{

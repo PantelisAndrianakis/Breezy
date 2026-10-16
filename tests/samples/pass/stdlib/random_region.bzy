@@ -1,0 +1,85 @@
+// Random builtins inside loops compiled through the C route. The generator is
+// seeded from the clock, so the checks are properties: every bounded value lands
+// in its range (a two-bound get includes its bound), nextDouble stays in [0, 1),
+// a bad bound yields 0 and nextBool is 0 or 1. Prints 0 (range misses), 0 (double
+// misses), 0 (bad-bound results summed) and 1 (both bool values seen).
+void main()
+{
+	long misses;
+	misses = 0;
+	for (int i = 0; i < 10000; i = i + 1)
+	{
+		int a;
+		a = Random.get(7);
+		long b;
+		b = Random.get(100L, 200L);
+		int c;
+		c = Random.get(-5, 5);
+		if (a < 0 or a >= 7)
+		{
+			misses = misses + 1;
+		}
+
+		if (b < 100 or b > 200)
+		{
+			misses = misses + 1;
+		}
+
+		if (c < -5 or c > 5)
+		{
+			misses = misses + 1;
+		}
+	}
+
+	print(misses);
+
+	long dmiss;
+	dmiss = 0;
+	for (int i = 0; i < 10000; i = i + 1)
+	{
+		double d;
+		d = Random.nextDouble();
+		double g;
+		g = Random.get(2.5);
+		if (d < 0.0 or d >= 1.0 or g < 0.0 or g >= 2.5)
+		{
+			dmiss = dmiss + 1;
+		}
+	}
+
+	print(dmiss);
+
+	long bad;
+	bad = 0;
+	for (int i = 0; i < 100; i = i + 1)
+	{
+		bad = bad + Random.get(0) + Random.get(-3);
+	}
+
+	print(bad);
+
+	long ones;
+	ones = 0;
+	long zeros;
+	zeros = 0;
+	for (int i = 0; i < 1000; i = i + 1)
+	{
+		if (Random.nextBool())
+		{
+			ones = ones + 1;
+		}
+		else
+		{
+			zeros = zeros + 1;
+		}
+	}
+
+	if (ones > 0 and zeros > 0 and ones + zeros == 1000)
+	{
+		print(1);
+	}
+	else
+	{
+		print(0);
+	}
+}

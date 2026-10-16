@@ -43,6 +43,7 @@ int ir_is_clock_read(const Expr *e);
 int ir_c_push(const Expr *e);
 const char *ir_c_call(const Expr *e);   /* C route: the runtime function for a non-throwing integer Map/TreeMap/PriorityQueue call on a local, or NULL. */
 FuncInfo *ir_c_callee(const Expr *e);   /* C route: the callee of a direct call to a function compiled whole to C, or NULL. */
+const char *ir_c_rnd(const Expr *e);   /* C route: the runtime function for a non-throwing Random builtin call, or NULL. */
 int ir_c_foreach(const Stmt *s);   /* C route: a foreach over a local string, integer or double array, or such a List/Stack/Queue/Deque whose body never names it. */
 
 /**
