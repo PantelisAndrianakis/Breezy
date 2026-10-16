@@ -69,6 +69,14 @@ static const char *C_PRELUDE =
 	"int64_t bzy_clock_millis(void);\n"
 	"void bzy_vec_push_back(void *v, int64_t val);\n"
 	"void bzy_pq_add(void *q, int64_t val);\n"
+	"int64_t bzy_map_get(void *m, int64_t key);\n"
+	"int64_t bzy_map_has(void *m, int64_t key);\n"
+	"void bzy_map_put(void *m, int64_t key, int64_t val);\n"
+	"int64_t bzy_btree_get(void *t, int64_t key);\n"
+	"int64_t bzy_btree_has(void *t, int64_t key);\n"
+	"void bzy_btree_put(void *t, int64_t key, int64_t val);\n"
+	"int64_t bzy_pq_poll(void *q);\n"
+	"int64_t bzy_pq_peek(void *q);\n"
 	"\n"
 	"/* List/Stack/Queue/Deque push of an integer: store into the ring when there is room and the vector is not shared across cores (gcinfo bit 3), else the runtime grows or locks. Layout: len@24 cap@32 head@40 data@48. */\n"
 	"static inline void bzy_c_vec_add(char *v, int64_t x)\n"
@@ -206,7 +214,11 @@ typedef struct
 	TypeKind    local_kind[CEMIT_MAX_LOCALS]; /* Its type. */
 	int         loops;                        /* Depth of enclosing loops at the statement being emitted. */
 	int         fe;                           /* Counter naming each foreach's C temporaries. */
+	int         ncallee;
+	FuncInfo   *callees[16];                  /* Whole-C functions the unit calls (each needs a prototype). */
 } CUnit;
+
+static const char *c_param_type(TypeKind k);
 
 /* The C type holding a Breezy scalar or array reference, or NULL. */
 static const char *c_type(TypeKind k)
@@ -675,6 +687,56 @@ static void c_unary(CUnit *u, const Expr *e, const char *t)
 	}
 }
 
+/* A whole-C callee's linker symbol: its asm label without the assembler's '$' escape. */
+static const char *c_callee_symbol(const FuncInfo *fi)
+{
+	return fi->asm_label[0] == '$' ? fi->asm_label + 1 : fi->asm_label;
+}
+
+/* A direct call to a function compiled whole to C (ir_c_callee): an ordinary C call, arguments widened as its C signature takes them. */
+static void c_user_call(CUnit *u, const Expr *e)
+{
+	FuncInfo *fi = ir_c_callee(e);
+	if (!fi)
+	{
+		u->ok = 0;
+		return;
+	}
+
+	int seen = 0;
+	for (int i = 0; i < u->ncallee; i++)
+	{
+		seen |= u->callees[i] == fi;
+	}
+
+	if (!seen)
+	{
+		if (u->ncallee == 16)
+		{
+			u->ok = 0;
+			return;
+		}
+
+		u->callees[u->ncallee++] = fi;
+	}
+
+	const char *rt = e->type.kind == TY_VOID ? NULL : c_type(e->type.kind);
+	if (rt)
+	{
+		cbuf_printf(&u->out, "((%s)", rt);
+	}
+
+	cbuf_printf(&u->out, "%s(", c_callee_symbol(fi));
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		cbuf_printf(&u->out, "%s(%s)(", i ? ", " : "", c_param_type(fi->param_types[i].kind));
+		c_expr(u, e->args[i]);
+		cbuf_printf(&u->out, ")");
+	}
+
+	cbuf_printf(&u->out, rt ? "))" : ")");
+}
+
 static void c_expr(CUnit *u, const Expr *e)
 {
 	if (!u->ok)
@@ -682,8 +744,37 @@ static void c_expr(CUnit *u, const Expr *e)
 		return;
 	}
 
+	if (e->kind == EX_CALL && !ir_is_clock_read(e))
+	{
+		c_user_call(u, e);
+		return;
+	}
+
 	if (e->kind == EX_METHOD_CALL)
 	{
+		// A non-throwing integer container call: the runtime function itself, receiver from its frame slot, keys and values widened to 64 bits as the emitter passes them.
+		const char *fn = ir_c_call(e);
+		if (fn)
+		{
+			const char *rt = c_type(e->type.kind); // NULL for a void put.
+			note_local(u, e->lhs->anno_int, TY_GENERIC);
+			if (rt)
+			{
+				cbuf_printf(&u->out, "((%s)", rt);
+			}
+
+			cbuf_printf(&u->out, "%s(l%d", fn, e->lhs->anno_int);
+			for (int i = 0; i < e->arg_count; i++)
+			{
+				cbuf_printf(&u->out, ", (int64_t)(");
+				c_expr(u, e->args[i]);
+				cbuf_printf(&u->out, ")");
+			}
+
+			cbuf_printf(&u->out, rt ? "))" : ")");
+			return;
+		}
+
 		// An integer push onto a local container: the inline helper, with the receiver read from its frame slot.
 		int push = ir_c_push(e);
 		if (!push)
@@ -1521,6 +1612,20 @@ int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *of
 		c_emit_final(u.finals[i]);
 	}
 
+	for (int i = 0; i < u.ncallee; i++)
+	{
+		// The callee is defined in this file under its label (possibly further down), so a prototype lets the region call it.
+		const FuncInfo *fi = u.callees[i];
+		TypeKind rk = fi->ret_type.kind;
+		cbuf_printf(&g_src, "%s %s(", rk == TY_VOID ? "void" : rk == TY_DOUBLE ? "double" : "int64_t", c_callee_symbol(fi));
+		for (int j = 0; j < fi->param_count; j++)
+		{
+			cbuf_printf(&g_src, "%s%s", j ? ", " : "", c_param_type(fi->param_types[j].kind));
+		}
+
+		cbuf_printf(&g_src, "%s);\n", fi->param_count ? "" : "void");
+	}
+
 	cbuf_printf(&g_src, "\nstatic inline __attribute__((always_inline)) void %s_body(char *fp, char *ra)\n{\n", sym);
 	for (int i = 0; i < u.nlocal; i++)
 	{
@@ -1573,6 +1678,25 @@ static int c_is_param_slot(const Func *f, int off)
 	}
 
 	return 0;
+}
+
+int cemit_func_ok(const Func *f)
+{
+	TypeKind rk = f->ret_type.kind;
+	if (rk != TY_VOID && !c_type(rk))
+	{
+		return 0;
+	}
+
+	CUnit u;
+	memset(&u, 0, sizeof(u));
+	u.ok = 1;
+	u.fn = f;
+	u.ret_wide = rk == TY_DOUBLE ? "double" : rk != TY_VOID ? "int64_t" : NULL;
+	u.ret_narrow = c_type(rk);
+	c_block(&u, f->body, 0);
+	cbuf_free(&u.out);
+	return u.ok;
 }
 
 int cemit_func(const Func *f, const char *label)

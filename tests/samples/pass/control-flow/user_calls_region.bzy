@@ -1,0 +1,89 @@
+// Loops compiled through the C route that call functions which are themselves
+// compiled whole to C: a narrow int result with negatives, a double result, an
+// array argument and a bool result. A loop calling a function that prints stays
+// off the C route and must still run. Prints -4950 (sum of negations), 2475
+// (halves summed), 4950 (array element sum through a helper), 50 (evens) and 3
+// (the printing loop's count, after its three lines).
+int neg(int x)
+{
+	return 0 - x;
+}
+
+double half(long x)
+{
+	return x * 0.5;
+}
+
+long at(long[] a, long i)
+{
+	return a[i % 100];
+}
+
+bool even(long x)
+{
+	return x % 2 == 0;
+}
+
+int shout(int x)
+{
+	print(x);
+	return 1;
+}
+
+void main()
+{
+	long ns;
+	ns = 0;
+	for (int i = 0; i < 100; i = i + 1)
+	{
+		ns = ns + neg(i);
+	}
+
+	print(ns);
+
+	double hs;
+	hs = 0.0;
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		hs = hs + half(i);
+	}
+
+	print((long)hs);
+
+	long[] a;
+	a = new long[100];
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		a[i] = i;
+	}
+
+	long as;
+	as = 0;
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		as = as + at(a, i);
+	}
+
+	print(as);
+
+	int evens;
+	evens = 0;
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		if (even(i))
+		{
+			evens = evens + 1;
+		}
+	}
+
+	print(evens);
+
+	int count;
+	count = 0;
+	for (int i = 7; i < 10; i = i + 1)
+	{
+		count = count + shout(i);
+	}
+
+	print(count);
+}

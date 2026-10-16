@@ -260,6 +260,8 @@ check foreach_list_region tests/samples/pass/collections/foreach_list_region.bzy
 check foreach_array_region tests/samples/pass/collections/foreach_array_region.bzy $'-128\n2500\n45\n552'
 check foreach_double tests/samples/pass/collections/foreach_double.bzy $'249750\n499500\ntrue'
 check foreach_string_region tests/samples/pass/collections/foreach_string_region.bzy $'461\n0\n3'
+check container_calls_region tests/samples/pass/collections/container_calls_region.bzy $'-500500\n500\n0\n-1000\n10\n55'
+check user_calls_region tests/samples/pass/control-flow/user_calls_region.bzy $'-4950\n2475\n4950\n50\n7\n8\n9\n3'
 # The same double foreach through the emitter (C route off), where the loop variable may live in an XMM register.
 BZY_C=0 bzy_build tests/samples/pass/collections/foreach_double.bzy
 if [ $? -ne 0 ]; then echo "  foreach_double_emitter: COMPILE FAILED"; fail=1

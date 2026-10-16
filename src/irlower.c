@@ -1,6 +1,7 @@
 ﻿#include "irlower.h"
 #include "lexer.h"   /* TokenType values for operators. */
 #include "config.h"  /* bzy_ir_calls_enabled. */
+#include "cemit.h"   /* cemit_func_ok: the C route's whole-function test. */
 #include <string.h>  /* strcmp for the arr.length field name. */
 #include <stdlib.h>  /* malloc for the IR_CALL argument-vreg array. */
 
@@ -78,6 +79,90 @@ int ir_c_push(const Expr *e)
 	}
 
 	return 0;
+}
+
+/**
+ * C route: a container call the runtime serves without ever throwing, on a local receiver with integer keys and values.
+ * Map and TreeMap get, put and containsKey; PriorityQueue poll and peek.
+ * Each runtime function takes the container's stripe lock itself when the container is shared.
+ * Returns the runtime function's name, or NULL.
+ */
+const char *ir_c_call(const Expr *e)
+{
+	if (e->kind != EX_METHOD_CALL || !e->lhs || e->lhs->kind != EX_IDENT || e->lhs->anno_capture || e->lhs->anno_int <= 0
+			|| !e->lhs->type.elem || !ty_is_int(e->lhs->type.elem->kind))
+	{
+		return NULL;
+	}
+
+	const TypeRef *t = &e->lhs->type;
+	const char *m = e->name;
+	int map = t->kind == TY_MAP;
+	int tree = t->kind == TY_GENERIC && strcmp(t->class_name, "TreeMap") == 0;
+	if ((map || tree) && t->elem2 && ty_is_int(t->elem2->kind))
+	{
+		if (strcmp(m, "get") == 0 && e->arg_count == 1)
+		{
+			return map ? "bzy_map_get" : "bzy_btree_get";
+		}
+
+		if (strcmp(m, "containsKey") == 0 && e->arg_count == 1)
+		{
+			return map ? "bzy_map_has" : "bzy_btree_has";
+		}
+
+		if (strcmp(m, "put") == 0 && e->arg_count == 2)
+		{
+			return map ? "bzy_map_put" : "bzy_btree_put";
+		}
+
+		return NULL;
+	}
+
+	if (t->kind == TY_GENERIC && strcmp(t->class_name, "PriorityQueue") == 0 && e->arg_count == 0)
+	{
+		if (strcmp(m, "poll") == 0)
+		{
+			return "bzy_pq_poll";
+		}
+
+		if (strcmp(m, "peek") == 0)
+		{
+			return "bzy_pq_peek";
+		}
+	}
+
+	return NULL;
+}
+
+/**
+ * C route: a direct call to a free function that is itself compiled whole to C.
+ * Such a callee is call-free and throw-free and lives in the same generated C file under its label, so the call is an ordinary C call that no exception can unwind through.
+ * The test mirrors the emitter's own choice (ir_eligible with the plain flags, then cemit), so the callee is sure to be defined in C.
+ * Returns the callee, or NULL.
+ */
+FuncInfo *ir_c_callee(const Expr *e)
+{
+	if (e->kind != EX_CALL || !g_ir_tt || e->anno_indirect || strchr(e->name, '.'))
+	{
+		return NULL;
+	}
+
+	FuncInfo *fi = types_find_func_idx(g_ir_tt, e->name, e->anno_overload);
+	if (!fi || !fi->ast || fi->is_extern || fi->is_dynamic || fi->is_blocking || fi->is_variadic || fi->ast->is_lambda
+			|| e->arg_count != fi->param_count)
+	{
+		return NULL;
+	}
+
+	int rm = elig_region_mode;
+	int sw = elig_allow_switch;
+	elig_region_mode = 0;
+	elig_allow_switch = 0;
+	int ok = ir_eligible(fi->ast);
+	elig_region_mode = rm;
+	elig_allow_switch = sw;
+	return ok && cemit_func_ok(fi->ast) ? fi : NULL;
 }
 
 /* 1 when expression e, or any sub-expression, names the local at off. */
@@ -237,10 +322,47 @@ static int elig_expr(const Expr *e)
 			return 1;
 		}
 
+		// C route: a call to a function that is itself compiled whole to C.
+		if (elig_allow_switch && ir_c_callee(e))
+		{
+			for (int i = 0; i < e->arg_count; i++)
+			{
+				if (!elig_expr(e->args[i]))
+				{
+					return 0;
+				}
+			}
+
+			return 1;
+		}
+
 		return elig_region_mode && elig_call_target(e) != NULL;
 	case EX_METHOD_CALL:
-		// C route only: an integer push onto a local List/Stack/Queue/Deque or PriorityQueue.
-		return elig_allow_switch && ir_c_push(e) && elig_expr(e->args[0]);
+		// C route only: an integer push onto a local List/Stack/Queue/Deque or PriorityQueue, or a non-throwing integer container call (ir_c_call).
+		if (!elig_allow_switch)
+		{
+			return 0;
+		}
+
+		if (ir_c_push(e))
+		{
+			return elig_expr(e->args[0]);
+		}
+
+		if (!ir_c_call(e))
+		{
+			return 0;
+		}
+
+		for (int i = 0; i < e->arg_count; i++)
+		{
+			if (!elig_expr(e->args[i]))
+			{
+				return 0;
+			}
+		}
+
+		return 1;
 	case EX_INT:
 	case EX_BOOL:
 	case EX_FLOAT:

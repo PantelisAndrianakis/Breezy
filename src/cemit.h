@@ -20,6 +20,9 @@ int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *of
  */
 int cemit_func(const Func *f, const char *label);
 
+/* 1 when cemit_func would accept free function f; emits nothing. */
+int cemit_func_ok(const Func *f);
+
 /* The accumulated C source, or NULL when no unit was emitted. */
 const char *cemit_source(void);
 

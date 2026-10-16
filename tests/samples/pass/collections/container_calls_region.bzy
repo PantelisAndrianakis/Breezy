@@ -1,0 +1,65 @@
+// Integer Map, TreeMap and PriorityQueue calls inside loops compiled through the
+// C route: put/get/containsKey with negative int keys and values (sign extension
+// must match the emitter), a missing key reading 0, and poll/peek in order.
+// Prints -500500 (the map sum), 500 (keys present), 0 (a missing key),
+// -1000 (the tree map sum of -1 per key), 10 (the queue's smallest) and 55 (the
+// first ten polls).
+void main()
+{
+	Map<int, int> m;
+	m = new Map<int, int>();
+	for (int i = 1; i <= 1000; i = i + 1)
+	{
+		m.put(0 - i, 0 - i);
+	}
+
+	long msum;
+	msum = 0;
+	int present;
+	present = 0;
+	for (int i = 1; i <= 1000; i = i + 1)
+	{
+		msum = msum + m.get(0 - i);
+		if (m.containsKey(0 - i * 2))
+		{
+			present = present + 1;
+		}
+	}
+
+	print(msum);
+	print(present);
+	print(m.get(5));
+
+	TreeMap<long, int> t;
+	t = new TreeMap<long, int>();
+	for (long i = 0; i < 1000; i = i + 1)
+	{
+		t.put(i * 7919 % 1000, -1);
+	}
+
+	long tsum;
+	tsum = 0;
+	for (long i = 0; i < 1000; i = i + 1)
+	{
+		tsum = tsum + t.get(i);
+	}
+
+	print(tsum);
+
+	PriorityQueue<long> q;
+	q = new PriorityQueue<long>();
+	for (long i = 100; i >= 1; i = i - 1)
+	{
+		q.add(i * 10);
+	}
+
+	print(q.peek());
+	long polled;
+	polled = 0;
+	for (int i = 0; i < 10; i = i + 1)
+	{
+		polled = polled + q.poll() / 10;
+	}
+
+	print(polled);
+}
