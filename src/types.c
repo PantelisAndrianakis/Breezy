@@ -195,7 +195,7 @@ static int typeref_same(TypeRef *a, TypeRef *b)
 	return typeref_same(a->elem,b->elem) && typeref_same(a->elem2,b->elem2);
 }
 
-static int g_shared_changed;   /* Fixpoint dirty flag for the current computation. */
+static int g_shared_changed; // Fixpoint dirty flag for the current computation.
 
 static void mark_type_shared(TypeTable *tt, TypeRef *t);
 

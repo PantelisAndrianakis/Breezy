@@ -15,20 +15,20 @@ struct IocpOp
 {
 	OVERLAPPED ov;
 	void   *breeze;
-	SRWLOCK lock;       /* park_unlock hand-off: completion can't wake until breeze is off-CPU. */
+	SRWLOCK lock; // park_unlock hand-off: completion can't wake until breeze is off-CPU.
 	DWORD   bytes;
 	int     err;
 };
 _Static_assert(sizeof(struct IocpOp) <= BZY_IOCP_OP_SIZE, "BZY_IOCP_OP_SIZE too small.");
 
-static HANDLE g_port;                 /* The completion port. */
+static HANDLE g_port; // The completion port.
 static HANDLE *g_threads;
 static int     g_nthreads;
-static volatile LONG g_inflight;      /* Breezes parked on a network op. */
-static int     g_started;             /* Guarded by g_start_lock. */
+static volatile LONG g_inflight; // Breezes parked on a network op.
+static int     g_started; // Guarded by g_start_lock.
 static SRWLOCK g_start_lock = SRWLOCK_INIT;
 static int     g_wsa_started;
-static int     g_skip;                /* 1 when sockets complete inline without a packet (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS). */
+static int     g_skip; // 1 when sockets complete inline without a packet (FILE_SKIP_COMPLETION_PORT_ON_SUCCESS).
 
 /* Test hook: lets the unit test post a fake completion to the real port. */
 void *bzy_iocp_test_port(void)

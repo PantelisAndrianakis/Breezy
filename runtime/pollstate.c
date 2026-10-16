@@ -1,6 +1,6 @@
 #include "pollstate.h"
 
-char bzy_pd_ready_sentinel;   /* Address-only sentinel; its value is never read. */
+char bzy_pd_ready_sentinel; // Address-only sentinel; its value is never read.
 
 void bzy_poll_init(PollDesc *pd)
 {

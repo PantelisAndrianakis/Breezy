@@ -16,7 +16,7 @@
 #if defined(_WIN32)
 #include <intrin.h>
 #elif defined(__SANITIZE_ADDRESS__)
-#include <pthread.h>   /* pthread_getattr_np: real thread-stack bounds for ASan fiber tracking. */
+#include <pthread.h> // pthread_getattr_np: real thread-stack bounds for ASan fiber tracking.
 #endif
 
 /**
@@ -27,17 +27,17 @@
 
 struct BzyCoroutine
 {
-	void          *sp;        /* Saved stack pointer while suspended. */
-	void          *stack_hi;  /* Top (high) of the stack region -> TEB StackBase on Win64. */
-	void          *stack_lo;  /* Bottom (low) of the stack region -> TEB StackLimit on Win64. */
-	void          *alloc;     /* malloc'd stack block (NULL for a promoted OS thread). */
+	void          *sp; // Saved stack pointer while suspended.
+	void          *stack_hi; // Top (high) of the stack region -> TEB StackBase on Win64.
+	void          *stack_lo; // Bottom (low) of the stack region -> TEB StackLimit on Win64.
+	void          *alloc; // malloc'd stack block (NULL for a promoted OS thread).
 	BzyCoroutineFn fn;
 	void          *arg;
-	int            is_thread; /* 1 = promoted OS thread; never recycle or free it. */
-	BzyCoroutine  *pool_next; /* Free-list link while pooled. */
-	void          *attach;    /* Caller bookkeeping that rides through the pool (scheduler's Breeze). */
+	int            is_thread; // 1 = promoted OS thread; never recycle or free it.
+	BzyCoroutine  *pool_next; // Free-list link while pooled.
+	void          *attach; // Caller bookkeeping that rides through the pool (scheduler's Breeze).
 #if defined(__SANITIZE_ADDRESS__)
-	void          *asan_fake; /* ASan's saved fake-stack for this fiber while it is suspended. */
+	void          *asan_fake; // ASan's saved fake-stack for this fiber while it is suspended.
 #endif
 };
 
@@ -59,23 +59,23 @@ static __thread BzyCoroutine  t_main;
  */
 extern void bzy_ctx_switch(void **save_sp, void *to_sp, void *to_hi, void *to_lo);
 extern void bzy_co_start(void);
-void        bzy_co_run(void);   /* Referenced from bzy_co_start. */
+void        bzy_co_run(void); // Referenced from bzy_co_start.
 
 #if defined(_WIN32)
 __asm__(
 	".text\n"
 	".globl bzy_ctx_switch\n"
-	"bzy_ctx_switch:\n"            /* rcx=save_sp, rdx=to_sp, r8=to_hi, r9=to_lo */
+	"bzy_ctx_switch:\n" // rcx=save_sp, rdx=to_sp, r8=to_hi, r9=to_lo
 	"  push %rbp\n  push %rbx\n  push %rdi\n  push %rsi\n"
 	"  push %r12\n  push %r13\n  push %r14\n  push %r15\n"
-	"  sub  $168, %rsp\n"          /* 160 xmm + 8 pad; keeps rsp 16-aligned for movaps */
+	"  sub  $168, %rsp\n" // 160 xmm + 8 pad; keeps rsp 16-aligned for movaps
 	"  movaps %xmm6,0(%rsp)\n  movaps %xmm7,16(%rsp)\n  movaps %xmm8,32(%rsp)\n  movaps %xmm9,48(%rsp)\n"
 	"  movaps %xmm10,64(%rsp)\n movaps %xmm11,80(%rsp)\n movaps %xmm12,96(%rsp)\n movaps %xmm13,112(%rsp)\n"
 	"  movaps %xmm14,128(%rsp)\n movaps %xmm15,144(%rsp)\n"
 	"  movq %rsp, (%rcx)\n"
 	"  movq %rdx, %rsp\n"
-	"  movq %r8, %gs:0x08\n"       /* TEB StackBase  */
-	"  movq %r9, %gs:0x10\n"       /* TEB StackLimit */
+	"  movq %r8, %gs:0x08\n" // TEB StackBase
+	"  movq %r9, %gs:0x10\n" // TEB StackLimit
 	"  movaps 0(%rsp),%xmm6\n  movaps 16(%rsp),%xmm7\n  movaps 32(%rsp),%xmm8\n  movaps 48(%rsp),%xmm9\n"
 	"  movaps 64(%rsp),%xmm10\n movaps 80(%rsp),%xmm11\n movaps 96(%rsp),%xmm12\n movaps 112(%rsp),%xmm13\n"
 	"  movaps 128(%rsp),%xmm14\n movaps 144(%rsp),%xmm15\n"
@@ -88,13 +88,13 @@ __asm__(
 	"  call bzy_co_run\n"
 	"  hlt\n"
 );
-#define BZY_CO_FRAME 232   /* 160 xmm + 8 pad + 64 (8 callee regs) */
+#define BZY_CO_FRAME 232 // 160 xmm + 8 pad + 64 (8 callee regs)
 #else
 __asm__(
 	".text\n"
 	".globl bzy_ctx_switch\n"
 	".type bzy_ctx_switch,@function\n"
-	"bzy_ctx_switch:\n"           /* rdi=save_sp, rsi=to_sp (rdx,rcx unused) */
+	"bzy_ctx_switch:\n" // rdi=save_sp, rsi=to_sp (rdx,rcx unused)
 	"  push %rbp\n  push %rbx\n  push %r12\n  push %r13\n  push %r14\n  push %r15\n"
 	"  mov  %rsp, (%rdi)\n"
 	"  mov  %rsi, %rsp\n"
@@ -106,7 +106,7 @@ __asm__(
 	"  call bzy_co_run\n"
 	"  hlt\n"
 );
-#define BZY_CO_FRAME 48    /* 6 callee regs */
+#define BZY_CO_FRAME 48 // 6 callee regs
 #endif
 
 void bzy_co_run(void)

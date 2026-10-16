@@ -25,28 +25,28 @@ typedef struct
 
 typedef struct CWaiter
 {
-	void            *breeze;   /* The parked breeze (a bzy_sched handle). */
+	void            *breeze; // The parked breeze (a bzy_sched handle).
 	struct CWaiter  *next;
 } CWaiter;
 
 typedef struct Channel
 {
-	void     *vtable;        /* 0  GC header. */
-	int64_t   rc;            /* 8  */
-	int64_t   gcinfo;        /* 16 */
-	int64_t   cap;           /* 24 Exact capacity (also the ring length). */
-	int64_t   mask;          /* 32 cap-1 when cap is a power of two, else 0 (use modulo). */
-	Cell     *cells;         /* 40 Ring of cap cells. */
-	int64_t   elem_managed;  /* 48 Elements are managed pointers (refcount across cores). */
-	int64_t   enq_pos;       /* 56 Next enqueue ticket (atomic). */
-	int64_t   deq_pos;       /* 64 Next dequeue ticket (atomic). */
-	int64_t   recv_waiters;  /* 72 Parked receivers (atomic; fast "should I wake?" check). */
-	int64_t   send_waiters;  /* 80 Parked senders (atomic). */
-	CWaiter  *send_head;     /* 88 */
-	CWaiter  *send_tail;     /* 96 */
-	CWaiter  *recv_head;     /* 104 */
-	CWaiter  *recv_tail;     /* 112 */
-	bzy_mutex lock;          /* 120 Guards the waiter lists only. */
+	void     *vtable; // 0  GC header.
+	int64_t   rc; // 8
+	int64_t   gcinfo; // 16
+	int64_t   cap; // 24 Exact capacity (also the ring length).
+	int64_t   mask; // 32 cap-1 when cap is a power of two, else 0 (use modulo).
+	Cell     *cells; // 40 Ring of cap cells.
+	int64_t   elem_managed; // 48 Elements are managed pointers (refcount across cores).
+	int64_t   enq_pos; // 56 Next enqueue ticket (atomic).
+	int64_t   deq_pos; // 64 Next dequeue ticket (atomic).
+	int64_t   recv_waiters; // 72 Parked receivers (atomic; fast "should I wake?" check).
+	int64_t   send_waiters; // 80 Parked senders (atomic).
+	CWaiter  *send_head; // 88
+	CWaiter  *send_tail; // 96
+	CWaiter  *recv_head; // 104
+	CWaiter  *recv_tail; // 112
+	bzy_mutex lock; // 120 Guards the waiter lists only.
 } Channel;
 
 static int64_t ring_index(Channel *c, int64_t pos)

@@ -7,7 +7,7 @@
 #include "generics.h"
 #include "types.h"
 #include "resolve.h"
-#include <string.h>   /* memset for hand-built IR functions. */
+#include <string.h> // memset for hand-built IR functions.
 
 /* Lex -> parse -> register -> resolve a snippet; return its first free function. */
 static TypeTable g_tt;

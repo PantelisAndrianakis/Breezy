@@ -3,13 +3,13 @@
 
 #include "ir.h"
 
-#define RA_NREGS   11      /* Base allocatable GP registers (rax stays scratch). */
-#define RA_MAXREGS 13      /* RA_NREGS + rcx, rdx: claimable when no shift / div-mod needs them. */
-#define RA_SPILLED (-1)    /* Not in a register: lives in a frame spill slot. */
+#define RA_NREGS   11 // Base allocatable GP registers (rax stays scratch).
+#define RA_MAXREGS 13 // RA_NREGS + rcx, rdx: claimable when no shift / div-mod needs them.
+#define RA_SPILLED (-1) // Not in a register: lives in a frame spill slot.
 
-#define RA_NXMM    4                       /* Allocatable xmm registers: xmm2..xmm5 (caller-saved on both ABIs). */
-#define RA_XMM0    RA_MAXREGS              /* First xmm index in the combined register-index space. */
-#define RA_NALL    (RA_MAXREGS + RA_NXMM)  /* Combined index space: GP 0..RA_MAXREGS-1, xmm RA_XMM0..RA_NALL-1. */
+#define RA_NXMM    4 // Allocatable xmm registers: xmm2..xmm5 (caller-saved on both ABIs).
+#define RA_XMM0    RA_MAXREGS // First xmm index in the combined register-index space.
+#define RA_NALL    (RA_MAXREGS + RA_NXMM) // Combined index space: GP 0..RA_MAXREGS-1, xmm RA_XMM0..RA_NALL-1.
 
 /**
  * A value's register class: integer/pointer values live in GP registers, double/ float values in xmm registers.
@@ -23,20 +23,20 @@ typedef enum { RC_GP = 0, RC_XMM = 1 } RegClass;
  */
 typedef struct
 {
-	int      *val_reg;       /* [nval] physical register index, or RA_SPILLED. */
-	int      *val_slot;      /* [nval] 0-based spill-slot index when spilled (emitter -> rbp offset). */
-	int       nval;          /* vreg_count + nlocal. */
-	int       vreg_count;    /* Real virtual registers (value ids below this). */
-	int       nlocal;        /* Distinct frame locals. */
-	long long *local_disp;   /* [nlocal] frame offset of local k (value id vreg_count+k). */
+	int      *val_reg; // [nval] physical register index, or RA_SPILLED.
+	int      *val_slot; // [nval] 0-based spill-slot index when spilled (emitter -> rbp offset).
+	int       nval; // vreg_count + nlocal.
+	int       vreg_count; // Real virtual registers (value ids below this).
+	int       nlocal; // Distinct frame locals.
+	long long *local_disp; // [nlocal] frame offset of local k (value id vreg_count+k).
 	int       used_reg[RA_NALL];
-	int      *val_class;     /* [nval] RegClass per value (RC_GP / RC_XMM). */
+	int      *val_class; // [nval] RegClass per value (RC_GP / RC_XMM).
 	int       spill_bytes;
-	int      *istart;        /* [nval] live-interval start position. */
-	int      *iend;          /* [nval] live-interval end position. */
-	int       hot_spill;       /* 1 if a temporary used in the deepest loop had to spill. */
-	int       hot_spill_count; /* How many distinct such temporaries spilled. */
-	long long *val_remat;    /* [nval] home-slot disp to rematerialize a spilled value from (-1 = none): the value is the single-def load of a local nothing stores, so reading the local's slot at each use replaces the spill slot and the def's store. */
+	int      *istart; // [nval] live-interval start position.
+	int      *iend; // [nval] live-interval end position.
+	int       hot_spill; // 1 if a temporary used in the deepest loop had to spill.
+	int       hot_spill_count; // How many distinct such temporaries spilled.
+	long long *val_remat; // [nval] home-slot disp to rematerialize a spilled value from (-1 = none): the value is the single-def load of a local nothing stores, so reading the local's slot at each use replaces the spill slot and the def's store.
 } IRAlloc;
 
 IRAlloc *ra_run(IRFunc *f);
@@ -50,8 +50,8 @@ int      ra_hot_spill(IRFunc *f);
 
 const char *ra_reg_name(int i);
 int  ra_is_callee_saved(int i, int linux_target);
-int  ra_reg_is_xmm(int i);                       /* 1 if combined index i is an xmm register. */
-int  ra_vreg_class(const IRAlloc *a, IRReg v);   /* RC_GP / RC_XMM of a value. */
+int  ra_reg_is_xmm(int i); // 1 if combined index i is an xmm register.
+int  ra_vreg_class(const IRAlloc *a, IRReg v); // RC_GP / RC_XMM of a value.
 
 /* Emitter queries. A register index in [0,RA_NREGS) or RA_SPILLED. */
 int  ra_vreg_reg(const IRAlloc *a, IRReg v);

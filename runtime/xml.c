@@ -65,7 +65,7 @@ typedef struct
 	const char *p, *end;
 	int64_t line, col;
 	const char *err;
-	void *names[XML_NAMES];   /* Interned element and attribute names (one reference each). */
+	void *names[XML_NAMES]; // Interned element and attribute names (one reference each).
 	int nnames;
 } Scan;
 
@@ -916,7 +916,7 @@ void *bzy_xml_descendants(void *node)
 
 /* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
 
-static __thread const char *g_xml_error;   /* Set by bzy_xml_parse; consumed by bzy_xml_check. */
+static __thread const char *g_xml_error; // Set by bzy_xml_parse; consumed by bzy_xml_check.
 
 /* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error message buffered for the codegen-emitted bzy_xml_check at the call site. */
 void *bzy_xml_parse(void *src)

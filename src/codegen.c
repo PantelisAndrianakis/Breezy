@@ -3644,7 +3644,7 @@ static void cg_sb_method(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 }
 
-static int cg_elem_kind(TypeKind k);   /* Defined below; used by containsValue. */
+static int cg_elem_kind(TypeKind k); // Defined below; used by containsValue.
 
 /**
  * Map methods lower to runtime calls (no vtable dispatch).
@@ -8920,8 +8920,8 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);
 static int  cg_region_find(Codegen *cg, const Stmt *s);
 static void cg_emit_region_stmt(Codegen *cg, Func *f, int r);
 static int cg_tt_has_statics(TypeTable *tt);
-static void cg_accum_loop(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main);   /* P5. */
-static void cg_accum_append(Codegen *cg, TypeTable *tt, Stmt *a);                       /* P5. */
+static void cg_accum_loop(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main); // P5.
+static void cg_accum_append(Codegen *cg, TypeTable *tt, Stmt *a); // P5.
 
 static void cg_store(Codegen *cg, TypeTable *tt, Expr *target)
 {

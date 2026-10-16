@@ -12,7 +12,7 @@
 #include "prelude.h"
 #include "cemit.h"
 #include <stdio.h>
-#include <stdlib.h>   /* putenv: keep the IR-region assertions off the default C route. */
+#include <stdlib.h> // putenv: keep the IR-region assertions off the default C route.
 #include <string.h>
 
 /**

@@ -3,7 +3,7 @@
 #include "types.h"
 #include "resolve.h"
 #include "prelude.h"
-#include "generics.h"   /* Drop uninstantiated generic templates (Pool<T>) before resolve, like the driver. */
+#include "generics.h" // Drop uninstantiated generic templates (Pool<T>) before resolve, like the driver.
 #include "ast.h"
 #include <string.h>
 

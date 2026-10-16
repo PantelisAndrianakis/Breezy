@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NREGS    4      /* r12..r15: the ABI-symmetric callee-saved integer registers. */
-#define NFREGS   4      /* xmm2..xmm5: caller-saved on BOTH Win64 and SysV, never used as codegen scratch. */
+#define NREGS    4 // r12..r15: the ABI-symmetric callee-saved integer registers.
+#define NFREGS   4 // xmm2..xmm5: caller-saved on BOTH Win64 and SysV, never used as codegen scratch.
 
 /**
  * A promotion candidate: a 64-bit integer local, its loop-weighted use count, and its live interval [lo,hi] in statement ticks.
@@ -16,24 +16,24 @@ typedef struct
 	long weight;
 	int  lo;
 	int  hi;
-	int  olo;   /* True live interval before loop-widening (used for the float call-free test). */
+	int  olo; // True live interval before loop-widening (used for the float call-free test).
 	int  ohi;
 } Cand;
 
 typedef struct
 {
-	int lo, hi;   /* A loop's tick span (entry statement .. last body tick), inclusive. */
+	int lo, hi; // A loop's tick span (entry statement .. last body tick), inclusive.
 } Span;
 
 typedef struct
 {
-	Cand *cand;             /* Integer promotion candidates; grown dynamically. */
+	Cand *cand; // Integer promotion candidates; grown dynamically.
 	int  ncand;
 	int  cand_cap;
-	Cand *fcand;            /* Double-local candidates for XMM promotion (parallel machinery). */
+	Cand *fcand; // Double-local candidates for XMM promotion (parallel machinery).
 	int  nfcand;
 	int  fcand_cap;
-	int  *ctick;            /* Statement ticks whose direct expressions emit a call (xmm2..5 clobber). */
+	int  *ctick; // Statement ticks whose direct expressions emit a call (xmm2..5 clobber).
 	int  nctick;
 	int  ctick_cap;
 	Span *loop;

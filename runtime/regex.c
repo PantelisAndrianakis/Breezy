@@ -10,11 +10,11 @@ typedef struct Node Node;
 struct Node
 {
 	int type;
-	unsigned char ch;        /* N_LIT. */
-	unsigned char set[32];   /* N_CLASS: 256-bit membership bitmap. */
-	int neg;                 /* N_CLASS: negated. */
-	int min, max;            /* N_REPEAT: max < 0 means unbounded. */
-	int gidx;                /* N_GROUP: 1-based capturing-group index. */
+	unsigned char ch; // N_LIT.
+	unsigned char set[32]; // N_CLASS: 256-bit membership bitmap.
+	int neg; // N_CLASS: negated.
+	int min, max; // N_REPEAT: max < 0 means unbounded.
+	int gidx; // N_GROUP: 1-based capturing-group index.
 	Node *a, *b;
 };
 
@@ -23,7 +23,7 @@ typedef struct
 	const char *p;
 	const char *end;
 	int ok;
-	int ngroup;              /* Capturing groups seen so far (assigns gidx). */
+	int ngroup; // Capturing groups seen so far (assigns gidx).
 } PS;
 
 static Node *node_new(int type)
@@ -418,8 +418,8 @@ typedef struct
 {
 	Inst *in;
 	int n, cap;
-	int captures;            /* Emit I_SAVE pairs around groups (else non-capturing). */
-	int ngroup;              /* Capturing groups in the pattern (0 = whole match only). */
+	int captures; // Emit I_SAVE pairs around groups (else non-capturing).
+	int ngroup; // Capturing groups in the pattern (0 = whole match only).
 } Prog;
 
 static int emit(Prog *p, int op)

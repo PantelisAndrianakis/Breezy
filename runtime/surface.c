@@ -16,7 +16,7 @@
 #endif
 
 #ifdef _WIN32
-#undef CreateWindow   /* windows.h macro-expands CreateWindow -> CreateWindowA; we use it as a struct field + SDL symbol (resolved by string name). */
+#undef CreateWindow // windows.h macro-expands CreateWindow -> CreateWindowA; we use it as a struct field + SDL symbol (resolved by string name).
 #endif
 
 /* ---- dl helpers (mirror runtime/tls.c). ---- */
@@ -64,7 +64,7 @@ static void *dl_sym(void *h, const char *n)
 #define BZ_SDL_INIT_VIDEO           0x00000020u
 #define BZ_SDL_WINDOWPOS_UNDEFINED  0x1FFF0000
 #define BZ_SDL_WINDOW_SHOWN         0x00000004u
-#define BZ_SDL_RENDERER_ACCELERATED 0x00000002u   /* No PRESENTVSYNC: vsync stays off. */
+#define BZ_SDL_RENDERER_ACCELERATED 0x00000002u // No PRESENTVSYNC: vsync stays off.
 #define BZ_SDL_PIXELFORMAT_ARGB8888 0x16362004u
 #define BZ_SDL_TEXTUREACCESS_STREAMING 1
 /* Event types. */
@@ -79,7 +79,7 @@ static void *dl_sym(void *h, const char *n)
 /* Dynamically-resolved SDL2 entry points. */
 static struct
 {
-	int loaded;            /* 0 = not tried, 1 = ok, -1 = failed. */
+	int loaded; // 0 = not tried, 1 = ok, -1 = failed.
 	int  (*Init)(uint32_t flags);
 	void (*Quit)(void);
 	void *(*CreateWindow)(const char *title, int x, int y, int w, int h, uint32_t flags);
@@ -152,12 +152,12 @@ typedef struct
 	char title[256];
 	bzy_thread thread;
 	int started;
-	bzy_mutex lock;          /* Guards the double-buffer swap + frame_ready. */
-	bzy_sem open_sem;        /* Posted once the window is ready or failed. */
-	bzy_sem frame_sem;       /* Posted by present() to wake the render thread. */
-	uint32_t *front, *back;  /* Double-buffered ARGB framebuffers (w*h each). */
+	bzy_mutex lock; // Guards the double-buffer swap + frame_ready.
+	bzy_sem open_sem; // Posted once the window is ready or failed.
+	bzy_sem frame_sem; // Posted by present() to wake the render thread.
+	uint32_t *front, *back; // Double-buffered ARGB framebuffers (w*h each).
 	volatile int frame_ready, stop, open, init_failed;
-	volatile long ring_head, ring_tail;   /* SPSC event ring. */
+	volatile long ring_head, ring_tail; // SPSC event ring.
 	int64_t ring[256];
 } SurfaceCtrl;
 

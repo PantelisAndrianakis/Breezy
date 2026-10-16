@@ -14,9 +14,9 @@ typedef struct
 	int64_t *objs;
 	int64_t ntry;
 	void *tryptr;
-	const char *file;   /* Source path for stack traces (NULL = no source). */
-	int64_t nline;      /* Number of [pc, line] pairs. */
-	int64_t *lines;     /* Flat [pc0, line0, pc1, line1, ...]. */
+	const char *file; // Source path for stack traces (NULL = no source).
+	int64_t nline; // Number of [pc, line] pairs.
+	int64_t *lines; // Flat [pc0, line0, pc1, line1, ...].
 } BzyExceptionFunc;
 
 /* Must match the codegen try-region layout (4 qwords). */
@@ -31,15 +31,15 @@ typedef struct
 extern BzyExceptionFunc *__bzy_exception_funcs[];
 extern int64_t __bzy_exception_func_count;
 
-extern void *__bzy_vtable_parents[];     /* Flat [child0, parent0, child1, parent1, ...]. */
-extern int64_t __bzy_vtable_parent_count;   /* Number of (child, parent) pairs. */
+extern void *__bzy_vtable_parents[]; // Flat [child0, parent0, child1, parent1, ...].
+extern int64_t __bzy_vtable_parent_count; // Number of (child, parent) pairs.
 
-extern char __vtable_IndexOutOfBounds[];   /* Emitted by codegen for the builtin class. */
-extern char __vtable_NumberFormatException[];   /* Reused for enum valueOf misses. */
+extern char __vtable_IndexOutOfBounds[]; // Emitted by codegen for the builtin class.
+extern char __vtable_NumberFormatException[]; // Reused for enum valueOf misses.
 
-static int64_t g_uncaught = 0;   /* Uncaught exceptions survived by the scheduler (atomic). */
+static int64_t g_uncaught = 0; // Uncaught exceptions survived by the scheduler (atomic).
 
-int64_t bzy_uncaught_count(void)   /* Lets the entry point exit non-zero after a survived crash. */
+int64_t bzy_uncaught_count(void) // Lets the entry point exit non-zero after a survived crash.
 {
 	return __atomic_load_n(&g_uncaught, __ATOMIC_RELAXED);
 }

@@ -34,7 +34,7 @@ typedef struct
 static int        g_ep = -1;
 static int        g_evfd = -1;
 static int        g_started;
-static int        g_inflight;                       /* Parked breezes (deadlock gate and poll gate). */
+static int        g_inflight; // Parked breezes (deadlock gate and poll gate).
 static bzy_mutex  g_start_lock = BZY_MUTEX_INIT;
 
 /* Wake `w`'s breeze after the park handshake: take w->lock (blocks until the breeze released it post-switch) then make it runnable. w->result must already be set. */

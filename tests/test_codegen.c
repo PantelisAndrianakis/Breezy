@@ -3,13 +3,13 @@
 #include "types.h"
 #include "resolve.h"
 #include "codegen.h"
-#include "config.h"   /* bzy_config_reset_cache: toggle BZY_IR for the SIMD case. */
-#include "cemit.h"    /* cemit_source/cemit_reset: inspect the C route's output. */
+#include "config.h" // bzy_config_reset_cache: toggle BZY_IR for the SIMD case.
+#include "cemit.h" // cemit_source/cemit_reset: inspect the C route's output.
 #include "prelude.h"
 #include "overload.h"
-#include "generics.h"   /* Mirror the driver: drop uninstantiated generic templates (e.g. the Pool<T> prelude class) before resolve/codegen. */
+#include "generics.h" // Mirror the driver: drop uninstantiated generic templates (e.g. the Pool<T> prelude class) before resolve/codegen.
 #include "grow.h"
-#include <stdlib.h>   /* putenv: force the emitter for these emitter-asm assertions. */
+#include <stdlib.h> // putenv: force the emitter for these emitter-asm assertions.
 
 #define MAX_U 64
 /* Holds the full emitted program: the always-on prelude (vectors + DateTime's civil-date math) already exceeds 100 KB of asm, and the desktop tests add the GUI prelude on top, so this must stay well clear of that total or trailing output (e.g. vtables emitted after the prelude) gets silently truncated. */

@@ -30,11 +30,11 @@ typedef struct
 	const TypeRef *param_types;
 	int param_count;
 	int min_args;
-	int is_variadic;   /* FFI variadic extern: accept argc > param_count (extra args unchecked). */
+	int is_variadic; // FFI variadic extern: accept argc > param_count (extra args unchecked).
 } OverloadCand;
 
-#define OVL_NONE  (-1)   /* No viable candidate. */
-#define OVL_AMBIG (-2)   /* Two or more equally-good candidates. */
+#define OVL_NONE  (-1) // No viable candidate.
+#define OVL_AMBIG (-2) // Two or more equally-good candidates.
 
 /**
  * Pick the best candidate for args[0..argc).

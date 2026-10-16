@@ -2,7 +2,7 @@
 #include "network_internal.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>       /* snprintf. */
+#include <stdio.h> // snprintf.
 
 /**
  * Spin-before-park for the request/response read path.
@@ -71,7 +71,7 @@ static void spin_outcome(int64_t *st, int hit)
 }
 
 #ifdef _WIN32
-#include <mswsock.h>     /* AcceptEx / ConnectEx / GetAcceptExSockaddrs. */
+#include <mswsock.h> // AcceptEx / ConnectEx / GetAcceptExSockaddrs.
 
 /**
  * Socket/Listener share this layout (object_size = 48):
@@ -694,9 +694,9 @@ void bzy_listener_close(void *l)
 #include "pollstate.h"
 #define SK_FD(o)     (*(int64_t*)((char*)(o) + 24))
 #define SK_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
-#define SK_POLL(o)   ((PollDesc*)((char*)(o) + 40))   /* Embedded after fd/closed. */
-#define SK_SPIN(o)   ((int64_t*)((char*)(o) + 40 + (int)sizeof(PollDesc)))   /* Adaptive spin state. */
-#define SK_OBJSIZE   (48 + (int)sizeof(PollDesc))      /* Grown handle (was 40). */
+#define SK_POLL(o)   ((PollDesc*)((char*)(o) + 40)) // Embedded after fd/closed.
+#define SK_SPIN(o)   ((int64_t*)((char*)(o) + 40 + (int)sizeof(PollDesc))) // Adaptive spin state.
+#define SK_OBJSIZE   (48 + (int)sizeof(PollDesc)) // Grown handle (was 40).
 
 static void bzy_socket_finalize(void *o)
 {

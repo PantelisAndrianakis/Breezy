@@ -11,7 +11,7 @@
 #define LG_WRITER(o) (*(void**)((char*)(o) + 40))
 #define LG_CLOSED(o) (*(int64_t*)((char*)(o) + 48))
 
-#define LOG_CAPACITY 1024   /* Bounded data channel: a far-behind producer parks here. */
+#define LOG_CAPACITY 1024 // Bounded data channel: a far-behind producer parks here.
 
 static int64_t g_logger_typeinfo[5] = { 0 /* Finalizer. */, 3, 24, 32, 40 };
 static int64_t g_logger_vtable[2];

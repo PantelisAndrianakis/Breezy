@@ -1,9 +1,9 @@
 ﻿#include "irlower.h"
-#include "lexer.h"   /* TokenType values for operators. */
-#include "config.h"  /* bzy_ir_calls_enabled. */
-#include "cemit.h"   /* cemit_func_ok: the C route's whole-function test. */
-#include <string.h>  /* strcmp for the arr.length field name. */
-#include <stdlib.h>  /* malloc for the IR_CALL argument-vreg array. */
+#include "lexer.h" // TokenType values for operators.
+#include "config.h" // bzy_ir_calls_enabled.
+#include "cemit.h" // cemit_func_ok: the C route's whole-function test.
+#include <string.h> // strcmp for the arr.length field name.
+#include <stdlib.h> // malloc for the IR_CALL argument-vreg array.
 
 /**
  * A scalar integer kind the v1 IR backend can hold in a register: any integer, bool, or void (for void-returning functions).
@@ -635,12 +635,12 @@ int ir_eligible(const Func *f)
 typedef struct
 {
 	IRFunc *f;
-	TypeTable *tt;   /* For resolving a direct call's callee (IR_CALL); NULL outside codegen. */
+	TypeTable *tt; // For resolving a direct call's callee (IR_CALL); NULL outside codegen.
 	int     cur;
 	int     break_blk;
 	int     cont_blk;
 	int     ok;
-	int     depth;   /* Current loop-nesting depth, stamped on new blocks for spill weighting. */
+	int     depth; // Current loop-nesting depth, stamped on new blocks for spill weighting.
 	/**
 	 * Unrolled-loop induction constants: reads of slot cc_off[i] lower to IR_CONST cc_val[i] instead of a frame load.
 	 * Stack-shaped (nesting).
@@ -1759,8 +1759,8 @@ typedef struct
 {
 	int       n;
 	int       off[64];
-	char      st[64];        /* 0 unknown, 1 const C, 2 varies. */
-	char      decl[64];      /* 1 if introduced by an ST_VARDECL (a genuine local, not a param). */
+	char      st[64]; // 0 unknown, 1 const C, 2 varies.
+	char      decl[64]; // 1 if introduced by an ST_VARDECL (a genuine local, not a param).
 	long long val[64];
 } ClcState;
 

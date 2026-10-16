@@ -61,7 +61,7 @@ static int64_t x_send(Xport *x, const char *buf, int64_t len)
 		   : bzy_sock_send_all(x->t, buf, len);
 }
 
-#define PG_PROTOCOL_V3 196608   /* 3.0 in the int32 (major<<16 | minor). */
+#define PG_PROTOCOL_V3 196608 // 3.0 in the int32 (major<<16 | minor).
 
 /* ---- the buffered reader (one growable buffer + a scan cursor, as httpproto) -- */
 

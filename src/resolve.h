@@ -22,5 +22,5 @@ typedef struct
 } FinalTable;
 
 int               final_table_count(void);
-const FinalTable *final_table(int idx);   /* idx = final_id - 1 = anno_final - 1. */
+const FinalTable *final_table(int idx); // idx = final_id - 1 = anno_final - 1.
 #endif

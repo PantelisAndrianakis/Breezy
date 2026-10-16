@@ -25,7 +25,7 @@ extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 #define J_KIND 24
 #define J_MAN  32
 #define J_SCA  40
-#define J_VALS 40   /* Object values array (aliases the scalar slot; objects never carry a scalar). */
+#define J_VALS 40 // Object values array (aliases the scalar slot; objects never carry a scalar).
 #define J_SIZE 48
 enum { JK_NULL = 0, JK_BOOL = 1, JK_INT = 2, JK_DBL = 3, JK_STR = 4, JK_ARR = 5, JK_OBJ = 6 };
 
@@ -258,7 +258,7 @@ static int parse_hex4(Scan *s)
 	return v;
 }
 
-static void *parse_value(Scan *s);   /* Forward. */
+static void *parse_value(Scan *s); // Forward.
 
 /**
  * Parse a JSON string at the opening '"'.
@@ -784,7 +784,7 @@ void *bzy_json_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t
 
 /* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
 
-static __thread const char *g_json_error;   /* Set by the runtime; consumed by bzy_json_check. */
+static __thread const char *g_json_error; // Set by the runtime; consumed by bzy_json_check.
 
 /* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error message buffered for the codegen-emitted bzy_json_check at the call site. */
 void *bzy_json_parse(void *src)

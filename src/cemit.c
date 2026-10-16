@@ -1,7 +1,7 @@
 #include "cemit.h"
-#include "lexer.h"   /* TokenType values for operators. */
-#include "resolve.h" /* final_table: final array values. */
-#include "irlower.h" /* ir_func_const_local: function-level constant locals. */
+#include "lexer.h" // TokenType values for operators.
+#include "resolve.h" // final_table: final array values.
+#include "irlower.h" // ir_func_const_local: function-level constant locals.
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,26 +206,26 @@ static const char *C_PRELUDE =
 /* Translation state for one unit. */
 typedef struct
 {
-	CBuf        out;                          /* The unit's statement text. */
-	int         ok;                           /* Cleared on the first unsupported construct. */
-	int         region;                       /* 1: region unit (bounds failures report through fp). */
-	int         tmp;                          /* Counter for statement-expression temporaries. */
+	CBuf        out; // The unit's statement text.
+	int         ok; // Cleared on the first unsupported construct.
+	int         region; // 1: region unit (bounds failures report through fp).
+	int         tmp; // Counter for statement-expression temporaries.
 	int         nfinal;
-	int         finals[64];                   /* Final tables the unit indexes (table index). */
-	const char *ret_wide;                     /* Whole function: C return type (NULL for void). */
-	const char *ret_narrow;                   /* Whole function: Breezy return type in C. */
-	const Func *fn;                           /* The enclosing function, for its constant locals. */
+	int         finals[64]; // Final tables the unit indexes (table index).
+	const char *ret_wide; // Whole function: C return type (NULL for void).
+	const char *ret_narrow; // Whole function: Breezy return type in C.
+	const Func *fn; // The enclosing function, for its constant locals.
 	int         nconst;
-	int         const_off[CEMIT_MAX_LOCALS];  /* Memo of locals already asked about. */
+	int         const_off[CEMIT_MAX_LOCALS]; // Memo of locals already asked about.
 	char        const_known[CEMIT_MAX_LOCALS];
 	long long   const_val[CEMIT_MAX_LOCALS];
 	int         nlocal;
-	int         local_off[CEMIT_MAX_LOCALS];  /* Frame offset of each referenced local. */
-	TypeKind    local_kind[CEMIT_MAX_LOCALS]; /* Its type. */
-	int         loops;                        /* Depth of enclosing loops at the statement being emitted. */
-	int         fe;                           /* Counter naming each foreach's C temporaries. */
+	int         local_off[CEMIT_MAX_LOCALS]; // Frame offset of each referenced local.
+	TypeKind    local_kind[CEMIT_MAX_LOCALS]; // Its type.
+	int         loops; // Depth of enclosing loops at the statement being emitted.
+	int         fe; // Counter naming each foreach's C temporaries.
 	int         ncallee;
-	FuncInfo   *callees[16];                  /* Whole-C functions the unit calls (each needs a prototype). */
+	FuncInfo   *callees[16]; // Whole-C functions the unit calls (each needs a prototype).
 } CUnit;
 
 static const char *c_param_type(TypeKind k);

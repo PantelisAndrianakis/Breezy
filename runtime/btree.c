@@ -19,19 +19,19 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#define BT_B   16                 /* Min degree; a node holds [BT_B-1 .. 2*BT_B-1] keys. */
+#define BT_B   16 // Min degree; a node holds [BT_B-1 .. 2*BT_B-1] keys.
 #define BT_MAX (2 * BT_B - 1)
 
 typedef struct BTNode
 {
-	void   *vtable;               /* +0  (managed mode only). */
-	int64_t rc;                   /* +8 */
-	int64_t gcinfo;               /* +16 */
-	int64_t n;                    /* +24 key count. */
-	int64_t leaf;                 /* +32 */
-	int64_t key[BT_MAX];          /* +40 */
+	void   *vtable; // +0  (managed mode only).
+	int64_t rc; // +8
+	int64_t gcinfo; // +16
+	int64_t n; // +24 key count.
+	int64_t leaf; // +32
+	int64_t key[BT_MAX]; // +40
 	int64_t val[BT_MAX];
-	int64_t kid[BT_MAX + 1];      /* Child node pointers (managed-node objects in managed mode). */
+	int64_t kid[BT_MAX + 1]; // Child node pointers (managed-node objects in managed mode).
 } BTNode;
 
 #define KEY_OFF ((int64_t)offsetof(BTNode, key))
@@ -183,10 +183,10 @@ static BTNode *bt_node_new(void *o, int leaf)
 }
 
 /* ---- handle descriptors ---- */
-static void bt_free_raw(void *o);   /* Forward. */
+static void bt_free_raw(void *o); // Forward.
 
-static int64_t g_h_ti_managed[3] = { 0, 1, 24 };          /* One child: root@24. */
-static int64_t g_h_ti_raw[2];                              /* { finalizer, 0 }. */
+static int64_t g_h_ti_managed[3] = { 0, 1, 24 }; // One child: root@24.
+static int64_t g_h_ti_raw[2]; // { finalizer, 0 }.
 static int64_t g_h_vt_managed[2];
 static int64_t g_h_vt_raw[2];
 
@@ -1047,7 +1047,7 @@ typedef struct
 	int64_t n;
 	int64_t esize;
 	int want;
-} BtCollect;   /* want: 0 keys, 1 values, 2 entries. */
+} BtCollect; // want: 0 keys, 1 values, 2 entries.
 
 static void bt_collect(void *o, BTNode *x, BtCollect *c)
 {

@@ -14,9 +14,9 @@
 #include <sys/xattr.h>
 #endif
 
-extern char __vtable_IOException[];   /* Emitted per-program by codegen. */
+extern char __vtable_IOException[]; // Emitted per-program by codegen.
 
-static __thread const char *g_io_error;   /* Per-thread: an offload worker sets its own; the wrapper transfers it. */
+static __thread const char *g_io_error; // Per-thread: an offload worker sets its own; the wrapper transfers it.
 
 static void io_fail(const char *msg)
 {

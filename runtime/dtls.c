@@ -14,7 +14,7 @@
 
 #ifndef _WIN32
 #include <dlfcn.h>
-#include <sys/time.h>   /* struct timeval (DTLS retransmit deadline). */
+#include <sys/time.h> // struct timeval (DTLS retransmit deadline).
 #include "pollstate.h"
 #endif
 
@@ -24,20 +24,20 @@
 #define BZ_SSL_FILETYPE_PEM     1
 #define BZ_SSL_VERIFY_PEER      1
 #define BZ_X509_V_OK            0
-#define BZ_SSL_CTRL_OPTIONS             32   /* SSL_ctrl: OR in option bits. */
+#define BZ_SSL_CTRL_OPTIONS             32 // SSL_ctrl: OR in option bits.
 #define BZ_SSL_CTRL_SET_TLSEXT_HOSTNAME 55
 #define BZ_TLSEXT_NAMETYPE_host_name    0
-#define BZ_DTLS_CTRL_GET_TIMEOUT        73   /* SSL_ctrl: fill a struct timeval; 1 if pending. */
-#define BZ_DTLS_CTRL_HANDLE_TIMEOUT     74   /* SSL_ctrl: re-queue the lost flight (DTLSv1_handle_timeout is a macro). */
-#define BZ_DTLS_CTRL_SET_LINK_MTU       120  /* SSL_ctrl: pin the link MTU. */
-#define BZ_SSL_OP_NO_QUERY_MTU          0x1000L  /* Do not ask the BIO for the path MTU. */
-#define BZ_SSL_OP_COOKIE_EXCHANGE       0x2000L  /* Server: require a HelloVerifyRequest cookie. */
-#define BZ_DTLS_LINK_MTU                1200 /* Conservative IPv6-safe datagram size. */
+#define BZ_DTLS_CTRL_GET_TIMEOUT        73 // SSL_ctrl: fill a struct timeval; 1 if pending.
+#define BZ_DTLS_CTRL_HANDLE_TIMEOUT     74 // SSL_ctrl: re-queue the lost flight (DTLSv1_handle_timeout is a macro).
+#define BZ_DTLS_CTRL_SET_LINK_MTU       120 // SSL_ctrl: pin the link MTU.
+#define BZ_SSL_OP_NO_QUERY_MTU          0x1000L // Do not ask the BIO for the path MTU.
+#define BZ_SSL_OP_COOKIE_EXCHANGE       0x2000L // Server: require a HelloVerifyRequest cookie.
+#define BZ_DTLS_LINK_MTU                1200 // Conservative IPv6-safe datagram size.
 
 /* Dynamically-resolved OpenSSL entry points (DTLS subset of the tls.c table). */
 static struct
 {
-	int loaded;            /* 0 = not tried, 1 = ok, -1 = failed. */
+	int loaded; // 0 = not tried, 1 = ok, -1 = failed.
 	void *(*CTX_new)(const void *method);
 	const void *(*DTLS_client_method)(void);
 	const void *(*DTLS_server_method)(void);
@@ -70,7 +70,7 @@ static struct
 	void  (*CTX_set_cookie_verify_cb)(void *ctx, int (*cb)(void *ssl, const unsigned char *c, unsigned int l));
 	int   (*SSL_set_ex_data)(void *ssl, int idx, void *data);
 	void *(*SSL_get_ex_data)(const void *ssl, int idx);
-	int   (*RAND_bytes)(unsigned char *buf, int num);   /* libcrypto: cookie secret. */
+	int   (*RAND_bytes)(unsigned char *buf, int num); // libcrypto: cookie secret.
 } ossl;
 
 /* Minimal dl helpers (mirrors tls.c; kept local for own-TU). */
@@ -215,11 +215,11 @@ static int dtls_load(void)
 typedef struct DtlsDemux DtlsDemux;
 typedef struct
 {
-	SOCKET fd;                       /* The listener's shared bound fd (not owned here). */
-	struct sockaddr_storage peer;    /* This peer's real address. */
+	SOCKET fd; // The listener's shared bound fd (not owned here).
+	struct sockaddr_storage peer; // This peer's real address.
 	int peerlen;
-	DtlsDemux *dx;                   /* Backptr to mark the table entry dead on close. */
-	void *entry;                     /* The DemuxPeer entry (opaque here). */
+	DtlsDemux *dx; // Backptr to mark the table entry dead on close.
+	void *entry; // The DemuxPeer entry (opaque here).
 } DtlsDemuxOut;
 #endif
 
@@ -227,7 +227,7 @@ static int64_t g_dtls_sock_typeinfo[2] = { 0, 0 };
 static int64_t g_dtls_sock_vtable[2];
 
 #ifdef _WIN32
-static void dtls_demux_peer_closed(void *demuxout);   /* Defined in the server block. */
+static void dtls_demux_peer_closed(void *demuxout); // Defined in the server block.
 #endif
 
 static void dtls_sock_finalize(void *o)
@@ -1011,22 +1011,22 @@ void bzy_dtls_close_listener(void *l)
 
 typedef struct
 {
-	struct sockaddr_storage peer;    /* The peer's real address (on the shared fd). */
+	struct sockaddr_storage peer; // The peer's real address (on the shared fd).
 	int peerlen;
-	SOCKET inbox_fd;                 /* Loopback inbox; demux forwards datagrams here. */
+	SOCKET inbox_fd; // Loopback inbox; demux forwards datagrams here.
 	struct sockaddr_in inbox_addr;
-	int taken;                       /* accept() has claimed this peer. */
-	int dead;                        /* The peer DtlsSocket has closed. */
+	int taken; // accept() has claimed this peer.
+	int dead; // The peer DtlsSocket has closed.
 } DemuxPeer;
 
 struct DtlsDemux
 {
-	SOCKET shared_fd;                /* Bound listen port; the demux thread recvfrom's. */
-	SOCKET fwd_fd;                   /* Demux thread sends to inboxes + accept-notify. */
-	SOCKET accept_fd;                /* accept() reads this (wrapped) to be woken. */
+	SOCKET shared_fd; // Bound listen port; the demux thread recvfrom's.
+	SOCKET fwd_fd; // Demux thread sends to inboxes + accept-notify.
+	SOCKET accept_fd; // accept() reads this (wrapped) to be woken.
 	struct sockaddr_in accept_addr;
-	void *accept_sock;               /* bzy_sock_wrap(accept_fd): reactor-parked. */
-	void *ctx;                       /* SSL_CTX. */
+	void *accept_sock; // bzy_sock_wrap(accept_fd): reactor-parked.
+	void *ctx; // SSL_CTX.
 	CRITICAL_SECTION lock;
 	DemuxPeer **peers;
 	int npeers;

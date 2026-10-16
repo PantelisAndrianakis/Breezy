@@ -14,11 +14,11 @@
  */
 
 /* Lifecycle / capability. */
-int bzy_desktop_is_enabled(void);   /* 1 if GTK loadable and a display exists, else 0 (Breezy bool). */
+int bzy_desktop_is_enabled(void); // 1 if GTK loadable and a display exists, else 0 (Breezy bool).
 
 /* Top-level windows. */
-int64_t bzy_desktop_frame_new(void);                       /* Returns a window handle. */
-int64_t bzy_desktop_frame_content(int64_t frame);          /* The window's border container (== frame). */
+int64_t bzy_desktop_frame_new(void); // Returns a window handle.
+int64_t bzy_desktop_frame_content(int64_t frame); // The window's border container (== frame).
 void    bzy_desktop_frame_set_title(int64_t frame, const char *title);
 
 /* Containers / controls. */
@@ -29,8 +29,8 @@ int64_t bzy_desktop_label_new(void);
 void    bzy_desktop_label_set_text(int64_t lbl, const char *text);
 
 /* Tree / visibility / state. */
-void bzy_desktop_container_add(int64_t parent, int64_t child);             /* Plain append (vbox). */
-void bzy_desktop_border_add(int64_t border, int64_t child, int region);   /* 0=N 1=S 2=W 3=E 4=C. */
+void bzy_desktop_container_add(int64_t parent, int64_t child); // Plain append (vbox).
+void bzy_desktop_border_add(int64_t border, int64_t child, int region); // 0=N 1=S 2=W 3=E 4=C.
 void bzy_desktop_set_visible(int64_t widget, int visible);
 void bzy_desktop_set_enabled(int64_t widget, int enabled);
 void bzy_desktop_window_set_size(int64_t window, int w, int h);
@@ -41,8 +41,8 @@ void bzy_desktop_window_dispose(int64_t window);
  * Event wiring.
  * The registration index identifies the Breezy widget object so the Breezy run-loop can dispatch without C calling back into Breezy.
  */
-void bzy_desktop_listen_action(int64_t widget, int reg_index);        /* "clicked". */
-void bzy_desktop_listen_window_close(int64_t window, int reg_index);  /* "destroy". */
+void bzy_desktop_listen_action(int64_t widget, int reg_index); // "clicked".
+void bzy_desktop_listen_window_close(int64_t window, int reg_index); // "destroy".
 
 /**
  * Event pump (blocking).

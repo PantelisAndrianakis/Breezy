@@ -7,7 +7,7 @@
 
 #include <stddef.h>
 #include <string.h>
-#include <stdlib.h>   /* malloc/free/getenv on all targets. */
+#include <stdlib.h> // malloc/free/getenv on all targets.
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -79,7 +79,7 @@ typedef void *(*fn_async_queue_pop)(void *q);
 
 struct gtk_api
 {
-	int loaded;          /* 0 = not attempted, 1 = ok, -1 = failed. */
+	int loaded; // 0 = not attempted, 1 = ok, -1 = failed.
 	void *gtk;
 	void *glib;
 	void *gobject;
@@ -259,10 +259,10 @@ static int start_mtx_init = 0;
  */
 struct border
 {
-	void *window;       /* The GtkWindow handle == Breezy frame/content handle. */
-	void *vbox;         /* North/South packing. */
-	void *center_row;   /* West/East packing. */
-	void *center;       /* Center packing (expands). */
+	void *window; // The GtkWindow handle == Breezy frame/content handle.
+	void *vbox; // North/South packing.
+	void *center_row; // West/East packing.
+	void *center; // Center packing (expands).
 };
 #define MAX_BORDERS 256
 static struct border borders[MAX_BORDERS];
@@ -282,7 +282,7 @@ static struct border *border_find(void *window)
 }
 
 static int open_windows = 0;
-static void *event_queue = NULL;   /* GAsyncQueue*, created lazily. */
+static void *event_queue = NULL; // GAsyncQueue*, created lazily.
 
 /**
  * One queued UI event. kind: 0=action, 1=window-close. reg_index identifies the Breezy widget object (its slot in Desktop._reg).

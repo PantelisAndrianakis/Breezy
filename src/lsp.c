@@ -30,7 +30,7 @@
 /* argv[0]: the path this server re-invokes with --check (set in lsp_main). */
 static const char *g_self_exe;
 
-static int same_file(const char *a, const char *b);   /* Defined below; used by the doc store. */
+static int same_file(const char *a, const char *b); // Defined below; used by the doc store.
 
 /* ---- a tiny growable string builder, used to compose outgoing messages ---- */
 
@@ -83,14 +83,14 @@ typedef struct JVal JVal;
 struct JVal
 {
 	JType       type;
-	const char *raw;     /* span into the parsed buffer (for verbatim id echo). */
+	const char *raw; // span into the parsed buffer (for verbatim id echo).
 	int         rawlen;
-	int         bval;    /* J_BOOL */
-	double      num;     /* J_NUM */
-	char       *str;     /* J_STR: unescaped, malloc'd. */
-	JVal      **items;   /* J_ARR */
+	int         bval; // J_BOOL
+	double      num; // J_NUM
+	char       *str; // J_STR: unescaped, malloc'd.
+	JVal      **items; // J_ARR
 	int         nitems;
-	char      **keys;    /* J_OBJ */
+	char      **keys; // J_OBJ
 	JVal      **vals;
 	int         npairs;
 };
@@ -603,7 +603,7 @@ static void sb_put_json_escaped(Sb *sb, const char *s)
  */
 static char **g_uris;
 static char **g_paths;
-static char **g_texts;   /* The latest (possibly unsaved) buffer per doc, or NULL. */
+static char **g_texts; // The latest (possibly unsaved) buffer per doc, or NULL.
 static int    g_ndocs;
 
 static int docs_index(const char *uri)

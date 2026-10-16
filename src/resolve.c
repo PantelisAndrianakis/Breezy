@@ -15,15 +15,15 @@
 #include <stdlib.h>
 
 static TypeTable *g_types;
-static const TypeRef *g_ret;   /* Return type of the function being resolved. */
-static int g_loop_depth;       /* >0 inside a while/for/foreach body; gates continue. */
-static int g_break_depth;      /* >0 inside a loop OR switch body; gates break. */
-static SymTable *g_lam_enc;    /* Enclosing scope while resolving a lambda body (NULL outside one). */
-static LambdaInfo *g_cur_lam;  /* Lambda whose body is currently being resolved (for capture recording). */
-static int g_lambda_seq;       /* Monotonic id for synthetic lambda body labels. */
+static const TypeRef *g_ret; // Return type of the function being resolved.
+static int g_loop_depth; // >0 inside a while/for/foreach body; gates continue.
+static int g_break_depth; // >0 inside a loop OR switch body; gates break.
+static SymTable *g_lam_enc; // Enclosing scope while resolving a lambda body (NULL outside one).
+static LambdaInfo *g_cur_lam; // Lambda whose body is currently being resolved (for capture recording).
+static int g_lambda_seq; // Monotonic id for synthetic lambda body labels.
 
-static const char *g_cur_file;   /* File of the unit being resolved, for diagnostics. */
-static const char *g_cur_src;    /* Its source buffer, for the diagnostic line echo. */
+static const char *g_cur_file; // File of the unit being resolved, for diagnostics.
+static const char *g_cur_src; // Its source buffer, for the diagnostic line echo.
 
 /* Every resolved body (free functions, methods, constructors, lambda bodies), collected in resolution order so the whole-program escape fixpoint and the per-function lowering passes can run after the entire program is resolved. */
 static Func **g_lower=NULL;
@@ -1047,8 +1047,8 @@ static TypeKind simd_lane_kind(TypeKind v)
 	return TY_FLOAT; // f32x4 / f32x8.
 }
 
-extern int g_program_uses_avx;    /* Defined in codegen.c; set for any 256-bit value. */
-extern int g_program_uses_avx2;   /* Stronger: the i32x8 integer ops need AVX2. */
+extern int g_program_uses_avx; // Defined in codegen.c; set for any 256-bit value.
+extern int g_program_uses_avx2; // Stronger: the i32x8 integer ops need AVX2.
 
 static void resolve_simd(Expr *e)
 {

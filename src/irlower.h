@@ -3,7 +3,7 @@
 
 #include "ast.h"
 #include "ir.h"
-#include "types.h"   /* TypeTable. */
+#include "types.h" // TypeTable.
 
 /**
  * 1 if `f` is a call-free scalar-numeric function the v1 IR backend can compile: only i8..i64/f32/f64/bool scalars; arithmetic, compares, if/else, while, for, return; no calls, arrays, strings, exceptions, managed-object refcounting, coroutines, channels, foreach, switch, throw.
@@ -31,7 +31,7 @@ int ir_region_eligible(const Stmt *s);
 
 /* Region eligibility for the C route: the same rules plus an integer or bool `switch` with literal case labels, static final arrays and clock reads. */
 int ir_region_eligible_c(const Stmt *s);
-int ir_c_expr_ok(const Expr *e);   /* C route: 1 when expression e can be emitted as C inside a region. */
+int ir_c_expr_ok(const Expr *e); // C route: 1 when expression e can be emitted as C inside a region.
 
 /* 1 for Clock.currentTimeNanos() or Clock.currentTimeMillis(): a runtime read that never throws and touches no Breezy state, so generated C may call it. */
 int ir_is_clock_read(const Expr *e);
@@ -41,10 +41,10 @@ int ir_is_clock_read(const Expr *e);
  * Generated C stores the value inline when there is room and calls the runtime otherwise.
  */
 int ir_c_push(const Expr *e);
-const char *ir_c_call(const Expr *e);   /* C route: the runtime function for a non-throwing integer Map/TreeMap/PriorityQueue call on a local, or NULL. */
-FuncInfo *ir_c_callee(const Expr *e);   /* C route: the callee of a direct call to a function compiled whole to C, or NULL. */
-const char *ir_c_rnd(const Expr *e);   /* C route: the runtime function for a non-throwing Random builtin call, or NULL. */
-int ir_c_foreach(const Stmt *s);   /* C route: a foreach over a local string, integer or double array, or such a List/Stack/Queue/Deque whose body never names it. */
+const char *ir_c_call(const Expr *e); // C route: the runtime function for a non-throwing integer Map/TreeMap/PriorityQueue call on a local, or NULL.
+FuncInfo *ir_c_callee(const Expr *e); // C route: the callee of a direct call to a function compiled whole to C, or NULL.
+const char *ir_c_rnd(const Expr *e); // C route: the runtime function for a non-throwing Random builtin call, or NULL.
+int ir_c_foreach(const Stmt *s); // C route: a foreach over a local string, integer or double array, or such a List/Stack/Queue/Deque whose body never names it.
 
 /**
  * Lower an eligible region to IR with no IR_RET: the final block is empty and emission falls off it into the region epilogue.

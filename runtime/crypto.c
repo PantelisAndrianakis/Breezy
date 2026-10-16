@@ -52,7 +52,7 @@ static void *dl_sym(void *h, const char *n)
 
 static struct
 {
-	int loaded;   /* 0 unknown, 1 ok, -1 unavailable. */
+	int loaded; // 0 unknown, 1 ok, -1 unavailable.
 	unsigned char *(*SHA1)(const unsigned char*, size_t, unsigned char*);
 	unsigned char *(*SHA256)(const unsigned char*, size_t, unsigned char*);
 	unsigned char *(*MD5)(const unsigned char*, size_t, unsigned char*);

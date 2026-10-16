@@ -14,10 +14,10 @@
 /* readUrl context: the worker thread fills body/err; the breeze wraps body in a managed string after it resumes (no cross-thread ARC allocation). */
 typedef struct
 {
-	char  url[2048];   /* In: the request URL (UTF-8/ASCII). */
-	char *body;        /* Out: malloc'd response body (NULL on error). */
-	int   body_len;    /* Out: body length in bytes. */
-	char  err[256];    /* Out: error message ("" = success). */
+	char  url[2048]; // In: the request URL (UTF-8/ASCII).
+	char *body; // Out: malloc'd response body (NULL on error).
+	int   body_len; // Out: body length in bytes.
+	char  err[256]; // Out: error message ("" = success).
 } UrlCtx;
 
 static void url_fail(UrlCtx *c, const char *msg)
@@ -174,7 +174,7 @@ typedef struct
 	char  *buf;
 	size_t len;
 	size_t cap;
-	int    over;   /* Exceeded the cap (or OOM). */
+	int    over; // Exceeded the cap (or OOM).
 } BodyAcc;
 
 static size_t curl_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata)

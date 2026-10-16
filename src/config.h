@@ -7,10 +7,10 @@
 
 typedef struct
 {
-	char **libs;       /* Each entry up to CFG_LIB_LEN bytes; grown dynamically. */
+	char **libs; // Each entry up to CFG_LIB_LEN bytes; grown dynamically.
 	int    nlibs;
 	int    libs_cap;
-	char **lib_paths;  /* Each entry up to CFG_PATH_LEN bytes. */
+	char **lib_paths; // Each entry up to CFG_PATH_LEN bytes.
 	int    nlib_paths;
 	int    lib_paths_cap;
 } LinkConfig;
@@ -21,8 +21,8 @@ typedef struct
 	char version[CFG_APP_STR_LEN];
 	char description[CFG_APP_STR_LEN];
 	char author[CFG_APP_STR_LEN];
-	char icon[CFG_PATH_LEN];        /* .ico path relative to breezy.toml dir. */
-	char project_dir[CFG_PATH_LEN]; /* Resolved dir; used to expand icon to absolute path. */
+	char icon[CFG_PATH_LEN]; // .ico path relative to breezy.toml dir.
+	char project_dir[CFG_PATH_LEN]; // Resolved dir; used to expand icon to absolute path.
 } AppConfig;
 
 /**

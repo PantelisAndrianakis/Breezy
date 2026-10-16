@@ -353,7 +353,7 @@ typedef struct
 	char *buf;
 	int64_t off;
 	int64_t max;
-	int n;          /* Bytes read (0 = EOF). */
+	int n; // Bytes read (0 = EOF).
 	int err;
 } RdCtx;
 static void rd_run(void *p)

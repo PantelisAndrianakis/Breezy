@@ -5,60 +5,60 @@ typedef enum
 {
 	TY_VOID,
 	TY_BOOL,
-	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG,    /* Signed. */
-	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG,   /* Unsigned. */
-	TY_FLOAT, TY_DOUBLE,                      /* IEEE-754, signed only. */
-	TY_F64X2,                                 /* SIMD: two packed f64 lanes in one xmm (16-byte value). */
-	TY_F32X4,                                 /* SIMD: four packed f32 lanes in one xmm (16-byte value). */
-	TY_I32X4,                                 /* SIMD: four packed i32 lanes in one xmm (16-byte value). */
-	TY_F64X4,                                 /* SIMD: four packed f64 lanes in one ymm (32-byte AVX value). */
-	TY_F32X8,                                 /* SIMD: eight packed f32 lanes in one ymm (32-byte AVX value). */
-	TY_I32X8,                                 /* SIMD: eight packed i32 lanes in one ymm (32-byte AVX2 value). */
-	TY_ARRAY,                                 /* T[]: 8-byte pointer to a heap array. */
-	TY_MAP,                                   /* map<K,V>: 8-byte pointer to a heap map. */
-	TY_GENERIC,                               /* Box<T> etc.: 8-byte pointer to a heap object. */
-	TY_ENTRY,                                 /* map Entry: 8-byte pointer; elem=K, elem2=V. */
-	TY_CHANNEL,                               /* channel<T>: 8-byte pointer; elem=T. */
-	TY_TIMER,                                 /* Timer: 8-byte pointer to a heap timer handle. */
-	TY_LISTENER,                              /* Listener: TCP accept handle. */
-	TY_SOCKET,                                /* Socket: TCP connection handle. */
-	TY_TLSSOCKET,                             /* TlsSocket: TLS connection handle. */
-	TY_TLSLISTENER,                           /* TlsListener: TLS accept handle. */
-	TY_DTLSSOCKET,                            /* DtlsSocket: DTLS-over-UDP connection handle. */
-	TY_DTLSLISTENER,                          /* DtlsListener: DTLS accept handle. */
-	TY_SURFACE,                               /* Surface: SDL2 pixel-window handle. */
-	TY_GLSURFACE,                             /* GlSurface: SDL2 OpenGL context handle. */
-	TY_UDPSOCKET,                             /* UdpSocket: UDP datagram handle. */
-	TY_DATAGRAM,                              /* Datagram: a received UDP payload + sender. */
-	TY_FILECHANNEL,                           /* FileChannel: random-access file handle. */
-	TY_FILEWRITER,                            /* FileWriter: buffered file-write handle. */
-	TY_MAPPEDFILE,                            /* MappedFile: memory-mapped file handle. */
-	TY_LOGGER,                                /* Logger: channel-fed buffered log handle. */
-	TY_XMLNODE,                               /* XmlNode: a parsed XML element node (managed tree). */
-	TY_JSONVALUE,                             /* JsonValue: a parsed JSON value node (managed tagged tree). */
-	TY_HTTPREQUEST,                           /* HttpRequest: a parsed/built HTTP request message (managed). */
-	TY_HTTPRESPONSE,                          /* HttpResponse: a parsed/built HTTP response message (managed). */
-	TY_PGCONNECTION,                          /* PgConnection: a PostgreSQL connection handle (managed). */
-	TY_MYCONNECTION,                          /* MyConnection: a MySQL/MariaDB connection handle (managed). */
-	TY_DBRESULT,                              /* DbResult: a query result set (managed; shared by DB drivers). */
-	TY_DBROW,                                 /* Row: one row of a DbResult (managed; shares the column names). */
+	TY_BYTE,  TY_SHORT,  TY_INT,  TY_LONG, // Signed.
+	TY_UBYTE, TY_USHORT, TY_UINT, TY_ULONG, // Unsigned.
+	TY_FLOAT, TY_DOUBLE, // IEEE-754, signed only.
+	TY_F64X2, // SIMD: two packed f64 lanes in one xmm (16-byte value).
+	TY_F32X4, // SIMD: four packed f32 lanes in one xmm (16-byte value).
+	TY_I32X4, // SIMD: four packed i32 lanes in one xmm (16-byte value).
+	TY_F64X4, // SIMD: four packed f64 lanes in one ymm (32-byte AVX value).
+	TY_F32X8, // SIMD: eight packed f32 lanes in one ymm (32-byte AVX value).
+	TY_I32X8, // SIMD: eight packed i32 lanes in one ymm (32-byte AVX2 value).
+	TY_ARRAY, // T[]: 8-byte pointer to a heap array.
+	TY_MAP, // map<K,V>: 8-byte pointer to a heap map.
+	TY_GENERIC, // Box<T> etc.: 8-byte pointer to a heap object.
+	TY_ENTRY, // map Entry: 8-byte pointer; elem=K, elem2=V.
+	TY_CHANNEL, // channel<T>: 8-byte pointer; elem=T.
+	TY_TIMER, // Timer: 8-byte pointer to a heap timer handle.
+	TY_LISTENER, // Listener: TCP accept handle.
+	TY_SOCKET, // Socket: TCP connection handle.
+	TY_TLSSOCKET, // TlsSocket: TLS connection handle.
+	TY_TLSLISTENER, // TlsListener: TLS accept handle.
+	TY_DTLSSOCKET, // DtlsSocket: DTLS-over-UDP connection handle.
+	TY_DTLSLISTENER, // DtlsListener: DTLS accept handle.
+	TY_SURFACE, // Surface: SDL2 pixel-window handle.
+	TY_GLSURFACE, // GlSurface: SDL2 OpenGL context handle.
+	TY_UDPSOCKET, // UdpSocket: UDP datagram handle.
+	TY_DATAGRAM, // Datagram: a received UDP payload + sender.
+	TY_FILECHANNEL, // FileChannel: random-access file handle.
+	TY_FILEWRITER, // FileWriter: buffered file-write handle.
+	TY_MAPPEDFILE, // MappedFile: memory-mapped file handle.
+	TY_LOGGER, // Logger: channel-fed buffered log handle.
+	TY_XMLNODE, // XmlNode: a parsed XML element node (managed tree).
+	TY_JSONVALUE, // JsonValue: a parsed JSON value node (managed tagged tree).
+	TY_HTTPREQUEST, // HttpRequest: a parsed/built HTTP request message (managed).
+	TY_HTTPRESPONSE, // HttpResponse: a parsed/built HTTP response message (managed).
+	TY_PGCONNECTION, // PgConnection: a PostgreSQL connection handle (managed).
+	TY_MYCONNECTION, // MyConnection: a MySQL/MariaDB connection handle (managed).
+	TY_DBRESULT, // DbResult: a query result set (managed; shared by DB drivers).
+	TY_DBROW, // Row: one row of a DbResult (managed; shares the column names).
 	TY_OBJECT,
-	TY_STRING,  /* Immutable string. */
-	TY_NULL,    /* The `null` literal: a bare 0 assignable to any managed reference. */
-	TY_FUNC     /* FFI: C function-pointer type; elem=return type, targs[0..targ_count)=param types. */
+	TY_STRING, // Immutable string.
+	TY_NULL, // The `null` literal: a bare 0 assignable to any managed reference.
+	TY_FUNC // FFI: C function-pointer type; elem=return type, targs[0..targ_count)=param types.
 } TypeKind;
 typedef struct TypeRef
 {
 	TypeKind kind;
 	char class_name[64];
-	struct TypeRef *elem;    /* TY_ARRAY element, or TY_MAP key; NULL otherwise. */
-	struct TypeRef *elem2;   /* TY_MAP value; NULL otherwise. */
+	struct TypeRef *elem; // TY_ARRAY element, or TY_MAP key; NULL otherwise.
+	struct TypeRef *elem2; // TY_MAP value; NULL otherwise.
 	/**
 	 * User-generic application args (TY_GENERIC, user class).
 	 * Built once at parse; value-copies share it read-only (typeref_deepcopy clones it).
 	 */
 	struct TypeRef **targs;
-	int targ_count;          /* 0 for built-in templates (Box/List/...), which use elem/elem2. */
+	int targ_count; // 0 for built-in templates (Box/List/...), which use elem/elem2.
 	int targ_cap;
 } TypeRef;
 
@@ -224,8 +224,8 @@ typedef enum
 {
 	EX_INT, EX_BOOL, EX_FLOAT, EX_STR, EX_IDENT, EX_THIS, EX_NEW, EX_NEWARRAY,
 	EX_NEWMAP, EX_NEWGEN, EX_NEWCHANNEL, EX_BINARY, EX_UNARY, EX_INCDEC, EX_CAST, EX_CALL, EX_METHOD_CALL, EX_FIELD, EX_INDEX, EX_NULL, EX_LAMBDA,
-	EX_TRYOP,       /* `operand?`: unwrap Some/Ok, else early-return None/Err. Operand in lhs. */
-	EX_ARRAYLIT     /* `{ v, v, ... }`: a final array's literal values, in args. */
+	EX_TRYOP, // `operand?`: unwrap Some/Ok, else early-return None/Err. Operand in lhs.
+	EX_ARRAYLIT // `{ v, v, ... }`: a final array's literal values, in args.
 } ExprKind;
 
 /**
@@ -235,32 +235,32 @@ typedef enum
 typedef struct LambdaParam
 {
 	char    name[64];
-	TypeRef type;             /* Valid when has_type; else inferred at resolve. */
+	TypeRef type; // Valid when has_type; else inferred at resolve.
 	int     has_type;
 } LambdaParam;
 
 typedef struct LambdaCap
 {
-	char    name[64];         /* Enclosing local captured by value. */
+	char    name[64]; // Enclosing local captured by value.
 	TypeRef type;
-	int     src_offset;       /* Resolver: stack slot of the source local (enclosing frame). */
-	int     env_offset;       /* Codegen: byte offset of this capture in the env object. */
-	int     local_slot;       /* Resolver: stack slot inside the body, seeded from env at entry. */
-	int     is_managed;       /* 1 if the captured value is a managed reference. */
+	int     src_offset; // Resolver: stack slot of the source local (enclosing frame).
+	int     env_offset; // Codegen: byte offset of this capture in the env object.
+	int     local_slot; // Resolver: stack slot inside the body, seeded from env at entry.
+	int     is_managed; // 1 if the captured value is a managed reference.
 } LambdaCap;
 
 typedef struct LambdaInfo
 {
 	LambdaParam params[16];
 	int         param_count;
-	int         is_block;     /* 1: body is a Block; 0: body is a single expression. */
+	int         is_block; // 1: body is a Block; 0: body is a single expression.
 	struct Expr  *body_expr;
 	struct Block *body_block;
 	LambdaCap   caps[32];
 	int         cap_count;
-	char        label[64];    /* Resolver: synthetic body label (__lambda_N). */
-	TypeRef     sig;          /* Resolver: the TY_FUNC signature this lambda satisfies. */
-	struct Func *sf;          /* Resolver: the synthesized body function (env arg0 + params). */
+	char        label[64]; // Resolver: synthetic body label (__lambda_N).
+	TypeRef     sig; // Resolver: the TY_FUNC signature this lambda satisfies.
+	struct Func *sf; // Resolver: the synthesized body function (env arg0 + params).
 } LambdaInfo;
 
 typedef struct Expr Expr;
@@ -268,33 +268,33 @@ struct Expr
 {
 	ExprKind kind;
 	int      line;
-	int      col;             /* 1-based column of the name token (named nodes only; 0 = unset). For the LSP symbol index. */
-	TypeRef  type;            /* Resolver: result type. */
-	int      anno_int;        /* Resolver: stack offset / field offset / vtable slot. */
-	char     anno_str[64];    /* Resolver: static class for dispatch. */
-	int      anno_stack;      /* EX_NEW: 1 if stack-allocated, else 0 (heap). */
-	int      anno_stack_off;  /* EX_NEW: rbp offset of the stack object when anno_stack. */
-	long long int_val;        /* EX_INT (64-bit: 'long' is 32-bit on Win64). */
-	char     int_suffix[4];   /* EX_INT/EX_FLOAT: literal suffix from the lexer ("", "L", "u", "uL", "Lu", "f"). */
-	double   float_val;       /* EX_FLOAT: parsed literal value. */
-	char     str_val[256];    /* EX_STR: decoded string-literal bytes. */
-	char     name[64];        /* EX_IDENT/NEW/CALL/METHOD_CALL/FIELD. */
-	int      op;              /* EX_BINARY/EX_UNARY: a TokenType. */
-	Expr    *lhs;             /* Binary left / unary operand / method-call|field receiver. */
-	Expr    *rhs;             /* Binary right. */
-	Expr   **args;            /* Call / method call; grown via expr_add_arg. */
+	int      col; // 1-based column of the name token (named nodes only; 0 = unset). For the LSP symbol index.
+	TypeRef  type; // Resolver: result type.
+	int      anno_int; // Resolver: stack offset / field offset / vtable slot.
+	char     anno_str[64]; // Resolver: static class for dispatch.
+	int      anno_stack; // EX_NEW: 1 if stack-allocated, else 0 (heap).
+	int      anno_stack_off; // EX_NEW: rbp offset of the stack object when anno_stack.
+	long long int_val; // EX_INT (64-bit: 'long' is 32-bit on Win64).
+	char     int_suffix[4]; // EX_INT/EX_FLOAT: literal suffix from the lexer ("", "L", "u", "uL", "Lu", "f").
+	double   float_val; // EX_FLOAT: parsed literal value.
+	char     str_val[256]; // EX_STR: decoded string-literal bytes.
+	char     name[64]; // EX_IDENT/NEW/CALL/METHOD_CALL/FIELD.
+	int      op; // EX_BINARY/EX_UNARY: a TokenType.
+	Expr    *lhs; // Binary left / unary operand / method-call|field receiver.
+	Expr    *rhs; // Binary right.
+	Expr   **args; // Call / method call; grown via expr_add_arg.
 	int      arg_count;
 	int      arg_cap;
-	int      anno_nonneg;     /* Non-neg pass: 1 if this /,% node's dividend is provably >= 0. */
-	int      anno_index_safe; /* BCE pass: 1 if this EX_INDEX's index is provably in [0, length). */
-	long long anno_len_const; /* BCE pass: this EX_INDEX array's exact length when statically constant (new T[N]); 0 = unknown. A kept bounds check then compares against the immediate, not a memory load of [base+24]. */
-	int      anno_shared_gate;/* Resolver: EX_INDEX on a managed element of a maybe-shared array -> SHARED-bit gated access (owned result). */
-	int      anno_overload;   /* Resolver: index of the selected overload (ctor/method/func) within its set; default 0. */
-	int      is_func_addr;    /* FFI: this arg is a bare function name passed as a C function pointer (its address). */
-	int      anno_indirect;   /* Resolver: EX_CALL through a function value (closure), not a named function. */
-	int      anno_capture;    /* Resolver: EX_IDENT that reads a captured var from the closure env (anno_int = env byte offset). */
-	LambdaInfo *lam;          /* EX_LAMBDA side-data. */
-	int      anno_final;      /* Resolver: final array table id + 1 for an EX_IDENT / static EX_FIELD naming a final array; 0 otherwise. */
+	int      anno_nonneg; // Non-neg pass: 1 if this /,% node's dividend is provably >= 0.
+	int      anno_index_safe; // BCE pass: 1 if this EX_INDEX's index is provably in [0, length).
+	long long anno_len_const; // BCE pass: this EX_INDEX array's exact length when statically constant (new T[N]); 0 = unknown. A kept bounds check then compares against the immediate, not a memory load of [base+24].
+	int      anno_shared_gate; // Resolver: EX_INDEX on a managed element of a maybe-shared array -> SHARED-bit gated access (owned result).
+	int      anno_overload; // Resolver: index of the selected overload (ctor/method/func) within its set; default 0.
+	int      is_func_addr; // FFI: this arg is a bare function name passed as a C function pointer (its address).
+	int      anno_indirect; // Resolver: EX_CALL through a function value (closure), not a named function.
+	int      anno_capture; // Resolver: EX_IDENT that reads a captured var from the closure env (anno_int = env byte offset).
+	LambdaInfo *lam; // EX_LAMBDA side-data.
+	int      anno_final; // Resolver: final array table id + 1 for an EX_IDENT / static EX_FIELD naming a final array; 0 otherwise.
 };
 
 typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FOREACH, ST_BREAK, ST_CONTINUE, ST_FOR, ST_SWITCH, ST_CASE, ST_DEFAULT, ST_THROW, ST_TRY, ST_CATCH, ST_SPAWN, ST_SELECT, ST_ASM } StmtKind;
@@ -305,13 +305,13 @@ typedef enum { ST_VARDECL, ST_ASSIGN, ST_IF, ST_WHILE, ST_RETURN, ST_EXPR, ST_FO
  */
 typedef struct
 {
-	int      is_send;       /* 1 = send arm, 0 = receive arm. */
-	Expr    *chan;          /* The channel expression. */
-	char     bind[64];      /* Receive arm: bound local name (empty if the value is discarded). */
-	TypeRef  bind_type;     /* Receive arm: channel element type (resolved). */
-	int      bind_offset;   /* Receive arm: frame slot for the bound local (resolved). */
-	Expr    *send_val;      /* Send arm: the value expression. */
-	struct Block *body;     /* The arm body (Block is defined below). */
+	int      is_send; // 1 = send arm, 0 = receive arm.
+	Expr    *chan; // The channel expression.
+	char     bind[64]; // Receive arm: bound local name (empty if the value is discarded).
+	TypeRef  bind_type; // Receive arm: channel element type (resolved).
+	int      bind_offset; // Receive arm: frame slot for the bound local (resolved).
+	Expr    *send_val; // Send arm: the value expression.
+	struct Block *body; // The arm body (Block is defined below).
 } SelectArm;
 
 typedef struct Stmt Stmt;
@@ -320,38 +320,38 @@ struct Stmt
 {
 	StmtKind kind;
 	int      line;
-	TypeRef  decl_type;       /* ST_VARDECL. */
+	TypeRef  decl_type; // ST_VARDECL.
 	char     decl_name[64];
-	Expr    *decl_init;       /* May be NULL. */
-	int      decl_offset;     /* Resolver: stack slot for this local. */
-	int      fe_coll_offset;  /* ST_FOREACH: container pointer slot. */
-	int      fe_index_offset; /* ST_FOREACH: index / map slot cursor. */
-	int      fe_len_offset;   /* ST_FOREACH (string): precomputed length. */
-	int      fe_aux_offset;   /* ST_FOREACH (string): precomputed data pointer. */
-	TypeRef  fe_val_type;     /* ST_FOREACH pair form: value var type (kind TY_VOID if absent). */
-	char     fe_val_name[64]; /* ST_FOREACH pair form: value var name. */
-	int      fe_val_offset;   /* ST_FOREACH pair form: value var stack slot. */
-	Stmt    *for_init;        /* ST_FOR: init clause (var-decl or assignment/expr). */
-	Stmt    *for_post;        /* ST_FOR: post clause (assignment or ++/--). */
-	Expr    *target;          /* ST_ASSIGN lvalue (EX_IDENT|EX_FIELD). */
-	Expr    *value;           /* ST_ASSIGN rhs. */
-	Expr    *cond;            /* ST_IF / ST_WHILE. */
-	Block   *then_blk;        /* Then-branch / while-body. */
-	Block   *else_blk;        /* Else-branch (NULL if none). */
-	Expr    *ret_val;         /* ST_RETURN (may be NULL). */
-	Expr    *expr;            /* ST_EXPR. */
-	int      is_match;        /* ST_SWITCH built from `match`: exhaustiveness enforced, arms auto-break. */
-	int      is_narrow;       /* ST_VARDECL: a match-arm tag-narrowing (base enum -> variant subclass); skip the downcast assignability check, the matched tag guarantees it. */
-	int      is_final;        /* ST_VARDECL: declared `final` (a read-only literal array). */
-	int      final_id;        /* Resolver: the final array's table id + 1; the initializer is dropped. */
-	char   (*case_binds)[64]; /* ST_CASE: positional payload bind names, e.g. Circle(r) -> {"r"}. */
+	Expr    *decl_init; // May be NULL.
+	int      decl_offset; // Resolver: stack slot for this local.
+	int      fe_coll_offset; // ST_FOREACH: container pointer slot.
+	int      fe_index_offset; // ST_FOREACH: index / map slot cursor.
+	int      fe_len_offset; // ST_FOREACH (string): precomputed length.
+	int      fe_aux_offset; // ST_FOREACH (string): precomputed data pointer.
+	TypeRef  fe_val_type; // ST_FOREACH pair form: value var type (kind TY_VOID if absent).
+	char     fe_val_name[64]; // ST_FOREACH pair form: value var name.
+	int      fe_val_offset; // ST_FOREACH pair form: value var stack slot.
+	Stmt    *for_init; // ST_FOR: init clause (var-decl or assignment/expr).
+	Stmt    *for_post; // ST_FOR: post clause (assignment or ++/--).
+	Expr    *target; // ST_ASSIGN lvalue (EX_IDENT|EX_FIELD).
+	Expr    *value; // ST_ASSIGN rhs.
+	Expr    *cond; // ST_IF / ST_WHILE.
+	Block   *then_blk; // Then-branch / while-body.
+	Block   *else_blk; // Else-branch (NULL if none).
+	Expr    *ret_val; // ST_RETURN (may be NULL).
+	Expr    *expr; // ST_EXPR.
+	int      is_match; // ST_SWITCH built from `match`: exhaustiveness enforced, arms auto-break.
+	int      is_narrow; // ST_VARDECL: a match-arm tag-narrowing (base enum -> variant subclass); skip the downcast assignability check, the matched tag guarantees it.
+	int      is_final; // ST_VARDECL: declared `final` (a read-only literal array).
+	int      final_id; // Resolver: the final array's table id + 1; the initializer is dropped.
+	char   (*case_binds)[64]; // ST_CASE: positional payload bind names, e.g. Circle(r) -> {"r"}.
 	int      case_bind_count;
-	SelectArm *sel_arms;      /* ST_SELECT: the send/receive arms. */
-	int      sel_arm_count;   /* ST_SELECT: arm count (else_blk holds the default body, or NULL). */
-	char   (*asm_lines)[256]; /* ST_ASM: raw assembly lines, emitted verbatim. */
+	SelectArm *sel_arms; // ST_SELECT: the send/receive arms.
+	int      sel_arm_count; // ST_SELECT: arm count (else_blk holds the default body, or NULL).
+	char   (*asm_lines)[256]; // ST_ASM: raw assembly lines, emitted verbatim.
 	int      asm_line_count;
-	Stmt    *accum_stmt;      /* P5: the recognized `s = s + ...` body statement, or NULL. */
-	int      accum_sb_offset; /* P5: frame slot for the lowering StringBuilder (0 = not lowered). */
+	Stmt    *accum_stmt; // P5: the recognized `s = s + ...` body statement, or NULL.
+	int      accum_sb_offset; // P5: frame slot for the lowering StringBuilder (0 = not lowered).
 };
 
 struct Block
@@ -365,8 +365,8 @@ typedef struct
 {
 	TypeRef type;
 	char name[64];
-	Expr *def;   /* Default value (a literal) used when the argument is omitted, or NULL. */
-	int offset;  /* Resolver: stack slot of this parameter (the escape summary maps an arg index to its offset). */
+	Expr *def; // Default value (a literal) used when the argument is omitted, or NULL.
+	int offset; // Resolver: stack slot of this parameter (the escape summary maps an arg index to its offset).
 } Param;
 
 /**
@@ -376,61 +376,61 @@ typedef struct
  */
 typedef struct
 {
-	unsigned char      solved;        /* The fixpoint has computed this body at least once. */
-	unsigned char      this_escapes;  /* Methods only: the receiver escapes the body. */
-	unsigned long long param_escapes; /* Bit k set => params[k] escapes; >64 params => all treated as escaping. */
+	unsigned char      solved; // The fixpoint has computed this body at least once.
+	unsigned char      this_escapes; // Methods only: the receiver escapes the body.
+	unsigned long long param_escapes; // Bit k set => params[k] escapes; >64 params => all treated as escaping.
 } EscSummary;
 typedef struct Func
 {
 	TypeRef ret_type;
 	char name[64];
-	int  name_line, name_col; /* 1-based position of the function/method name (for the LSP symbol index; 0 = unset). */
-	Param  *params;           /* Grown via func_add_param; param_count live, param_cap allocated. */
+	int  name_line, name_col; // 1-based position of the function/method name (for the LSP symbol index; 0 = unset).
+	Param  *params; // Grown via func_add_param; param_count live, param_cap allocated.
 	int param_count;
 	int param_cap;
 	Block  *body;
-	int     is_extern;        /* FFI: declared with `extern`, no body; asm_label is the raw C symbol. */
-	int     is_blocking;      /* FFI: `extern blocking` - dispatch via the offload pool. */
-	int     is_variadic;      /* FFI: trailing `...` - a variadic C function (e.g. printf/snprintf). */
-	int     is_dynamic;       /* FFI: `extern dynamic` - address resolved at run time via the registered resolver. */
-	int     is_static;        /* Static method: no `this`, called via the class name. */
-	int     is_lambda;        /* Synthesized lambda body (env arg0); kept off the IR path. */
-	int     cap_count;        /* Lambda body: captures seeded from env at entry. */
-	int     cap_env_off[32];  /* Lambda body: byte offset of each capture in the env object. */
-	int     cap_local_off[32];/* Lambda body: stack slot each capture is copied into. */
-	int     frame_size;       /* Resolver. */
-	int     this_offset;      /* Resolver: stack slot of `this` for a method body; -1 for a free/static function. */
-	EscSummary esc;           /* Escape pass: which inputs escape this body (interprocedural summary). */
-	int     obj_local_offsets[64];  /* Ownership pass: the stack offset of each object-typed local. */
-	int     obj_local_count;        /* Number of entries in obj_local_offsets. */
-	int     stack_alloc_bytes;      /* Escape pass: total frame bytes reserved for stack objects. */
-	int     max_temp_depth;         /* Frame pass: deepest simultaneously-live preserve-across-call temporaries. */
-	int     max_outgoing_args;      /* Frame pass: most argument slots any call in this body needs (0..4). */
-	int     max_scratch_bytes;      /* Frame pass: peak sum of nested scratch-block bytes (sizes the static-rsp arena). */
-#define PROMO_MAX 64                /* Promotion: max logical locals (registers reused across disjoint live ranges). */
-	int     promo_count;            /* Register promotion: number of promoted locals (<= PROMO_MAX; share 4 phys regs). */
-	int     promo_off[PROMO_MAX];   /* Register promotion: rbp slot offset of each promoted local. */
-	int     promo_reg[PROMO_MAX];   /* Register promotion: physical register index 0..3 -> r12..r15 (repeats under reuse). */
-	int     fpromo_count;           /* Float promotion: number of promoted double locals (<= PROMO_MAX; share 4 xmm regs). */
-	int     fpromo_off[PROMO_MAX];  /* Float promotion: rbp slot offset of each promoted double local. */
-	int     fpromo_reg[PROMO_MAX];  /* Float promotion: physical register index 0..3 -> xmm2..xmm5 (repeats under reuse). */
+	int     is_extern; // FFI: declared with `extern`, no body; asm_label is the raw C symbol.
+	int     is_blocking; // FFI: `extern blocking` - dispatch via the offload pool.
+	int     is_variadic; // FFI: trailing `...` - a variadic C function (e.g. printf/snprintf).
+	int     is_dynamic; // FFI: `extern dynamic` - address resolved at run time via the registered resolver.
+	int     is_static; // Static method: no `this`, called via the class name.
+	int     is_lambda; // Synthesized lambda body (env arg0); kept off the IR path.
+	int     cap_count; // Lambda body: captures seeded from env at entry.
+	int     cap_env_off[32]; // Lambda body: byte offset of each capture in the env object.
+	int     cap_local_off[32]; // Lambda body: stack slot each capture is copied into.
+	int     frame_size; // Resolver.
+	int     this_offset; // Resolver: stack slot of `this` for a method body; -1 for a free/static function.
+	EscSummary esc; // Escape pass: which inputs escape this body (interprocedural summary).
+	int     obj_local_offsets[64]; // Ownership pass: the stack offset of each object-typed local.
+	int     obj_local_count; // Number of entries in obj_local_offsets.
+	int     stack_alloc_bytes; // Escape pass: total frame bytes reserved for stack objects.
+	int     max_temp_depth; // Frame pass: deepest simultaneously-live preserve-across-call temporaries.
+	int     max_outgoing_args; // Frame pass: most argument slots any call in this body needs (0..4).
+	int     max_scratch_bytes; // Frame pass: peak sum of nested scratch-block bytes (sizes the static-rsp arena).
+#define PROMO_MAX 64 // Promotion: max logical locals (registers reused across disjoint live ranges).
+	int     promo_count; // Register promotion: number of promoted locals (<= PROMO_MAX; share 4 phys regs).
+	int     promo_off[PROMO_MAX]; // Register promotion: rbp slot offset of each promoted local.
+	int     promo_reg[PROMO_MAX]; // Register promotion: physical register index 0..3 -> r12..r15 (repeats under reuse).
+	int     fpromo_count; // Float promotion: number of promoted double locals (<= PROMO_MAX; share 4 xmm regs).
+	int     fpromo_off[PROMO_MAX]; // Float promotion: rbp slot offset of each promoted double local.
+	int     fpromo_reg[PROMO_MAX]; // Float promotion: physical register index 0..3 -> xmm2..xmm5 (repeats under reuse).
 } Func;
 
 typedef struct
 {
 	TypeRef type;
 	char name[64];
-	int   is_static;          /* Static field: one shared global slot, not in the object. */
-	int   is_final;           /* `static final`: a read-only literal array. */
-	Expr *init;               /* Static-field declaration initializer, or NULL. */
-	int   name_line, name_col;/* 1-based position of the field name (for the LSP symbol index; 0 = unset). */
+	int   is_static; // Static field: one shared global slot, not in the object.
+	int   is_final; // `static final`: a read-only literal array.
+	Expr *init; // Static-field declaration initializer, or NULL.
+	int   name_line, name_col; // 1-based position of the field name (for the LSP symbol index; 0 = unset).
 } Field;
 typedef struct
 {
 	char  name[64];
-	int   name_line, name_col;/* 1-based position of the class name (for the LSP symbol index; 0 = unset). */
-	int is_static;            /* `static class`: every member is static, not instantiable. */
-	int is_record;            /* `record`: final class with compiler-synthesized hashCode/equals. */
+	int   name_line, name_col; // 1-based position of the class name (for the LSP symbol index; 0 = unset).
+	int is_static; // `static class`: every member is static, not instantiable.
+	int is_record; // `record`: final class with compiler-synthesized hashCode/equals.
 	char parent_name[64];
 	int has_parent;
 	/**
@@ -439,40 +439,40 @@ typedef struct
 	 */
 	struct TypeRef **parent_targs;
 	int parent_targ_count;
-	char (*implements)[64];   /* Interface names this class implements. Grown at parse. */
+	char (*implements)[64]; // Interface names this class implements. Grown at parse.
 	int implements_count;
 	int implements_cap;
-	char (*type_params)[64];        /* Generic class: parameter names, e.g. "T". Grown at parse. */
-	char (*type_param_bounds)[64];  /* Interface bound per param, or "" if none. */
-	int  type_param_count;          /* 0 = ordinary (non-generic) class. */
+	char (*type_params)[64]; // Generic class: parameter names, e.g. "T". Grown at parse.
+	char (*type_param_bounds)[64]; // Interface bound per param, or "" if none.
+	int  type_param_count; // 0 = ordinary (non-generic) class.
 	int  type_param_cap;
 	int  type_param_bounds_cap;
-	Field *fields;            /* Grown via class_add_field. */
+	Field *fields; // Grown via class_add_field.
 	int field_count;
 	int fields_cap;
-	Func **methods;           /* Grown via class_add_method. */
+	Func **methods; // Grown via class_add_method.
 	int method_count;
 	int methods_cap;
-	Func **ctors;             /* Overloaded constructors, declaration order; ret_type is TY_VOID. */
+	Func **ctors; // Overloaded constructors, declaration order; ret_type is TY_VOID.
 	int ctor_count;
 	int ctors_cap;
-	Func *ctor;               /* Legacy alias = ctors[0] when ctor_count >= 1, else NULL. */
+	Func *ctor; // Legacy alias = ctors[0] when ctor_count >= 1, else NULL.
 } ClassDecl;
 
 typedef struct
 {
 	char  name[64];
-	Func **methods;           /* Bodyless signature Funcs (body == NULL). Grown at parse. */
+	Func **methods; // Bodyless signature Funcs (body == NULL). Grown at parse.
 	int   method_count;
 	int   methods_cap;
 } InterfaceDecl;
 
 typedef struct
 {
-	char  name[64];           /* Constant name, e.g. "RED". */
-	Expr *args[8];            /* Constructor arguments for this constant. */
+	char  name[64]; // Constant name, e.g. "RED".
+	Expr *args[8]; // Constructor arguments for this constant.
 	int   arg_count;
-	Func *overrides[8];       /* Per-constant method override bodies (empty if none). */
+	Func *overrides[8]; // Per-constant method override bodies (empty if none).
 	int   override_count;
 	/**
 	 * Payload variant (sum type): the constant declares its own typed fields, e.g. `Circle(double r)`. payload_count>0 marks a constructible variant (Shape.Circle(2.0) builds a fresh instance) rather than a singleton constant.
@@ -485,41 +485,41 @@ typedef struct
 typedef struct
 {
 	char  name[64];
-	char  (*type_params)[64]; /* Generic enum: parameter names, e.g. "T". 0 = non-generic. */
+	char  (*type_params)[64]; // Generic enum: parameter names, e.g. "T". 0 = non-generic.
 	int   type_param_count;
 	int   type_param_cap;
 	char  (*implements)[64];
 	int   implements_count;
 	int   implements_cap;
-	EnumConstant *constants;  /* Grown at parse. */
+	EnumConstant *constants; // Grown at parse.
 	int   constant_count;
 	int   constants_cap;
-	Field *fields;            /* Shared instance fields (user-declared). */
+	Field *fields; // Shared instance fields (user-declared).
 	int   field_count;
 	int   fields_cap;
-	Func **methods;           /* Shared instance methods. */
+	Func **methods; // Shared instance methods.
 	int   method_count;
 	int   methods_cap;
-	Func *ctor;               /* The enum constructor (params + body), or NULL. */
+	Func *ctor; // The enum constructor (params + body), or NULL.
 } EnumDecl;
 
 typedef struct
 {
-	ClassDecl    **klasses;       /* Peer top-level classes declared in this file. */
+	ClassDecl    **klasses; // Peer top-level classes declared in this file.
 	int            class_count;
 	int            class_cap;
-	InterfaceDecl **interfaces;   /* File-scope interface declarations. Grown at parse. */
+	InterfaceDecl **interfaces; // File-scope interface declarations. Grown at parse.
 	int            interface_count;
 	int            interfaces_cap;
-	EnumDecl      **enums;        /* File-scope enum declarations. */
+	EnumDecl      **enums; // File-scope enum declarations.
 	int            enum_count;
 	int            enums_cap;
-	Func          **funcs;        /* File-scope functions. */
+	Func          **funcs; // File-scope functions.
 	int            func_count;
 	int            funcs_cap;
-	const char    *file;          /* Source path, for diagnostics. */
-	const char    *src;           /* Source buffer, for diagnostic line echo. */
-	int            is_prelude;    /* Built-in standard-library source, not the user's program. */
+	const char    *file; // Source path, for diagnostics.
+	const char    *src; // Source buffer, for diagnostic line echo.
+	int            is_prelude; // Built-in standard-library source, not the user's program.
 } Unit;
 
 void   ast_free_all(void);
@@ -527,13 +527,13 @@ Expr  *expr_new(ExprKind kind, int line);
 LambdaInfo *lambda_new(void);
 void   lambda_add_param(LambdaInfo *l, const char *name, int has_type, TypeRef type);
 TypeRef *typeref_box(TypeRef t);
-void     typeref_add_targ(TypeRef *f, TypeRef t);   /* Append a param type to a TY_FUNC signature. */
+void     typeref_add_targ(TypeRef *f, TypeRef t); // Append a param type to a TY_FUNC signature.
 Stmt  *stmt_new(StmtKind kind, int line);
 Block *block_new(void);
 void   block_push(Block *b, Stmt *s);
-Param *func_add_param(Func *f);          /* Grow f->params by one; returns the zeroed new slot. */
-void   expr_add_arg(Expr *e, Expr *a);   /* Append a to e->args, growing as needed. */
-Field *class_add_field(ClassDecl *c);    /* Grow c->fields by one; returns the zeroed new slot. */
+Param *func_add_param(Func *f); // Grow f->params by one; returns the zeroed new slot.
+void   expr_add_arg(Expr *e, Expr *a); // Append a to e->args, growing as needed.
+Field *class_add_field(ClassDecl *c); // Grow c->fields by one; returns the zeroed new slot.
 void   class_add_method(ClassDecl *c, Func *m);
 void   class_add_ctor(ClassDecl *c, Func *f);
 Func  *func_new(void);
@@ -543,7 +543,7 @@ EnumDecl *enum_new(void);
 Unit  *unit_new(void);
 void   unit_add_class(Unit *u, ClassDecl *c);
 
-TypeRef    typeref_deepcopy(const TypeRef *t);   /* Deep copy incl. elem/elem2/targs. */
+TypeRef    typeref_deepcopy(const TypeRef *t); // Deep copy incl. elem/elem2/targs.
 Expr      *expr_clone(const Expr *e);
 Stmt      *stmt_clone(const Stmt *s);
 Block     *block_clone(const Block *b);

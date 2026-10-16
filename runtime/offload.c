@@ -5,7 +5,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
-#include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
+#include <unistd.h> // sysconf(_SC_NPROCESSORS_ONLN).
 #endif
 
 /**
@@ -22,12 +22,12 @@ typedef struct OffTask
 
 static OffTask *g_head, *g_tail;
 static bzy_mutex  g_lock = BZY_MUTEX_INIT;
-static bzy_sem    g_sem;               /* Released once per submitted task. */
+static bzy_sem    g_sem; // Released once per submitted task.
 static bzy_thread *g_threads;
 static int        g_nthreads;
-static int        g_inflight;          /* Breezes parked on an offload task (via __atomic). */
-static int        g_shutdown;          /* Read by workers via __atomic. */
-static int        g_started;           /* Guarded by g_start_lock. */
+static int        g_inflight; // Breezes parked on an offload task (via __atomic).
+static int        g_shutdown; // Read by workers via __atomic.
+static int        g_started; // Guarded by g_start_lock.
 static bzy_mutex  g_start_lock = BZY_MUTEX_INIT;
 
 static void *offload_worker(void *unused)

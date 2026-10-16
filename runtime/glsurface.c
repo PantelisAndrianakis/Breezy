@@ -18,7 +18,7 @@
 #endif
 
 #ifdef _WIN32
-#undef CreateWindow   /* windows.h macro-expands CreateWindow -> CreateWindowA. */
+#undef CreateWindow // windows.h macro-expands CreateWindow -> CreateWindowA.
 #endif
 
 /* ---- dl helpers (mirror runtime/surface.c). ---- */
@@ -67,7 +67,7 @@ static void *dl_sym(void *h, const char *n)
 #define BZ_SDL_WINDOWPOS_UNDEFINED 0x1FFF0000
 #define BZ_SDL_WINDOW_OPENGL       0x00000002u
 #define BZ_SDL_WINDOW_SHOWN        0x00000004u
-#define BZ_SDL_GL_DOUBLEBUFFER     5            /* SDL_GLattr enum value. */
+#define BZ_SDL_GL_DOUBLEBUFFER     5 // SDL_GLattr enum value.
 /* Event types (same packing as surface.c). */
 #define BZ_SDL_QUIT             0x100u
 #define BZ_SDL_WINDOWEVENT      0x200u
@@ -79,7 +79,7 @@ static void *dl_sym(void *h, const char *n)
 
 static struct
 {
-	int loaded;            /* 0 = not tried, 1 = ok, -1 = failed. */
+	int loaded; // 0 = not tried, 1 = ok, -1 = failed.
 	int  (*Init)(uint32_t flags);
 	int  (*GL_SetAttribute)(int attr, int value);
 	void *(*CreateWindow)(const char *title, int x, int y, int w, int h, uint32_t flags);
@@ -148,7 +148,7 @@ static void *gl_getproc(const char *name)
 typedef struct
 {
 	void *win, *ctx;
-	uintptr_t owner_tid;   /* OS thread that holds the context current. */
+	uintptr_t owner_tid; // OS thread that holds the context current.
 } GlCtrl;
 
 /**

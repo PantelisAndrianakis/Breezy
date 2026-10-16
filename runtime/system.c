@@ -198,7 +198,7 @@ void *bzy_sys_getenv(void *name)
 
 static volatile sig_atomic_t g_shutdown_flag = 0;
 static bzy_sem               g_sig_sem;
-static int                   g_handlers_installed = 0;   /* One-shot via atomic exchange. */
+static int                   g_handlers_installed = 0; // One-shot via atomic exchange.
 
 /**
  * Async-signal-safe handler: ONLY set the flag and post the semaphore.

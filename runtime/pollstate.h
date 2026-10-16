@@ -20,20 +20,20 @@ extern char bzy_pd_ready_sentinel;
  */
 typedef struct
 {
-	void      *breeze;   /* bzy_sched_current() of the parked breeze. */
-	int        result;   /* Set by the waker: 1 = ready, 0 = timed out, -1 = error. */
-	bzy_mutex  lock;     /* Park handshake: held by the breeze across the park switch. */
+	void      *breeze; // bzy_sched_current() of the parked breeze.
+	int        result; // Set by the waker: 1 = ready, 0 = timed out, -1 = error.
+	bzy_mutex  lock; // Park handshake: held by the breeze across the park switch.
 } Waiter;
 
 /* Per-fd readiness, embedded in the socket handle. g[dir] is 0 / PD_READY / Waiter*. */
 typedef struct
 {
-	void      *g[2];          /* __atomic-accessed read/write readiness words. */
-	int        registered;    /* fd ADDed to epoll yet? Guarded by reg_lock. */
-	bzy_mutex  reg_lock;      /* One-time ADD + close teardown. */
+	void      *g[2]; // __atomic-accessed read/write readiness words.
+	int        registered; // fd ADDed to epoll yet? Guarded by reg_lock.
+	bzy_mutex  reg_lock; // One-time ADD + close teardown.
 } PollDesc;
 
-void  bzy_poll_init(PollDesc *pd);          /* Zero state + init reg_lock. */
+void  bzy_poll_init(PollDesc *pd); // Zero state + init reg_lock.
 
 /**
  * Clear a stale ready bit before retrying the syscall.

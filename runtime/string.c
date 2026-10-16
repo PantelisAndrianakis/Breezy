@@ -16,7 +16,7 @@
  */
 
 static int64_t g_string_typeinfo[2] = { 0 /* Finalizer. */, 0 /* Object-field count. */ };
-static int64_t g_string_vtable[2];   /* [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused. */
+static int64_t g_string_vtable[2]; // [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused.
 
 static void *string_vtable(void)
 {
@@ -746,7 +746,7 @@ static void bzy_sb_finalize(void *sb)
 }
 
 static int64_t g_sb_typeinfo[2] = { 0 /* Finalizer (set on first use). */, 0 /* Object-field count. */ };
-static int64_t g_sb_vtable[2];   /* [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused. */
+static int64_t g_sb_vtable[2]; // [0] = typeinfo back-pointer (becomes vtable[-1]); [1] unused.
 
 static void *sb_vtable(void)
 {
@@ -806,9 +806,9 @@ void *bzy_sb_to_string(void *sb)
  * A parse op sets g_parse_error on malformed input; the codegen-emitted bzy_number_check then throws NumberFormatException, locating the call site with pc/frame (the bzy_io_check / bzy_oob pattern).
  */
 
-extern char __vtable_NumberFormatException[];   /* Emitted per-program by codegen. */
+extern char __vtable_NumberFormatException[]; // Emitted per-program by codegen.
 
-static __thread const char *g_parse_error;       /* Set by a parse op; consumed by bzy_number_check. */
+static __thread const char *g_parse_error; // Set by a parse op; consumed by bzy_number_check.
 
 static void parse_fail(const char *msg)
 {

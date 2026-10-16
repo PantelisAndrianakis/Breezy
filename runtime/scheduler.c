@@ -3,13 +3,13 @@
 #include "platform.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <stddef.h>   /* offsetof, for recovering the Breeze from its inline argbuf. */
+#include <stddef.h> // offsetof, for recovering the Breeze from its inline argbuf.
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <pthread.h>
-#include <unistd.h>   /* sysconf(_SC_NPROCESSORS_ONLN). */
+#include <unistd.h> // sysconf(_SC_NPROCESSORS_ONLN).
 #endif
 
 /**
@@ -19,9 +19,9 @@
  */
 #define SCHED_SPIN 1024
 
-#define POLL_SPIN_EVERY   64  /* Idle-spin rounds between non-blocking network polls. */
-#define POLL_TICK_EVERY   61  /* Dispatches between non-blocking network polls on a busy worker. */
-#define POLL_SPINNERS_MAX 4   /* Workers polling without blocking at once; more only contend on the poll's own lock. */
+#define POLL_SPIN_EVERY   64 // Idle-spin rounds between non-blocking network polls.
+#define POLL_TICK_EVERY   61 // Dispatches between non-blocking network polls on a busy worker.
+#define POLL_SPINNERS_MAX 4 // Workers polling without blocking at once; more only contend on the poll's own lock.
 
 /* The one worker that may sleep in a blocking network poll. */
 #define POLL_NONE    0
@@ -39,11 +39,11 @@ static inline void bzy_cpu_relax(void)
 typedef struct Breeze
 {
 	BzyCoroutine *coroutine;
-	void (*entry)(void);        /* Zero-arg spawn (6a-1). */
-	void (*thunk)(void*);       /* Arg'd spawn: codegen-emitted per-target thunk. */
-	void *arg;                  /* Arg block for the thunk (points at argbuf below). */
+	void (*entry)(void); // Zero-arg spawn (6a-1).
+	void (*thunk)(void*); // Arg'd spawn: codegen-emitted per-target thunk.
+	void *arg; // Arg block for the thunk (points at argbuf below).
 	int done;
-	int home;                   /* Worker id this breeze last ran on (cache-affine wake target). */
+	int home; // Worker id this breeze last ran on (cache-affine wake target).
 	struct Breeze *next;
 	/**
 	 * Inline storage for the (<=4, per resolve.c) spawn args.
@@ -60,24 +60,24 @@ typedef struct Breeze
  */
 typedef struct CLArray
 {
-	int64_t          cap;     /* Number of slots (power of two). */
-	int64_t          mask;    /* cap - 1. */
-	Breeze         **slot;    /* cap entries; indexed by (pos & mask). */
-	struct CLArray  *older;   /* Previous, smaller array kept alive until deque free (a thief may still hold a pointer into it). */
+	int64_t          cap; // Number of slots (power of two).
+	int64_t          mask; // cap - 1.
+	Breeze         **slot; // cap entries; indexed by (pos & mask).
+	struct CLArray  *older; // Previous, smaller array kept alive until deque free (a thief may still hold a pointer into it).
 } CLArray;
 
 typedef struct
 {
-	int64_t  top;          /* Steal end; thieves CAS this forward. */
-	char     _pad[56];     /* Keep top and bottom on separate cache lines: the owner writes bottom on every push while many thieves CAS top, and sharing one line makes each push invalidate it for all stealers (false sharing that cost ~5 ms at 20 workers on the fan-in benchmark). 64-byte separation guarantees distinct lines regardless of base alignment. */
-	int64_t  bottom;       /* Owner end; only the owner moves it. */
-	CLArray *array;        /* Backing store; swapped (release) by the owner on growth. */
+	int64_t  top; // Steal end; thieves CAS this forward.
+	char     _pad[56]; // Keep top and bottom on separate cache lines: the owner writes bottom on every push while many thieves CAS top, and sharing one line makes each push invalidate it for all stealers (false sharing that cost ~5 ms at 20 workers on the fan-in benchmark). 64-byte separation guarantees distinct lines regardless of base alignment.
+	int64_t  bottom; // Owner end; only the owner moves it.
+	CLArray *array; // Backing store; swapped (release) by the owner on growth.
 } Deque;
 
 typedef struct Worker
 {
 	Deque     dq;
-	Breeze   *inj_head, *inj_tail;   /* Foreign-producer injection (MPSC under inj_lock). */
+	Breeze   *inj_head, *inj_tail; // Foreign-producer injection (MPSC under inj_lock).
 	bzy_mutex inj_lock;
 	/**
 	 * Direct-handoff slot: a breeze woken by a channel rendezvous on THIS worker runs next here, without nudging a stealer - keeps a ping-pong pair local instead of bouncing cross-worker.
@@ -173,7 +173,7 @@ static Breeze *cl_take(Deque *d)
 	return x;
 }
 
-#define CL_STEAL_MAX 256   /* Cap on how many a thief lifts in one CAS (bounds the copy). */
+#define CL_STEAL_MAX 256 // Cap on how many a thief lifts in one CAS (bounds the copy).
 
 /**
  * Steal up to half a victim's items in a single CAS, into out[0..return).
@@ -216,19 +216,19 @@ static int cl_steal_batch(Deque *d, Breeze **out, int max)
 
 static Worker *g_workers;
 static int     g_nworkers = 1;
-static bzy_sem g_work_sem;          /* Released on every enqueue: "work may be available". */
-static int     g_sem_ready;         /* 1 once g_work_sem is initialized (nudge guard pre-run). */
-static int     g_live;              /* Breezes created but not finished (accessed via __atomic). */
-static int     g_shutdown;          /* Set when g_live hits 0; unblocks idle workers so they exit. */
+static bzy_sem g_work_sem; // Released on every enqueue: "work may be available".
+static int     g_sem_ready; // 1 once g_work_sem is initialized (nudge guard pre-run).
+static int     g_live; // Breezes created but not finished (accessed via __atomic).
+static int     g_shutdown; // Set when g_live hits 0; unblocks idle workers so they exit.
 /* Workers blocked (or about to block) on g_work_sem. enqueue_on only posts the semaphore when this is > 0, so a spawn/wake onto a busy pool costs no syscall: the work is found by polling. */
 static int     g_idle;
-static int     g_poll_state;        /* POLL_NONE / POLL_BLOCKED / POLL_BROKEN (a break is already on its way). */
-static int     g_poll_spinners;     /* Workers inside a non-blocking poll right now. */
+static int     g_poll_state; // POLL_NONE / POLL_BLOCKED / POLL_BROKEN (a break is already on its way).
+static int     g_poll_spinners; // Workers inside a non-blocking poll right now.
 
-static __thread BzyCoroutine *t_sched;       /* This thread's scheduler coroutine. */
-static __thread Breeze       *t_running;     /* Breeze currently on this CPU (NULL = scheduler). */
-static __thread int           t_wid;         /* This thread's worker index. */
-static __thread void         *t_park_unlock; /* bzy_mutex* the scheduler releases after a parking switch. */
+static __thread BzyCoroutine *t_sched; // This thread's scheduler coroutine.
+static __thread Breeze       *t_running; // Breeze currently on this CPU (NULL = scheduler).
+static __thread int           t_wid; // This thread's worker index.
+static __thread void         *t_park_unlock; // bzy_mutex* the scheduler releases after a parking switch.
 /* bzy_yield sets this; the scheduler re-enqueues the breeze after the switch, when it is safely off its own CPU. */
 static __thread int           t_requeue;
 /**
@@ -387,7 +387,7 @@ void bzy_sched_breeze_uncaught(void)
 	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_set_workers(int n)    /* Call before bzy_sched_run. n <= 0 => auto (logical core count). */
+void bzy_sched_set_workers(int n) // Call before bzy_sched_run. n <= 0 => auto (logical core count).
 {
 	if (n <= 0)
 	{
@@ -496,7 +496,7 @@ void bzy_spawn_args_commit(void *argbuf)
 	enqueue_on(t_wid, b);
 }
 
-void *bzy_sched_current(void)      /* Opaque handle to the running breeze (for waiter lists). */
+void *bzy_sched_current(void) // Opaque handle to the running breeze (for waiter lists).
 {
 	return t_running;
 }
@@ -531,13 +531,13 @@ static void bzy_callback_guard(const char *op)
 	}
 }
 
-void bzy_sched_park(void)          /* Suspend the running breeze; a wake() must re-enqueue it. */
+void bzy_sched_park(void) // Suspend the running breeze; a wake() must re-enqueue it.
 {
 	bzy_callback_guard("park");
 	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_park_unlock(void *lock)   /* Park, then have the scheduler release the lock after we switch out. */
+void bzy_sched_park_unlock(void *lock) // Park, then have the scheduler release the lock after we switch out.
 {
 	bzy_callback_guard("park");
 	// bzy_mutex*.
@@ -546,7 +546,7 @@ void bzy_sched_park_unlock(void *lock)   /* Park, then have the scheduler releas
 	bzy_coroutine_switch(t_sched);
 }
 
-void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again via the direct-handoff slot. */
+void bzy_sched_wake(void *breeze) // Make a parked breeze ready again via the direct-handoff slot.
 {
 	// Direct handoff: place the woken breeze in this worker's runnext so it runs next HERE when the current breeze parks/yields, with no wake_one() nudge - the partner in a channel ping-pong stays on one worker instead of being stolen onto an idle sibling (a cross-worker inject + futex + cache bounce per round-trip).
 	// Any breeze already in runnext is displaced to the deque via the normal enqueue (which DOES nudge), so at most one breeze is owner-pinned and nothing strands: the current breeze always yields eventually, and find_work then takes runnext.
@@ -566,7 +566,7 @@ void bzy_sched_wake(void *breeze)  /* Make a parked breeze ready again via the d
 	enqueue_on(t_wid, (Breeze*)breeze); // Not on a worker (rare): fall back to the deque.
 }
 
-void bzy_sched_wake_external(void *breeze)   /* Wake from a non-scheduler thread (e.g. an offload worker). */
+void bzy_sched_wake_external(void *breeze) // Wake from a non-scheduler thread (e.g. an offload worker).
 {
 	Breeze *b = (Breeze*)breeze;
 	int wid = b->home;
@@ -594,7 +594,7 @@ void bzy_sched_ready(void *breeze)
 	bzy_sched_wake_external(breeze);
 }
 
-void bzy_sched_nudge(void)   /* Wake an idle worker to re-check timers: one semaphore count, and the poller if one is blocked. */
+void bzy_sched_nudge(void) // Wake an idle worker to re-check timers: one semaphore count, and the poller if one is blocked.
 {
 	if (g_sem_ready)
 	{

@@ -33,7 +33,7 @@ static int        g_template_cap;
 static char     **g_instances;
 static int        g_instance_count;
 static int        g_instance_cap;
-static Unit    ***g_units;   /* Handle to main's units pointer so appends can realloc it. */
+static Unit    ***g_units; // Handle to main's units pointer so appends can realloc it.
 static int       *g_total;
 static int       *g_cap;
 static int        g_changed;

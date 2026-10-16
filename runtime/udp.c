@@ -18,7 +18,7 @@ static void udp_v4mapped(struct sockaddr_storage *ss, socklen_t *len)
 }
 
 #ifdef _WIN32
-#define U_FD(o)     (*(SOCKET*)((char*)(o) + 24))   /* UdpSocket reuses the socket-handle layout. */
+#define U_FD(o)     (*(SOCKET*)((char*)(o) + 24)) // UdpSocket reuses the socket-handle layout.
 #define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
 
 /* Datagram layout: 24 data(byte[]) | 32 host(string) | 40 port. num_obj_fields = 2. */
@@ -391,7 +391,7 @@ int64_t bzy_dgram_port(void *d)
 #include "pollstate.h"
 #define U_FD(o)     (*(int64_t*)((char*)(o) + 24))
 #define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
-#define U_POLL(o)   ((PollDesc*)((char*)(o) + 40))   /* bzy_udp_new wraps via bzy_sock_wrap. */
+#define U_POLL(o)   ((PollDesc*)((char*)(o) + 40)) // bzy_udp_new wraps via bzy_sock_wrap.
 
 #define DG_DATA(o) (*(void**)((char*)(o) + 24))
 #define DG_HOST(o) (*(void**)((char*)(o) + 32))

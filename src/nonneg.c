@@ -5,7 +5,7 @@
 
 typedef struct
 {
-	int *off;   /* slot offsets of locals currently known >= 0; grown dynamically. */
+	int *off; // slot offsets of locals currently known >= 0; grown dynamically.
 	int count;
 	int cap;
 } NonNeg;

@@ -24,7 +24,7 @@ static inline uint64_t read_tsc(void)
 }
 
 static volatile uint64_t g_tsc0      = 0;
-static volatile uint64_t g_scale_q32 = 0;   /* ns-per-tick in Q32.32 fixed-point. */
+static volatile uint64_t g_scale_q32 = 0; // ns-per-tick in Q32.32 fixed-point.
 
 static void rdtsc_init(void)
 {

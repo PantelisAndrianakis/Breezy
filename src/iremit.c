@@ -1,7 +1,7 @@
 #include "iremit.h"
 #include "regalloc.h"
-#include "irlower.h"   /* ir_func_const_local: resolve a constant-local loop bound. */
-#include "lexer.h"   /* Comparison TokenTypes. */
+#include "irlower.h" // ir_func_const_local: resolve a constant-local loop bound.
+#include "lexer.h" // Comparison TokenTypes.
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,16 +22,16 @@ typedef struct
 {
 	Codegen *cg;
 	IRAlloc *a;
-	int      spill_base;          /* rbp offset of spilled temp slot 0. */
-	int     *blabel;              /* Per-block unique label id. */
-	int      cs_base;             /* rbp offset of saved-callee-reg 0. */
-	int      cs_regs[RA_NREGS];   /* Used callee-saved register indices. */
+	int      spill_base; // rbp offset of spilled temp slot 0.
+	int     *blabel; // Per-block unique label id.
+	int      cs_base; // rbp offset of saved-callee-reg 0.
+	int      cs_regs[RA_NREGS]; // Used callee-saved register indices.
 	int      ncs;
-	char      *cis;               /* [vreg_count] 1 if the vreg is a known constant. */
-	long long *cval;              /* [vreg_count] that constant's value. */
-	char      *cdead;            /* [vreg_count] 1 if the const folds into every use (skip emit). */
-	char      *nn;               /* [vreg_count] 1 if the vreg's value is provably >= 0. */
-	char      *mclean;          /* [vreg_count] 1 if some use observes the value's high 32 bits, so a narrow-int result must be re-extended (clean). */
+	char      *cis; // [vreg_count] 1 if the vreg is a known constant.
+	long long *cval; // [vreg_count] that constant's value.
+	char      *cdead; // [vreg_count] 1 if the const folds into every use (skip emit).
+	char      *nn; // [vreg_count] 1 if the vreg's value is provably >= 0.
+	char      *mclean; // [vreg_count] 1 if some use observes the value's high 32 bits, so a narrow-int result must be re-extended (clean).
 	/* Cold bounds-failure stubs, buffered so the hot path is a single not-taken jae: each records the label and the registers holding base/index at the check (still live at the stub - the jump leaves them untouched). */
 	struct
 	{
@@ -2005,9 +2005,9 @@ typedef struct VecNode VecNode;
 struct VecNode
 {
 	VecNodeKind kind;
-	int          slot;    /* VN_LOAD: input array frame slot. */
-	int          op;      /* VN_BINOP: TokenType (TOKEN_PLUS/MINUS/STAR). */
-	VecNode     *l, *r;   /* VN_BINOP operands. */
+	int          slot; // VN_LOAD: input array frame slot.
+	int          op; // VN_BINOP: TokenType (TOKEN_PLUS/MINUS/STAR).
+	VecNode     *l, *r; // VN_BINOP operands.
 };
 
 /**
@@ -2019,17 +2019,17 @@ struct VecNode
 typedef struct
 {
 	int         ok;
-	int         slot_i;     /* Induction local frame offset. */
-	long long   bound;          /* Constant upper bound (a literal, or a resolved constant local). */
-	int         bound_from_ident; /* 1 if the bound was an EX_IDENT resolved to a constant local. */
-	int         out_slot;   /* Output array frame offset (store shape); -1 for a reduction. */
-	int         is_reduce;  /* 1 if a loop-carried scalar reduction (acc = acc + sop). */
-	int         reduce_slot; /* Reduction accumulator's frame offset (is_reduce only). */
-	TypeKind    elem;       /* Element kind of the vectorized arrays: TY_INT or TY_DOUBLE. */
+	int         slot_i; // Induction local frame offset.
+	long long   bound; // Constant upper bound (a literal, or a resolved constant local).
+	int         bound_from_ident; // 1 if the bound was an EX_IDENT resolved to a constant local.
+	int         out_slot; // Output array frame offset (store shape); -1 for a reduction.
+	int         is_reduce; // 1 if a loop-carried scalar reduction (acc = acc + sop).
+	int         reduce_slot; // Reduction accumulator's frame offset (is_reduce only).
+	TypeKind    elem; // Element kind of the vectorized arrays: TY_INT or TY_DOUBLE.
 	VecNode     pool[VEC_MAX_NODES];
 	int         npool;
-	VecNode    *root;       /* The stored value's op tree (into pool). */
-	const char *reason;     /* Verdict text, for BZY_SIMD_REPORT triage. */
+	VecNode    *root; // The stored value's op tree (into pool).
+	const char *reason; // Verdict text, for BZY_SIMD_REPORT triage.
 } VecLoop;
 
 /**

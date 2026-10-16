@@ -1157,7 +1157,7 @@ static void test_pool_recycles_block(void)
 	ASSERT_INT(bzy_live_count(), before); // No leak: pooled blocks are still logically freed.
 }
 
-static int g_timer_hits;            /* A timer target for tests that only need a side effect. */
+static int g_timer_hits; // A timer target for tests that only need a side effect.
 static void timer_test_target(void)
 {
 	g_timer_hits++;
@@ -1447,7 +1447,7 @@ static void test_iocp_completion_wakes_breeze(void)
 }
 
 static int g_tcp_ok;
-static void *g_tcp_listener;       /* Shared Listener handle (set by server, read by client). */
+static void *g_tcp_listener; // Shared Listener handle (set by server, read by client).
 
 static void tcp_server(void)
 {
@@ -1510,7 +1510,7 @@ static void test_tcp_accept_timeout_and_try(void)
 }
 
 static int g_udp_ok;
-static void *g_udp_server;     /* Shared UdpSocket handle. */
+static void *g_udp_server; // Shared UdpSocket handle.
 static int64_t g_udp_server_port;
 
 static void udp_server(void)

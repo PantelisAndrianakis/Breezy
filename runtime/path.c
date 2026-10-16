@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>   /* getcwd (MinGW and POSIX both provide it). */
+#include <unistd.h> // getcwd (MinGW and POSIX both provide it).
 
 /**
  * Pure path-string helpers (the Path namespace).

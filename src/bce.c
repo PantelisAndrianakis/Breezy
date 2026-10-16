@@ -1,10 +1,10 @@
 #include "bce.h"
 #include "lexer.h"
 #include "grow.h"
-#include "resolve.h"   /* final_table: constant lengths of final arrays. */
+#include "resolve.h" // final_table: constant lengths of final arrays.
 #include <stddef.h>
 #include <stdlib.h>
-#include <string.h>   /* strcmp for the .length field name. */
+#include <string.h> // strcmp for the .length field name.
 
 /**
  * Bounds-check elimination by forward interval analysis.
@@ -25,7 +25,7 @@
 
 typedef struct
 {
-	int known;        /* 0 = full range (unbounded); 1 = [lo, hi] holds. */
+	int known; // 0 = full range (unbounded); 1 = [lo, hi] holds.
 	long long lo, hi;
 } Iv;
 
@@ -133,11 +133,11 @@ static Iv iv_mul(Iv a, Iv b)
 typedef struct
 {
 	int n;
-	int *off;        /* scalar-int interval keys; grown dynamically. */
+	int *off; // scalar-int interval keys; grown dynamically.
 	Iv  *iv;
 	int cap;
 	int an;
-	int *aoff;       /* array-length interval keys. */
+	int *aoff; // array-length interval keys.
 	Iv  *alen;
 	int acap;
 	/**

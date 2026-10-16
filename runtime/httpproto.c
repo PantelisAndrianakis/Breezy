@@ -585,7 +585,7 @@ static void *parse_response(Reader *r, int *was_eof)
 extern char __vtable_HttpException[];
 extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
-static __thread const char *g_http_error;   /* Set by the runtime; consumed by bzy_http_check. */
+static __thread const char *g_http_error; // Set by the runtime; consumed by bzy_http_check.
 
 /**
  * Read one request off the socket.

@@ -28,7 +28,7 @@
 /* Dynamically-resolved OpenSSL entry points. */
 static struct
 {
-	int loaded;            /* 0 = not tried, 1 = ok, -1 = failed. */
+	int loaded; // 0 = not tried, 1 = ok, -1 = failed.
 	void *(*CTX_new)(const void *method);
 	const void *(*TLS_client_method)(void);
 	const void *(*TLS_server_method)(void);
@@ -187,7 +187,7 @@ static int tls_load(void)
 #define TLS_SSL(o)       (*(void**)((char*)(o) + 32))
 #define TLS_CTXOWN(o)    (*(void**)((char*)(o) + 40))
 #define TLS_CLOSED(o)    (*(int64_t*)((char*)(o) + 48))
-#define TLS_PENDING(o)   (*(int64_t*)((char*)(o) + 56))   /* 1 while an accepted connection's handshake has not run. */
+#define TLS_PENDING(o)   (*(int64_t*)((char*)(o) + 56)) // 1 while an accepted connection's handshake has not run.
 
 /**
  * ---- TlsListener layout (object_size = 48):

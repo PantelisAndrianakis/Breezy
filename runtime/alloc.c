@@ -1,12 +1,12 @@
 #include "breezy.h"
-#include "platform.h"  /* bzy_mutex for the cycle-roots lock. */
+#include "platform.h" // bzy_mutex for the cycle-roots lock.
 #include <stdlib.h>
-#include <stdio.h>     /* fprintf, for BZY_CYCLE_TIMING pause measurement. */
+#include <stdio.h> // fprintf, for BZY_CYCLE_TIMING pause measurement.
 #include <string.h>
-#include <stddef.h>   /* offsetof, for the inline-allocator layout asserts. */
+#include <stddef.h> // offsetof, for the inline-allocator layout asserts.
 #ifdef _WIN32
-#include <windows.h>   /* TlsAlloc / Interlocked* for the TEB-slot allocator TLS. */
-#include <intrin.h>    /* __readgsqword / __writegsqword. */
+#include <windows.h> // TlsAlloc / Interlocked* for the TEB-slot allocator TLS.
+#include <intrin.h> // __readgsqword / __writegsqword.
 #endif
 
 /* Cycle-collector colors, stored in the low two bits of gcinfo at offset 16. */
@@ -132,7 +132,7 @@ typedef struct
 	void **roots;
 	int64_t n, cap;
 } CycBuf;
-static CycBuf g_cyc[BZY_CYC_MAX_WORKERS];   /* Zero-initialized (BSS). */
+static CycBuf g_cyc[BZY_CYC_MAX_WORKERS]; // Zero-initialized (BSS).
 
 static void collect_worker(int wid, int budget);
 
@@ -202,8 +202,8 @@ static void roots_push_wid(int wid, void *o)
  */
 
 #define POOL_MAX_SIZE 256
-#define POOL_NCLASS   11        /* Index 0 = unpooled; 1..10 are real classes. */
-#define POOL_CAP      256       /* Max recycled blocks held per class, per thread. */
+#define POOL_NCLASS   11 // Index 0 = unpooled; 1..10 are real classes.
+#define POOL_CAP      256 // Max recycled blocks held per class, per thread.
 
 static const int g_class_size[POOL_NCLASS] =
 {
@@ -218,12 +218,12 @@ static const int g_class_size[POOL_NCLASS] =
  */
 typedef struct
 {
-	void    *head[POOL_NCLASS];   /* Free-list head per class (next link @ block offset 0). */
-	int32_t  n[POOL_NCLASS];      /* Current depth per class. */
-	int64_t  live;                /* This thread's contribution to the live-object count. */
-	int      registered;          /* 1 once this shard is linked into g_shards. */
-	char    *slab_cur;            /* Bump cursor for net-new pooled blocks (see slab_carve). */
-	char    *slab_end;            /* End of the current slab; carving past it grabs a new one. */
+	void    *head[POOL_NCLASS]; // Free-list head per class (next link @ block offset 0).
+	int32_t  n[POOL_NCLASS]; // Current depth per class.
+	int64_t  live; // This thread's contribution to the live-object count.
+	int      registered; // 1 once this shard is linked into g_shards.
+	char    *slab_cur; // Bump cursor for net-new pooled blocks (see slab_carve).
+	char    *slab_end; // End of the current slab; carving past it grabs a new one.
 } PoolTLS;
 
 #ifndef _WIN32
@@ -231,9 +231,9 @@ typedef struct
  * Exported (no `static`) so the compiler can inline the allocation fast path.
  * The per-thread struct lives directly in initial-exec TLS, so its address is the thread pointer plus a fixed offset that is identical on every thread; the runtime records that offset once in bzy_tpool_off, and an inlined Linux `new` reads the free list at fs:[bzy_tpool_off + ...] with no TLS relocation in the emitted asm. bzy_tpool_off_ready guards the window before the offset is known.
  */
-__thread PoolTLS t_pool;          /* Linux/ELF: native fs:-relative TLS - one mov per resolution. */
-int64_t      bzy_tpool_off;       /* (char*)&t_pool - thread pointer; constant across threads. */
-volatile int bzy_tpool_off_ready; /* 1 once bzy_tpool_off has been computed. */
+__thread PoolTLS t_pool; // Linux/ELF: native fs:-relative TLS - one mov per resolution.
+int64_t      bzy_tpool_off; // (char*)&t_pool - thread pointer; constant across threads.
+volatile int bzy_tpool_off_ready; // 1 once bzy_tpool_off has been computed.
 #endif
 
 /**
@@ -243,7 +243,7 @@ volatile int bzy_tpool_off_ready; /* 1 once bzy_tpool_off has been computed. */
  */
 #define MAX_SHARDS 256
 static PoolTLS *g_shards[MAX_SHARDS];
-static int      g_nshards;   /* Appended via __atomic; read back to bound the sum. */
+static int      g_nshards; // Appended via __atomic; read back to bound the sum.
 
 /* Link a freshly created shard into the registry so bzy_live_count can sum it. */
 static void register_shard(PoolTLS *p)
@@ -269,16 +269,16 @@ _Static_assert(POOL_CAP == 256,                "inline free: POOL_CAP changed");
  * Instead, hold the per-thread shard pointer in a reserved TEB TLS slot and read it with a single gs:-relative load (no call), the same shape as the native fs:-relative access the ELF build gets for free.
  * TlsAlloc is taken once, on the first allocation (very early, so the index lands inside the inline TlsSlots[64] array); a TlsGetValue fallback covers the unlikely overflow case.
  */
-#define TEB_TLS_SLOTS 0x1480   /* Offset of TlsSlots[64] in the x64 TEB. */
+#define TEB_TLS_SLOTS 0x1480 // Offset of TlsSlots[64] in the x64 TEB.
 
-static volatile LONG g_slot_claim;   /* CAS gate: elects one thread to run TlsAlloc. */
+static volatile LONG g_slot_claim; // CAS gate: elects one thread to run TlsAlloc.
 
 /**
  * Exported (no `static`) so the compiler can inline the allocation fast path: a Windows `new` reads bzy_pool_slot_ready, then the per-thread pool pointer from gs:[TEB_TLS_SLOTS + bzy_pool_slot*8], then pops the size-class free list - the same sequence pool_tls()/bzy_alloc run, emitted at the call site.
  * The inline path falls back to bzy_alloc whenever the slot is not yet ready, the slot index is >= 64 (out of the inline TEB array), the thread has no pool yet, or the free list is empty.
  * The offsets it bakes in are pinned by the _Static_asserts below.
  */
-volatile LONG bzy_pool_slot_ready;   /* 1 once bzy_pool_slot is valid. */
+volatile LONG bzy_pool_slot_ready; // 1 once bzy_pool_slot is valid.
 DWORD         bzy_pool_slot;
 
 _Static_assert(TEB_TLS_SLOTS == 0x1480, "inline alloc: TEB TLS slot base changed");
@@ -400,7 +400,7 @@ static void pool_free(void *o)
  * Worker threads are hard-capped and long-lived, so holding slab memory until exit matches the pool's existing "returned to the OS only at process exit" contract.
  * Every g_class_size value is a multiple of 16 and malloc returns 16-aligned storage, so bumping by the class size keeps each block 16-byte aligned.
  */
-#define SLAB_SIZE (1u << 20)   /* 1 MiB per slab; pooled blocks are <= 256 B, so one always fits. */
+#define SLAB_SIZE (1u << 20) // 1 MiB per slab; pooled blocks are <= 256 B, so one always fits.
 
 static void *slab_carve(PoolTLS *p, int64_t size)
 {
