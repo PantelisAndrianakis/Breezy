@@ -838,6 +838,27 @@ static IRReg low_index(Low *L, const Expr *ix, int safe, int scale, long long *d
 	return low_expr(L, ix);
 }
 
+/**
+ * Lower x as an operand of an operation carried out in type k.
+ * An integer operand of a double operation is converted first, as the emitter's own promotion does; the resolver leaves that conversion implicit.
+ */
+static IRReg low_as(Low *L, const Expr *x, TypeKind k)
+{
+	IRReg r = low_expr(L, x);
+	if (r == IR_NO_REG || !ty_is_float(k) || ty_is_float(x->type.kind))
+	{
+		return r;
+	}
+
+	IRReg d = ir_reg(L->f);
+	IRInstr *in = ir_emit(L->f, L->cur, IR_CAST, x->type.kind);
+	in->dst = d;
+	in->a = r;
+	in->to_kind = k;
+	in->line = x->line;
+	return d;
+}
+
 /* Lower an expression, returning the vreg holding its value (IR_NO_REG on bail). */
 static IRReg low_expr(Low *L, const Expr *e)
 {
@@ -1023,10 +1044,12 @@ static IRReg low_expr(Low *L, const Expr *e)
 
 		if (tok_is_cmp(e->op))
 		{
-			IRReg la = low_expr(L, e->lhs);
-			IRReg rb = low_expr(L, e->rhs);
+			// Mixed integer and double operands compare as doubles.
+			TypeKind ct = ty_is_float(e->rhs->type.kind) && !ty_is_float(e->lhs->type.kind) ? e->rhs->type.kind : e->lhs->type.kind;
+			IRReg la = low_as(L, e->lhs, ct);
+			IRReg rb = low_as(L, e->rhs, ct);
 			IRReg r = ir_reg(L->f);
-			IRInstr *in = ir_emit(L->f, L->cur, IR_CMP, e->lhs->type.kind);
+			IRInstr *in = ir_emit(L->f, L->cur, IR_CMP, ct);
 			in->dst = r;
 			in->a = la;
 			in->b = rb;
@@ -1071,8 +1094,8 @@ static IRReg low_expr(Low *L, const Expr *e)
 			return r;
 		}
 
-		IRReg la = low_expr(L, e->lhs);
-		IRReg rb = low_expr(L, e->rhs);
+		IRReg la = low_as(L, e->lhs, e->type.kind);
+		IRReg rb = low_as(L, e->rhs, e->type.kind);
 		IRReg r = ir_reg(L->f);
 		IRInstr *in = ir_emit(L->f, L->cur, op, e->type.kind);
 		in->dst = r;
@@ -1098,7 +1121,7 @@ static IRReg low_expr(Low *L, const Expr *e)
 			args = malloc((size_t)e->arg_count * sizeof(IRReg));
 			for (int i = 0; i < e->arg_count; i++)
 			{
-				args[i] = low_expr(L, e->args[i]);
+				args[i] = low_as(L, e->args[i], fi->param_types[i].kind);
 			}
 		}
 
@@ -1317,7 +1340,7 @@ static void low_stmt(Low *L, const Stmt *s)
 	case ST_VARDECL:
 		if (s->decl_init)
 		{
-			IRReg v = low_expr(L, s->decl_init);
+			IRReg v = low_as(L, s->decl_init, s->decl_type.kind);
 			low_store_local(L, s->decl_offset, s->decl_type.kind, v);
 		}
 
@@ -1325,7 +1348,7 @@ static void low_stmt(Low *L, const Stmt *s)
 	case ST_ASSIGN:
 		if (s->target->kind == EX_IDENT)
 		{
-			IRReg v = low_expr(L, s->value);
+			IRReg v = low_as(L, s->value, s->target->type.kind);
 			low_store_local(L, s->target->anno_int, s->target->type.kind, v);
 		}
 		else if (s->target->kind == EX_INDEX)
@@ -1367,7 +1390,7 @@ static void low_stmt(Low *L, const Stmt *s)
 				ld->line = s->line;
 
 				const Expr *other = (inner == s->value->lhs) ? s->value->rhs : s->value->lhs;
-				IRReg ov = low_expr(L, other);
+				IRReg ov = low_as(L, other, s->value->type.kind);
 				int aok;
 				IROp aop = tok_arith_op(s->value->op, &aok);
 				if (!aok)
@@ -1401,7 +1424,7 @@ static void low_stmt(Low *L, const Stmt *s)
 			int scale = elem_stride(s->target->type.kind);
 			long long disp = 32;
 			IRReg idx = low_index(L, s->target->rhs, s->target->anno_index_safe, scale, &disp);
-			IRReg v = low_expr(L, s->value);
+			IRReg v = low_as(L, s->value, s->target->type.kind);
 			IRInstr *in = ir_emit(L->f, L->cur, IR_STORE, s->target->type.kind);
 			in->is_frame = 0;
 			in->a = base;
@@ -1420,12 +1443,20 @@ static void low_stmt(Low *L, const Stmt *s)
 	case ST_RETURN:
 	{
 		IRReg v = IR_NO_REG;
+		TypeKind rt = s->ret_val ? s->ret_val->type.kind : TY_VOID;
 		if (s->ret_val)
 		{
-			v = low_expr(L, s->ret_val);
+			// An integer returned from a double function converts, as the emitter does; otherwise the value keeps its own type.
+			TypeKind fk = L->f->src ? L->f->src->ret_type.kind : rt;
+			if (ty_is_float(fk) && !ty_is_float(rt))
+			{
+				rt = fk;
+			}
+
+			v = low_as(L, s->ret_val, rt);
 		}
 
-		IRInstr *in = ir_emit(L->f, L->cur, IR_RET, s->ret_val ? s->ret_val->type.kind : TY_VOID);
+		IRInstr *in = ir_emit(L->f, L->cur, IR_RET, rt);
 		in->a = v;
 		break;
 	}

@@ -1,0 +1,97 @@
+// Integer values used as doubles, and double comparisons, in functions the IR
+// backend compiles when the C route is off: an integer operand of a double
+// multiply or add, an integer stored into a double local or array element, an
+// integer returned from a double function, an integer compared with a double,
+// and plain double compares feeding a branch and a min/max choice.
+// Prints 35, 4950, 42, -9, 3, 0, 7, 2, 4 and 12.
+double half(long x)
+{
+	return x * 0.5;
+}
+
+double sumTo(long n)
+{
+	double s;
+	s = 0.0;
+	for (long i = 0; i < n; i = i + 1)
+	{
+		s = s + i;
+	}
+
+	return s;
+}
+
+double widen(long x)
+{
+	double r;
+	r = x;
+	return r * 2.0;
+}
+
+double asIs(long x)
+{
+	return x;
+}
+
+long below(long n)
+{
+	long c;
+	c = 0;
+	for (long i = 0; i < n; i = i + 1)
+	{
+		if (i < 2.5)
+		{
+			c = c + 1;
+		}
+	}
+
+	return c;
+}
+
+double clampLow(double x)
+{
+	if (x < 0.0)
+	{
+		return 0.0;
+	}
+
+	return x;
+}
+
+double larger(double a, double b)
+{
+	double m;
+	m = b;
+	if (a > b)
+	{
+		m = a;
+	}
+
+	return m;
+}
+
+long fill(long n)
+{
+	double[] d;
+	d = new double[8];
+	for (long i = 0; i < 8; i = i + 1)
+	{
+		d[i] = i;
+	}
+
+	return (long)(d[n] + d[1]);
+}
+
+void main()
+{
+	print((long)(half(7) * 10));
+	print((long)sumTo(100));
+	print((long)widen(21));
+	print((long)asIs(-9));
+	print(below(10));
+	print((long)clampLow(-3.5));
+	print((long)clampLow(7.25));
+	print((long)larger(1.5, 2.5));
+	print((long)larger(4.75, 0.5));
+	print(fill(11 % 8) * 3);
+}

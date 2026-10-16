@@ -262,6 +262,15 @@ check foreach_double tests/samples/pass/collections/foreach_double.bzy $'249750\
 check foreach_string_region tests/samples/pass/collections/foreach_string_region.bzy $'461\n0\n3'
 check container_calls_region tests/samples/pass/collections/container_calls_region.bzy $'-500500\n500\n0\n-1000\n10\n55'
 check user_calls_region tests/samples/pass/control-flow/user_calls_region.bzy $'-4950\n2475\n4950\n50\n7\n8\n9\n3'
+check ir_mixed_double tests/samples/pass/numbers/ir_mixed_double.bzy $'35\n4950\n42\n-9\n3\n0\n7\n2\n4\n12'
+# The same functions through the IR backend (C route off): integer-to-double conversions and double compares.
+BZY_C=0 bzy_build tests/samples/pass/numbers/ir_mixed_double.bzy
+if [ $? -ne 0 ]; then echo "  ir_mixed_double_ir: COMPILE FAILED"; fail=1
+else
+    imd_out="$(./out.exe)"; imd_out="${imd_out//$'\r'/}"
+    if [ "$imd_out" == $'35\n4950\n42\n-9\n3\n0\n7\n2\n4\n12' ]; then echo "  ir_mixed_double_ir: OK"
+    else echo "  ir_mixed_double_ir: FAIL (got '$imd_out')"; fail=1; fi
+fi
 # The same double foreach through the emitter (C route off), where the loop variable may live in an XMM register.
 BZY_C=0 bzy_build tests/samples/pass/collections/foreach_double.bzy
 if [ $? -ne 0 ]; then echo "  foreach_double_emitter: COMPILE FAILED"; fail=1

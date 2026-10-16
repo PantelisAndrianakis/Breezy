@@ -897,23 +897,42 @@ static void emit_epilogue(Emit *e)
 	cg_emit(cg, "    ret");
 }
 
-/* A compare immediately followed by a branch on its result: emit cmp + a single conditional jump, skipping the setcc/movzx/test the two would otherwise need. */
-static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br, int next)
+/**
+ * Set the flags for a compare of a against b in type `type`.
+ * A double compare uses ucomisd, whose flags read like an unsigned compare (as the emitter's own double compare does); an integer compare uses cmp, folding a 32-bit immediate rhs.
+ * sa and sb are the integer scratch registers for a spilled operand.
+ * Returns 1 when the result's condition codes are the unsigned ones.
+ */
+static int emit_cmp_flags(Emit *e, TypeKind type, IRReg a, IRReg b, const char *sa, const char *sb)
 {
 	Codegen *cg = e->cg;
-	const char *Ra = vreg_in(e, cmp->a, "rax");
+	if (ty_is_float(type))
+	{
+		const char *Fa = vreg_in(e, a, "xmm0");
+		const char *Fb = vreg_in(e, b, "xmm1");
+		cg_emit(cg, "    %s %s, %s", type == TY_FLOAT ? "ucomiss" : "ucomisd", Fa, Fb);
+		return 1;
+	}
+
+	const char *Ra = vreg_in(e, a, sa);
 	long long imm;
-	if (const_imm32(e, cmp->b, &imm))
+	if (const_imm32(e, b, &imm))
 	{
 		cg_emit(cg, "    cmp %s, %lld", Ra, imm);
 	}
 	else
 	{
-		const char *Rb = vreg_in(e, cmp->b, "rcx");
+		const char *Rb = vreg_in(e, b, sb);
 		cg_emit(cg, "    cmp %s, %s", Ra, Rb);
 	}
 
-	int uns = ty_is_unsigned(cmp->type);
+	return ty_is_unsigned(type);
+}
+
+/* A compare immediately followed by a branch on its result: emit cmp + a single conditional jump, skipping the setcc/movzx/test the two would otherwise need. */
+static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br, int next)
+{
+	int uns = emit_cmp_flags(e, cmp->type, cmp->a, cmp->b, "rax", "rcx");
 	emit_two_way(e, jcc_op(cmp->cmp_op, uns), cmp->cmp_op, uns, br->blk_true, br->blk_false, next);
 }
 
@@ -1293,19 +1312,8 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	}
 	case IR_CMP:
 	{
-		const char *Ra = vreg_in(e, in->a, "rax");
-		long long imm;
-		if (const_imm32(e, in->b, &imm))
-		{
-			cg_emit(cg, "    cmp %s, %lld", Ra, imm);
-		}
-		else
-		{
-			const char *Rb = vreg_in(e, in->b, "rcx");
-			cg_emit(cg, "    cmp %s, %s", Ra, Rb);
-		}
-
-		cg_emit(cg, "    %s al", setcc_op(in->cmp_op, ty_is_unsigned(in->type)));
+		int uns = emit_cmp_flags(e, in->type, in->a, in->b, "rax", "rcx");
+		cg_emit(cg, "    %s al", setcc_op(in->cmp_op, uns));
 		cg_emit(cg, "    movzx rax, al");
 		const char *Rd = dst_reg(e, in->dst);
 		if (strcmp(Rd, "rax"))
@@ -1330,21 +1338,9 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 			cg_emit(cg, "    mov %s, %s", Rd, Dd);
 		}
 
-		const char *Ra = vreg_in(e, in->a, s1);
-		long long imm;
-		if (const_imm32(e, in->b, &imm))
-		{
-			cg_emit(cg, "    cmp %s, %lld", Ra, imm);
-		}
-		else
-		{
-			const char *Rb = vreg_in(e, in->b, s2);
-			cg_emit(cg, "    cmp %s, %s", Ra, Rb);
-		}
-
+		int uns = emit_cmp_flags(e, in->type, in->a, in->b, s1, s2);
 		const char *Rc = vreg_in(e, in->c, s2); // After the cmp: mov keeps flags.
-		cg_emit(cg, "    cmov%s %s, %s",
-				jcc_op(in->cmp_op, ty_is_unsigned(in->type)) + 1, Rd, Rc);
+		cg_emit(cg, "    cmov%s %s, %s", jcc_op(in->cmp_op, uns) + 1, Rd, Rc);
 		finish_dst(e, in->dst);
 		break;
 	}
@@ -1629,6 +1625,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 	}
 
 	// Constant table: each vreg is defined once; a vreg defined by IR_CONST holds that constant (used to strength-reduce div/mod by a power of two).
+	// Integer constants only: a double constant's bit pattern is no integer immediate, and folding it as one would leave its register unloaded.
 	int nv = f->vreg_count > 0 ? f->vreg_count : 1;
 	e->cis = calloc((size_t)nv, 1);
 	e->cval = calloc((size_t)nv, sizeof(long long));
@@ -1638,7 +1635,7 @@ static void emit_tables_init(Emit *e, IRFunc *f)
 		for (int i = 0; i < blk->count; i++)
 		{
 			IRInstr *in = &blk->instrs[i];
-			if (in->op == IR_CONST && in->dst >= 0 && in->dst < f->vreg_count)
+			if (in->op == IR_CONST && !ty_is_float(in->type) && in->dst >= 0 && in->dst < f->vreg_count)
 			{
 				e->cis[in->dst] = 1;
 				e->cval[in->dst] = in->imm;
