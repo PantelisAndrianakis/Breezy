@@ -15,6 +15,14 @@
 int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *offs, int cap, int *noffs);
 
 /**
+ * The value-list map fill as a region: for each element of the list in frame slot src_off, bind it to the local at elem_off and store body's value into the same position of the presized result list in dst_off.
+ * src_kind and dst_kind are the element kinds (integers or double); body must be call-free.
+ * Returns 1 as cemit_region does, or 0 when body or the kinds are outside the C route.
+ */
+int cemit_map_fill(const Func *f, const Expr *body, int src_off, int dst_off, int elem_off, TypeKind src_kind, TypeKind dst_kind,
+				   char *sym, int *offs, int cap, int *noffs);
+
+/**
  * Translates free function f, linked under the symbol `label`.
  * Only functions that can never throw are accepted (every array index proven in bounds).
  */

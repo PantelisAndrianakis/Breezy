@@ -31,6 +31,7 @@ int ir_region_eligible(const Stmt *s);
 
 /* Region eligibility for the C route: the same rules plus an integer or bool `switch` with literal case labels, static final arrays and clock reads. */
 int ir_region_eligible_c(const Stmt *s);
+int ir_c_expr_ok(const Expr *e);   /* C route: 1 when expression e can be emitted as C inside a region. */
 
 /* 1 for Clock.currentTimeNanos() or Clock.currentTimeMillis(): a runtime read that never throws and touches no Breezy state, so generated C may call it. */
 int ir_is_clock_read(const Expr *e);

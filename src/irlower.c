@@ -1976,6 +1976,18 @@ int ir_region_eligible(const Stmt *s)
 	return ok;
 }
 
+int ir_c_expr_ok(const Expr *e)
+{
+	int rm = elig_region_mode;
+	int sw = elig_allow_switch;
+	elig_region_mode = 1;
+	elig_allow_switch = 1;
+	int ok = elig_type(e->type.kind) && elig_expr(e);
+	elig_region_mode = rm;
+	elig_allow_switch = sw;
+	return ok;
+}
+
 int ir_region_eligible_c(const Stmt *s)
 {
 	elig_allow_switch = 1;

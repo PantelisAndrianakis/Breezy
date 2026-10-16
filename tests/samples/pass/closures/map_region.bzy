@@ -1,0 +1,83 @@
+// Value-list map fills compiled through the C route: an integer list with a
+// captured offset, a double list, a source whose head moved off slot 0, an empty
+// source, and a map beside a hot double accumulator. Prints 5050 (0..99 each plus
+// 1), 5050 (0..100 halved then doubled), 48 and 4 (1, 5, 10 and 20 plus 3 each,
+// summed, then the first), 0 (the empty map's size) and 9900 (the accumulator).
+long sumOf(List<long> xs)
+{
+	long s;
+	s = 0;
+	foreach (long v in xs)
+	{
+		s = s + v;
+	}
+
+	return s;
+}
+
+double hot(List<long> xs)
+{
+	double acc;
+	acc = 0.0;
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		acc = acc + i * 2.0;
+	}
+
+	List<long> ys;
+	ys = xs.map(x => x * 2);
+	return acc + sumOf(ys) - sumOf(ys);
+}
+
+void main()
+{
+	List<long> xs;
+	xs = new List<long>();
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		xs.add(i);
+	}
+
+	long off;
+	off = 1;
+	List<long> ys;
+	ys = xs.map(x => x + off);
+	print(sumOf(ys));
+
+	List<double> ds;
+	ds = new List<double>();
+	for (long i = 0; i <= 100; i = i + 1)
+	{
+		ds.add(i * 0.5);
+	}
+
+	List<double> dd;
+	dd = ds.map(x => x * 2.0);
+	double dsum;
+	dsum = 0.0;
+	foreach (double v in dd)
+	{
+		dsum = dsum + v;
+	}
+
+	print((long)dsum);
+
+	List<long> rs;
+	rs = new List<long>();
+	rs.add(10);
+	rs.add(20);
+	rs.addFirst(5);
+	rs.addFirst(1);
+	List<long> rm;
+	rm = rs.map(x => x + 3);
+	print(sumOf(rm));
+	print(rm.get(0));
+
+	List<long> empty;
+	empty = new List<long>();
+	List<long> em;
+	em = empty.map(x => x + 1);
+	print(em.size);
+
+	print((long)hot(xs));
+}

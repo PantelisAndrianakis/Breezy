@@ -1584,38 +1584,37 @@ static int c_declares_in_block(const Block *b, int off)
 	return 0;
 }
 
-int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *offs, int cap, int *noffs)
+/**
+ * Writes a finished region unit u as `void <sym>(char *fp)`: its finals and callee prototypes, then a body that loads every local it touches from its frame slot, runs the unit's text and stores the locals back.
+ * A local declared inside s (when outermost) or at skip_off is dead after the region and is not stored back.
+ * Returns 0, emitting nothing, when the unit failed or touches more than cap locals.
+ */
+static int c_region_finish(CUnit *u, const Stmt *s, int outermost, int skip_off, char *sym, int *offs, int cap, int *noffs)
 {
-	CUnit u;
-	memset(&u, 0, sizeof(u));
-	u.ok = 1;
-	u.region = 1;
-	u.fn = f;
-	c_stmt(&u, s, 1);
-	if (!u.ok || u.nlocal > cap)
+	if (!u->ok || u->nlocal > cap)
 	{
-		cbuf_free(&u.out);
+		cbuf_free(&u->out);
 		return 0;
 	}
 
-	for (int i = 0; i < u.nlocal; i++)
+	for (int i = 0; i < u->nlocal; i++)
 	{
-		offs[i] = u.local_off[i];
+		offs[i] = u->local_off[i];
 	}
 
-	*noffs = u.nlocal;
+	*noffs = u->nlocal;
 
 	snprintf(sym, 64, "bzy_creg_%d", g_region_seq++);
 	c_prelude_once();
-	for (int i = 0; i < u.nfinal; i++)
+	for (int i = 0; i < u->nfinal; i++)
 	{
-		c_emit_final(u.finals[i]);
+		c_emit_final(u->finals[i]);
 	}
 
-	for (int i = 0; i < u.ncallee; i++)
+	for (int i = 0; i < u->ncallee; i++)
 	{
 		// The callee is defined in this file under its label (possibly further down), so a prototype lets the region call it.
-		const FuncInfo *fi = u.callees[i];
+		const FuncInfo *fi = u->callees[i];
 		TypeKind rk = fi->ret_type.kind;
 		cbuf_printf(&g_src, "%s %s(", rk == TY_VOID ? "void" : rk == TY_DOUBLE ? "double" : "int64_t", c_callee_symbol(fi));
 		for (int j = 0; j < fi->param_count; j++)
@@ -1627,28 +1626,91 @@ int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *of
 	}
 
 	cbuf_printf(&g_src, "\nstatic inline __attribute__((always_inline)) void %s_body(char *fp, char *ra)\n{\n", sym);
-	for (int i = 0; i < u.nlocal; i++)
+	for (int i = 0; i < u->nlocal; i++)
 	{
-		c_load_slot(u.local_off[i], u.local_kind[i]);
+		c_load_slot(u->local_off[i], u->local_kind[i]);
 	}
 
-	cbuf_printf(&g_src, "%s", u.out.n ? u.out.p : "");
-	for (int i = 0; i < u.nlocal; i++)
+	cbuf_printf(&g_src, "%s", u->out.n ? u->out.p : "");
+	for (int i = 0; i < u->nlocal; i++)
 	{
 		// A local declared inside an outermost region is out of scope once the region ends and its declaration never runs again (slots are never shared), so its final value is dead.
 		// Skipping the store frees gcc from keeping it live across the loop.
-		if (outermost && c_declares(s, u.local_off[i]))
+		if ((outermost && s && c_declares(s, u->local_off[i])) || u->local_off[i] == skip_off)
 		{
 			continue;
 		}
 
-		c_store_slot(u.local_off[i], u.local_kind[i]);
+		c_store_slot(u->local_off[i], u->local_kind[i]);
 	}
 
 	cbuf_printf(&g_src, "\t(void)fp;\n\t(void)ra;\n}\n");
 	c_region_dispatch(sym);
-	cbuf_free(&u.out);
+	cbuf_free(&u->out);
 	return 1;
+}
+
+int cemit_region(const Func *f, const Stmt *s, int outermost, char *sym, int *offs, int cap, int *noffs)
+{
+	CUnit u;
+	memset(&u, 0, sizeof(u));
+	u.ok = 1;
+	u.region = 1;
+	u.fn = f;
+	c_stmt(&u, s, 1);
+	return c_region_finish(&u, s, outermost, 0, sym, offs, cap, noffs);
+}
+
+int cemit_map_fill(const Func *f, const Expr *body, int src_off, int dst_off, int elem_off, TypeKind src_kind, TypeKind dst_kind,
+				   char *sym, int *offs, int cap, int *noffs)
+{
+	int src_ok = ty_is_int(src_kind) || src_kind == TY_DOUBLE;
+	int dst_ok = ty_is_int(dst_kind) || dst_kind == TY_DOUBLE;
+	const char *vt = c_type(src_kind);
+	if (!src_ok || !dst_ok || !vt || !ir_c_expr_ok(body))
+	{
+		return 0;
+	}
+
+	CUnit u;
+	memset(&u, 0, sizeof(u));
+	u.ok = 1;
+	u.region = 1;
+	u.fn = f;
+	note_local(&u, src_off, TY_GENERIC);
+	note_local(&u, dst_off, TY_GENERIC);
+	note_local(&u, elem_off, src_kind);
+
+	// Each list slot is 8 bytes; a double list stores the double's bits, so double slots are read and written through a double view.
+	const char *st = src_kind == TY_DOUBLE ? "double" : "int64_t";
+	const char *dt = dst_kind == TY_DOUBLE ? "double" : "int64_t";
+	cbuf_printf(&u.out, "\t{\n");
+	cbuf_printf(&u.out, "\t\tint64_t fm_n = *(int64_t *)(l%d + 24);\n", src_off);
+	cbuf_printf(&u.out, "\t\tint64_t fm_h = *(int64_t *)(l%d + 40);\n", src_off);
+	cbuf_printf(&u.out, "\t\tint64_t fm_m = *(int64_t *)(l%d + 32) - 1;\n", src_off);
+	cbuf_printf(&u.out, "\t\tconst %s *fm_s = fm_n > 0 ? (const %s *)(*(char **)(l%d + 48) + 32) : 0;\n", st, st, src_off);
+	cbuf_printf(&u.out, "\t\t%s *fm_d = fm_n > 0 ? (%s *)(*(char **)(l%d + 48) + 32) : 0;\n", dt, dt, dst_off);
+	for (int ring = 0; ring < 2; ring++)
+	{
+		// The fresh result has head 0, so it is always indexed directly; only a source whose head moved needs the ring index.
+		cbuf_printf(&u.out, ring ? "\t\telse\n" : "\t\tif (fm_h == 0)\n");
+		cbuf_printf(&u.out, "\t\tfor (int64_t fm_i = 0; fm_i < fm_n; fm_i++)\n\t\t{\n");
+		if (ring)
+		{
+			cbuf_printf(&u.out, "\t\t\tl%d = (%s)fm_s[(fm_h + fm_i) & fm_m];\n", elem_off, vt);
+		}
+		else
+		{
+			cbuf_printf(&u.out, "\t\t\tl%d = (%s)fm_s[fm_i];\n", elem_off, vt);
+		}
+
+		cbuf_printf(&u.out, "\t\t\tfm_d[fm_i] = (%s)(", dt);
+		c_expr(&u, body);
+		cbuf_printf(&u.out, ");\n\t\t}\n");
+	}
+
+	cbuf_printf(&u.out, "\t}\n");
+	return c_region_finish(&u, NULL, 0, elem_off, sym, offs, cap, noffs);
 }
 
 /* The C parameter type a Breezy argument arrives in: integers widened to 64 bits. */

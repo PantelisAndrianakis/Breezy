@@ -4086,6 +4086,9 @@ static void cg_inline_remap(Expr *e, LambdaInfo *lam, int elem_slot, int acc_slo
 	}
 }
 
+static void cg_region_record(Codegen *cg, const Stmt *s, IRFunc *irf, IRAlloc *a, const char *csym, const int *offs, int noffs);
+static void cg_emit_region_stmt(Codegen *cg, Func *f, int r);
+
 static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *nm = e->name;
@@ -4157,6 +4160,25 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 			cg_emit(cg,"    mov rax, [rbp - %d]", s_res);
 			cg_emit(cg,"    mov rcx, [rbp - %d]", s_len);
 			cg_emit(cg,"    mov [rax + 24], rcx"); // length = source length.
+		}
+	}
+
+	// C route: the value-map fill as a generated C loop, so gcc can vectorize a pure body.
+	// The same idle-register conditions as a C region apply; a function with promoted doubles also needs the region save area, which the prologue reserves only when it saw a region.
+	if (do_inline && map_direct && ibody && e->type.elem && bzy_c_enabled() && !cg->cur_unit_prelude && cg->cur_func
+			&& cg->hoist_n == 0 && cg->sr_n == 0 && cg->defer_n == 0 && !cg->unrolling && cg->lpromo_n == 0
+			&& (cg->cur_func->fpromo_count == 0 || cg->region_base > 0) && cg_hoist_expr_ok(ibody))
+	{
+		char sym[64];
+		int offs[256];
+		int noffs = 0;
+		if (cemit_map_fill(cg->cur_func, ibody, s_coll, s_res, s_elem, et, e->type.elem->kind, sym, offs, 256, &noffs))
+		{
+			cg_region_record(cg, NULL, NULL, NULL, sym, offs, noffs);
+			cg_emit_region_stmt(cg, cg->cur_func, cg->region_count - 1);
+			cg_emit(cg,"    mov rax, [rbp - %d]", s_res); // Result list (builds).
+			cg_scratch_free(cg, 64);
+			return;
 		}
 	}
 
