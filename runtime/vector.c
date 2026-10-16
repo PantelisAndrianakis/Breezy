@@ -126,9 +126,52 @@ static void vec_relocate(void *v, void *newdata, int64_t newcap)
 	}
 }
 
+/**
+ * Grow the backing array in place when that is safe: the vector is confined to this core, its elements start at slot 0, and it is the only owner of a large backing array that the cycle collector has not buffered.
+ * A large array is an unpooled block (gcinfo class nibble 0) taken straight from the system allocator, so realloc can extend it, and for a big block it remaps the pages instead of copying them.
+ * A buffered array is skipped because the collector's candidate list holds its address, which a move would leave dangling.
+ * The new slots of a reference list are zeroed, as a fresh array's would be.
+ * Returns 0 when the caller must relocate instead.
+ */
+static int vec_grow_in_place(void *v, int64_t newcap)
+{
+	char *old = (char*)*V_DATA(v);
+	if (!old || *V_HEAD(v) != 0 || vec_is_shared(v))
+	{
+		return 0;
+	}
+
+	int64_t gi = *(int64_t*)(old + 16);
+	if (((gi >> 4) & 0xF) != 0 || (gi & 4) != 0 || *(int64_t*)(old + 8) != 1)
+	{
+		return 0;
+	}
+
+	int64_t oldcap = *V_CAP(v);
+	char *grown = (char*)realloc(old, 32 + (size_t)newcap * 8);
+	if (!grown)
+	{
+		return 0; // The old block is untouched; relocation reports the failure the usual way.
+	}
+
+	if (vec_managed(v))
+	{
+		memset(grown + 32 + oldcap * 8, 0, (size_t)(newcap - oldcap) * 8); // Reference slots must read as null; value slots past the length are never read.
+	}
+	*(int64_t*)(grown + 24) = newcap; // The array's own length.
+	*V_DATA(v) = grown;
+	*V_CAP(v) = newcap;
+	return 1;
+}
+
 static void vec_grow(void *v)
 {
 	int64_t oldcap = *V_CAP(v), newcap = oldcap ? oldcap * 2 : 8;
+	if (vec_grow_in_place(v, newcap))
+	{
+		return;
+	}
+
 	vec_relocate(v, bzy_array_new(newcap, vec_managed(v) ? 1 : 0), newcap);
 }
 
