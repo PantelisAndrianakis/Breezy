@@ -1,6 +1,7 @@
 #include "breezy.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /**
  * Array layout (one allocation): [vtable|refcount|gcinfo|length|elem0..].
@@ -42,6 +43,42 @@ void *bzy_array_new_sized(int64_t n, int64_t elem_size, int64_t elem_is_managed)
 void *bzy_array_new(int64_t n, int64_t elem_is_managed)
 {
 	return bzy_array_new_sized(n, 8, elem_is_managed); // Legacy 8-byte slot arrays.
+}
+
+/**
+ * Extend an 8-byte slot array to newcap slots in place, for a container that is the only owner of a large backing array.
+ * A large array is an unpooled block (gcinfo class nibble 0) taken straight from the system allocator, so realloc can extend it, and for a big block it remaps the pages instead of copying them.
+ * A shared array or one the cycle collector has buffered is refused: the collector's candidate list holds its address, which a move would leave dangling.
+ * The new slots of a reference array are zeroed, as a fresh array's would be; value slots past the container's length are never read.
+ * Returns the grown array, possibly moved, or NULL when the caller must relocate instead, with the old array untouched.
+ */
+void *bzy_array_grow_in_place(void *a, int64_t newcap)
+{
+	if (!a)
+	{
+		return NULL;
+	}
+
+	int64_t gi = *(int64_t*)((char*)a + 16);
+	if (((gi >> 4) & 0xF) != 0 || (gi & 12) != 0 || *(int64_t*)((char*)a + 8) != 1)
+	{
+		return NULL;
+	}
+
+	int64_t oldcap = *(int64_t*)((char*)a + 24);
+	char *grown = (char*)realloc(a, 32 + (size_t)newcap * 8);
+	if (!grown)
+	{
+		return NULL;
+	}
+
+	if (*(void**)grown == array_obj_vtable())
+	{
+		memset(grown + 32 + oldcap * 8, 0, (size_t)(newcap - oldcap) * 8);
+	}
+
+	*(int64_t*)(grown + 24) = newcap;
+	return grown;
 }
 
 int64_t bzy_array_len(void *a)

@@ -103,6 +103,7 @@ void   *bzy_sb_to_string(void *sb); // Owned (+1) immutable snapshot.
 
 void   *bzy_array_new(int64_t n, int64_t elem_is_managed); // Owned (+1) zeroed array.
 void   *bzy_array_new_sized(int64_t n, int64_t elem_size, int64_t elem_is_managed); // Owned (+1) zeroed array, explicit element width.
+void   *bzy_array_grow_in_place(void *a, int64_t newcap); // Extend a solely owned large slot array, or NULL to relocate.
 int64_t bzy_array_len(void *a);
 void    bzy_oob(int64_t index, int64_t length, int64_t pc, int64_t frame); // Throw IndexOutOfBounds (no return).
 void    bzy_oob_abort(int64_t index, int64_t length); // Print + abort (no return).

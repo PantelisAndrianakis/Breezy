@@ -694,7 +694,7 @@ static void test_collector_skips_shared(void)
 
 static void test_deep_share_marks_graph(void)
 {
-	// A map with string keys and object values: deep share must mark the map, its keys/vals backing arrays, every key string, and every value object.
+	// A map with string keys and object values: deep share must mark the map, its key/value pairs block, every key string, and every value object.
 	int64_t before = bzy_live_count();
 	void *m = bzy_map_new(1 /* String keys. */, 1 /* Managed values. */);
 	void *k = bzy_str_new("alpha", 5);
@@ -703,10 +703,8 @@ static void test_deep_share_marks_graph(void)
 	bzy_map_put(m, (int64_t)k, (int64_t)v);
 	bzy_share_crosscore(m);
 	ASSERT(*(int64_t*)((char*)m + 16) & (1ll << 3)); // Map header.
-	void *keys = *(void**)((char*)m + 48);
-	void *vals = *(void**)((char*)m + 56);
-	ASSERT(*(int64_t*)((char*)keys + 16) & (1ll << 3)); // Keys backing array.
-	ASSERT(*(int64_t*)((char*)vals + 16) & (1ll << 3)); // Vals backing array.
+	void *pairs = *(void**)((char*)m + 48);
+	ASSERT(*(int64_t*)((char*)pairs + 16) & (1ll << 3)); // Pairs block.
 	ASSERT(*(int64_t*)((char*)k + 16) & (1ll << 3)); // Key string.
 	ASSERT(*(int64_t*)((char*)v + 16) & (1ll << 3)); // Value object.
 	bzy_release(k);

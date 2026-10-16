@@ -101,6 +101,14 @@ static void pq_grow(void *o)
 {
 	int64_t oldcap = *PQ_CAP(o), newcap = oldcap ? oldcap * 2 : 8, n = *PQ_LEN(o);
 	void *olddata = *PQ_DATA(o);
+	void *grown = pq_shared(o) ? NULL : bzy_array_grow_in_place(olddata, newcap);
+	if (grown)
+	{
+		*PQ_DATA(o) = grown;
+		*PQ_CAP(o) = newcap;
+		return;
+	}
+
 	void *newdata = bzy_array_new(newcap, pq_managed(o) ? 1 : 0);
 	if (n > 0)
 	{

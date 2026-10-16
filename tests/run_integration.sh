@@ -191,7 +191,7 @@ check map_strkey_cache tests/samples/pass/collections/map_strkey_cache.bzy $'7\n
 check map_contains tests/samples/pass/collections/map_contains.bzy $'true\nfalse\ntrue\nfalse'
 check map_keys_values tests/samples/pass/collections/map_keys_values.bzy $'60\n3'
 check map_entries tests/samples/pass/collections/map_entries.bzy $'60\n3'
-check map_obj     tests/samples/pass/collections/proj_map_obj   $'6\n9'
+check map_obj     tests/samples/pass/collections/proj_map_obj   $'6\n8'
 check map_cycle   tests/samples/pass/collections/proj_map_cycle $'0'
 check map_long    tests/samples/pass/collections/map_long.bzy    $'1\n2\ntrue\n2'
 check map_byte    tests/samples/pass/collections/map_byte.bzy    $'7\n8\n2'

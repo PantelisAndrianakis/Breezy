@@ -11,5 +11,5 @@ void main()
 	}
 
 	print(d.size);          // 6
-	print(liveCount());     // map + keys array + vals array + 6 Box = 9
+	print(liveCount());     // map + key/value pairs block + 6 Box = 8
 }

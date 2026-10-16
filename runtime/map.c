@@ -6,10 +6,11 @@
 /**
  * Map layout (object_size = 80):
  * 0 vtable | 8 rc | 16 gcinfo | 24 size | 32 cap | 40 ctrl ptr (raw bytes) |
- * 48 keys BzyArray | 56 vals BzyArray | 64 key_kind | 72 val_is_managed.
+ * 48 pairs block | 56 unused | 64 key_kind | 72 val_is_managed.
  * key_kind: 0=int family, 1=string, 2=object identity,
  *           3=record value (key's vtable slot 0 = hashCode, slot 1 = equals).
- * Keys/vals live in managed arrays, so ARC and the cycle collector reach map contents through the array span descriptor; the finalizer only frees ctrl.
+ * The pairs block holds slot s's key at word 2s and its value at word 2s+1, so an insert or a lookup touches one cache line for both.
+ * Its span descriptor covers only the managed halves, so ARC and the cycle collector reach map contents through it; the finalizer only frees ctrl.
  */
 
 enum { CTRL_EMPTY = 0x80, CTRL_DELETED = 0xFE };
@@ -29,14 +30,9 @@ static uint8_t **M_CTRL(void *m)
 	return (uint8_t**)((char*)m + 40);
 }
 
-static void    **M_KEYS(void *m)
+static void    **M_PAIRS(void *m)
 {
 	return (void**)((char*)m + 48);
-}
-
-static void    **M_VALS(void *m)
-{
-	return (void**)((char*)m + 56);
 }
 
 static int64_t  *M_KKIND(void *m)
@@ -88,14 +84,15 @@ static int map_is_shared(void *m)
 	return (*(int64_t*)((char*)m + 16) & (1ll << 3)) != 0;
 }
 
+/* Slot s's key is keys_data(m)[2 * s] and its value vals_data(m)[2 * s]. */
 static int64_t *keys_data(void *m)
 {
-	return (int64_t*)((char*)(*M_KEYS(m)) + 32);
+	return (int64_t*)((char*)(*M_PAIRS(m)) + 32);
 }
 
 static int64_t *vals_data(void *m)
 {
-	return (int64_t*)((char*)(*M_VALS(m)) + 32);
+	return (int64_t*)((char*)(*M_PAIRS(m)) + 40);
 }
 
 static uint64_t mix64(uint64_t x)
@@ -205,11 +202,11 @@ static int key_eq(void *m, int64_t a, int64_t b)
 
 static void bzy_map_finalize(void *m)
 {
-	free(*M_CTRL(m)); // The two arrays are managed children, released by free_object.
+	free(*M_CTRL(m)); // The pairs block is a managed child, released by free_object.
 }
 
-/* Runtime-owned vtable/descriptor (finalizer + 2 managed children at 48, 56). */
-static int64_t g_map_typeinfo[4] = { 0 /* Finalizer (set on first use). */, 2, 48, 56 };
+/* Runtime-owned vtable/descriptor (finalizer + 1 managed child at 48). */
+static int64_t g_map_typeinfo[3] = { 0 /* Finalizer (set on first use). */, 1, 48 };
 static int64_t g_map_vtable[2];
 
 static void *map_vtable(void)
@@ -240,7 +237,7 @@ static int64_t map_find(void *m, int64_t key, uint64_t h)
 			return -1;
 		}
 
-		if (c == h2 && key_eq(m, keys[i], key))
+		if (c == h2 && key_eq(m, keys[2 * i], key))
 		{
 			return i;
 		}
@@ -270,7 +267,7 @@ static int64_t map_find_insert(void *m, int64_t key, uint64_t h)
 		{
 			first_del = i;
 		}
-		else if (c == h2 && key_eq(m, keys[i], key))
+		else if (c == h2 && key_eq(m, keys[2 * i], key))
 		{
 			return i; // Existing key (overwrite).
 		}
@@ -301,10 +298,10 @@ static int64_t map_put_impl(void *m, int64_t key, int64_t val, uint64_t h)
 		if (*M_VMAN(m))
 		{
 			bzy_retain((void*)val);
-			old = vals[slot];
+			old = vals[2 * slot];
 		}
 
-		vals[slot] = val;
+		vals[2 * slot] = val;
 		return old;
 	}
 
@@ -318,8 +315,8 @@ static int64_t map_put_impl(void *m, int64_t key, int64_t val, uint64_t h)
 		bzy_retain((void*)val);
 	}
 
-	keys[slot] = key;
-	vals[slot] = val;
+	keys[2 * slot] = key;
+	vals[2 * slot] = val;
 	ctrl[slot] = (uint8_t)(h & 0x7f);
 	if (hash_is_cached(m))
 	{
@@ -368,7 +365,7 @@ static int64_t map_get_impl(void *m, int64_t key, uint64_t h)
 		return 0;
 	}
 
-	int64_t v = vals_data(m)[slot];
+	int64_t v = vals_data(m)[2 * slot];
 	if (*M_VMAN(m))
 	{
 		bzy_retain((void*)v); // Retain inside the stripe on the shared path.
@@ -419,16 +416,16 @@ static void map_remove_impl(void *m, int64_t key, uint64_t h, int64_t *out_key, 
 	int64_t *keys = keys_data(m), *vals = vals_data(m);
 	if (key_managed(m))
 	{
-		*out_key = keys[slot];
+		*out_key = keys[2 * slot];
 	}
 
 	if (*M_VMAN(m))
 	{
-		*out_val = vals[slot];
+		*out_val = vals[2 * slot];
 	}
 
-	keys[slot] = 0;
-	vals[slot] = 0;
+	keys[2 * slot] = 0;
+	vals[2 * slot] = 0;
 	(*M_CTRL(m))[slot] = CTRL_DELETED;
 	(*M_SIZE(m))--;
 }
@@ -498,12 +495,12 @@ int64_t bzy_map_key_at(void *m, int64_t slot)
 	if (map_is_shared(m))
 	{
 		bzy_shared_lock(m);
-		int64_t k = keys_data(m)[slot];
+		int64_t k = keys_data(m)[2 * slot];
 		bzy_shared_unlock(m);
 		return k; // Borrowed: the map keeps the reference.
 	}
 
-	return keys_data(m)[slot]; // Borrowed: the map keeps the reference.
+	return keys_data(m)[2 * slot]; // Borrowed: the map keeps the reference.
 }
 
 int64_t bzy_map_val_at(void *m, int64_t slot)
@@ -511,12 +508,12 @@ int64_t bzy_map_val_at(void *m, int64_t slot)
 	if (map_is_shared(m))
 	{
 		bzy_shared_lock(m);
-		int64_t v = vals_data(m)[slot];
+		int64_t v = vals_data(m)[2 * slot];
 		bzy_shared_unlock(m);
 		return v; // Borrowed: the map keeps the reference.
 	}
 
-	return vals_data(m)[slot]; // Borrowed: the map keeps the reference.
+	return vals_data(m)[2 * slot]; // Borrowed: the map keeps the reference.
 }
 
 /* val_kind: 3 = string (content equality), anything else = raw 8-byte equality. */
@@ -532,7 +529,7 @@ static int64_t map_contains_value_impl(void *m, int64_t needle, int64_t val_kind
 			continue;
 		}
 
-		if (val_kind == 3 ? (bzy_str_eq((void*)vals[i], (void*)needle) != 0) : (vals[i] == needle))
+		if (val_kind == 3 ? (bzy_str_eq((void*)vals[2 * i], (void*)needle) != 0) : (vals[2 * i] == needle))
 		{
 			return 1;
 		}
@@ -592,10 +589,10 @@ static void *map_keys_impl(void *m, int64_t elem_size)
 		{
 			if (managed)
 			{
-				bzy_retain((void*)keys[i]);
+				bzy_retain((void*)keys[2 * i]);
 			}
 
-			pack_write(out, n++, elem_size, keys[i]);
+			pack_write(out, n++, elem_size, keys[2 * i]);
 		}
 	}
 
@@ -629,10 +626,10 @@ static void *map_values_impl(void *m, int64_t elem_size)
 		{
 			if (managed)
 			{
-				bzy_retain((void*)vals[i]);
+				bzy_retain((void*)vals[2 * i]);
 			}
 
-			pack_write(out, n++, elem_size, vals[i]);
+			pack_write(out, n++, elem_size, vals[2 * i]);
 		}
 	}
 
@@ -663,7 +660,7 @@ static void *map_entries_impl(void *m)
 	{
 		if ((ctrl[i] & 0x80) == 0)
 		{
-			out[n++] = bzy_entry_new(keys[i], vals[i], kman, vman); // +1, transferred to the array.
+			out[n++] = bzy_entry_new(keys[2 * i], vals[2 * i], kman, vman); // +1, transferred to the array.
 		}
 	}
 
@@ -710,8 +707,8 @@ void *bzy_map_iter_snapshot(void *m)
 		{
 			if ((ctrl[s] & 0x80) == 0)
 			{
-				uint64_t h = cached ? map_hashes(m)[s] : hash_key(m, keys[s]);
-				map_put_impl(c, keys[s], vals[s], h); // Retains key and value into the clone.
+				uint64_t h = cached ? map_hashes(m)[s] : hash_key(m, keys[2 * s]);
+				map_put_impl(c, keys[2 * s], vals[2 * s], h); // Retains key and value into the clone.
 			}
 		}
 	}
@@ -736,7 +733,7 @@ static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_
 	int64_t *keys = keys_data(m), *vals = vals_data(m);
 	if (ctrl[slot] != CTRL_EMPTY && ctrl[slot] != CTRL_DELETED)
 	{
-		int64_t v = vals[slot];
+		int64_t v = vals[2 * slot];
 		if (*M_VMAN(m))
 		{
 			bzy_retain((void*)v); // The existing value wins; owned result.
@@ -755,8 +752,8 @@ static int64_t map_put_if_absent_impl(void *m, int64_t key, int64_t val, uint64_
 		bzy_retain((void*)val); // The map's reference.
 	}
 
-	keys[slot] = key;
-	vals[slot] = val;
+	keys[2 * slot] = key;
+	vals[2 * slot] = val;
 	ctrl[slot] = (uint8_t)(h & 0x7f);
 	if (hash_is_cached(m))
 	{
@@ -800,7 +797,7 @@ int64_t bzy_map_put_if_absent(void *m, int64_t key, int64_t val)
 static int64_t map_get_or_default_impl(void *m, int64_t key, int64_t dflt, uint64_t h)
 {
 	int64_t slot = map_find(m, key, h);
-	int64_t v = (slot >= 0) ? vals_data(m)[slot] : dflt;
+	int64_t v = (slot >= 0) ? vals_data(m)[2 * slot] : dflt;
 	if (*M_VMAN(m))
 	{
 		bzy_retain((void*)v); // Owned result on both branches (the default included).
@@ -835,10 +832,34 @@ void *bzy_map_new(int64_t key_kind, int64_t val_is_managed)
 {
 	void *m = bzy_alloc(80);
 	*(void**)m = map_vtable();
-	// The backing store (ctrl + keys + vals) is allocated lazily on the first put, so an unused map costs only its header. map_grow handles the cap == 0 case.
+	// The backing store (ctrl + pairs) is allocated lazily on the first put, so an unused map costs only its header. map_grow handles the cap == 0 case.
 	*M_KKIND(m) = key_kind;
 	*M_VMAN(m) = val_is_managed;
-	return m; // size, cap, ctrl, keys and vals are left zero by bzy_alloc.
+	return m; // size, cap, ctrl and pairs are left zero by bzy_alloc.
+}
+
+/**
+ * Span descriptors for the pairs block, one per managed combination, indexed by (keys managed) | (values managed) << 1.
+ * Each covers only the managed words: keys from offset 32, values from 40, both from 32 at stride 8 over twice the slot count.
+ */
+static int64_t g_pairs_typeinfo[4][4] =
+{
+	{ 0, 0, 0, 0 },
+	{ 0, -1, 32, 16 },
+	{ 0, -1, 40, 16 },
+	{ 0, -1, 32, 8 },
+};
+static int64_t g_pairs_vtable[4][2];
+
+/* Owned (+1) zeroed pairs block of cap slots; its length word counts the managed words the descriptor walks. */
+static void *pairs_new(void *m, int64_t cap)
+{
+	int which = (key_managed(m) ? 1 : 0) | (*M_VMAN(m) ? 2 : 0);
+	void *p = bzy_alloc(32 + cap * 16);
+	g_pairs_vtable[which][0] = (int64_t)&g_pairs_typeinfo[which][0];
+	*(void**)p = &g_pairs_vtable[which][1];
+	*(int64_t*)((char*)p + 24) = which == 3 ? cap * 2 : cap;
+	return p;
 }
 
 static void map_grow(void *m)
@@ -847,29 +868,26 @@ static void map_grow(void *m)
 	int cached = hash_is_cached(m);
 	uint8_t *oldctrl = *M_CTRL(m);
 	uint64_t *oldhashes = (cached && oldctrl) ? (uint64_t*)(oldctrl + oldcap) : NULL;
-	void *oldkeys = *M_KEYS(m), *oldvals = *M_VALS(m);
-	int64_t *okeys = oldkeys ? (int64_t*)((char*)oldkeys + 32) : NULL;
-	int64_t *ovals = oldvals ? (int64_t*)((char*)oldvals + 32) : NULL;
+	void *oldpairs = *M_PAIRS(m);
+	int64_t *okeys = oldpairs ? (int64_t*)((char*)oldpairs + 32) : NULL;
+	int64_t *ovals = oldpairs ? (int64_t*)((char*)oldpairs + 40) : NULL;
 
 	// When caching, one block holds newcap control bytes + newcap 8-byte hashes; otherwise just the control bytes (cheap-hash keys recompute on grow).
 	uint8_t *nctrl = (uint8_t*)malloc((size_t)newcap + (cached ? (size_t)newcap * 8 : 0));
 	map_init_ctrl(nctrl, newcap);
 	uint64_t *nhashes = cached ? (uint64_t*)(nctrl + newcap) : NULL;
-	void *nkeys = bzy_array_new(newcap, key_managed(m) ? 1 : 0);
-	void *nvals = bzy_array_new(newcap, *M_VMAN(m));
-	int64_t *nk = (int64_t*)((char*)nkeys + 32);
-	int64_t *nv = (int64_t*)((char*)nvals + 32);
+	void *npairs = pairs_new(m, newcap);
+	int64_t *nk = (int64_t*)((char*)npairs + 32);
+	int64_t *nv = (int64_t*)((char*)npairs + 40);
 
-	// A shared map's fresh backing arrays inherit the SHARED bit: they are newborn and sole-referenced here, so a plain OR is race-free (and the roots lock must NOT be taken while holding a stripe).
+	// A shared map's fresh pairs block inherits the SHARED bit: it is newborn and sole-referenced here, so a plain OR is race-free (and the roots lock must NOT be taken while holding a stripe).
 	if (map_is_shared(m))
 	{
-		*(int64_t*)((char*)nkeys + 16) |= (1ll << 3);
-		*(int64_t*)((char*)nvals + 16) |= (1ll << 3);
+		*(int64_t*)((char*)npairs + 16) |= (1ll << 3);
 	}
 
 	*M_CTRL(m) = nctrl; // Publish new buffers before re-probing.
-	*M_KEYS(m) = nkeys;
-	*M_VALS(m) = nvals;
+	*M_PAIRS(m) = npairs;
 	*M_CAP(m) = newcap;
 
 	for (int64_t i = 0; i < oldcap; i++)
@@ -877,22 +895,31 @@ static void map_grow(void *m)
 		if (oldctrl[i] != CTRL_EMPTY && oldctrl[i] != CTRL_DELETED)
 		{
 			// Reuse the cached hash (no recompute, no key pointer-chase); for cheap-hash keys recompute - it costs only a couple of instructions.
-			uint64_t h = cached ? oldhashes[i] : hash_key(m, okeys[i]);
-			int64_t s = map_find_insert(m, okeys[i], h); // Into the new arrays.
-			nk[s] = okeys[i];
-			nv[s] = ovals[i];
+			uint64_t h = cached ? oldhashes[i] : hash_key(m, okeys[2 * i]);
+
+			// The new table holds no tombstones and no copy of this key, so the first empty slot on the probe path is its place.
+			int64_t s = (int64_t)((h >> 7) & (uint64_t)(newcap - 1)), step = 1;
+			while (nctrl[s] != CTRL_EMPTY)
+			{
+				s = (s + step) & (newcap - 1);
+				step++;
+			}
+
+			nk[2 * s] = okeys[2 * i];
+			nv[2 * s] = ovals[2 * i];
 			nctrl[s] = (uint8_t)(h & 0x7f);
 			if (cached)
 			{
 				nhashes[s] = h;
 			}
-
-			okeys[i] = 0; // Transfer ownership: blank the old slot.
-			ovals[i] = 0;
 		}
 	}
 
 	free(oldctrl); // Frees the (combined, when cached) ctrl block.
-	bzy_release(oldkeys); // Old element slots are now NULL: frees the block only.
-	bzy_release(oldvals);
+	if (oldpairs)
+	{
+		*(int64_t*)((char*)oldpairs + 24) = 0; // Ownership moved: the old block releases no elements and frees the block only.
+	}
+
+	bzy_release(oldpairs);
 }
