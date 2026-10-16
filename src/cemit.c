@@ -103,6 +103,34 @@ static const char *C_PRELUDE =
 	"\tbzy_vec_push_back(v, x);\n"
 	"}\n"
 	"\n"
+	"/* The length, capacity, head and data of a list that a loop keeps in locals. A shared list reads capacity -1, so every push goes to the runtime and the length is never written back. */\n"
+	"static inline void bzy_c_vec_load(char *v, int64_t *len, int64_t *cap, int64_t *head, char **data)\n"
+	"{\n"
+	"\t*len = *(int64_t *)(v + 24);\n"
+	"\t*cap = (*(int64_t *)(v + 16) & 8) ? -1 : *(int64_t *)(v + 32);\n"
+	"\t*head = *(int64_t *)(v + 40);\n"
+	"\t*data = *(char **)(v + 48);\n"
+	"}\n"
+	"\n"
+	"/* A push onto a list held in locals by bzy_c_vec_load: the ring store when there is room, else the runtime with the length written back first and the locals reloaded after. */\n"
+	"static inline void bzy_c_vec_push(char *v, int64_t *len, int64_t *cap, int64_t *head, char **data, int64_t x)\n"
+	"{\n"
+	"\tif (__builtin_expect(*len < *cap, 1))\n"
+	"\t{\n"
+	"\t\t((int64_t *)(*data + 32))[(*head + *len) & (*cap - 1)] = x;\n"
+	"\t\t*len += 1;\n"
+	"\t\treturn;\n"
+	"\t}\n"
+	"\n"
+	"\tif (*cap >= 0)\n"
+	"\t{\n"
+	"\t\t*(int64_t *)(v + 24) = *len;\n"
+	"\t}\n"
+	"\n"
+	"\tbzy_vec_push_back(v, x);\n"
+	"\tbzy_c_vec_load(v, len, cap, head, data);\n"
+	"}\n"
+	"\n"
 	"/* PriorityQueue.add of an integer: the runtime's hole sift-up inline when there is room and the heap is not shared, else the runtime. Layout: len@24 cap@32 data@40. */\n"
 	"static inline void bzy_c_pq_add(char *q, int64_t x)\n"
 	"{\n"
@@ -226,6 +254,8 @@ typedef struct
 	int         fe; // Counter naming each foreach's C temporaries.
 	int         ncallee;
 	FuncInfo   *callees[16]; // Whole-C functions the unit calls (each needs a prototype).
+	int         nvc;
+	int         vc_off[4]; // Lists whose state the current loop keeps in locals (frame offset).
 } CUnit;
 
 static const char *c_param_type(TypeKind k);
@@ -817,7 +847,19 @@ static void c_expr(CUnit *u, const Expr *e)
 		}
 
 		note_local(u, e->lhs->anno_int, TY_GENERIC);
-		cbuf_printf(&u->out, "%s(l%d, (int64_t)(", push == 2 ? "bzy_c_pq_add" : "bzy_c_vec_add", e->lhs->anno_int);
+		int off = e->lhs->anno_int;
+		for (int i = 0; push == 1 && i < u->nvc; i++)
+		{
+			if (u->vc_off[i] == off)
+			{
+				cbuf_printf(&u->out, "bzy_c_vec_push(l%d, &c%d_len, &c%d_cap, &c%d_head, &c%d_data, (int64_t)(", off, off, off, off, off);
+				c_expr(u, e->args[0]);
+				cbuf_printf(&u->out, "))");
+				return;
+			}
+		}
+
+		cbuf_printf(&u->out, "%s(l%d, (int64_t)(", push == 2 ? "bzy_c_pq_add" : "bzy_c_vec_add", off);
 		c_expr(u, e->args[0]);
 		cbuf_printf(&u->out, "))");
 		return;
@@ -1106,6 +1148,103 @@ static void c_affine_jump(CUnit *u, const Stmt *s, int depth)
 	cbuf_printf(&u->out, "}\n");
 }
 
+/**
+ * Whether a loop may keep the lists it pushes integers onto in locals (bzy_c_vec_load), collecting their frame offsets into u->vc_off.
+ * Nothing in the loop may read such a list or leave the loop by throwing while its length lives only in a local.
+ * So the only container uses allowed are those pushes, the only calls clock reads, and there is no array access and no division.
+ */
+static int c_vc_expr(CUnit *u, const Expr *e)
+{
+	if (!e)
+	{
+		return 1;
+	}
+
+	switch (e->kind)
+	{
+	case EX_INT:
+	case EX_BOOL:
+	case EX_FLOAT:
+		return 1;
+	case EX_IDENT:
+		return e->type.kind != TY_GENERIC;
+	case EX_CAST:
+	case EX_UNARY:
+		return c_vc_expr(u, e->lhs);
+	case EX_BINARY:
+		return e->op != TOKEN_SLASH && e->op != TOKEN_PERCENT && c_vc_expr(u, e->lhs) && c_vc_expr(u, e->rhs);
+	case EX_CALL:
+		return ir_is_clock_read(e);
+	case EX_METHOD_CALL:
+		if (ir_c_push(e) != 1 || !c_vc_expr(u, e->args[0]))
+		{
+			return 0;
+		}
+
+		for (int i = 0; i < u->nvc; i++)
+		{
+			if (u->vc_off[i] == e->lhs->anno_int)
+			{
+				return 1;
+			}
+		}
+
+		if (u->nvc == (int)(sizeof(u->vc_off) / sizeof(u->vc_off[0])))
+		{
+			return 0;
+		}
+
+		u->vc_off[u->nvc++] = e->lhs->anno_int;
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int c_vc_stmt(CUnit *u, const Stmt *s);
+
+static int c_vc_block(CUnit *u, const Block *b)
+{
+	for (int i = 0; b && i < b->count; i++)
+	{
+		if (!c_vc_stmt(u, b->stmts[i]))
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+static int c_vc_stmt(CUnit *u, const Stmt *s)
+{
+	if (!s)
+	{
+		return 1;
+	}
+
+	switch (s->kind)
+	{
+	case ST_VARDECL:
+		return s->decl_type.kind != TY_GENERIC && c_vc_expr(u, s->decl_init);
+	case ST_ASSIGN:
+		return s->target->kind == EX_IDENT && s->target->type.kind != TY_GENERIC && c_vc_expr(u, s->value);
+	case ST_EXPR:
+		return c_vc_expr(u, s->expr);
+	case ST_IF:
+		return c_vc_expr(u, s->cond) && c_vc_block(u, s->then_blk) && c_vc_block(u, s->else_blk);
+	case ST_WHILE:
+		return c_vc_expr(u, s->cond) && c_vc_block(u, s->then_blk);
+	case ST_FOR:
+		return c_vc_stmt(u, s->for_init) && c_vc_expr(u, s->cond) && c_vc_stmt(u, s->for_post) && c_vc_block(u, s->then_blk);
+	case ST_BREAK:
+	case ST_CONTINUE:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static void c_for(CUnit *u, const Stmt *s, int depth)
 {
 	c_indent(u, depth);
@@ -1116,6 +1255,31 @@ static void c_for(CUnit *u, const Stmt *s, int depth)
 	}
 
 	c_affine_jump(u, s, depth + 1);
+
+	// An outermost loop that pushes onto local lists holds their state in locals for its whole run; the length goes back to the list when the loop ends.
+	int cached = 0;
+	if (u->nvc == 0)
+	{
+		int init_ok = c_vc_stmt(u, s->for_init) && u->nvc == 0; // A push in the init clause would run before the locals exist.
+		if (init_ok && c_vc_expr(u, s->cond) && c_vc_stmt(u, s->for_post) && c_vc_block(u, s->then_blk))
+		{
+			cached = u->nvc;
+		}
+
+		u->nvc = cached;
+	}
+
+	for (int i = 0; i < cached; i++)
+	{
+		int off = u->vc_off[i];
+		note_local(u, off, TY_GENERIC);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "int64_t c%d_len, c%d_cap, c%d_head;\n", off, off, off);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "char *c%d_data;\n", off);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "bzy_c_vec_load(l%d, &c%d_len, &c%d_cap, &c%d_head, &c%d_data);\n", off, off, off, off, off);
+	}
 
 	c_indent(u, depth + 1);
 	cbuf_printf(&u->out, "for (; ");
@@ -1147,6 +1311,24 @@ static void c_for(CUnit *u, const Stmt *s, int depth)
 	u->loops++;
 	c_block(u, s->then_blk, depth + 1);
 	u->loops--;
+	for (int i = 0; i < cached; i++)
+	{
+		int off = u->vc_off[i];
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "if (c%d_cap >= 0)\n", off);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "{\n");
+		c_indent(u, depth + 2);
+		cbuf_printf(&u->out, "*(int64_t *)(l%d + 24) = c%d_len;\n", off, off);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "}\n");
+	}
+
+	if (cached)
+	{
+		u->nvc = 0;
+	}
+
 	c_indent(u, depth);
 	cbuf_printf(&u->out, "}\n");
 }

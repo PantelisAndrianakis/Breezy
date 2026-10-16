@@ -1,0 +1,56 @@
+// Integer pushes in pure loops keep the list's length in a local until the loop ends: the list must read right after a break, a ring that wraps and grows mid-loop, and an inner loop.
+void main()
+{
+	List<long> l;
+	l = new List<long>();
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		if (i == 50)
+		{
+			break;
+		}
+
+		l.add(i * 3);
+	}
+
+	print(l.size); // 50
+	print(l.get(49)); // 147
+
+	Deque<long> d;
+	d = new Deque<long>();
+	for (long i = 0; i < 6; i = i + 1)
+	{
+		d.addLast(i);
+	}
+
+	d.removeFirst();
+	d.removeFirst();
+	for (long i = 6; i < 40; i = i + 1)
+	{
+		d.addLast(i);
+	}
+
+	print(d.size); // 38
+	print(d.removeFirst()); // 2
+	print(d.get(36)); // 39
+
+	List<long> n;
+	n = new List<long>();
+	for (long i = 0; i < 20; i = i + 1)
+	{
+		for (long j = 0; j < i; j = j + 1)
+		{
+			n.add(j);
+		}
+	}
+
+	long sum;
+	sum = 0;
+	foreach (long x in n)
+	{
+		sum = sum + x;
+	}
+
+	print(n.size); // 190
+	print(sum); // 1140
+}

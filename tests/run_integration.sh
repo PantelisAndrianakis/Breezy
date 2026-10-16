@@ -248,6 +248,7 @@ check list_subscript tests/samples/pass/collections/list_subscript.bzy $'10\n99\
 check_abort list_set_oob tests/samples/fail/collections/list_set_oob.bzy
 check stack_queue tests/samples/pass/collections/stack_queue.bzy  $'2\n2\n1\n7\n7\n8'
 check deque       tests/samples/pass/collections/deque.bzy        $'1\n3\n1\n3\n1'
+check list_push_loop tests/samples/pass/collections/list_push_loop.bzy $'50\n147\n38\n2\n39\n190\n1140'
 check set_string  tests/samples/pass/collections/set_string.bzy   $'2\ntrue\nfalse\nfalse\n1'
 check set_obj     tests/samples/pass/collections/proj_set_obj       $'2\ntrue\ntrue\nfalse'
 check set_obj_cycle tests/samples/pass/collections/proj_set_obj_cycle $'0'
