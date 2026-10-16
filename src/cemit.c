@@ -1028,7 +1028,7 @@ static void c_for(CUnit *u, const Stmt *s, int depth)
 }
 
 /**
- * A foreach over a local integer List/Stack/Queue/Deque (ir_c_foreach): read the length, head and data once, then run the body over each slot.
+ * A foreach over a local string, an integer or double array or List/Stack/Queue/Deque (ir_c_foreach): read the length, head and data once, then run the body over each slot.
  * Unswitched on the head like the emitter's own list loop: head 0 (no front removal yet) indexes the data directly, which lets gcc vectorize a pure body; otherwise the ring index wraps with the capacity mask.
  * The list's slots are read without its stripe lock, as the emitter's hoisted value-list loop does: an aligned 8-byte load is atomic.
  */
@@ -1044,8 +1044,37 @@ static void c_foreach(CUnit *u, const Stmt *s, int depth)
 	int lo = s->expr->anno_int;
 	int x = s->decl_offset;
 	int id = u->fe++;
-	note_local(u, lo, TY_GENERIC);
 	note_local(u, x, s->decl_type.kind);
+	if (s->expr->type.kind == TY_ARRAY || s->expr->type.kind == TY_STRING)
+	{
+		// An array: length at +24, elements packed at their own width from +32.
+		// A string has the same layout with unsigned bytes; it is loaded as a plain pointer, since nothing else in an eligible loop can name it.
+		int str = s->expr->type.kind == TY_STRING;
+		const char *et = str ? "uint8_t" : c_elem_type(s->expr->type.elem->kind);
+		note_local(u, lo, str ? TY_GENERIC : TY_ARRAY);
+		c_indent(u, depth);
+		cbuf_printf(&u->out, "{\n");
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "int64_t fe%d_n = *(int64_t *)(l%d + 24);\n", id, lo);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "const %s *fe%d_d = (const %s *)(l%d + 32);\n", et, id, et, lo);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "for (int64_t fe%d_i = 0; fe%d_i < fe%d_n; fe%d_i++)\n", id, id, id, id);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "{\n");
+		c_indent(u, depth + 2);
+		cbuf_printf(&u->out, "l%d = (%s)fe%d_d[fe%d_i];\n", x, vt, id, id);
+		u->loops++;
+		c_block(u, s->then_blk, depth + 2);
+		u->loops--;
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "}\n");
+		c_indent(u, depth);
+		cbuf_printf(&u->out, "}\n");
+		return;
+	}
+
+	note_local(u, lo, TY_GENERIC);
 	c_indent(u, depth);
 	cbuf_printf(&u->out, "{\n");
 	c_indent(u, depth + 1);
@@ -1055,7 +1084,9 @@ static void c_foreach(CUnit *u, const Stmt *s, int depth)
 	c_indent(u, depth + 1);
 	cbuf_printf(&u->out, "int64_t fe%d_m = *(int64_t *)(l%d + 32) - 1;\n", id, lo);
 	c_indent(u, depth + 1);
-	cbuf_printf(&u->out, "const int64_t *fe%d_d = fe%d_n > 0 ? (const int64_t *)(*(char **)(l%d + 48) + 32) : 0;\n", id, id, lo);
+	// Each slot is 8 bytes; a double list stores the double's bits, so it is read through a double view.
+	const char *st = s->expr->type.elem->kind == TY_DOUBLE ? "double" : "int64_t";
+	cbuf_printf(&u->out, "const %s *fe%d_d = fe%d_n > 0 ? (const %s *)(*(char **)(l%d + 48) + 32) : 0;\n", st, id, id, st, lo);
 	for (int ring = 0; ring < 2; ring++)
 	{
 		c_indent(u, depth + 1);

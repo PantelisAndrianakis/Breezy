@@ -143,11 +143,34 @@ static int block_names_off(const Block *b, int off)
 	return 0;
 }
 
+/* A foreach element the C route can bind: an integer into an integer variable, or a double into a double. */
+static int fe_scalar_ok(TypeKind elem, TypeKind var)
+{
+	return (ty_is_int(elem) && ty_is_int(var)) || (elem == TY_DOUBLE && var == TY_DOUBLE);
+}
+
 int ir_c_foreach(const Stmt *s)
 {
 	const Expr *it = s->expr;
-	if (s->kind != ST_FOREACH || !it || it->kind != EX_IDENT || it->anno_capture || it->anno_int <= 0
-			|| it->type.kind != TY_GENERIC || !it->type.elem)
+	if (s->kind != ST_FOREACH || !it || it->kind != EX_IDENT || it->anno_capture || it->anno_int <= 0)
+	{
+		return 0;
+	}
+
+	// A string is immutable: its bytes are walked as unsigned integers.
+	if (it->type.kind == TY_STRING)
+	{
+		return ty_is_int(s->decl_type.kind) && s->decl_offset > 0 && s->fe_val_type.kind == TY_VOID;
+	}
+
+	// An array never grows or moves, so the body may read and write its elements freely.
+	if (it->type.kind == TY_ARRAY)
+	{
+		return elig_arrayref(&it->type) && fe_scalar_ok(it->type.elem->kind, s->decl_type.kind)
+			   && s->decl_offset > 0 && s->fe_val_type.kind == TY_VOID;
+	}
+
+	if (it->type.kind != TY_GENERIC || !it->type.elem)
 	{
 		return 0;
 	}
@@ -159,7 +182,7 @@ int ir_c_foreach(const Stmt *s)
 		return 0;
 	}
 
-	if (!ty_is_int(it->type.elem->kind) || !ty_is_int(s->decl_type.kind) || s->decl_offset <= 0
+	if (!fe_scalar_ok(it->type.elem->kind, s->decl_type.kind) || s->decl_offset <= 0
 			|| s->fe_val_type.kind != TY_VOID)
 	{
 		return 0;

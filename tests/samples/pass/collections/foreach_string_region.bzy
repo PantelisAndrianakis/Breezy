@@ -1,0 +1,52 @@
+// String foreach loops compiled through the C route: bytes are unsigned (a UTF-8
+// "é" is 195 then 169), an empty string runs no iterations, and continue and
+// break work. Prints 461 (97 + 195 + 169), 0 (the empty string) and 3 (commas
+// before the first semicolon, skipping spaces).
+void main()
+{
+	string s;
+	s = "aé";
+	int sum;
+	sum = 0;
+	foreach (int b in s)
+	{
+		sum = sum + b;
+	}
+
+	print(sum);
+
+	string e;
+	e = "";
+	int n;
+	n = 0;
+	foreach (int b in e)
+	{
+		n = n + 1;
+	}
+
+	print(n);
+
+	string csv;
+	csv = "a, b,c,d;e,f";
+	int commas;
+	commas = 0;
+	foreach (int b in csv)
+	{
+		if (b == 59)
+		{
+			break;
+		}
+
+		if (b == 32)
+		{
+			continue;
+		}
+
+		if (b == 44)
+		{
+			commas = commas + 1;
+		}
+	}
+
+	print(commas);
+}

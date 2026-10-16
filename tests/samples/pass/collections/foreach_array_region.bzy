@@ -1,0 +1,88 @@
+// Integer array foreach loops compiled through the C route: packed signed
+// bytes, ints with continue and break, and a long array whose elements the body
+// rewrites while it is being walked. Prints -128 (sum of -1, -2 .. -16 then 8),
+// 2500 (odd ints below 100), 45 (ints up to the first above 9) and 552
+// (a long array doubled in place, then summed).
+void main()
+{
+	byte[] bs;
+	bs = new byte[17];
+	for (int i = 0; i < 16; i = i + 1)
+	{
+		bs[i] = (byte)(0 - i - 1);
+	}
+
+	bs[16] = (byte)8;
+	int bsum;
+	bsum = 0;
+	foreach (int b in bs)
+	{
+		bsum = bsum + b;
+	}
+
+	print(bsum);
+
+	int[] xs;
+	xs = new int[200];
+	for (int i = 0; i < 200; i = i + 1)
+	{
+		xs[i] = i;
+	}
+
+	int odd;
+	odd = 0;
+	foreach (int v in xs)
+	{
+		if (v >= 100)
+		{
+			break;
+		}
+
+		if (v % 2 == 0)
+		{
+			continue;
+		}
+
+		odd = odd + v;
+	}
+
+	print(odd);
+
+	int upto;
+	upto = 0;
+	foreach (int v in xs)
+	{
+		if (v > 9)
+		{
+			break;
+		}
+
+		upto = upto + v;
+	}
+
+	print(upto);
+
+	long[] ls;
+	ls = new long[24];
+	for (int i = 0; i < 24; i = i + 1)
+	{
+		ls[i] = (long)i;
+	}
+
+	int k;
+	k = 0;
+	foreach (long v in ls)
+	{
+		ls[k] = v * 2;
+		k = k + 1;
+	}
+
+	long lsum;
+	lsum = 0;
+	foreach (long v in ls)
+	{
+		lsum = lsum + v;
+	}
+
+	print(lsum);
+}

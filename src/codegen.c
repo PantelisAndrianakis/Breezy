@@ -4549,7 +4549,8 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 		if (fp)
 		{
 			cg_expr(cg,tt,e->args[0]);
-			cg_emit(cg, tk==TY_FLOAT ? "    movd edx, xmm0" : "    movq rdx, xmm0");
+			cg_emit(cg, tk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+			cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1)); // Value bits in the ABI's second integer argument register.
 		}
 		else
 		{
@@ -4660,7 +4661,8 @@ static void cg_collection_method(Codegen *cg, TypeTable *tt, Expr *e)
 	if (fp)
 	{
 		cg_expr(cg,tt,e->args[0]);
-		cg_emit(cg, tk==TY_FLOAT ? "    movd edx, xmm0" : "    movq rdx, xmm0");
+		cg_emit(cg, tk==TY_FLOAT ? "    movd eax, xmm0" : "    movq rax, xmm0");
+		cg_emit(cg,"    mov %s, rax", cg_iarg(cg, 1)); // Value bits in the ABI's second integer argument register.
 	}
 	else
 	{
@@ -10387,10 +10389,8 @@ static void cg_foreach_vec_tail(Codegen *cg, TypeTable *tt, Func *f, Stmt *s,
 {
 	if (ty_is_float(et))
 	{
-		char mem[32];
 		cg_emit(cg, et==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
-		sprintf(mem,"[rbp - %d]", s->decl_offset);
-		cg_store_fp(cg,et,mem);
+		cg_store_local_fp(cg, s->decl_offset, et); // XMM home if promoted, else slot.
 	}
 	else
 	{
@@ -10550,10 +10550,8 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 			cg_aligned_call(cg,"bzy_map_val_at"); // Value bits (borrowed) in rax.
 			if (ty_is_float(vt))
 			{
-				char mem[32];
 				cg_emit(cg, vt==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
-				sprintf(mem,"[rbp - %d]", s->fe_val_offset);
-				cg_store_fp(cg,vt,mem);
+				cg_store_local_fp(cg, s->fe_val_offset, vt); // XMM home if promoted, else slot.
 			}
 			else
 			{
@@ -10625,10 +10623,8 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 
 		if (ty_is_float(et))
 		{
-			char mem[32];
 			cg_emit(cg, et==TY_FLOAT ? "    movd xmm0, eax" : "    movq xmm0, rax");
-			sprintf(mem,"[rbp - %d]", s->decl_offset);
-			cg_store_fp(cg,et,mem);
+			cg_store_local_fp(cg, s->decl_offset, et); // XMM home if promoted, else slot.
 		}
 		else
 		{
@@ -10651,10 +10647,8 @@ static void cg_foreach(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main
 		cg_emit(cg,"    lea rbx, [rax + rcx*%d + 32]", cg_elem_stride(et)); // element address
 		if (ty_is_float(et))
 		{
-			char mem[32];
-			sprintf(mem,"[rbp - %d]", s->decl_offset);
 			cg_load_fp(cg,et,"[rbx]");
-			cg_store_fp(cg,et,mem);
+			cg_store_local_fp(cg, s->decl_offset, et); // XMM home if promoted, else slot.
 		}
 		else
 		{

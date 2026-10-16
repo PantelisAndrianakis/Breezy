@@ -1,0 +1,36 @@
+// Double lists and arrays: add and contains must pass the value in the ABI's own
+// argument register, and a foreach loop variable hot enough to live in an XMM
+// register must be written to that register, not only to its stack slot.
+// Prints 249750 (the list sum), 499500 (the array sum) and true (10.5 is listed).
+void main()
+{
+	List<double> ds;
+	ds = new List<double>();
+	double[] da;
+	da = new double[1000];
+	for (long i = 0; i < 1000; i = i + 1)
+	{
+		ds.add(i * 0.5);
+		da[i] = i * 1.0;
+	}
+
+	double s;
+	s = 0.0;
+	foreach (double v in ds)
+	{
+		s = s + v;
+	}
+
+	print((long)s);
+
+	double t;
+	t = 0.0;
+	foreach (double v in da)
+	{
+		t = t + v;
+	}
+
+	print((long)t);
+
+	print(ds.contains(10.5));
+}

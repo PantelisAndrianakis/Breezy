@@ -257,6 +257,17 @@ check_fail set_float tests/samples/fail/collections/set_float.bzy
 check foreach_list tests/samples/pass/collections/foreach_list.bzy $'12'
 check foreach_list_front tests/samples/pass/collections/foreach_list_front.bzy $'1\n36'
 check foreach_list_region tests/samples/pass/collections/foreach_list_region.bzy $'25\n8\n5950\n66'
+check foreach_array_region tests/samples/pass/collections/foreach_array_region.bzy $'-128\n2500\n45\n552'
+check foreach_double tests/samples/pass/collections/foreach_double.bzy $'249750\n499500\ntrue'
+check foreach_string_region tests/samples/pass/collections/foreach_string_region.bzy $'461\n0\n3'
+# The same double foreach through the emitter (C route off), where the loop variable may live in an XMM register.
+BZY_C=0 bzy_build tests/samples/pass/collections/foreach_double.bzy
+if [ $? -ne 0 ]; then echo "  foreach_double_emitter: COMPILE FAILED"; fail=1
+else
+    fd_out="$(./out.exe)"; fd_out="${fd_out//$'\r'/}"
+    if [ "$fd_out" == $'249750\n499500\ntrue' ]; then echo "  foreach_double_emitter: OK"
+    else echo "  foreach_double_emitter: FAIL (got '$fd_out')"; fail=1; fi
+fi
 check foreach_set  tests/samples/pass/collections/foreach_set.bzy  $'30\n2'
 check list_obj    tests/samples/pass/collections/proj_list_obj      $'6\n8\n7'
 check list_cycle  tests/samples/pass/collections/proj_list_cycle    $'0'
