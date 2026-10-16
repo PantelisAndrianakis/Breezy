@@ -256,6 +256,7 @@ check set_long    tests/samples/pass/collections/set_long.bzy      $'2\ntrue\ntr
 check_fail set_float tests/samples/fail/collections/set_float.bzy
 check foreach_list tests/samples/pass/collections/foreach_list.bzy $'12'
 check foreach_list_front tests/samples/pass/collections/foreach_list_front.bzy $'1\n36'
+check foreach_list_region tests/samples/pass/collections/foreach_list_region.bzy $'25\n8\n5950\n66'
 check foreach_set  tests/samples/pass/collections/foreach_set.bzy  $'30\n2'
 check list_obj    tests/samples/pass/collections/proj_list_obj      $'6\n8\n7'
 check list_cycle  tests/samples/pass/collections/proj_list_cycle    $'0'

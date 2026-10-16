@@ -4181,15 +4181,19 @@ static void cg_combinator(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg,"    jnz .L%d", rloop);
 
 		// head == 0: phys == index, flat source and result.
-		cg_emit(cg,".L%d:", floop);
-		cg_emit(cg,"    cmp r10, [rbp - %d]", s_len);
+		// The length is hoisted into r11 and the loop is tested at the bottom: one compare and one taken branch per element.
+		cg_emit(cg,"    mov r11, [rbp - %d]", s_len);
+		cg_emit(cg,"    cmp r10, r11");
 		cg_emit(cg,"    jge .L%d", fend);
+		cg_emit(cg,".L%d:", floop);
 		cg_emit(cg,"    mov rax, [r8 + r10*8 + 32]");
 		cg_emit(cg,"    mov [rbp - %d], rax", s_elem);
-		cg_expr(cg, tt, ibody); // result -> rax; r8/r9/r10 preserved.
+		cg_expr(cg, tt, ibody); // result -> rax; r8-r11 preserved.
 		cg_emit(cg,"    mov [r9 + r10*8 + 32], rax");
 		cg_emit(cg,"    inc r10");
-		cg_emit(cg,"    jmp .L%d", floop);
+		cg_emit(cg,"    cmp r10, r11");
+		cg_emit(cg,"    jl .L%d", floop);
+		cg_emit(cg,"    jmp .L%d", fend);
 
 		// head != 0: ring source phys = (head + i) & (cap - 1); result stays flat.
 		cg_emit(cg,".L%d:", rloop);
@@ -11562,6 +11566,17 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		break;
 	}
 	case ST_FOREACH:
+		// A C region (integer list sweep), under the same idle-register conditions as the for and while regions above.
+		if (cg->hoist_n == 0 && cg->sr_n == 0 && cg->defer_n == 0 && !cg->unrolling && cg->lpromo_n == 0)
+		{
+			int r = cg_region_find(cg, s);
+			if (r >= 0)
+			{
+				cg_emit_region_stmt(cg, f, r);
+				break;
+			}
+		}
+
 		cg_foreach(cg,tt,f,s,in_main);
 		break;
 	case ST_BREAK:
@@ -12112,6 +12127,28 @@ static void cg_scan_regions(Codegen *cg, Func *f, const Block *b, int depth)
 	for (int i = 0; i < b->count; i++)
 	{
 		Stmt *s = b->stmts[i];
+		if (s->kind == ST_FOREACH)
+		{
+			// Only the C route takes a foreach (an integer list sweep); the IR backend does not lower one.
+			char sym[64];
+			int offs[256];
+			int noffs = 0;
+			if (bzy_c_enabled() && !cg->cur_unit_prelude && ir_region_eligible_c(s) && cg_region_line_allowed(s->line)
+					&& cemit_region(f, s, depth == 0, sym, offs, 256, &noffs))
+			{
+				cg_region_record(cg, s, NULL, NULL, sym, offs, noffs);
+				if (cg_region_debug())
+				{
+					fprintf(stderr, "ir-region: %s line %d: C-REGION %s\n", f->name, s->line, sym);
+				}
+
+				continue;
+			}
+
+			cg_scan_regions(cg, f, s->then_blk, depth + 1);
+			continue;
+		}
+
 		if (s->kind == ST_FOR || s->kind == ST_WHILE)
 		{
 			const char *verdict = "ineligible";

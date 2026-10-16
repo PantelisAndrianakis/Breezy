@@ -1,0 +1,94 @@
+// Integer list foreach loops compiled through the C route: continue and break,
+// a queue whose head moved off slot 0 after dequeues, and a nested foreach over
+// a second list. Prints 25 (odd values below 10), 8 (values up to 7), 5950
+// (10..109 after dequeuing 0..9) and 66 (ordered pairs of 12 values).
+void main()
+{
+	List<long> xs;
+	xs = new List<long>();
+	for (long i = 0; i < 20; i = i + 1)
+	{
+		xs.add(i);
+	}
+
+	long odd;
+	odd = 0;
+	foreach (long v in xs)
+	{
+		if (v >= 10)
+		{
+			break;
+		}
+
+		if (v % 2 == 0)
+		{
+			continue;
+		}
+
+		odd = odd + v;
+	}
+
+	print(odd);
+
+	long pos;
+	pos = 0;
+	foreach (long v in xs)
+	{
+		if (v > 7)
+		{
+			break;
+		}
+
+		pos = pos + 1;
+	}
+
+	print(pos);
+
+	Queue<long> q;
+	q = new Queue<long>();
+	for (long i = 0; i < 100; i = i + 1)
+	{
+		q.enqueue(i);
+	}
+
+	for (long i = 0; i < 10; i = i + 1)
+	{
+		q.dequeue();
+	}
+
+	for (long i = 100; i < 110; i = i + 1)
+	{
+		q.enqueue(i);
+	}
+
+	long qsum;
+	qsum = 0;
+	foreach (long v in q)
+	{
+		qsum = qsum + v;
+	}
+
+	print(qsum);
+
+	List<long> ys;
+	ys = new List<long>();
+	for (long i = 0; i < 12; i = i + 1)
+	{
+		ys.add(i);
+	}
+
+	long pairs;
+	pairs = 0;
+	foreach (long a in ys)
+	{
+		foreach (long b in ys)
+		{
+			if (a < b)
+			{
+				pairs = pairs + 1;
+			}
+		}
+	}
+
+	print(pairs);
+}

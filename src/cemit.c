@@ -205,6 +205,7 @@ typedef struct
 	int         local_off[CEMIT_MAX_LOCALS];  /* Frame offset of each referenced local. */
 	TypeKind    local_kind[CEMIT_MAX_LOCALS]; /* Its type. */
 	int         loops;                        /* Depth of enclosing loops at the statement being emitted. */
+	int         fe;                           /* Counter naming each foreach's C temporaries. */
 } CUnit;
 
 /* The C type holding a Breezy scalar or array reference, or NULL. */
@@ -1027,6 +1028,64 @@ static void c_for(CUnit *u, const Stmt *s, int depth)
 }
 
 /**
+ * A foreach over a local integer List/Stack/Queue/Deque (ir_c_foreach): read the length, head and data once, then run the body over each slot.
+ * Unswitched on the head like the emitter's own list loop: head 0 (no front removal yet) indexes the data directly, which lets gcc vectorize a pure body; otherwise the ring index wraps with the capacity mask.
+ * The list's slots are read without its stripe lock, as the emitter's hoisted value-list loop does: an aligned 8-byte load is atomic.
+ */
+static void c_foreach(CUnit *u, const Stmt *s, int depth)
+{
+	const char *vt = c_type(s->decl_type.kind);
+	if (!ir_c_foreach(s) || !vt)
+	{
+		u->ok = 0;
+		return;
+	}
+
+	int lo = s->expr->anno_int;
+	int x = s->decl_offset;
+	int id = u->fe++;
+	note_local(u, lo, TY_GENERIC);
+	note_local(u, x, s->decl_type.kind);
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "{\n");
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "int64_t fe%d_n = *(int64_t *)(l%d + 24);\n", id, lo);
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "int64_t fe%d_h = *(int64_t *)(l%d + 40);\n", id, lo);
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "int64_t fe%d_m = *(int64_t *)(l%d + 32) - 1;\n", id, lo);
+	c_indent(u, depth + 1);
+	cbuf_printf(&u->out, "const int64_t *fe%d_d = fe%d_n > 0 ? (const int64_t *)(*(char **)(l%d + 48) + 32) : 0;\n", id, id, lo);
+	for (int ring = 0; ring < 2; ring++)
+	{
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, ring ? "else\n" : "if (fe%d_h == 0)\n", id);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "for (int64_t fe%d_i = 0; fe%d_i < fe%d_n; fe%d_i++)\n", id, id, id, id);
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "{\n");
+		c_indent(u, depth + 2);
+		if (ring)
+		{
+			cbuf_printf(&u->out, "l%d = (%s)fe%d_d[(fe%d_h + fe%d_i) & fe%d_m];\n", x, vt, id, id, id, id);
+		}
+		else
+		{
+			cbuf_printf(&u->out, "l%d = (%s)fe%d_d[fe%d_i];\n", x, vt, id, id);
+		}
+
+		u->loops++;
+		c_block(u, s->then_blk, depth + 2);
+		u->loops--;
+		c_indent(u, depth + 1);
+		cbuf_printf(&u->out, "}\n");
+	}
+
+	c_indent(u, depth);
+	cbuf_printf(&u->out, "}\n");
+}
+
+/**
  * 1 when integer expression e is cheap and can never trap, so it may be evaluated even on the path that would not have run it.
  * Array reads (bounds checks), calls and division by anything but a constant other than 0 and -1 are excluded; *budget caps the size.
  */
@@ -1243,6 +1302,9 @@ static void c_stmt(CUnit *u, const Stmt *s, int depth)
 	case ST_FOR:
 		c_for(u, s, depth);
 		break;
+	case ST_FOREACH:
+		c_foreach(u, s, depth);
+		break;
 	case ST_BREAK:
 		c_indent(u, depth);
 		cbuf_printf(&u->out, "break;\n");
@@ -1374,7 +1436,7 @@ static int c_declares(const Stmt *s, int off)
 		return 0;
 	}
 
-	if (s->kind == ST_VARDECL && s->decl_offset == off)
+	if ((s->kind == ST_VARDECL || s->kind == ST_FOREACH) && s->decl_offset == off)
 	{
 		return 1;
 	}

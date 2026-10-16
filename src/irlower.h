@@ -40,6 +40,7 @@ int ir_is_clock_read(const Expr *e);
  * Generated C stores the value inline when there is room and calls the runtime otherwise.
  */
 int ir_c_push(const Expr *e);
+int ir_c_foreach(const Stmt *s);   /* C route: a foreach over a local integer List/Stack/Queue/Deque whose body never names it. */
 
 /**
  * Lower an eligible region to IR with no IR_RET: the final block is empty and emission falls off it into the region epilogue.

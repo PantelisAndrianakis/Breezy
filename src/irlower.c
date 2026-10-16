@@ -80,6 +80,95 @@ int ir_c_push(const Expr *e)
 	return 0;
 }
 
+/* 1 when expression e, or any sub-expression, names the local at off. */
+static int expr_names_off(const Expr *e, int off)
+{
+	if (!e)
+	{
+		return 0;
+	}
+
+	if (e->kind == EX_IDENT && !e->anno_capture && e->anno_int == off)
+	{
+		return 1;
+	}
+
+	if (expr_names_off(e->lhs, off) || expr_names_off(e->rhs, off))
+	{
+		return 1;
+	}
+
+	for (int i = 0; i < e->arg_count; i++)
+	{
+		if (expr_names_off(e->args[i], off))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int block_names_off(const Block *b, int off);
+
+/* 1 when statement s, or anything nested in it, names the local at off. */
+static int stmt_names_off(const Stmt *s, int off)
+{
+	if (!s)
+	{
+		return 0;
+	}
+
+	return expr_names_off(s->decl_init, off) || expr_names_off(s->target, off) || expr_names_off(s->value, off)
+		   || expr_names_off(s->cond, off) || expr_names_off(s->expr, off) || expr_names_off(s->ret_val, off)
+		   || stmt_names_off(s->for_init, off) || stmt_names_off(s->for_post, off)
+		   || block_names_off(s->then_blk, off) || block_names_off(s->else_blk, off);
+}
+
+static int block_names_off(const Block *b, int off)
+{
+	if (!b)
+	{
+		return 0;
+	}
+
+	for (int i = 0; i < b->count; i++)
+	{
+		if (stmt_names_off(b->stmts[i], off))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int ir_c_foreach(const Stmt *s)
+{
+	const Expr *it = s->expr;
+	if (s->kind != ST_FOREACH || !it || it->kind != EX_IDENT || it->anno_capture || it->anno_int <= 0
+			|| it->type.kind != TY_GENERIC || !it->type.elem)
+	{
+		return 0;
+	}
+
+	const char *cls = it->type.class_name;
+	if (strcmp(cls, "List") != 0 && strcmp(cls, "Stack") != 0 && strcmp(cls, "Queue") != 0
+			&& strcmp(cls, "Deque") != 0 && strcmp(cls, "ArrayDeque") != 0)
+	{
+		return 0;
+	}
+
+	if (!ty_is_int(it->type.elem->kind) || !ty_is_int(s->decl_type.kind) || s->decl_offset <= 0
+			|| s->fe_val_type.kind != TY_VOID)
+	{
+		return 0;
+	}
+
+	// The body must leave the list alone: a push to it could move its backing array under the loop.
+	return !block_names_off(s->then_blk, it->anno_int);
+}
+
 int ir_is_clock_read(const Expr *e)
 {
 	return e->kind == EX_CALL && e->arg_count == 0
@@ -266,8 +355,10 @@ static int elig_stmt(const Stmt *s)
 		return elig_allow_switch && elig_case_label(s->value);
 	case ST_DEFAULT:
 		return elig_allow_switch;
+	case ST_FOREACH:
+		return elig_allow_switch && ir_c_foreach(s) && elig_block(s->then_blk);
 	default:
-		// ST_FOREACH, ST_THROW, ST_TRY/CATCH, ST_SPAWN, and switches outside the C route.
+		// ST_THROW, ST_TRY/CATCH and ST_SPAWN, plus foreach and switches outside the C route.
 		return 0;
 	}
 }
@@ -1691,7 +1782,7 @@ static long long const_trip_count(const Stmt *s)
 
 int ir_region_eligible(const Stmt *s)
 {
-	if (!s || (s->kind != ST_FOR && s->kind != ST_WHILE) || s->accum_sb_offset)
+	if (!s || (s->kind != ST_FOR && s->kind != ST_WHILE && !(s->kind == ST_FOREACH && elig_allow_switch)) || s->accum_sb_offset)
 	{
 		return 0;
 	}
