@@ -3,8 +3,8 @@
  * Pins the CURRENT OS (worker) thread, not the breeze - a breeze migrates across workers, so deterministic pinning needs a dedicated worker.
  * Lives in its own translation unit so a program that calls neither links none of this (the no-bloat invariant).
  */
-#ifndef _WIN32
-#define _GNU_SOURCE
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE // The Makefile passes it already; standalone builds still get cpu_set_t.
 #endif
 
 #include "breezy.h"

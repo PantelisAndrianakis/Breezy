@@ -4,9 +4,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+#endif
 
 /* Exception registry stubs: no compiled Breezy program is linked into this unit-test binary. */
 void *__bzy_exception_funcs[1] = { 0 };
@@ -922,8 +924,13 @@ static void test_str_more(void)
 
 static void test_clock_date(void)
 {
+#ifdef _WIN32
 	_putenv("TZ=UTC0");
 	_tzset();
+#else
+	setenv("TZ", "UTC0", 1);
+	tzset();
+#endif
 	void *s = bzy_clock_date(0); // Epoch in UTC -> 1970-01-01 00:00:00.
 	ASSERT_INT(bzy_str_len(s), 19);
 	ASSERT_INT(memcmp(bzy_str_data(s), "1970-01-01 00:00:00", 19), 0);
@@ -1403,6 +1410,17 @@ static void test_system_shell_wait_exit_code(void)
 	bzy_offload_shutdown();
 }
 
+/* Close the network backend a socket test started, as entry.c does at exit. */
+static void net_shutdown(void)
+{
+#ifdef _WIN32
+	bzy_iocp_shutdown();
+#else
+	bzy_reactor_shutdown();
+#endif
+}
+
+#ifdef _WIN32
 static char g_iocp_opbuf[BZY_IOCP_OP_SIZE];
 static int  g_iocp_resumed;
 static unsigned long g_iocp_bytes;
@@ -1443,6 +1461,7 @@ static void test_iocp_completion_wakes_breeze(void)
 	ASSERT_INT((int)g_iocp_bytes, 7); // The posted byte count transferred through.
 	bzy_iocp_shutdown();
 }
+#endif
 
 static int g_tcp_ok;
 static void *g_tcp_listener; // Shared Listener handle (set by server, read by client).
@@ -1483,7 +1502,7 @@ static void test_tcp_loopback_echo(void)
 	ASSERT_INT(g_tcp_ok, 1); // The client got its bytes echoed back.
 	bzy_listener_close(g_tcp_listener);
 	bzy_release(g_tcp_listener);
-	bzy_iocp_shutdown();
+	net_shutdown();
 }
 
 static int g_tcp_null_ok;
@@ -1504,7 +1523,7 @@ static void test_tcp_accept_timeout_and_try(void)
 	bzy_spawn(tcp_timeout_breeze);
 	bzy_sched_run();
 	ASSERT_INT(g_tcp_null_ok, 1);
-	bzy_iocp_shutdown();
+	net_shutdown();
 }
 
 static int g_udp_ok;
@@ -1551,7 +1570,7 @@ static void test_udp_loopback_echo(void)
 	ASSERT_INT(g_udp_ok, 1);
 	bzy_udp_close(g_udp_server);
 	bzy_release(g_udp_server);
-	bzy_iocp_shutdown();
+	net_shutdown();
 }
 
 static int g_fc_ok;
@@ -1602,7 +1621,7 @@ static void test_filechannel_positioned_io(void)
 	bzy_sched_run();
 	ASSERT_INT(g_fc_ok, 1); // Positioned writes + sync + read round-trip and size are correct.
 	bzy_offload_shutdown();
-	bzy_iocp_shutdown();
+	net_shutdown();
 	remove("fc_unit.tmp");
 }
 
@@ -1662,7 +1681,7 @@ static void test_filechannel_read_into(void)
 	bzy_sched_run();
 	ASSERT_INT(g_fc_into_ok, 1); // Exact, clamp, partial, and EOF reads all correct; no over-write.
 	bzy_offload_shutdown();
-	bzy_iocp_shutdown();
+	net_shutdown();
 	remove("fc_into.tmp");
 }
 
@@ -1989,7 +2008,9 @@ int main(void)
 	RUN(test_offload_runs_and_resumes);
 	RUN(test_file_ops_offload_in_breeze);
 	RUN(test_system_shell_wait_exit_code);
+#ifdef _WIN32
 	RUN(test_iocp_completion_wakes_breeze);
+#endif
 	RUN(test_tcp_loopback_echo);
 	RUN(test_tcp_accept_timeout_and_try);
 	RUN(test_udp_loopback_echo);

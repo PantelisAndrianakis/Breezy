@@ -7,12 +7,14 @@ UNAME := $(shell uname -s)
 ifeq ($(findstring Linux,$(UNAME)),Linux)
   CORO_SRC      = runtime/coroutine.c
   PLATFORM_LIBS = -lpthread
+  RT_TEST_LIBS  = -lpthread -lm -lcurl -ldl   # What the compiler links every Linux program with (src/main.c).
   STACKFLAG     =
   PLATFORM_DEFS = -D_GNU_SOURCE   # Expose POSIX (clock_gettime/sem_timedwait) + GNU (accept4/SOCK_NONBLOCK/MSG_NOSIGNAL) under -std=c99.
   OBJDIR        = build/linux
 else
   CORO_SRC      = runtime/coroutine.c
   PLATFORM_LIBS =
+  RT_TEST_LIBS  = -lws2_32 -lwinhttp
   STACKFLAG     = -Wl,--stack,0x4000000
   PLATFORM_DEFS =
   OBJDIR        = build/win
@@ -132,7 +134,7 @@ $(LIB): $(RT_OBJ)
 	ar rcs $(LIB) $(RT_OBJ)
 
 $(OBJDIR)/test_runtime: tests/test_runtime.c $(RT_SRC) $(RT_HDR) | $(OBJDIR)
-	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) -lws2_32 -lwinhttp
+	$(CC) $(CFLAGS) -Iruntime -o $@ tests/test_runtime.c $(RT_SRC) $(RT_TEST_LIBS)
 
 TEST_BINS = $(addprefix $(OBJDIR)/,test_lexer test_ast test_config test_parser test_types \
             test_resolve test_ownership test_escape test_promote test_codegen test_ir test_regalloc test_coroutine test_reactor test_runtime)
