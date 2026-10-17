@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include "platform.h"
 
 int64_t bzy_clock_millis(void)
 {
@@ -152,8 +153,6 @@ static void civil_from_days(int64_t z, int *year, int *month, int *day)
  */
 static int64_t local_offset(time_t secs)
 {
-	// One __thread struct so the Windows emutls hot path pays a single __emutls_get_address per call instead of four (mirrors PoolTLS in alloc.c).
-	// Linux is unaffected: still one fs:-relative resolution.
 	typedef struct
 	{
 		int64_t lo;
@@ -161,8 +160,14 @@ static int64_t local_offset(time_t secs)
 		int64_t off;
 		int     valid;
 	} TzCache;
+#ifdef _WIN32
+	// A TEB slot instead of __thread, which the MinGW target emulates with a call per access (see BzyTlsKey).
+	static BzyTlsKey tz_key;
+	TzCache *c = (TzCache*)bzy_tls_block(&tz_key, sizeof(TzCache));
+#else
 	static __thread TzCache tz;
-	TzCache *c = &tz; // Resolve TLS once; all reads/writes go through c.
+	TzCache *c = &tz; // One fs:-relative resolution; all reads and writes go through c.
+#endif
 
 	int64_t s = (int64_t)secs;
 	if (c->valid && s >= c->lo && s < c->hi)
