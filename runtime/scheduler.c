@@ -225,25 +225,44 @@ static int     g_idle;
 static int     g_poll_state; // POLL_NONE / POLL_BLOCKED / POLL_BROKEN (a break is already on its way).
 static int     g_poll_spinners; // Workers inside a non-blocking poll right now.
 
-static __thread BzyCoroutine *t_sched; // This thread's scheduler coroutine.
-static __thread Breeze       *t_running; // Breeze currently on this CPU (NULL = scheduler).
-static __thread int           t_wid; // This thread's worker index.
-static __thread void         *t_park_unlock; // bzy_mutex* the scheduler releases after a parking switch.
-/* bzy_yield sets this; the scheduler re-enqueues the breeze after the switch, when it is safely off its own CPU. */
-static __thread int           t_requeue;
-/**
- * A finishing breeze sets this on its own thread just before its last switch; the scheduler reads it instead of b->done.
- * A parked breeze can be woken, resumed on another worker and finish there before this worker has looked at it, so b->done read after the switch can belong to that later run and retire the breeze twice.
- */
-static __thread int           t_finished;
-/* 1 on a scheduler worker thread (and the main thread acting as worker 0); 0 on offload/reactor/foreign threads. */
-static __thread int           t_is_worker;
-/**
- * FFI: depth of foreign (C) callbacks running on this thread.
- * A callback runs synchronously inside a C stack frame, so it must not park/yield (would unwind the C frame) or throw across the C boundary.
- * Non-zero => park/throw is a fatal misuse.
- */
-static __thread int           t_in_callback;
+/* The scheduler's per-thread state, reached as t_<field>: native TLS on Linux, a TEB slot on Windows (see BzyTlsKey). */
+typedef struct
+{
+	BzyCoroutine *sched; // This thread's scheduler coroutine.
+	Breeze       *running; // Breeze currently on this CPU (NULL = scheduler).
+	int           wid; // This thread's worker index.
+	void         *park_unlock; // bzy_mutex* the scheduler releases after a parking switch.
+	int           requeue; // bzy_yield sets this; the scheduler re-enqueues the breeze after the switch, when it is safely off its own CPU.
+	/**
+	 * A finishing breeze sets this on its own thread just before its last switch; the scheduler reads it instead of b->done.
+	 * A parked breeze can be woken, resumed on another worker and finish there before this worker has looked at it, so b->done read after the switch can belong to that later run and retire the breeze twice.
+	 */
+	int           finished;
+	int           is_worker; // 1 on a scheduler worker thread (and the main thread acting as worker 0); 0 on offload/reactor/foreign threads.
+	/**
+	 * FFI: depth of foreign (C) callbacks running on this thread.
+	 * A callback runs synchronously inside a C stack frame, so it must not park/yield (would unwind the C frame) or throw across the C boundary.
+	 * Non-zero => park/throw is a fatal misuse.
+	 */
+	int           in_callback;
+} SchedTls;
+
+#ifdef _WIN32
+static BzyTlsKey g_sched_tls;
+#define SCHED_TLS ((SchedTls*)bzy_tls_block(&g_sched_tls, sizeof(SchedTls)))
+#else
+static __thread SchedTls t_sched_tls;
+#define SCHED_TLS (&t_sched_tls)
+#endif
+
+#define t_sched       (SCHED_TLS->sched)
+#define t_running     (SCHED_TLS->running)
+#define t_wid         (SCHED_TLS->wid)
+#define t_park_unlock (SCHED_TLS->park_unlock)
+#define t_requeue     (SCHED_TLS->requeue)
+#define t_finished    (SCHED_TLS->finished)
+#define t_is_worker   (SCHED_TLS->is_worker)
+#define t_in_callback (SCHED_TLS->in_callback)
 
 /* Bracket a foreign callback: codegen emits enter before, leave after, the extern call that receives a Breezy function pointer. */
 void bzy_callback_enter(void)

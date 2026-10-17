@@ -10,6 +10,8 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <intrin.h>
+#include <stdlib.h>
 typedef SRWLOCK bzy_mutex;
 typedef HANDLE  bzy_sem;
 #define BZY_MUTEX_INIT SRWLOCK_INIT
@@ -63,6 +65,77 @@ static inline void bzy_thread_join(bzy_thread t)
 {
 	WaitForSingleObject(t, INFINITE);
 	CloseHandle(t);
+}
+
+/**
+ * Per-thread storage without emulated TLS.
+ * The MinGW target compiles `__thread` as a call to __emutls_get_address on every access, which made a coroutine switch cost several calls.
+ * A BzyTlsKey instead names one TEB TLS slot holding a pointer to the thread's zeroed block, read with a single gs:-relative load.
+ * The slot is taken on the first access from any thread; an index past the TEB's inline array of 64 falls back to TlsGetValue.
+ * ponytail: a thread's block is never freed; only workers and a few service threads ever touch one.
+ */
+#define BZY_TEB_TLS_SLOTS 0x1480 // Offset of TlsSlots[64] in the x64 TEB.
+
+typedef struct
+{
+	volatile LONG claim; // CAS gate: elects the one thread that runs TlsAlloc.
+	volatile LONG ready; // 1 once slot is valid.
+	DWORD slot;
+} BzyTlsKey;
+
+static __attribute__((noinline, unused)) void *bzy_tls_block_slow(BzyTlsKey *k, size_t size)
+{
+	if (!k->ready)
+	{
+		if (InterlockedCompareExchange(&k->claim, 1, 0) == 0)
+		{
+			k->slot = TlsAlloc();
+			InterlockedExchange(&k->ready, 1);
+		}
+		else
+		{
+			while (!k->ready) // Another thread is mid-TlsAlloc; a brief one-time spin.
+			{
+				YieldProcessor();
+			}
+		}
+	}
+
+	if (k->slot < 64)
+	{
+		unsigned off = BZY_TEB_TLS_SLOTS + k->slot * 8u;
+		void *p = (void*)__readgsqword(off);
+		if (!p)
+		{
+			p = calloc(1, size);
+			__writegsqword(off, (DWORD64)(uintptr_t)p);
+		}
+
+		return p;
+	}
+
+	void *p = TlsGetValue(k->slot);
+	if (!p)
+	{
+		p = calloc(1, size);
+		TlsSetValue(k->slot, p);
+	}
+
+	return p;
+}
+
+static inline void *bzy_tls_block(BzyTlsKey *k, size_t size)
+{
+	if (__builtin_expect(k->ready && k->slot < 64, 1))
+	{
+		void *p = (void*)__readgsqword(BZY_TEB_TLS_SLOTS + k->slot * 8u);
+		if (__builtin_expect(p != NULL, 1))
+		{
+			return p;
+		}
+	}
+
+	return bzy_tls_block_slow(k, size);
 }
 #else
 #include <pthread.h>

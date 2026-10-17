@@ -50,8 +50,23 @@ void __sanitizer_start_switch_fiber(void **fake_save, const void *bottom, size_t
 void __sanitizer_finish_switch_fiber(void *fake_save, const void **old_bottom, size_t *old_size);
 #endif
 
-static __thread BzyCoroutine *t_current;
-static __thread BzyCoroutine  t_main;
+/* The running coroutine and the thread's own pseudo-coroutine, reached as t_current / t_main: native TLS on Linux, a TEB slot on Windows (see BzyTlsKey). */
+typedef struct
+{
+	BzyCoroutine *current;
+	BzyCoroutine  main;
+} CoroTls;
+
+#ifdef _WIN32
+static BzyTlsKey g_coro_tls;
+#define CORO_TLS ((CoroTls*)bzy_tls_block(&g_coro_tls, sizeof(CoroTls)))
+#else
+static __thread CoroTls t_coro_tls;
+#define CORO_TLS (&t_coro_tls)
+#endif
+
+#define t_current (CORO_TLS->current)
+#define t_main    (CORO_TLS->main)
 
 /**
  * The context switch and the new-coroutine entry stub, in their own asm.
