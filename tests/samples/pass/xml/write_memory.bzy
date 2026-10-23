@@ -1,0 +1,18 @@
+// Parsing, editing and writing leave nothing behind once the cycle collector has run (a node released while it is a cycle candidate is reclaimed by the next collection).
+void work()
+{
+	XmlNode r = Xml.parse("<a x='1'><b/>\n</a>");
+	r.setAttr("y", "2");
+	r.addChild(Xml.element("c"));
+	r.removeChild(r.children.get(0));
+	string s = Xml.stringify(r);
+	print(s);
+}
+
+void main()
+{
+	long before = liveCount();
+	work();
+	collectCycles();
+	print(liveCount() == before);
+}

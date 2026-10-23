@@ -1367,6 +1367,30 @@ static void resolve_xml(Expr *e)
 		return;
 	}
 
+	if (strcmp(m,"element")==0)
+	{
+		if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+		{
+			die(e->line,"Xml.element(name) takes one string.",NULL);
+		}
+
+		e->type.kind = TY_XMLNODE;
+		return;
+	}
+
+	if (strcmp(m,"stringify")==0)
+	{
+		int ok = (e->arg_count==1 || (e->arg_count==2 && e->args[1]->type.kind==TY_BOOL))
+				 && e->args[0]->type.kind==TY_XMLNODE;
+		if (!ok)
+		{
+			die(e->line,"Xml.stringify(node) takes an XmlNode, optionally followed by a bool.",NULL);
+		}
+
+		e->type.kind = TY_STRING;
+		return;
+	}
+
 	die(e->line,"Unknown Xml method: ",m);
 }
 
@@ -3578,6 +3602,42 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 				e->type.kind=TY_GENERIC;
 				snprintf(e->type.class_name,sizeof(e->type.class_name),"List");
 				e->type.elem=typeref_box(el);
+			}
+			else if (strcmp(e->name,"setAttr")==0)
+			{
+				if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || e->args[1]->type.kind!=TY_STRING)
+				{
+					die(e->line,"XmlNode.setAttr(name, value) takes two strings.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"removeAttr")==0 || strcmp(e->name,"setText")==0 || strcmp(e->name,"rename")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"This XmlNode method takes one string: ",e->name);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"addChild")==0 || strcmp(e->name,"removeChild")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_XMLNODE)
+				{
+					die(e->line,"This XmlNode method takes one XmlNode: ",e->name);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(e->name,"insertChild")==0)
+			{
+				if (e->arg_count!=2 || !ty_is_int(e->args[0]->type.kind) || e->args[1]->type.kind!=TY_XMLNODE)
+				{
+					die(e->line,"XmlNode.insertChild(index, node) takes an integer and an XmlNode.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
 			}
 			else
 			{

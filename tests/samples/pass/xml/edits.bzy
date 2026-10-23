@@ -1,0 +1,30 @@
+// Edits change only what they touch; new content follows the document's indentation.
+void main()
+{
+	XmlNode r = Xml.parse("<cfg  a='1'   b=\"2\" c='3'/>");
+	r.setAttr("b", "two");
+	r.setAttr("d", "x<y");
+	r.removeAttr("a");
+	r.rename("conf");
+	print(Xml.stringify(r));
+
+	XmlNode root = Xml.parse("<root>\n\t<a/>\n\t<b>x</b>\n</root>");
+	root.addChild(Xml.element("c"));
+	root.removeChild(root.children.get(0));
+	XmlNode z = Xml.element("z");
+	z.addChild(Xml.element("q"));
+	root.insertChild(0, z);
+	print(Xml.stringify(root));
+
+	XmlNode t = Xml.parse("<t>\n  <v>old<!-- c --></v>\n</t>");
+	t.children.get(0).setText("new & <ok>");
+	print(Xml.stringify(t));
+	print(t.children.get(0).text);
+
+	XmlNode b = Xml.element("doc");
+	b.setAttr("v", "1");
+	XmlNode c = Xml.element("c");
+	c.setText("hi");
+	b.addChild(c);
+	print(Xml.stringify(b, true));
+}

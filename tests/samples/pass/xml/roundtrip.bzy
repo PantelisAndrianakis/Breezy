@@ -1,0 +1,13 @@
+// Xml.stringify returns a parsed document byte-for-byte: comments, the declaration, CDATA, processing instructions, quotes, spacing, entities and line endings all survive.
+void main()
+{
+	string a = "<?xml version=\"1.0\"?>\n<!-- items -->\n<list  kind='x' n=\"2\" >\n\t<item id=\"1\">A &amp; B<!-- note --></item>\n\t<item id='2'><![CDATA[<raw>]]></item>\n\t<?pi data?>\n\t<e />\n</list>\n<!-- end -->\n";
+	print(Xml.stringify(Xml.parse(a)).equals(a));
+	string b = "<r>\r\n  <x a=\"&#65;\">t&lt;u</x>\r\n</r>";
+	print(Xml.stringify(Xml.parse(b)).equals(b));
+	string c = "<p>one <b>two</b> three</p>";
+	print(Xml.stringify(Xml.parse(c)).equals(c));
+	XmlNode doc = Xml.parse(a);
+	print(Xml.stringify(doc.children.get(1)));
+	print(Xml.stringify(doc, true).equals(a));
+}

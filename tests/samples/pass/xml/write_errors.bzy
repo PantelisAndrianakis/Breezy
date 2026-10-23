@@ -1,0 +1,72 @@
+// Every writer mistake throws a catchable XmlException.
+void main()
+{
+	XmlNode r = Xml.parse("<r><k/></r>");
+	XmlNode stranger = Xml.element("s");
+	try
+	{
+		Xml.element("1x");
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	try
+	{
+		r.setAttr("a b", "1");
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	try
+	{
+		r.setText("t");
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	try
+	{
+		r.addChild(r);
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	try
+	{
+		r.insertChild(5, stranger);
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	try
+	{
+		r.removeChild(stranger);
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	XmlNode la = Xml.element("a");
+	XmlNode lb = Xml.element("b");
+	la.children.add(lb);
+	lb.children.add(la);
+	try
+	{
+		print(Xml.stringify(la));
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+}

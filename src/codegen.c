@@ -5923,6 +5923,18 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
  * Log.open(path) -> owned Logger.
  * Single string arg; fallible (the FileWriter open can fail) so a post-call bzy_io_check throws IOException, result preserved.
  */
+/* After a call that may buffer an XmlException: throw it at this site, keeping the call's rax result. */
+static void cg_xml_check(Codegen *cg)
+{
+	cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
+	int k = cg_label(cg);
+	cg_emit(cg,"    lea %s, [rel .L%d]", cg_iarg(cg, 0), k);
+	cg_emit(cg,".L%d:", k);
+	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
+	cg_aligned_call(cg,"bzy_xml_check");
+	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
 /**
  * XmlNode methods: attr(name)/hasAttr(name) take a string, attrNameAt(index) takes an int. attr/attrNameAt return an owned string; hasAttr returns a bool.
  * The receiver is borrowed; an owned argument or receiver is released after the call, preserving the result across the releases.
@@ -5930,6 +5942,28 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_xml_method(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *n = e->name;
+
+	const char *edit =
+		strcmp(n,"setAttr")==0     ? "bzy_xml_set_attr" :
+		strcmp(n,"removeAttr")==0  ? "bzy_xml_remove_attr" :
+		strcmp(n,"setText")==0     ? "bzy_xml_set_text" :
+		strcmp(n,"rename")==0      ? "bzy_xml_rename" :
+		strcmp(n,"addChild")==0    ? "bzy_xml_add_child" :
+		strcmp(n,"insertChild")==0 ? "bzy_xml_insert_child" :
+		strcmp(n,"removeChild")==0 ? "bzy_xml_remove_child" :
+		NULL;
+	if (edit) // Void edits; a bad argument buffers an XmlException.
+	{
+		TypeRef ps[2];
+		for (int i=0; i<e->arg_count; i++)
+		{
+			ps[i]=e->args[i]->type;
+		}
+
+		cg_call_with_args(cg,tt,edit,e->lhs,e->args,e->arg_count,0,0,0,ps,e->arg_count,0);
+		cg_xml_check(cg);
+		return;
+	}
 
 	if (strcmp(n,"descendants")==0) // Zero-arg; owned List<XmlNode>.
 	{
@@ -5994,6 +6028,29 @@ static void cg_xml_method(Codegen *cg, TypeTable *tt, Expr *e)
 static void cg_xml(Codegen *cg, TypeTable *tt, Expr *e)
 {
 	const char *m = e->name + 4; // After "Xml.".
+	if (strcmp(m,"element")==0) // Owned new XmlNode; a bad name throws.
+	{
+		TypeRef ps[1];
+		ps[0]=e->args[0]->type;
+		cg_call_with_args(cg,tt,"bzy_xml_element",NULL,e->args,1,0,1,0,ps,1,0);
+		cg_xml_check(cg);
+		return;
+	}
+
+	if (strcmp(m,"stringify")==0) // Owned string; a looped tree throws.
+	{
+		TypeRef ps[2];
+		for (int i=0; i<e->arg_count; i++)
+		{
+			ps[i]=e->args[i]->type;
+		}
+
+		cg_call_with_args(cg,tt,e->arg_count==2 ? "bzy_xml_stringify_decl" : "bzy_xml_stringify",
+						  NULL,e->args,e->arg_count,0,1,0,ps,e->arg_count,0);
+		cg_xml_check(cg);
+		return;
+	}
+
 	if (strcmp(m,"parse")!=0)
 	{
 		fprintf(stderr,"Codegen: unknown Xml method '%s'\n", m);
@@ -13554,6 +13611,16 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_xml_has_attr");
 	cg_emit(cg,"extern bzy_xml_attr_name_at");
 	cg_emit(cg,"extern bzy_xml_descendants");
+	cg_emit(cg,"extern bzy_xml_element");
+	cg_emit(cg,"extern bzy_xml_set_attr");
+	cg_emit(cg,"extern bzy_xml_remove_attr");
+	cg_emit(cg,"extern bzy_xml_set_text");
+	cg_emit(cg,"extern bzy_xml_rename");
+	cg_emit(cg,"extern bzy_xml_add_child");
+	cg_emit(cg,"extern bzy_xml_insert_child");
+	cg_emit(cg,"extern bzy_xml_remove_child");
+	cg_emit(cg,"extern bzy_xml_stringify");
+	cg_emit(cg,"extern bzy_xml_stringify_decl");
 	cg_emit(cg,"extern bzy_json_parse");
 	cg_emit(cg,"extern bzy_json_check");
 	cg_emit(cg,"extern bzy_json_is_null");
