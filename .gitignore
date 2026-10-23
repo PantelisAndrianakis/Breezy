@@ -4,6 +4,8 @@ breezy
 out.asm
 out.obj
 out_cg_test.asm
+out_c.c
+out_c.obj
 
 # Per-host build dir: runtime objects, lib_breezy.a, and the test binaries.
 /build/

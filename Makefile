@@ -62,7 +62,7 @@ RT_SRC  = $(addprefix runtime/,$(addsuffix .c,$(RT_NAMES)))
 # Objects and the runtime archive live in a per-host build dir (build/win or
 # build/linux) so Windows and Linux artifacts never collide in a shared tree.
 RT_OBJ  = $(addprefix $(OBJDIR)/,$(addsuffix .o,$(RT_NAMES))) $(OBJDIR)/entry.o
-RT_HDR  = runtime/breezy.h runtime/coroutine.h runtime/platform.h runtime/network_internal.h
+RT_HDR  = runtime/breezy.h runtime/coroutine.h runtime/platform.h runtime/network_internal.h runtime/xml_node.h
 LIB     = $(OBJDIR)/lib_breezy.a
 
 .PHONY: all clean test integration release

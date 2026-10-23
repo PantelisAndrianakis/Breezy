@@ -1,5 +1,6 @@
 #include "test_framework.h"
 #include "breezy.h"
+#include "xml_node.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1928,6 +1929,38 @@ static void test_hash_bytes_stable(void)
 	ASSERT_INT(bzy_live_count(), before);
 }
 
+static void *xs(const char *c)
+{
+	return bzy_str_new(c, (int64_t)strlen(c));
+}
+
+void *bzy_xml_parse(void *src);
+void *bzy_xml_children(void *node);
+
+static void test_xml_offsets(void)
+{
+	// <a>\n <b x='1'/>\n</a>: b sits at 5..15 behind the gap that starts at 3; a ends at 20.
+	void *src = xs("<a>\n <b x='1'/>\n</a>");
+	void *a = bzy_xml_parse(src);
+	void *b = (void*)bzy_vec_get(bzy_xml_children(a), 0);
+	ASSERT_INT(NODE_I32(a, X_START), 0);
+	ASSERT_INT(NODE_I32(a, X_STAG), 3);
+	ASSERT_INT(NODE_I32(a, X_TAIL), 15);
+	ASSERT_INT(NODE_I32(a, X_ETAG), 16);
+	ASSERT_INT(NODE_I32(a, X_END), 20);
+	ASSERT_INT(NODE_I32(b, X_LEAD), 3);
+	ASSERT_INT(NODE_I32(b, X_START), 5);
+	ASSERT_INT(NODE_I32(b, X_STAG), 15);
+	ASSERT_INT(NODE_I32(b, X_END), 15);
+	ASSERT_INT(NODE_I64(a, X_PID), 0);
+	ASSERT(NODE_I64(a, X_ID) != 0);
+	ASSERT_INT(NODE_I64(b, X_PID), NODE_I64(a, X_ID));
+	ASSERT(NODE_GET(b, X_SRC) == src);
+	bzy_release(b);
+	bzy_release(a);
+	bzy_release(src);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -2019,6 +2052,7 @@ int main(void)
 	RUN(test_filewriter_buffered_flush);
 	RUN(test_logger_drains_and_closes);
 	RUN(test_string_parse_values);
+	RUN(test_xml_offsets);
 	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;

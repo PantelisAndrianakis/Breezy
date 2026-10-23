@@ -1,12 +1,11 @@
 /**
- * runtime/xml.c -- read-only XML reader (pragmatic subset).
- * Own TU: a program that never calls Xml.parse links none of this.
+ * runtime/xml.c -- the XML reader and in-place tree edits.
+ * Own TU: a program that never calls Xml.parse or Xml.element links none of this.
  * The parser builds a tree of managed XmlNode objects; ARC + the cycle collector reclaim it via the per-type typeinfo.
- *
- * This file is Task 2 of the Phase E.3 plan: the well-formed scanner (elements, attributes, text) + the managed node.
- * Entity/numeric-ref/CDATA decoding and the comment/PI skipping land in Task 7; the Xml.parse entry + accessors in 3-8.
+ * Each node also records where it sits in its source text, so runtime/xmlwrite.c can copy untouched parts back byte-for-byte.
  */
 #include "breezy.h"
+#include "xml_node.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -16,21 +15,11 @@
 extern char __vtable_XmlException[];
 extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 
-/* XmlNode layout: vtable|rc|gcinfo|name@24|text@32|attrs@40|acount@48|children@56. attrs is one array of 2 * acount strings: name, value, name, value, ... */
-#define X_NAME   24
-#define X_TEXT   32
-#define X_ATTRS  40
-#define X_ACOUNT 48
-#define X_KIDS   56
-#define X_SIZE   64
-
-#define NODE_SET(n, off, v) (*(void**)((char*)(n) + (off)) = (void*)(v))
-#define NODE_GET(n, off)    (*(void**)((char*)(n) + (off)))
-
-/* Managed-node typeinfo: {finalizer=0, child_count=4, name,text,attrs,kids}. attr_count@48 is a plain int, not a managed child. */
-static int64_t g_xml_ti[6] = { 0, 4, X_NAME, X_TEXT, X_ATTRS, X_KIDS };
+/* Managed-node typeinfo: {finalizer=0, child_count=5, name,text,attrs,kids,src}. The counts, offsets and ids are plain integers. */
+static int64_t g_xml_ti[7] = { 0, 5, X_NAME, X_TEXT, X_ATTRS, X_KIDS, X_SRC };
 static int64_t g_xml_vt[2];
 static int     g_xml_vt_built;
+static int64_t g_xml_next_id; // Last id handed to a parsed element (atomic: documents parse on any worker).
 
 static void *xml_vtable(void)
 {
@@ -63,6 +52,8 @@ static void arr_set(void *arr, int64_t i, void *str)
 typedef struct
 {
 	const char *p, *end;
+	const char *base; // Start of the document text (offsets are relative to it).
+	void *doc; // The document string, retained by every node parsed from it.
 	int64_t line, col;
 	const char *err;
 	void *names[XML_NAMES]; // Interned element and attribute names (one reference each).
@@ -237,7 +228,18 @@ static void at_push(AttrTmp *a, void *name, void *val)
 	a->count++;
 }
 
-static void *parse_element(Scan *s);
+/* Record where an element sits in the document, as offsets from s->base. */
+static void set_span(void *node, Scan *s, const char *lead, const char *start, const char *stag, const char *tail, const char *etag, const char *end)
+{
+	NODE_I32(node, X_LEAD) = (int32_t)(lead - s->base);
+	NODE_I32(node, X_START) = (int32_t)(start - s->base);
+	NODE_I32(node, X_STAG) = (int32_t)(stag - s->base);
+	NODE_I32(node, X_TAIL) = (int32_t)(tail - s->base);
+	NODE_I32(node, X_ETAG) = (int32_t)(etag - s->base);
+	NODE_I32(node, X_END) = (int32_t)(end - s->base);
+}
+
+static void *parse_element(Scan *s, const char *lead, int64_t parent_id);
 
 /* Append a Unicode code point to the buffer as UTF-8 (1-4 bytes). */
 static void append_utf8(TextBuf *t, long cp)
@@ -540,7 +542,7 @@ static void parse_attrs(Scan *s, void *node)
 }
 
 /* Parse one element starting at '<'. Returns the owned (+1) node, or NULL. */
-static void *parse_element(Scan *s)
+static void *parse_element(Scan *s, const char *lead, int64_t parent_id)
 {
 	if (peek(s) != '<')
 	{
@@ -548,9 +550,15 @@ static void *parse_element(Scan *s)
 		return NULL;
 	}
 
+	const char *el_start = s->p;
 	advance(s);
 
 	void *node = node_new();
+	int64_t id = __atomic_add_fetch(&g_xml_next_id, 1, __ATOMIC_RELAXED);
+	NODE_I64(node, X_ID) = id;
+	NODE_I64(node, X_PID) = parent_id;
+	bzy_retain(s->doc);
+	NODE_SET(node, X_SRC, s->doc);
 	void *name = parse_name(s);
 	if (s->err)
 	{
@@ -579,6 +587,7 @@ static void *parse_element(Scan *s)
 		}
 
 		advance(s);
+		set_span(node, s, lead, el_start, s->p, s->p, s->p, s->p);
 		NODE_SET(node, X_TEXT, bzy_str_new("", 0));
 		return node; // No children list until something asks for it (bzy_xml_children).
 	}
@@ -591,6 +600,9 @@ static void *parse_element(Scan *s)
 	}
 
 	advance(s);
+	const char *stag = s->p;
+	const char *gap = s->p; // Where the next child's leading gap begins.
+	const char *etag = s->p;
 
 	// Content: direct text runs (into tb) interleaved with child elements.
 	// The children list is made on the first child: a leaf keeps the slot NULL, and bzy_xml_children makes an empty list only if a program asks for one.
@@ -609,6 +621,7 @@ static void *parse_element(Scan *s)
 		{
 			if (peek2(s) == '/') // End tag </name>.
 			{
+				etag = s->p;
 				advance(s); // '<'.
 				advance(s); // '/'.
 				const char *estart = s->p;
@@ -680,12 +693,13 @@ static void *parse_element(Scan *s)
 				break;
 			}
 
-			void *child = parse_element(s);
+			void *child = parse_element(s, gap, id);
 			if (s->err)
 			{
 				break;
 			}
 
+			gap = s->p;
 			if (!kids)
 			{
 				kids = bzy_vec_new(4);
@@ -731,6 +745,7 @@ static void *parse_element(Scan *s)
 
 	NODE_SET(node, X_TEXT, bzy_str_new(tb.data ? tb.data : "", (int64_t)tb.len));
 	free(tb.data);
+	set_span(node, s, lead, el_start, stag, gap, etag, s->p);
 	if (kids)
 	{
 		NODE_SET(node, X_KIDS, kids);
@@ -752,6 +767,15 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	s.col = 1;
 	s.err = NULL;
 	s.nnames = 0;
+	s.base = s.p;
+	s.doc = src;
+	if (bzy_str_len(src) >= 0x7fffffff)
+	{
+		*errmsg = "Document is too large: 2 GiB or more.";
+		*line = 1;
+		*col = 1;
+		return NULL;
+	}
 
 	skip_misc(&s); // Leading whitespace, comments, <?xml?> declaration, PIs.
 	if (!s.err && (peek(&s) != '<' || !is_name_start(peek2(&s))))
@@ -759,7 +783,7 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 		fail(&s, "expected a root element");
 	}
 
-	void *root = s.err ? NULL : parse_element(&s);
+	void *root = s.err ? NULL : parse_element(&s, s.base, 0);
 	if (!s.err)
 	{
 		skip_misc(&s); // Trailing whitespace, comments, PIs.
