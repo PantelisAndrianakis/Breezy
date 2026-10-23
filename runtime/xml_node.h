@@ -37,6 +37,17 @@
 #define NODE_I32(n, off)    (*(int32_t*)((char*)(n) + (off)))
 #define NODE_I64(n, off)    (*(int64_t*)((char*)(n) + (off)))
 
+/**
+ * Child i of a children list, borrowed: no retain and no release.
+ * Walking a tree with bzy_vec_get would retain then release every node, and each release that leaves a node alive makes it a cycle candidate.
+ * List layout: len@24 cap@32 head@40 data@48 (a ring; slots start 32 bytes into the data array).
+ */
+static inline void *xml_kid(void *kids, int64_t i)
+{
+	int64_t cap = *(int64_t*)((char*)kids + 32), head = *(int64_t*)((char*)kids + 40);
+	return ((void**)((char*)*(void**)((char*)kids + 48) + 32))[(head + i) & (cap - 1)];
+}
+
 void bzy_xml_fail(const char *msg); // Buffer an XmlException message for the call site's bzy_xml_check.
 int  bzy_xml_valid_name(void *s); // 1 when s is a non-empty XML name the reader accepts.
 int  bzy_xml_valid_chars(void *s); // 1 when s holds no character XML 1.0 forbids.

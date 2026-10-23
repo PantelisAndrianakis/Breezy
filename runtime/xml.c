@@ -19,7 +19,7 @@ extern void bzy_throw(void *exc, int64_t pc, int64_t frame);
 static int64_t g_xml_ti[7] = { 0, 5, X_NAME, X_TEXT, X_ATTRS, X_KIDS, X_SRC };
 static int64_t g_xml_vt[2];
 static int     g_xml_vt_built;
-static int64_t g_xml_next_id; // Last id handed to a parsed element (atomic: documents parse on any worker).
+static int64_t g_xml_next_parse; // Last number handed to a parse (atomic: documents parse on any worker); it forms the high half of every element id of that parse.
 
 static void *xml_vtable(void)
 {
@@ -58,7 +58,22 @@ typedef struct
 	const char *err;
 	void *names[XML_NAMES]; // Interned element and attribute names (one reference each).
 	int nnames;
+	int64_t id_base; // This parse's number, shifted into the high half of an element id.
+	int64_t nnodes; // Elements made so far; the low half of the next id.
 } Scan;
+
+/* Every node holds a reference to its document: a confined document takes it with a plain increment instead of a call per node. */
+static void retain_doc(void *doc)
+{
+	int64_t *rc = (int64_t*)((char*)doc + 8);
+	if (*rc != 0 && !(*(int64_t*)((char*)doc + 16) & BZY_GCINFO_SHARED))
+	{
+		(*rc)++;
+		return;
+	}
+
+	bzy_retain(doc); // Shared (atomic) or unmanaged (no-op).
+}
 
 static void fail(Scan *s, const char *msg)
 {
@@ -623,10 +638,10 @@ static void *parse_element(Scan *s, const char *lead, int64_t parent_id)
 	advance(s);
 
 	void *node = node_new();
-	int64_t id = __atomic_add_fetch(&g_xml_next_id, 1, __ATOMIC_RELAXED);
+	int64_t id = s->id_base | ++s->nnodes; // Unique across parses without an atomic per element.
 	NODE_I64(node, X_ID) = id;
 	NODE_I64(node, X_PID) = parent_id;
-	bzy_retain(s->doc);
+	retain_doc(s->doc);
 	NODE_SET(node, X_SRC, s->doc);
 	void *name = parse_name(s);
 	if (s->err)
@@ -836,6 +851,8 @@ void *bzy_xml_parse_impl(void *src, const char **errmsg, int64_t *line, int64_t 
 	s.col = 1;
 	s.err = NULL;
 	s.nnames = 0;
+	s.nnodes = 0;
+	s.id_base = __atomic_add_fetch(&g_xml_next_parse, 1, __ATOMIC_RELAXED) << 32;
 	s.base = s.p;
 	s.doc = src;
 	if (bzy_str_len(src) >= 0x7fffffff)
@@ -1137,9 +1154,8 @@ static int subtree_has(void *node, void *target, int depth)
 	int64_t n = kids ? bzy_vec_len(kids) : 0;
 	for (int64_t i = 0; i < n; i++)
 	{
-		void *c = (void*)bzy_vec_get(kids, i); // +1.
+		void *c = xml_kid(kids, i); // Borrowed.
 		int hit = subtree_has(c, target, depth + 1);
-		bzy_release(c);
 		if (hit)
 		{
 			return 1;

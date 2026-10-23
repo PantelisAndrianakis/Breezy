@@ -124,10 +124,9 @@ static int clean(void *node)
 	int64_t expect = NODE_I32(node, X_STAG); // Where the next original child's gap must begin.
 	for (int64_t i = 0; i < n; i++)
 	{
-		void *c = (void*)bzy_vec_get(kids, i); // +1.
+		void *c = xml_kid(kids, i); // Borrowed.
 		int ok = in_place(c, node) && NODE_I32(c, X_LEAD) == expect && clean(c);
 		expect = NODE_I32(c, X_END);
-		bzy_release(c);
 		if (!ok)
 		{
 			return 0;
@@ -283,7 +282,7 @@ static int64_t find_unit(void *node, const char *ind, int64_t ind_len, const cha
 	int64_t found = 0;
 	for (int64_t i = 0; i < n && !found; i++)
 	{
-		void *c = (void*)bzy_vec_get(kids, i); // +1.
+		void *c = xml_kid(kids, i); // Borrowed.
 		if (in_place(c, node))
 		{
 			const char *ci = NULL;
@@ -299,7 +298,6 @@ static int64_t find_unit(void *node, const char *ind, int64_t ind_len, const cha
 			}
 		}
 
-		bzy_release(c);
 	}
 
 	return found;
@@ -506,19 +504,18 @@ static void write_el(W *w, void *node, const char *ind, int64_t ind_len)
 	int64_t sib_len = -1;
 	for (int64_t i = 0; i < nk && sib_len < 0 && d && !text_set; i++)
 	{
-		void *c = (void*)bzy_vec_get(kids, i); // +1.
+		void *c = xml_kid(kids, i); // Borrowed.
 		if (in_place(c, node))
 		{
 			sib_len = src_indent(c, &sib);
 		}
 
-		bzy_release(c);
 	}
 
 	char *deeper = NULL; // ind + one unit, built on demand.
 	for (int64_t i = 0; i < nk && !w->failed; i++)
 	{
-		void *c = (void*)bzy_vec_get(kids, i); // +1.
+		void *c = xml_kid(kids, i); // Borrowed.
 		const char *ci = NULL;
 		int64_t cl = -1;
 		if (d && !text_set && in_place(c, node))
@@ -552,7 +549,6 @@ static void write_el(W *w, void *node, const char *ind, int64_t ind_len)
 		}
 
 		write_el(w, c, ci, cl);
-		bzy_release(c);
 	}
 
 	free(deeper);
