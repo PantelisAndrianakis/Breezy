@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# The single cross-platform integration suite: passes 163/163 on both Windows
-# (MinGW) and Linux (ELF64/SysV). The Linux backend now supports files, sockets,
-# HTTP, and process I/O, so there is no separate Linux subset. On Linux run it
-# directly (`bash tests/run_integration.sh` or `make integration`); `make test`
-# is Windows-only because test_runtime links Windows libraries.
+# The single cross-platform integration suite, run on both Windows (MinGW) and
+# Linux (ELF64/SysV). The Linux backend supports files, sockets, HTTP, and
+# process I/O, so there is no separate Linux subset. Run it directly
+# (`bash tests/run_integration.sh` or `make integration`); `make test` runs it
+# after the unit tests on both OSes.
 set -u
 export TZ=UTC0   # Make Clock.getDateString output deterministic across machines.
 fail=0
