@@ -2133,6 +2133,43 @@ static void test_xml_edited_output(void)
 	ASSERT_STR(bzy_xml_take_error(), "The XML tree contains a loop: a node is inside itself.");
 }
 
+static void test_xml_writer(void)
+{
+	void *w = bzy_xmlw_new();
+	bzy_xmlw_comment(w, xs(" generated "));
+	bzy_xmlw_start(w, xs("list"));
+	bzy_xmlw_attr(w, xs("n"), xs("2"));
+	bzy_xmlw_start(w, xs("item"));
+	bzy_xmlw_attr(w, xs("q"), xs("a\"b"));
+	bzy_xmlw_text(w, xs("x < y & z"));
+	bzy_xmlw_end(w);
+	bzy_xmlw_start(w, xs("empty"));
+	bzy_xmlw_end(w);
+	bzy_xmlw_end(w);
+	void *out = bzy_xmlw_to_string(w);
+	ASSERT_STR(bzy_str_data(out), "<!-- generated --><list n=\"2\"><item q=\"a&quot;b\">x &lt; y &amp; z</item><empty/></list>");
+	bzy_release(out);
+	ASSERT(bzy_xml_take_error() == NULL);
+
+	bzy_xmlw_attr(w, xs("a"), xs("1"));
+	ASSERT_STR(bzy_xml_take_error(), "XmlWriter.attr must follow start, before any content.");
+	bzy_xmlw_end(w);
+	ASSERT_STR(bzy_xml_take_error(), "XmlWriter.end has no open element to close.");
+	bzy_xmlw_comment(w, xs("a--b"));
+	ASSERT_STR(bzy_xml_take_error(), "An XML comment cannot contain \"--\" or end with \"-\".");
+	bzy_xmlw_start(w, xs("second"));
+	ASSERT_STR(bzy_xml_take_error(), "An XML document has a single root element.");
+	bzy_release(w);
+
+	void *v = bzy_xmlw_new();
+	bzy_xmlw_start(v, xs("x"));
+	ASSERT(bzy_xmlw_to_string(v) == NULL);
+	ASSERT_STR(bzy_xml_take_error(), "XmlWriter.toString with an element still open.");
+	bzy_xmlw_text(v, xs("\x01"));
+	ASSERT_STR(bzy_xml_take_error(), "XML text cannot contain control characters other than tab, line feed and carriage return.");
+	bzy_release(v);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -2229,6 +2266,7 @@ int main(void)
 	RUN(test_xml_edits);
 	RUN(test_xml_round_trip);
 	RUN(test_xml_edited_output);
+	RUN(test_xml_writer);
 	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;

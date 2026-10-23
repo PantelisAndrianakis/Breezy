@@ -607,3 +607,218 @@ static void write_el(W *w, void *node, const char *ind, int64_t ind_len)
 
 	w->depth--;
 }
+
+/* ---- XmlWriter ---------------------------------------------------------------- */
+
+/* XmlWriter layout: vtable|rc|gcinfo|sb@24|open@32|depth@40|stack@48|cap@56|roots@64. stack is a malloc'd array of owned element names. */
+#define XW_SB    24
+#define XW_OPEN  32 // 1 while a start tag still takes attributes.
+#define XW_DEPTH 40
+#define XW_STACK 48
+#define XW_CAP   56
+#define XW_ROOTS 64 // Root elements already closed.
+#define XW_SIZE  72
+
+static void xmlw_finalize(void *w)
+{
+	void **stack = (void**)NODE_GET(w, XW_STACK);
+	for (int64_t i = 0; i < NODE_I64(w, XW_DEPTH); i++)
+	{
+		bzy_release(stack[i]);
+	}
+
+	free(stack);
+}
+
+static int64_t g_xmlw_ti[3] = { 0 /* Finalizer (set on first use). */, 1, XW_SB };
+static int64_t g_xmlw_vt[2];
+
+static void *xmlw_vtable(void)
+{
+	g_xmlw_ti[0] = (int64_t)(void*)xmlw_finalize;
+	g_xmlw_vt[0] = (int64_t)&g_xmlw_ti[0];
+	return &g_xmlw_vt[1];
+}
+
+void *bzy_xmlw_new(void)
+{
+	void *w = bzy_alloc(XW_SIZE); // Zeroed: nothing open, no stack.
+	*(void**)w = xmlw_vtable();
+	NODE_SET(w, XW_SB, bzy_sb_new());
+	return w;
+}
+
+static void xw_put(void *w, const char *p, int64_t n)
+{
+	bzy_sb_append_cstr(NODE_GET(w, XW_SB), p, n);
+}
+
+/* Close a start tag that still takes attributes. */
+static void xw_close_open(void *w)
+{
+	if (NODE_I64(w, XW_OPEN))
+	{
+		xw_put(w, ">", 1);
+		NODE_I64(w, XW_OPEN) = 0;
+	}
+}
+
+static void xw_escaped(void *w, void *s, int quote)
+{
+	W tmp;
+	memset(&tmp, 0, sizeof tmp);
+	tmp.sb = NODE_GET(w, XW_SB);
+	put_escaped(&tmp, s, quote);
+}
+
+void bzy_xmlw_start(void *w, void *name)
+{
+	if (!bzy_xml_valid_name(name))
+	{
+		bzy_xml_fail("Invalid XML element name.");
+		return;
+	}
+
+	int64_t depth = NODE_I64(w, XW_DEPTH);
+	if (depth == 0 && NODE_I64(w, XW_ROOTS) > 0)
+	{
+		bzy_xml_fail("An XML document has a single root element.");
+		return;
+	}
+
+	xw_close_open(w);
+	xw_put(w, "<", 1);
+	bzy_sb_append(NODE_GET(w, XW_SB), name);
+	if (depth == NODE_I64(w, XW_CAP))
+	{
+		int64_t cap = depth ? depth * 2 : 8;
+		NODE_SET(w, XW_STACK, realloc(NODE_GET(w, XW_STACK), (size_t)cap * sizeof(void*)));
+		NODE_I64(w, XW_CAP) = cap;
+	}
+
+	bzy_retain(name);
+	((void**)NODE_GET(w, XW_STACK))[depth] = name;
+	NODE_I64(w, XW_DEPTH) = depth + 1;
+	NODE_I64(w, XW_OPEN) = 1;
+}
+
+void bzy_xmlw_attr(void *w, void *name, void *value)
+{
+	if (!NODE_I64(w, XW_OPEN))
+	{
+		bzy_xml_fail("XmlWriter.attr must follow start, before any content.");
+		return;
+	}
+
+	if (!bzy_xml_valid_name(name))
+	{
+		bzy_xml_fail("Invalid XML attribute name.");
+		return;
+	}
+
+	if (!bzy_xml_valid_chars(value))
+	{
+		bzy_xml_fail("An XML attribute value cannot contain control characters other than tab, line feed and carriage return.");
+		return;
+	}
+
+	xw_put(w, " ", 1);
+	bzy_sb_append(NODE_GET(w, XW_SB), name);
+	xw_put(w, "=\"", 2);
+	xw_escaped(w, value, '"');
+	xw_put(w, "\"", 1);
+}
+
+void bzy_xmlw_text(void *w, void *text)
+{
+	if (!bzy_xml_valid_chars(text))
+	{
+		bzy_xml_fail("XML text cannot contain control characters other than tab, line feed and carriage return.");
+		return;
+	}
+
+	if (NODE_I64(w, XW_DEPTH) == 0)
+	{
+		const char *p = bzy_str_data(text);
+		for (int64_t i = 0; i < bzy_str_len(text); i++)
+		{
+			if (p[i] != ' ' && p[i] != '\t' && p[i] != '\r' && p[i] != '\n')
+			{
+				bzy_xml_fail("XmlWriter.text outside an element may only be whitespace.");
+				return;
+			}
+		}
+	}
+
+	xw_close_open(w);
+	xw_escaped(w, text, 0);
+}
+
+void bzy_xmlw_comment(void *w, void *text)
+{
+	const char *p = bzy_str_data(text);
+	int64_t n = bzy_str_len(text);
+	int bad = n > 0 && p[n - 1] == '-';
+	for (int64_t i = 0; i + 1 < n && !bad; i++)
+	{
+		bad = p[i] == '-' && p[i + 1] == '-';
+	}
+
+	if (bad)
+	{
+		bzy_xml_fail("An XML comment cannot contain \"--\" or end with \"-\".");
+		return;
+	}
+
+	if (!bzy_xml_valid_chars(text))
+	{
+		bzy_xml_fail("XML text cannot contain control characters other than tab, line feed and carriage return.");
+		return;
+	}
+
+	xw_close_open(w);
+	xw_put(w, "<!--", 4);
+	xw_put(w, p, n);
+	xw_put(w, "-->", 3);
+}
+
+void bzy_xmlw_end(void *w)
+{
+	int64_t depth = NODE_I64(w, XW_DEPTH);
+	if (depth == 0)
+	{
+		bzy_xml_fail("XmlWriter.end has no open element to close.");
+		return;
+	}
+
+	void *name = ((void**)NODE_GET(w, XW_STACK))[depth - 1];
+	if (NODE_I64(w, XW_OPEN))
+	{
+		xw_put(w, "/>", 2);
+		NODE_I64(w, XW_OPEN) = 0;
+	}
+	else
+	{
+		xw_put(w, "</", 2);
+		bzy_sb_append(NODE_GET(w, XW_SB), name);
+		xw_put(w, ">", 1);
+	}
+
+	bzy_release(name);
+	NODE_I64(w, XW_DEPTH) = depth - 1;
+	if (depth == 1)
+	{
+		NODE_I64(w, XW_ROOTS)++;
+	}
+}
+
+void *bzy_xmlw_to_string(void *w)
+{
+	if (NODE_I64(w, XW_DEPTH) > 0)
+	{
+		bzy_xml_fail("XmlWriter.toString with an element still open.");
+		return NULL;
+	}
+
+	return bzy_sb_to_string(NODE_GET(w, XW_SB));
+}
