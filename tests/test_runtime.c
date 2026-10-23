@@ -2049,6 +2049,90 @@ static void test_xml_round_trip(void)
 	bzy_release(src);
 }
 
+/* Stringify node and compare with want; releases nothing (the caller owns node). */
+static int xml_writes(void *node, const char *want)
+{
+	void *out = bzy_xml_stringify(node);
+	int same = out && strcmp(bzy_str_data(out), want) == 0;
+	if (!same)
+	{
+		printf("    got: [%s]\n", out ? (char*)bzy_str_data(out) : "(null)");
+	}
+
+	bzy_release(out);
+	return same;
+}
+
+static void test_xml_edited_output(void)
+{
+	void *r = bzy_xml_parse(xs("<cfg  a='1'   b=\"2\" c='3'/>"));
+	bzy_xml_set_attr(r, xs("b"), xs("two"));
+	ASSERT(xml_writes(r, "<cfg  a='1'   b=\"two\" c='3'/>"));
+	bzy_xml_set_attr(r, xs("d"), xs("x<y\"z"));
+	ASSERT(xml_writes(r, "<cfg  a='1'   b=\"two\" c='3' d=\"x&lt;y&quot;z\"/>"));
+	bzy_xml_remove_attr(r, xs("a"));
+	ASSERT(xml_writes(r, "<cfg   b=\"two\" c='3' d=\"x&lt;y&quot;z\"/>"));
+	bzy_xml_rename(r, xs("conf"));
+	ASSERT(xml_writes(r, "<conf   b=\"two\" c='3' d=\"x&lt;y&quot;z\"/>"));
+
+	void *s = bzy_xml_parse(xs("<s x='1'/>"));
+	bzy_xml_set_attr(s, xs("y"), xs("a'b"));
+	ASSERT(xml_writes(s, "<s x='1' y='a&apos;b'/>"));
+
+	void *t = bzy_xml_parse(xs("<t v=\"&#65;B\" w=\"1\"/>"));
+	bzy_xml_set_attr(t, xs("w"), xs("2"));
+	ASSERT(xml_writes(t, "<t v=\"&#65;B\" w=\"2\"/>"));
+
+	void *root = bzy_xml_parse(xs("<root>\n\t<a/>\n\t<b>x</b>\n</root>"));
+	bzy_xml_add_child(root, bzy_xml_element(xs("c")));
+	ASSERT(xml_writes(root, "<root>\n\t<a/>\n\t<b>x</b>\n\t<c/>\n</root>"));
+	void *first = (void*)bzy_vec_get(bzy_xml_children(root), 0);
+	bzy_xml_remove_child(root, first);
+	bzy_release(first);
+	ASSERT(xml_writes(root, "<root>\n\t<b>x</b>\n\t<c/>\n</root>"));
+	void *z = bzy_xml_element(xs("z"));
+	bzy_xml_add_child(z, bzy_xml_element(xs("q")));
+	bzy_xml_insert_child(root, 0, z);
+	ASSERT(xml_writes(root, "<root>\n\t<z>\n\t\t<q/>\n\t</z>\n\t<b>x</b>\n\t<c/>\n</root>"));
+
+	void *e = bzy_xml_parse(xs("<e x='1'/>"));
+	bzy_xml_add_child(e, bzy_xml_element(xs("k")));
+	ASSERT(xml_writes(e, "<e x='1'><k/></e>"));
+
+	void *m = bzy_xml_parse(xs("<m>\n  <p>\n    <i/>\n  </p>\n  <q/>\n</m>"));
+	void *p = (void*)bzy_vec_get(bzy_xml_children(m), 0);
+	void *q = (void*)bzy_vec_get(bzy_xml_children(m), 1);
+	void *i = (void*)bzy_vec_get(bzy_xml_children(p), 0);
+	bzy_xml_remove_child(p, i);
+	bzy_xml_add_child(q, i);
+	ASSERT(xml_writes(m, "<m>\n  <p>\n  </p>\n  <q>\n    <i/>\n  </q>\n</m>"));
+
+	void *tt = bzy_xml_parse(xs("<t>\n  <v>old<!-- c --></v>\n</t>"));
+	void *v = (void*)bzy_vec_get(bzy_xml_children(tt), 0);
+	bzy_xml_set_text(v, xs("new & <ok>"));
+	ASSERT(xml_writes(tt, "<t>\n  <v>new &amp; &lt;ok&gt;</v>\n</t>"));
+
+	void *crlf = bzy_xml_parse(xs("<r>\r\n  <a/>\r\n</r>"));
+	bzy_xml_add_child(crlf, bzy_xml_element(xs("b")));
+	ASSERT(xml_writes(crlf, "<r>\r\n  <a/>\r\n  <b/>\r\n</r>"));
+
+	void *built = bzy_xml_element(xs("doc"));
+	bzy_xml_set_attr(built, xs("v"), xs("1"));
+	void *c = bzy_xml_element(xs("c"));
+	bzy_xml_set_text(c, xs("hi"));
+	bzy_xml_add_child(built, c);
+	ASSERT(xml_writes(built, "<doc v=\"1\"><c>hi</c></doc>"));
+	void *withdecl = bzy_xml_stringify_decl(built, 1);
+	ASSERT_STR(bzy_str_data(withdecl), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<doc v=\"1\"><c>hi</c></doc>");
+
+	void *la = bzy_xml_element(xs("a"));
+	void *lb = bzy_xml_element(xs("b"));
+	bzy_vec_push_back(bzy_xml_children(la), (int64_t)lb); // A loop made through the list itself.
+	bzy_vec_push_back(bzy_xml_children(lb), (int64_t)la);
+	ASSERT(bzy_xml_stringify(la) == NULL);
+	ASSERT_STR(bzy_xml_take_error(), "The XML tree contains a loop: a node is inside itself.");
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -2144,6 +2228,7 @@ int main(void)
 	RUN(test_xml_validation);
 	RUN(test_xml_edits);
 	RUN(test_xml_round_trip);
+	RUN(test_xml_edited_output);
 	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;
