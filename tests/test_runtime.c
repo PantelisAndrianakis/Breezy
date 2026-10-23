@@ -2017,6 +2017,38 @@ static void test_xml_edits(void)
 	bzy_release(src);
 }
 
+/* 1 when stringify hands back exactly the bytes of doc. */
+static int xml_round_trips(const char *doc)
+{
+	void *src = xs(doc);
+	void *root = bzy_xml_parse(src);
+	void *out = bzy_xml_stringify(root);
+	int same = bzy_str_len(out) == (int64_t)strlen(doc) && memcmp(bzy_str_data(out), doc, strlen(doc)) == 0;
+	bzy_release(out);
+	bzy_release(root);
+	bzy_release(src);
+	return same;
+}
+
+static void test_xml_round_trip(void)
+{
+	ASSERT(xml_round_trips("<?xml version=\"1.0\"?>\n<!-- items -->\n<list  kind='x' n=\"2\" >\n\t<item id=\"1\">A &amp; B<!-- note --></item>\n\t<item id='2'><![CDATA[<raw>]]></item>\n\t<?pi data?>\n\t<e />\n</list>\n<!-- end -->\n"));
+	ASSERT(xml_round_trips("<r>\r\n  <x a=\"&#65;\">t&lt;u</x>\r\n</r>"));
+	ASSERT(xml_round_trips("<p>one <b>two</b> three</p>"));
+	ASSERT(xml_round_trips("<t name=\"caf\xc3\xa9\">\xc3\xbc" "ber</t>"));
+	ASSERT(xml_round_trips("<a/>"));
+
+	void *src = xs("<l>\n\t<i k='1'/>\n\t<i k='2'>x</i>\n</l>");
+	void *l = bzy_xml_parse(src);
+	void *second = (void*)bzy_vec_get(bzy_xml_children(l), 1);
+	void *out = bzy_xml_stringify(second);
+	ASSERT_STR(bzy_str_data(out), "<i k='2'>x</i>");
+	bzy_release(out);
+	bzy_release(second);
+	bzy_release(l);
+	bzy_release(src);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -2111,6 +2143,7 @@ int main(void)
 	RUN(test_xml_offsets);
 	RUN(test_xml_validation);
 	RUN(test_xml_edits);
+	RUN(test_xml_round_trip);
 	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;
