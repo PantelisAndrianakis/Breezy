@@ -417,4 +417,27 @@ void    bzy_sched_nudge(void); // Wake one idle worker to re-evaluate its timer 
 void    bzy_yield(void); // Cooperatively yield to the scheduler (no-op outside a breeze).
 void    bzy_sched_run(void); // Run ready breezes until the queue drains.
 
+/* XML: reader, tree edits and writers (runtime/xml.c, runtime/xmlwrite.c). Fallible calls buffer an XmlException for bzy_xml_check. */
+void   *bzy_xml_parse(void *src); // Owned (+1) root, or NULL with an error buffered.
+void    bzy_xml_check(int64_t pc, int64_t frame); // Throws the buffered XmlException, if any.
+void   *bzy_xml_children(void *node); // Borrowed child list, made on first use.
+const char *bzy_xml_take_error(void); // Test hook: the buffered message, or NULL, cleared.
+void   *bzy_xml_element(void *name); // Owned (+1) new element, or NULL on a bad name.
+void    bzy_xml_set_attr(void *node, void *name, void *value);
+void    bzy_xml_remove_attr(void *node, void *name);
+void    bzy_xml_set_text(void *node, void *text);
+void    bzy_xml_rename(void *node, void *name);
+void    bzy_xml_add_child(void *node, void *child);
+void    bzy_xml_insert_child(void *node, int64_t index, void *child);
+void    bzy_xml_remove_child(void *node, void *child);
+void   *bzy_xml_stringify(void *node); // Owned (+1) text, or NULL on a loop.
+void   *bzy_xml_stringify_decl(void *node, int64_t declaration);
+void   *bzy_xmlw_new(void); // Owned (+1) XmlWriter.
+void    bzy_xmlw_start(void *w, void *name);
+void    bzy_xmlw_attr(void *w, void *name, void *value);
+void    bzy_xmlw_text(void *w, void *text);
+void    bzy_xmlw_comment(void *w, void *text);
+void    bzy_xmlw_end(void *w);
+void   *bzy_xmlw_to_string(void *w); // Owned (+1) text, or NULL while an element is open.
+
 #endif

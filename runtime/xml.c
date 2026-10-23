@@ -179,6 +179,41 @@ static void *parse_name(Scan *s)
 	return len < 0 ? NULL : intern_name(s, start, len);
 }
 
+int bzy_xml_valid_name(void *s)
+{
+	const char *p = bzy_str_data(s);
+	int64_t n = bzy_str_len(s);
+	if (n == 0 || !is_name_start((unsigned char)p[0]))
+	{
+		return 0;
+	}
+
+	for (int64_t i = 1; i < n; i++)
+	{
+		if (!is_name_char((unsigned char)p[i]))
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+int bzy_xml_valid_chars(void *s)
+{
+	const unsigned char *p = (const unsigned char*)bzy_str_data(s);
+	int64_t n = bzy_str_len(s);
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (p[i] < 0x20 && p[i] != '\t' && p[i] != '\n' && p[i] != '\r')
+		{
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
 /* ---- a growable text buffer (one per element's direct character data) ------- */
 
 typedef struct
@@ -375,6 +410,40 @@ static int decode_entity(Scan *s, TextBuf *t)
 	advance(s); // ';'.
 	tb_push(t, &rep, 1);
 	return 1;
+}
+
+void *bzy_xml_decode_value(const char *p, int64_t len)
+{
+	Scan s;
+	memset(&s, 0, sizeof s);
+	s.p = p;
+	s.end = p + len;
+	s.base = p;
+	s.line = 1;
+	s.col = 1;
+	TextBuf tb = { 0 };
+	while (!at_end(&s))
+	{
+		const char *seg = s.p;
+		while (!at_end(&s) && peek(&s) != '&')
+		{
+			advance(&s);
+		}
+
+		if (s.p > seg)
+		{
+			tb_push(&tb, seg, (size_t)(s.p - seg));
+		}
+
+		if (peek(&s) == '&' && !decode_entity(&s, &tb))
+		{
+			break;
+		}
+	}
+
+	void *out = bzy_str_new(tb.data ? tb.data : "", (int64_t)tb.len);
+	free(tb.data);
+	return out;
 }
 
 /* If the bytes at the cursor equal `lit`, consume them and return 1; else 0. */
@@ -941,6 +1010,23 @@ void *bzy_xml_descendants(void *node)
 /* ---- Breezy entry + catchable-error plumbing (the bzy_number_check pattern) -- */
 
 static __thread const char *g_xml_error; // Set by bzy_xml_parse; consumed by bzy_xml_check.
+
+/* Buffer an XmlException for the call site's bzy_xml_check; the first message of a call wins. */
+void bzy_xml_fail(const char *msg)
+{
+	if (!g_xml_error)
+	{
+		g_xml_error = msg;
+	}
+}
+
+/* Test hook: the buffered message, or NULL, cleared. */
+const char *bzy_xml_take_error(void)
+{
+	const char *m = g_xml_error;
+	g_xml_error = NULL;
+	return m;
+}
 
 /* Called from Breezy: returns the owned (+1) root in rax, or NULL with the error message buffered for the codegen-emitted bzy_xml_check at the call site. */
 void *bzy_xml_parse(void *src)

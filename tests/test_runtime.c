@@ -1934,9 +1934,6 @@ static void *xs(const char *c)
 	return bzy_str_new(c, (int64_t)strlen(c));
 }
 
-void *bzy_xml_parse(void *src);
-void *bzy_xml_children(void *node);
-
 static void test_xml_offsets(void)
 {
 	// <a>\n <b x='1'/>\n</a>: b sits at 5..15 behind the gap that starts at 3; a ends at 20.
@@ -1959,6 +1956,24 @@ static void test_xml_offsets(void)
 	bzy_release(b);
 	bzy_release(a);
 	bzy_release(src);
+}
+
+static void test_xml_validation(void)
+{
+	ASSERT(bzy_xml_valid_name(xs("svg:rect")));
+	ASSERT(bzy_xml_valid_name(xs("_a-b.c9")));
+	ASSERT(!bzy_xml_valid_name(xs("")));
+	ASSERT(!bzy_xml_valid_name(xs("1x")));
+	ASSERT(!bzy_xml_valid_name(xs("a b")));
+	ASSERT(bzy_xml_valid_chars(xs("tab\there\r\nok")));
+	ASSERT(!bzy_xml_valid_chars(xs("bell\x07")));
+	void *v = bzy_xml_decode_value("x &lt; &#65;", 12);
+	ASSERT_STR(bzy_str_data(v), "x < A");
+	bzy_release(v);
+	bzy_xml_fail("First.");
+	bzy_xml_fail("Second.");
+	ASSERT_STR(bzy_xml_take_error(), "First.");
+	ASSERT(bzy_xml_take_error() == NULL);
 }
 
 int main(void)
@@ -2053,6 +2068,7 @@ int main(void)
 	RUN(test_logger_drains_and_closes);
 	RUN(test_string_parse_values);
 	RUN(test_xml_offsets);
+	RUN(test_xml_validation);
 	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;
