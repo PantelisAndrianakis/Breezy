@@ -372,9 +372,9 @@ static void mark_stmt_stack(TypeTable *tt, Stmt *s, Func *f, int base)
 	if (n)
 	{
 		int off = target_local_offset(s);
-		if (off >= 0 && !esc_has(off))
+		ClassInfo *c = types_find_class(tt, n->name); // NULL for a runtime class (StringBuilder, XmlWriter): those stay on the heap.
+		if (c && off >= 0 && !esc_has(off))
 		{
-			ClassInfo *c = types_find_class(tt, n->name);
 			f->stack_alloc_bytes += c->object_size;
 			n->anno_stack = 1;
 			n->anno_stack_off = base + f->stack_alloc_bytes;

@@ -5229,6 +5229,12 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 		return;
 	}
 
+	if (strcmp(e->name,"XmlWriter")==0)
+	{
+		cg_aligned_call(cg,"bzy_xmlw_new"); // Owned (+1) XmlWriter in rax.
+		return;
+	}
+
 	ClassInfo *c=types_find_class(tt,e->name);
 	if (e->anno_stack)
 	{
@@ -5933,6 +5939,26 @@ static void cg_xml_check(Codegen *cg)
 	cg_emit(cg,"    mov %s, rbp", cg_iarg(cg, 1));
 	cg_aligned_call(cg,"bzy_xml_check");
 	cg_emit(cg,"    mov rax, [rbp - %d]", cg->val_save);
+}
+
+/* XmlWriter methods lower to runtime calls; misuse buffers an XmlException thrown at the call site. */
+static void cg_xmlwriter_method(Codegen *cg, TypeTable *tt, Expr *e)
+{
+	const char *n = e->name;
+	const char *fn = strcmp(n,"start")==0   ? "bzy_xmlw_start" :
+					 strcmp(n,"attr")==0    ? "bzy_xmlw_attr" :
+					 strcmp(n,"text")==0    ? "bzy_xmlw_text" :
+					 strcmp(n,"comment")==0 ? "bzy_xmlw_comment" :
+					 strcmp(n,"end")==0     ? "bzy_xmlw_end" :
+					 "bzy_xmlw_to_string";
+	TypeRef ps[2];
+	for (int i=0; i<e->arg_count; i++)
+	{
+		ps[i]=e->args[i]->type;
+	}
+
+	cg_call_with_args(cg,tt,fn,e->lhs,e->args,e->arg_count,0,ty_is_managed(e->type.kind),0,ps,e->arg_count,0);
+	cg_xml_check(cg);
 }
 
 /**
@@ -8729,6 +8755,10 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		else if (e->lhs->type.kind==TY_LOGGER)
 		{
 			cg_logger_method(cg,tt,e);
+		}
+		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"XmlWriter")==0)
+		{
+			cg_xmlwriter_method(cg,tt,e);
 		}
 		else if (e->lhs->type.kind==TY_OBJECT && strcmp(e->lhs->type.class_name,"StringBuilder")==0)
 		{
@@ -13353,6 +13383,13 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_print_str");
 	cg_emit(cg,"extern bzy_input_line");
 	cg_emit(cg,"extern bzy_sb_new");
+	cg_emit(cg,"extern bzy_xmlw_new");
+	cg_emit(cg,"extern bzy_xmlw_start");
+	cg_emit(cg,"extern bzy_xmlw_attr");
+	cg_emit(cg,"extern bzy_xmlw_text");
+	cg_emit(cg,"extern bzy_xmlw_comment");
+	cg_emit(cg,"extern bzy_xmlw_end");
+	cg_emit(cg,"extern bzy_xmlw_to_string");
 	cg_emit(cg,"extern bzy_sb_append");
 	cg_emit(cg,"extern bzy_sb_to_string");
 	cg_emit(cg,"extern bzy_array_new");

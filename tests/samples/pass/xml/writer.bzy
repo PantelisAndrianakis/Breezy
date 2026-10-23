@@ -1,0 +1,36 @@
+// XmlWriter emits XML in one pass, with escaping and misuse checks.
+void main()
+{
+	XmlWriter w = new XmlWriter();
+	w.comment(" generated ");
+	w.start("list");
+	w.attr("n", "2");
+	w.start("item");
+	w.attr("q", "a\"b");
+	w.text("x < y & z");
+	w.end();
+	w.start("empty");
+	w.end();
+	w.end();
+	print(w.toString());
+	print(Xml.parse(w.toString()).children.size);
+	try
+	{
+		w.start("second");
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+
+	XmlWriter v = new XmlWriter();
+	v.start("x");
+	try
+	{
+		print(v.toString());
+	}
+	catch (XmlException e)
+	{
+		print(e.message);
+	}
+}

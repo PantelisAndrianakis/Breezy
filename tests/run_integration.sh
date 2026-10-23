@@ -214,6 +214,8 @@ check xml_roundtrip tests/samples/pass/xml/roundtrip.bzy $'true\ntrue\ntrue\n<it
 check xml_edits tests/samples/pass/xml/edits.bzy $'<conf   b="two" c=\'3\' d="x&lt;y"/>\n<root>\n\t<z>\n\t\t<q/>\n\t</z>\n\t<b>x</b>\n\t<c/>\n</root>\n<t>\n  <v>new &amp; &lt;ok&gt;</v>\n</t>\nnew & <ok>\n<?xml version="1.0" encoding="UTF-8"?>\n<doc v="1"><c>hi</c></doc>'
 check xml_write_errors tests/samples/pass/xml/write_errors.bzy $'Invalid XML element name.\nInvalid XML attribute name.\nXmlNode.setText only works on an element without child elements.\nA node cannot be added inside itself.\nChild index out of range.\nThe node is not a child of this element.\nThe XML tree contains a loop: a node is inside itself.'
 check xml_write_memory tests/samples/pass/xml/write_memory.bzy $'<a x=\'1\' y=\'2\'>\n\t<c/>\n</a>\ntrue'
+check xml_writer tests/samples/pass/xml/writer.bzy $'<!-- generated --><list n="2"><item q="a&quot;b">x &lt; y &amp; z</item><empty/></list>\n2\nAn XML document has a single root element.\nXmlWriter.toString with an element still open.'
+check xml_writer_unused tests/samples/pass/xml/writer_unused.bzy $'ok'
 check json_scalars tests/samples/pass/json/scalars.bzy $'42\n3.5\nhi\ntrue\ntrue\ntrue\nnumber\nstring\ntrue'
 check json_objects tests/samples/pass/json/objects.bzy $'1\n2\ntrue\ntrue\ntrue\nfalse\n2'
 check json_arrays tests/samples/pass/json/arrays.bzy $'3\n20\n60'

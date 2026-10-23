@@ -226,6 +226,18 @@ static int is_stringbuilder(const TypeRef *t)
 	return t->kind==TY_OBJECT && strcmp(t->class_name,"StringBuilder")==0;
 }
 
+/* XmlWriter is a runtime-provided builtin object class like StringBuilder. */
+static int is_xmlwriter(const TypeRef *t)
+{
+	return t->kind==TY_OBJECT && strcmp(t->class_name,"XmlWriter")==0;
+}
+
+/* A class the runtime provides, which programs use without declaring it. */
+static int is_runtime_class(const TypeRef *t)
+{
+	return is_stringbuilder(t) || is_xmlwriter(t);
+}
+
 /* Type of an integer literal from its suffix; range-checks the unsuffixed form. */
 static TypeKind literal_type(Expr *e)
 {
@@ -2091,7 +2103,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		if (e->type.elem->kind==TY_OBJECT
-				&& !is_stringbuilder(e->type.elem)
+				&& !is_runtime_class(e->type.elem)
 				&& !types_find_class(g_types,e->type.elem->class_name))
 		{
 			die(e->line,"Unknown array element type: ",e->type.elem->class_name);
@@ -2106,7 +2118,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		if (e->type.elem->kind==TY_OBJECT
-				&& !is_stringbuilder(e->type.elem)
+				&& !is_runtime_class(e->type.elem)
 				&& !enum_is(e->type.elem->class_name)
 				&& !types_find_class(g_types,e->type.elem->class_name))
 		{
@@ -2114,7 +2126,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		if (e->type.elem2->kind==TY_OBJECT
-				&& !is_stringbuilder(e->type.elem2)
+				&& !is_runtime_class(e->type.elem2)
 				&& !types_find_class(g_types,e->type.elem2->class_name))
 		{
 			die(e->line,"Unknown map value type: ",e->type.elem2->class_name);
@@ -2134,7 +2146,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		if (e->type.elem->kind==TY_OBJECT
-				&& !is_stringbuilder(e->type.elem)
+				&& !is_runtime_class(e->type.elem)
 				&& !types_find_class(g_types,e->type.elem->class_name))
 		{
 			die(e->line,"Unknown channel element type: ",e->type.elem->class_name);
@@ -2157,7 +2169,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		}
 
 		if (ek==TY_OBJECT
-				&& !is_stringbuilder(e->type.elem)
+				&& !is_runtime_class(e->type.elem)
 				&& !types_find_class(g_types,e->type.elem->class_name))
 		{
 			die(e->line,"Unknown collection element type: ",e->type.elem->class_name);
@@ -2341,7 +2353,7 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 		break;
 	case EX_NEW:
 	{
-		if (strcmp(e->name,"StringBuilder")!=0 && !types_find_class(g_types,e->name))
+		if (strcmp(e->name,"StringBuilder")!=0 && strcmp(e->name,"XmlWriter")!=0 && !types_find_class(g_types,e->name))
 		{
 			die(e->line,"Unknown class: ",e->name);
 		}
@@ -4792,6 +4804,45 @@ static void resolve_expr(SymTable *st, Expr *e, const char *tc)
 			break;
 		}
 
+		if (is_xmlwriter(&e->lhs->type))
+		{
+			resolve_args(st,e,tc);
+			const char *n = e->name;
+			if (strcmp(n,"start")==0 || strcmp(n,"text")==0 || strcmp(n,"comment")==0)
+			{
+				if (e->arg_count!=1 || e->args[0]->type.kind!=TY_STRING)
+				{
+					die(e->line,"This XmlWriter method takes one string: ",n);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(n,"attr")==0)
+			{
+				if (e->arg_count!=2 || e->args[0]->type.kind!=TY_STRING || e->args[1]->type.kind!=TY_STRING)
+				{
+					die(e->line,"XmlWriter.attr(name, value) takes two strings.",NULL);
+				}
+
+				e->type.kind=TY_VOID;
+			}
+			else if (strcmp(n,"end")==0 || strcmp(n,"toString")==0)
+			{
+				if (e->arg_count!=0)
+				{
+					die(e->line,"This XmlWriter method takes no arguments: ",n);
+				}
+
+				e->type.kind = strcmp(n,"end")==0 ? TY_VOID : TY_STRING;
+			}
+			else
+			{
+				die(e->line,"Unknown XmlWriter method: ",n);
+			}
+
+			break;
+		}
+
 		ClassInfo *c=class_of(&e->lhs->type);
 		if (!c && e->lhs->type.kind==TY_OBJECT)
 		{
@@ -5597,7 +5648,7 @@ static void resolve_stmt(SymTable *st, Stmt *s, const char *tc)
 	{
 	case ST_VARDECL:
 	{
-		if (s->decl_type.kind==TY_OBJECT && !is_stringbuilder(&s->decl_type)
+		if (s->decl_type.kind==TY_OBJECT && !is_runtime_class(&s->decl_type)
 				&& !types_find_class(g_types,s->decl_type.class_name)
 				&& !types_is_interface(g_types,s->decl_type.class_name))
 		{

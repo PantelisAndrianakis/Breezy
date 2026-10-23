@@ -1,0 +1,7 @@
+// A runtime class made with new and never used must not be stack-allocated (the compiler has no layout for it).
+void main()
+{
+	XmlWriter w = new XmlWriter();
+	StringBuilder sb = new StringBuilder();
+	print("ok");
+}
