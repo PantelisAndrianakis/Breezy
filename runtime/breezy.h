@@ -421,6 +421,7 @@ void    bzy_sched_run(void); // Run ready breezes until the queue drains.
 void   *bzy_xml_parse(void *src); // Owned (+1) root, or NULL with an error buffered.
 void    bzy_xml_check(int64_t pc, int64_t frame); // Throws the buffered XmlException, if any.
 void   *bzy_xml_children(void *node); // Borrowed child list, made on first use.
+void   *bzy_xml_attr(void *node, void *name); // Owned (+1) value, or an owned empty string when absent.
 const char *bzy_xml_take_error(void); // Test hook: the buffered message, or NULL, cleared.
 void   *bzy_xml_element(void *name); // Owned (+1) new element, or NULL on a bad name.
 void    bzy_xml_set_attr(void *node, void *name, void *value);

@@ -970,6 +970,233 @@ void *bzy_xml_attr_name_at(void *node, int64_t i)
 	return nm;
 }
 
+/* ---- tree edits ----------------------------------------------------------------- */
+
+/* Replace a managed string field: the node takes its own reference to s and drops the old one. */
+static void set_str(void *node, int off, void *s)
+{
+	bzy_retain(s);
+	void *old = NODE_GET(node, off);
+	NODE_SET(node, off, s);
+	bzy_release(old);
+}
+
+void *bzy_xml_element(void *name)
+{
+	if (!bzy_xml_valid_name(name))
+	{
+		bzy_xml_fail("Invalid XML element name.");
+		return NULL;
+	}
+
+	void *n = node_new();
+	bzy_retain(name);
+	NODE_SET(n, X_NAME, name);
+	NODE_SET(n, X_TEXT, bzy_str_new("", 0));
+	return n;
+}
+
+void bzy_xml_set_attr(void *node, void *name, void *value)
+{
+	if (!bzy_xml_valid_name(name))
+	{
+		bzy_xml_fail("Invalid XML attribute name.");
+		return;
+	}
+
+	if (!bzy_xml_valid_chars(value))
+	{
+		bzy_xml_fail("An XML attribute value cannot contain control characters other than tab, line feed and carriage return.");
+		return;
+	}
+
+	int64_t n = NODE_I64(node, X_ACOUNT);
+	void *attrs = NODE_GET(node, X_ATTRS);
+	void **slots = n ? (void**)((char*)attrs + 32) : NULL;
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (bzy_str_eq(slots[2 * i], name))
+		{
+			bzy_retain(value);
+			void *old = slots[2 * i + 1];
+			slots[2 * i + 1] = value;
+			bzy_release(old);
+			NODE_I64(node, X_DIRTY) |= XD_ATTRS;
+			return;
+		}
+	}
+
+	void *grown = bzy_array_new(2 * (n + 1), 1);
+	void **g = (void**)((char*)grown + 32);
+	for (int64_t i = 0; i < 2 * n; i++)
+	{
+		bzy_retain(slots[i]);
+		g[i] = slots[i];
+	}
+
+	bzy_retain(name);
+	bzy_retain(value);
+	g[2 * n] = name;
+	g[2 * n + 1] = value;
+	NODE_SET(node, X_ATTRS, grown);
+	NODE_I64(node, X_ACOUNT) = n + 1;
+	bzy_release(attrs); // Releases its copies of the moved strings; grown holds its own.
+	NODE_I64(node, X_DIRTY) |= XD_ATTRS;
+}
+
+void bzy_xml_remove_attr(void *node, void *name)
+{
+	int64_t n = NODE_I64(node, X_ACOUNT);
+	void *attrs = NODE_GET(node, X_ATTRS);
+	void **slots = n ? (void**)((char*)attrs + 32) : NULL;
+	int64_t at = -1;
+	for (int64_t i = 0; i < n; i++)
+	{
+		if (bzy_str_eq(slots[2 * i], name))
+		{
+			at = i;
+			break;
+		}
+	}
+
+	if (at < 0)
+	{
+		return;
+	}
+
+	void *kept = NULL;
+	if (n > 1)
+	{
+		kept = bzy_array_new(2 * (n - 1), 1);
+		void **k = (void**)((char*)kept + 32);
+		int64_t j = 0;
+		for (int64_t i = 0; i < n; i++)
+		{
+			if (i == at)
+			{
+				continue;
+			}
+
+			bzy_retain(slots[2 * i]);
+			bzy_retain(slots[2 * i + 1]);
+			k[2 * j] = slots[2 * i];
+			k[2 * j + 1] = slots[2 * i + 1];
+			j++;
+		}
+	}
+
+	NODE_SET(node, X_ATTRS, kept);
+	NODE_I64(node, X_ACOUNT) = n - 1;
+	bzy_release(attrs);
+	NODE_I64(node, X_DIRTY) |= XD_ATTRS;
+}
+
+void bzy_xml_set_text(void *node, void *text)
+{
+	if (!bzy_xml_valid_chars(text))
+	{
+		bzy_xml_fail("XML text cannot contain control characters other than tab, line feed and carriage return.");
+		return;
+	}
+
+	void *kids = NODE_GET(node, X_KIDS);
+	if (kids && bzy_vec_len(kids) > 0)
+	{
+		bzy_xml_fail("XmlNode.setText only works on an element without child elements.");
+		return;
+	}
+
+	set_str(node, X_TEXT, text);
+	NODE_I64(node, X_DIRTY) |= XD_TEXT;
+}
+
+void bzy_xml_rename(void *node, void *name)
+{
+	if (!bzy_xml_valid_name(name))
+	{
+		bzy_xml_fail("Invalid XML element name.");
+		return;
+	}
+
+	set_str(node, X_NAME, name);
+	NODE_I64(node, X_DIRTY) |= XD_NAME;
+}
+
+/**
+ * 1 when target is node or inside node's subtree.
+ * ponytail: a subtree already looped through children.add would recurse forever, so depth past 65536 counts as a hit.
+ */
+static int subtree_has(void *node, void *target, int depth)
+{
+	if (node == target || depth > 65536)
+	{
+		return 1;
+	}
+
+	void *kids = NODE_GET(node, X_KIDS);
+	int64_t n = kids ? bzy_vec_len(kids) : 0;
+	for (int64_t i = 0; i < n; i++)
+	{
+		void *c = (void*)bzy_vec_get(kids, i); // +1.
+		int hit = subtree_has(c, target, depth + 1);
+		bzy_release(c);
+		if (hit)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+void bzy_xml_insert_child(void *node, int64_t index, void *child)
+{
+	void *kids = bzy_xml_children(node); // Borrowed; made on first use.
+	int64_t n = bzy_vec_len(kids);
+	if (index < 0 || index > n)
+	{
+		bzy_xml_fail("Child index out of range.");
+		return;
+	}
+
+	if (subtree_has(child, node, 0))
+	{
+		bzy_xml_fail("A node cannot be added inside itself.");
+		return;
+	}
+
+	bzy_vec_push_back(kids, (int64_t)child); // Retains.
+	for (int64_t i = n; i > index; i--)
+	{
+		int64_t prev = bzy_vec_get(kids, i - 1); // +1.
+		bzy_vec_set(kids, i, prev); // Retains prev, releases the displaced occupant.
+		bzy_release((void*)prev);
+	}
+
+	if (index < n)
+	{
+		bzy_vec_set(kids, index, (int64_t)child);
+	}
+}
+
+void bzy_xml_add_child(void *node, void *child)
+{
+	bzy_xml_insert_child(node, bzy_vec_len(bzy_xml_children(node)), child);
+}
+
+void bzy_xml_remove_child(void *node, void *child)
+{
+	void *kids = NODE_GET(node, X_KIDS);
+	int64_t at = kids ? bzy_vec_index_of(kids, (int64_t)child) : -1;
+	if (at < 0)
+	{
+		bzy_xml_fail("The node is not a child of this element.");
+		return;
+	}
+
+	bzy_vec_remove_at(kids, at);
+}
+
 /**
  * ---- descendants --------------------------------------------------------------
  *

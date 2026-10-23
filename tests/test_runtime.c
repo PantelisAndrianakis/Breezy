@@ -1976,6 +1976,47 @@ static void test_xml_validation(void)
 	ASSERT(bzy_xml_take_error() == NULL);
 }
 
+static void test_xml_edits(void)
+{
+	void *src = xs("<a x='1' y='2'><b/></a>");
+	void *a = bzy_xml_parse(src);
+	bzy_xml_set_attr(a, xs("x"), xs("9"));
+	bzy_xml_set_attr(a, xs("z"), xs("3"));
+	bzy_xml_remove_attr(a, xs("y"));
+	ASSERT_INT(NODE_I64(a, X_ACOUNT), 2);
+	ASSERT_STR(bzy_str_data(bzy_xml_attr(a, xs("x"))), "9");
+	ASSERT_STR(bzy_str_data(bzy_xml_attr(a, xs("z"))), "3");
+	ASSERT(NODE_I64(a, X_DIRTY) & XD_ATTRS);
+
+	void *c = bzy_xml_element(xs("c"));
+	bzy_xml_insert_child(a, 0, c);
+	void *kids = bzy_xml_children(a);
+	ASSERT_INT(bzy_vec_len(kids), 2);
+	void *first = (void*)bzy_vec_get(kids, 0);
+	ASSERT(first == c);
+	bzy_release(first);
+
+	bzy_xml_add_child(c, a); // a holds c: a loop.
+	ASSERT_STR(bzy_xml_take_error(), "A node cannot be added inside itself.");
+	bzy_xml_set_text(a, xs("t"));
+	ASSERT_STR(bzy_xml_take_error(), "XmlNode.setText only works on an element without child elements.");
+	bzy_xml_set_text(c, xs("hi"));
+	ASSERT_STR(bzy_str_data(NODE_GET(c, X_TEXT)), "hi");
+	bzy_xml_rename(c, xs("1bad"));
+	ASSERT_STR(bzy_xml_take_error(), "Invalid XML element name.");
+	bzy_xml_insert_child(a, 5, c);
+	ASSERT_STR(bzy_xml_take_error(), "Child index out of range.");
+	bzy_xml_remove_child(a, c);
+	ASSERT_INT(bzy_vec_len(kids), 1);
+	bzy_xml_remove_child(a, c);
+	ASSERT_STR(bzy_xml_take_error(), "The node is not a child of this element.");
+	ASSERT(bzy_xml_element(xs("a b")) == NULL);
+	ASSERT_STR(bzy_xml_take_error(), "Invalid XML element name.");
+	bzy_release(c);
+	bzy_release(a);
+	bzy_release(src);
+}
+
 int main(void)
 {
 	printf("Runtime (ARC) tests\n");
@@ -2069,6 +2110,7 @@ int main(void)
 	RUN(test_string_parse_values);
 	RUN(test_xml_offsets);
 	RUN(test_xml_validation);
+	RUN(test_xml_edits);
 	RUN(test_clock_nanos_monotonic);
 	SUMMARY();
 	return 0;
