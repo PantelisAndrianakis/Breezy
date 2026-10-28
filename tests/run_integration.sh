@@ -584,6 +584,21 @@ else
     echo "  nobloat_minimal: SKIP (no linker map produced)"
 fi
 
+# Application metadata has no code references and must survive section removal.
+mkdir -p build/integration_metadata
+printf 'void main()\n{\n\tprint(0);\n}\n' >build/integration_metadata/Main.bzy
+printf '[app]\nversion = "1.2.3"\n' >build/integration_metadata/breezy.toml
+if bzy_build build/integration_metadata && objdump -h out.exe | grep -q '\.bzy_app' && ./out.exe >/dev/null; then
+    echo "  stripped_metadata: OK"
+else
+    echo "  stripped_metadata: FAIL"; fail=1
+fi
+if objdump -t out.exe | grep -q 'no symbols'; then
+    echo "  stripped_symbols: OK"
+else
+    echo "  stripped_symbols: FAIL"; fail=1
+fi
+
 # Language Server: drive `breezy --lsp` over stdio with a framed
 # JSON-RPC session and assert the lifecycle handshake. Pure stdin/stdout, no DB
 # and no network -- fully CI-portable (unlike the database-driver pillars).

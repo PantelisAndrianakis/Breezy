@@ -291,6 +291,7 @@ int main(int argc, char *argv[])
 
 	// Append a .bzy_app metadata section if any [app] fields are set.
 	// Strings are emitted as byte sequences to avoid NASM quoting issues.
+	const char *app_symbol = NULL;
 	int has_app_info = app_cfg.name[0] || app_cfg.version[0]
 					   || app_cfg.description[0] || app_cfg.author[0];
 	if (has_app_info)
@@ -321,6 +322,7 @@ int main(int argc, char *argv[])
 					continue;
 				}
 
+				app_symbol = fields[fi][0];
 				fprintf(af, "global %s\n%s: db ", fields[fi][0], fields[fi][0]);
 				for (const char *cp = fields[fi][1]; *cp; cp++)
 				{
@@ -466,12 +468,12 @@ int main(int argc, char *argv[])
 	if (target == TARGET_LINUX)
 	{
 		// -L. finds a co-located lib_breezy.a (distribution); -Lbuild/linux finds the per-host build output when running from the project tree.
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie out.obj%s -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl -ldl",
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -no-pie -Wl,--gc-sections,--as-needed out.obj%s -L. -Lbuild/linux -l_breezy -lpthread -lm -lcurl -ldl",
 					   has_c ? " out_c.obj" : "");
 	}
 	else
 	{
-		off = snprintf(link_cmd,sizeof(link_cmd),"gcc out.obj%s%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
+		off = snprintf(link_cmd,sizeof(link_cmd),"gcc -Wl,--gc-sections out.obj%s%s -L. -Lbuild/win -l_breezy -lws2_32 -lwinhttp",
 					   has_c ? " out_c.obj" : "", has_rc ? " out_res.obj" : "");
 	}
 
@@ -484,6 +486,12 @@ int main(int argc, char *argv[])
 	{
 		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -l%s",cfg.libs[i]);
 	}
+	if (app_symbol)
+	{
+		// Application metadata has no code references, so retain its section explicitly.
+		off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -Wl,--undefined=%s",app_symbol);
+	}
+
 	// Strip symbols (-s): the emitted program carries no source-level debug info and the runtime is opaque, so the only thing the linker would otherwise embed is the toolchain CRT's own debug sections - ~3x the binary size for no debugging value.
 	off += snprintf(link_cmd+off,sizeof(link_cmd)-off," -s");
 	// BZY_LINK_MAP: emit a linker map (out.map) listing which runtime archive members were pulled in.
