@@ -1,0 +1,31 @@
+extern long bzy_live_count();
+
+class Counts
+{
+	static long before;
+}
+
+string fail(string value)
+{
+	throw new Exception();
+}
+
+void caught(string value)
+{
+	try
+	{
+		fail(value);
+	}
+	catch (Exception error)
+	{
+	}
+}
+
+void main()
+{
+	string value = "preserved";
+	Counts.before = bzy_live_count();
+	caught(value);
+	print(value);
+	print(bzy_live_count() == Counts.before);
+}

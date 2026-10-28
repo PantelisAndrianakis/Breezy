@@ -97,6 +97,7 @@ typedef struct
 	{
 		char *bytes; // Decoded literal bytes (no embedded NUL); allocated to len.
 		int  len;
+		int  encoded;
 	} *strk; // String literal pool, emitted in .data as __str<id>. Grown.
 	int strk_count;
 	int strk_cap;

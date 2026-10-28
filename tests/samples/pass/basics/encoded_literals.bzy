@@ -1,0 +1,66 @@
+class LiteralBox
+{
+	static string shared = "static encoded";
+	string field = "field encoded";
+}
+
+enum LiteralEnum
+{
+	ENTRY("enum encoded");
+	string text;
+	LiteralEnum(string text)
+	{
+		this.text = text;
+	}
+}
+
+string default_text(string text = "default encoded")
+{
+	return text;
+}
+
+string concurrent_text()
+{
+	return "concurrent encoded";
+}
+
+void literal_worker(channel<int> values)
+{
+	int correct = 0;
+	for (int i = 0; i < 100; i++)
+	{
+		if (concurrent_text().equals("concurrent encoded"))
+		{
+			correct++;
+		}
+	}
+
+	values.send(correct);
+}
+
+void main()
+{
+	print("HiddenLiteralSentinel_47");
+	print("");
+	print("héllo");
+	LiteralBox box = new LiteralBox();
+	print(box.field);
+	print(LiteralBox.shared);
+	print(default_text());
+	print(LiteralEnum.ENTRY.text);
+	() -> string text = () => "lambda encoded";
+	print(text());
+	channel<int> values = new channel<int>(8);
+	for (int i = 0; i < 8; i++)
+	{
+		spawn literal_worker(values);
+	}
+
+	int correct = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		correct += values.recv();
+	}
+
+	print(correct);
+}

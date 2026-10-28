@@ -34,6 +34,7 @@ void    bzy_print_bool(int64_t v); // Print "true" or "false" followed by a newl
 void    bzy_print_f64(double v); // Print a double with %.17g followed by a newline.
 
 void   *bzy_str_new(const char *bytes, int64_t len); // Owned (+1) immutable string.
+void   *bzy_str_literal(void *literal, int64_t len); // Decode compiler-owned literal bytes once; return an owned (+1) string.
 void   *bzy_str_from_cstring(const char *p); // Copy a NUL-terminated char* into an owned string; NULL -> null.
 void   *bzy_str_from_cbytes(const char *p, int64_t len); // Copy len bytes into an owned string; NULL -> null.
 void   *bzy_str_to_bytes(void *s); // Owned (+1) byte[] copy of the string's UTF-8 bytes.

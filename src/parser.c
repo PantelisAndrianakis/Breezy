@@ -63,6 +63,7 @@ static Token expect(Parser *p, TokenType tt)
 
 void parser_init(Parser *p, const char *src)
 {
+	p->is_prelude = 0;
 	lexer_init(&p->lex, src);
 	p->peek = lexer_next(&p->lex);
 	p->peek2 = lexer_next(&p->lex);
@@ -602,6 +603,7 @@ static Expr *parse_primary(Parser *p)
 	if (check(p,TOKEN_STR_LIT))
 	{
 		Expr *e=expr_new(EX_STR,line);
+		e->str_encoded = !p->is_prelude;
 		strcpy(e->str_val,p->cur.text);
 		advance(p);
 		return e;
@@ -1557,6 +1559,7 @@ static Expr *parse_case_const(Parser *p)
 	if (check(p,TOKEN_STR_LIT))
 	{
 		Expr *e=expr_new(EX_STR,line);
+		e->str_encoded = !p->is_prelude;
 		strcpy(e->str_val,p->cur.text);
 		advance(p);
 		return e;

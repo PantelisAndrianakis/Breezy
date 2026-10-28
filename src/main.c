@@ -215,6 +215,7 @@ int main(int argc, char *argv[])
 	for (int i=0; i<np; i++)
 	{
 		parser_init(&parsers[i],BZY_PRELUDE[i]);
+		parsers[i].is_prelude = 1;
 		units[i]=parse_unit(&parsers[i]);
 		units[i]->is_prelude=1;
 	}
@@ -222,6 +223,7 @@ int main(int argc, char *argv[])
 	for (int i=0; i<ndesk; i++)
 	{
 		parser_init(&parsers[np+i],BZY_DESKTOP_PRELUDE[i]);
+		parsers[np+i].is_prelude = 1;
 		units[np+i]=parse_unit(&parsers[np+i]);
 		units[np+i]->is_prelude=1;
 	}

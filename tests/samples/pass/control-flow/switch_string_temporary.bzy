@@ -1,0 +1,37 @@
+string warmup(string value = "switch-warmup")
+{
+	return value;
+}
+
+string selection()
+{
+	return "matching-text";
+}
+
+void main()
+{
+	print(warmup());
+	switch (selection())
+	{
+		case "matching-text":
+		{
+			print(1);
+			break;
+		}
+		case "different-text":
+		{
+			print(2);
+			break;
+		}
+		case "another-text":
+		{
+			print(3);
+			break;
+		}
+		default:
+		{
+			print(4);
+			break;
+		}
+	}
+}

@@ -1,0 +1,32 @@
+string identity(string value)
+{
+	return value;
+}
+
+string reassigned(string value)
+{
+	value = "replacement";
+	return value;
+}
+
+extern long bzy_live_count();
+
+string aliased(string first, string second)
+{
+	return first;
+}
+
+void main()
+{
+	string input = "original";
+	string output = identity(input);
+	input = "replaced";
+	string churn = "overwrite";
+	print(output);
+	print(input);
+	print(churn);
+	long before = bzy_live_count();
+	print(reassigned("incoming"));
+	print(aliased(input, input));
+	print(bzy_live_count() == before);
+}

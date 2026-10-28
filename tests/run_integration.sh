@@ -115,6 +115,16 @@ check simd_f64x4  tests/samples/pass/simd/f64x4.bzy          $'1\n4\n11\n44\n10\
 check simd_f32x8  tests/samples/pass/simd/f32x8.bzy          $'1\n4\n36\n72\n3\n2\n16\n72'
 check simd_i32x8  tests/samples/pass/simd/i32x8.bzy          $'1\n4\n36\n72\n3\n2\n16\n72'
 check arith       tests/samples/pass/basics/arith.bzy      "14"
+check managed_return_parameter tests/samples/pass/basics/managed_return_parameter.bzy $'original\nreplaced\noverwrite\nreplacement\nreplaced\ntrue'
+check managed_return_unwind tests/samples/pass/exceptions/managed_return_unwind.bzy $'preserved\ntrue'
+check mc_fresh_string tests/samples/pass/concurrency/mc_fresh_string.bzy $'fresh-channel-warmup\n800'
+check switch_string_temporary tests/samples/pass/control-flow/switch_string_temporary.bzy $'switch-warmup\n1'
+check encoded_literals tests/samples/pass/basics/encoded_literals.bzy $'HiddenLiteralSentinel_47\n\nh\xc3\xa9llo\nfield encoded\nstatic encoded\ndefault encoded\nenum encoded\nlambda encoded\n800'
+if grep -aFq 'HiddenLiteralSentinel_47' out.exe; then
+    echo "  encoded_literal_bytes: FAIL (plaintext remains in executable)"; fail=1
+else
+    echo "  encoded_literal_bytes: OK"
+fi
 check system_rt   tests/samples/pass/system/realtime_io.bzy $'-1\n-1'
 check system_affinity tests/samples/pass/system/affinity.bzy $'true\ntrue'
 check int_semantics tests/samples/pass/basics/int_semantics.bzy $'-294967296\n1410065408\n-4\n-3\n-1\n-123\n2\n4000000000\n48\n255\n240\n-2147483648\n1\n16'

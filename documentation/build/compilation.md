@@ -45,6 +45,8 @@ The compiled program links against a small **Breezy runtime** (`lib_breezy.a`) t
 
 The runtime is written in C and compiled ahead of time into `lib_breezy.a`. Your program's *logic* is lowered to fresh assembly by the compiler; the runtime services it calls (allocate an object, send on a channel, open a socket) are pre-written C that the generated assembly simply calls into. So a finished binary is **your code as native assembly, statically linked against the C runtime** - there is no separate runtime to install or ship.
 
+User string literals are stored as reversible XOR-encoded bytes in the executable. Each literal decodes once on first use under an initialization mutex, then reuses those decoded bytes. Each evaluation still creates a normal owned string. Runtime messages and standard-library literals stay plain.
+
 ---
 
 ## Compiling a program

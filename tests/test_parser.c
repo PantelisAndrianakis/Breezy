@@ -138,6 +138,15 @@ static void test_string_expr(void)
 	Expr *e = parse_str("\"hi\"");
 	ASSERT_INT(e->kind, EX_STR);
 	ASSERT_STR(e->str_val, "hi");
+	ASSERT_INT(e->str_encoded, 1);
+	ASSERT_INT(expr_clone(e)->str_encoded, 1);
+
+	Parser parser;
+	parser_init(&parser, "\"plain\"");
+	parser.is_prelude = 1;
+	Expr *plain = parse_expr(&parser);
+	ASSERT_INT(plain->str_encoded, 0);
+	ASSERT_INT(expr_clone(plain)->str_encoded, 0);
 }
 
 static void test_precedence(void)

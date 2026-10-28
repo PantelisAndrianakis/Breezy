@@ -1,0 +1,38 @@
+string identity(string value)
+{
+	return value;
+}
+
+string payload()
+{
+	return "fresh-channel-payload";
+}
+
+void producer(channel<string> values)
+{
+	for (int i = 0; i < 100; i++)
+	{
+		values.send(payload());
+	}
+}
+
+void main()
+{
+	print(identity("fresh-channel-warmup"));
+	channel<string> values = new channel<string>(8);
+	for (int i = 0; i < 8; i++)
+	{
+		spawn producer(values);
+	}
+
+	int correct = 0;
+	for (int i = 0; i < 800; i++)
+	{
+		if (values.recv().equals("fresh-channel-payload"))
+		{
+			correct++;
+		}
+	}
+
+	print(correct);
+}

@@ -6,6 +6,7 @@
 typedef struct
 {
 	Lexer lex;
+	int is_prelude; // Built-in source keeps its string literals plain.
 	Token cur;
 	Token peek;
 	Token peek2;

@@ -20,6 +20,7 @@ static Func *resolve_one(const char *src, const char *fname)
 	for (int i = 0; i < np; i++)
 	{
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
+		parsers[i].is_prelude = 1;
 		units[i] = parse_unit(&parsers[i]);
 	}
 

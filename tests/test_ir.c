@@ -926,6 +926,7 @@ static void emit_unit_asm(const char *src, Target target)
 	for (int i = 0; i < np; i++)
 	{
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
+		parsers[i].is_prelude = 1;
 		units[i] = parse_unit(&parsers[i]);
 	}
 

@@ -278,6 +278,7 @@ struct Expr
 	char     int_suffix[4]; // EX_INT/EX_FLOAT: literal suffix from the lexer ("", "L", "u", "uL", "Lu", "f").
 	double   float_val; // EX_FLOAT: parsed literal value.
 	char     str_val[256]; // EX_STR: decoded string-literal bytes.
+	int      str_encoded; // User literal provenance survives defaults and expression copies.
 	char     name[64]; // EX_IDENT/NEW/CALL/METHOD_CALL/FIELD.
 	int      op; // EX_BINARY/EX_UNARY: a TokenType.
 	Expr    *lhs; // Binary left / unary operand / method-call|field receiver.

@@ -1026,6 +1026,7 @@ static int cg_str_const(Codegen *cg, Expr *e)
 	}
 
 	cg->strk[id].len = n;
+	cg->strk[id].encoded = e->str_encoded;
 	return id;
 }
 
@@ -1931,7 +1932,7 @@ static void cg_release_rcx(Codegen *cg)
 	cg_emit(cg,".L%d:", done);
 }
 
-/* Release every object-typed local of the function, optionally skipping one slot so a returned local can transfer ownership; pass except_off = -1 for none. */
+/* Release owned locals and the owned parameters of managed-return functions, skipping except_off when that slot transfers to the caller. */
 static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
 {
 	for (int i=0; i<f->obj_local_count; i++)
@@ -1944,6 +1945,26 @@ static void cg_release_object_locals(Codegen *cg, Func *f, int except_off)
 
 		cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), off);
 		cg_release_rcx(cg);
+	}
+
+	if (ty_is_managed(f->ret_type.kind))
+	{
+		for (int i = 0; i < f->param_count; i++)
+		{
+			if (!ty_is_managed(f->params[i].type.kind))
+			{
+				continue;
+			}
+
+			int off = f->params[i].offset;
+			if (off == except_off)
+			{
+				continue;
+			}
+
+			cg_emit(cg,"    mov %s, [rbp - %d]", cg_iarg(cg, 0), off);
+			cg_release_rcx(cg);
+		}
 	}
 }
 
@@ -8434,7 +8455,7 @@ static void cg_expr(Codegen *cg, TypeTable *tt, Expr *e)
 		int id=cg_str_const(cg,e);
 		cg_emit(cg,"    lea %s, [rel __str%d]", cg_iarg(cg, 0), id);
 		cg_emit(cg,"    mov %s, %d", cg_iarg(cg, 1), cg->strk[id].len);
-		cg_aligned_call(cg,"bzy_str_new"); // Owned (+1) string in rax.
+		cg_aligned_call(cg, cg->strk[id].encoded ? "bzy_str_literal" : "bzy_str_new"); // Owned (+1) string in rax.
 		break;
 	}
 	case EX_FLOAT:
@@ -11520,7 +11541,7 @@ static void cg_stmt(Codegen *cg, TypeTable *tt, Func *f, Stmt *s, int in_main)
 		{
 			if (s->ret_val->kind==EX_IDENT)
 			{
-				// Transfer the returned local's reference out; release the rest.
+				// Transfer the returned owned slot to the caller; release the rest.
 				cg_expr(cg,tt,s->ret_val);
 				cg_emit(cg,"    mov [rbp - %d], rax", cg->val_save);
 				cg_release_object_locals(cg, f, s->ret_val->anno_int);
@@ -11946,15 +11967,36 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 		cg_emit(cg,"    dq ..@line%d, %d", cg->cur_line[t*2], cg->cur_line[t*2+1]);
 	}
 
-	if (f->obj_local_count > 0)
+	int object_count = f->obj_local_count;
+	if (ty_is_managed(f->ret_type.kind))
 	{
-		fprintf(cg->out, "__exceptionobjs%d: dq ", i);
-		for (int j=0; j<f->obj_local_count; j++)
+		for (int j = 0; j < f->param_count; j++)
 		{
-			fprintf(cg->out, "%d%s", f->obj_local_offsets[j], j+1<f->obj_local_count ? "," : "");
+			if (ty_is_managed(f->params[j].type.kind))
+			{
+				object_count++;
+			}
+		}
+	}
+
+	if (object_count > 0)
+	{
+		cg_emit(cg,"__exceptionobjs%d:", i);
+		for (int j = 0; j < f->obj_local_count; j++)
+		{
+			cg_emit(cg,"    dq %d", f->obj_local_offsets[j]);
 		}
 
-		fprintf(cg->out, "\n");
+		if (ty_is_managed(f->ret_type.kind))
+		{
+			for (int j = 0; j < f->param_count; j++)
+			{
+				if (ty_is_managed(f->params[j].type.kind))
+				{
+					cg_emit(cg,"    dq %d", f->params[j].offset);
+				}
+			}
+		}
 	}
 
 	if (cg->cur_try_count > 0)
@@ -11976,8 +12018,8 @@ void cg_emit_exception_record(Codegen *cg, const char *label, int frame, Func *f
 	cg_emit(cg,"    dq __exceptionend%d", i);
 	cg_emit(cg,"    dq %d", frame);
 	cg_emit(cg,"    dq __exceptionname%d", i);
-	cg_emit(cg,"    dq %d", f->obj_local_count);
-	if (f->obj_local_count > 0)
+	cg_emit(cg,"    dq %d", object_count);
+	if (object_count > 0)
 	{
 		cg_emit(cg,"    dq __exceptionobjs%d", i);
 	}
@@ -12707,6 +12749,19 @@ static void cg_emit_func(Codegen *cg, TypeTable *tt, const char *label, Func *f,
 		}
 	}
 
+	// Managed returns can transfer a parameter slot, so these frames own their managed parameters for the call's duration.
+	if (ty_is_managed(f->ret_type.kind))
+	{
+		for (int i = 0; i < f->param_count; i++)
+		{
+			if (ty_is_managed(f->params[i].type.kind))
+			{
+				cg_emit(cg,"    mov rax, [rbp - %d]", f->params[i].offset);
+				cg_retain_rax(cg);
+			}
+		}
+	}
+
 	// Object locals must be NULL before any release; bzy_alloc only zeroes heap objects, not stack slots.
 	for (int i=0; i<f->obj_local_count; i++)
 	{
@@ -13369,6 +13424,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_print_bool");
 	cg_emit(cg,"extern bzy_print_f64");
 	cg_emit(cg,"extern bzy_str_new");
+	cg_emit(cg,"extern bzy_str_literal");
 	cg_emit(cg,"extern bzy_str_concat");
 	cg_emit(cg,"extern bzy_str_concat_n");
 	cg_emit(cg,"extern bzy_str_from_i64");
@@ -13956,10 +14012,22 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 
 	for (int i=0; i<cg->strk_count; i++)
 	{
-		fprintf(cg->out, "__str%d: db ", i);
+		unsigned char key = cg->strk[i].encoded ? 0xA5 : 0;
+		if (cg->strk[i].encoded)
+		{
+			cg_emit(cg,"    align 8");
+			cg_emit(cg,"__str%d: dq 0", i);
+			cg_emit(cg,"    db %u", key);
+			fprintf(cg->out, "    db ");
+		}
+		else
+		{
+			fprintf(cg->out, "__str%d: db ", i);
+		}
+
 		for (int j=0; j<cg->strk[i].len; j++)
 		{
-			fprintf(cg->out, "%d,", (unsigned char)cg->strk[i].bytes[j]);
+			fprintf(cg->out, "%u,", (unsigned char)cg->strk[i].bytes[j] ^ key);
 		}
 
 		fprintf(cg->out, "0\n"); // Trailing NUL (bzy_str_new also NUL-terminates).

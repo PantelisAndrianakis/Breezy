@@ -16,7 +16,7 @@
 static char g_asm[1 << 20];
 
 /* Compile `nsrc` source strings for `target` (prelude first, then all srcs) and load the emitted asm into g_asm. */
-static void emit_n(const char **srcs, int nsrc, Target target)
+static void emit_n(const char **srcs, int nsrc, Target target, int plain_sources)
 {
 	static Parser parsers[MAX_U];
 	static Unit *units[MAX_U];
@@ -26,6 +26,7 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 	for (int i = 0; i < np; i++)
 	{
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
+		parsers[i].is_prelude = 1;
 		units[i] = parse_unit(&parsers[i]);
 		units[i]->is_prelude = 1; // Mirror main.c.
 	}
@@ -33,6 +34,7 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 	for (int j = 0; j < nsrc; j++)
 	{
 		parser_init(&parsers[np + j], srcs[j]);
+		parsers[np + j].is_prelude = j < plain_sources;
 		units[np + j] = parse_unit(&parsers[np + j]);
 	}
 
@@ -85,7 +87,7 @@ static void emit_n(const char **srcs, int nsrc, Target target)
 static void emit(const char *src, Target target)
 {
 	const char *srcs[1] = { src };
-	emit_n(srcs, 1, target);
+	emit_n(srcs, 1, target, 0);
 }
 
 /**
@@ -102,6 +104,7 @@ static TypeTable *build_tt(const char **srcs, int nsrc)
 	for (int i = 0; i < np; i++)
 	{
 		parser_init(&parsers[i], BZY_PRELUDE[i]);
+		parsers[i].is_prelude = 1;
 		units[i] = parse_unit(&parsers[i]);
 		units[i]->is_prelude = 1; // Mirror main.c.
 	}
@@ -167,6 +170,42 @@ static const char *fn_body(const char *label)
 	return buf;
 }
 
+static void test_managed_return_ownership(void)
+{
+	for (int target = TARGET_WINDOWS; target <= TARGET_LINUX; target++)
+	{
+		emit("string identity(string value) { return value; } string local() { string value = \"owned\"; return value; } void main() { print(identity(local())); }", (Target)target);
+		ASSERT(strstr(fn_body("bzy_identity:"), "call bzy_retain") != NULL);
+		ASSERT(strstr(fn_body("bzy_local:"), "call bzy_retain") == NULL);
+	}
+}
+
+static void test_user_string_literals_encoded(void)
+{
+	for (int target = TARGET_WINDOWS; target <= TARGET_LINUX; target++)
+	{
+		emit("void main() { print(\"HiddenLiteralSentinel_47\"); }", (Target)target);
+		ASSERT(strstr(fn_body("bzy_user_main:"), "call bzy_str_literal") != NULL);
+		ASSERT(strstr(g_asm, "72,105,100,100,101,110,76,105,116,101,114,97,108,83,101,110,116,105,110,101,108,95,52,55,") == NULL);
+	}
+}
+
+static void test_prelude_string_provenance_survives_copy(void)
+{
+	const char *srcs[2] = { "string builtin(string text = \"PlainSentinel\") { return text; } class PlainBox<T> { string text() { return \"PlainSentinel\"; } }", "void main() { print(builtin()); PlainBox<int> box = new PlainBox<int>(); print(box.text()); }" };
+	emit_n(srcs, 2, TARGET_WINDOWS, 1);
+	ASSERT(strstr(fn_body("bzy_user_main:"), "call bzy_str_new") != NULL);
+	int plain_count = 0;
+	const char *literal = g_asm;
+	while ((literal = strstr(literal, "80,108,97,105,110,83,101,110,116,105,110,101,108,0")) != NULL)
+	{
+		plain_count++;
+		literal++;
+	}
+
+	ASSERT_INT(plain_count, 2);
+}
+
 /* Compile prelude + desktop-prelude + the user source, exactly as the driver does when Desktop is referenced, and load the emitted asm into g_asm. */
 static void emit_desktop(const char *src, Target target)
 {
@@ -178,6 +217,7 @@ static void emit_desktop(const char *src, Target target)
 	for (int i = 0; i < BZY_PRELUDE_COUNT; i++)
 	{
 		parser_init(&parsers[n], BZY_PRELUDE[i]);
+		parsers[n].is_prelude = 1;
 		units[n] = parse_unit(&parsers[n]);
 		units[n]->is_prelude = 1; // Mirror main.c.
 		n++;
@@ -186,6 +226,7 @@ static void emit_desktop(const char *src, Target target)
 	for (int i = 0; i < BZY_DESKTOP_PRELUDE_COUNT; i++)
 	{
 		parser_init(&parsers[n], BZY_DESKTOP_PRELUDE[i]);
+		parsers[n].is_prelude = 1;
 		units[n] = parse_unit(&parsers[n]);
 		units[n]->is_prelude = 1; // Mirror main.c.
 		n++;
@@ -317,7 +358,7 @@ static void test_devirt_polymorphic_stays_indirect(void)
 		"class Dog extends Animal { void speak() { print(1); } }",
 		"void main() { Animal a; a = new Dog(); a.speak(); }"
 	};
-	emit_n(srcs, 3, TARGET_WINDOWS);
+	emit_n(srcs, 3, TARGET_WINDOWS, 0);
 	ASSERT_INT(strstr(g_asm, "call r11") != NULL, 1);
 }
 
@@ -331,7 +372,7 @@ static void test_devirt_unoverridden_base_method(void)
 		"class Dog extends Animal { void speak() { print(1); } }",
 		"void main() { Animal a; a = new Dog(); int t; t = a.tag(); }"
 	};
-	emit_n(srcs, 3, TARGET_WINDOWS);
+	emit_n(srcs, 3, TARGET_WINDOWS, 0);
 	ASSERT_INT(strstr(g_asm, "call Animal__tag") != NULL, 1);
 }
 
@@ -1949,6 +1990,9 @@ int main(void)
 	putenv("BZY_IR=0");
 	putenv("BZY_C=0");
 
+	RUN(test_managed_return_ownership);
+	RUN(test_user_string_literals_encoded);
+	RUN(test_prelude_string_provenance_survives_copy);
 	RUN(test_inline_alloc_windows_pool_pop);
 	RUN(test_inline_arc_fast_paths);
 	RUN(test_array_elem_stride);

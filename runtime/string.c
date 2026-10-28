@@ -1,4 +1,5 @@
 #include "breezy.h"
+#include "platform.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +38,38 @@ void *bzy_str_new(const char *bytes, int64_t len)
 
 	data[len] = '\0';
 	return s;
+}
+
+// Container callbacks can already hold a shared stripe, so literal initialization uses a separate lock.
+static bzy_mutex g_literal_lock = BZY_MUTEX_INIT;
+
+/**
+ * Decode a compiler-owned writable literal on first use and return a fresh owned string.
+ * The descriptor starts with an aligned eight-byte ready flag, then one XOR key byte and exactly `len` encoded bytes followed by a NUL.
+ * Decoded bytes stay in the descriptor; string ownership and per-use allocation stay unchanged.
+ */
+void *bzy_str_literal(void *literal, int64_t len)
+{
+	uint64_t *ready = literal;
+	unsigned char *bytes = (unsigned char*)literal + sizeof(*ready) + 1;
+	if (!__atomic_load_n(ready, __ATOMIC_ACQUIRE))
+	{
+		bzy_mutex_lock(&g_literal_lock);
+		if (!__atomic_load_n(ready, __ATOMIC_RELAXED))
+		{
+			unsigned char key = *((unsigned char*)literal + sizeof(*ready));
+			for (int64_t i = 0; i < len; i++)
+			{
+				bytes[i] ^= key;
+			}
+
+			__atomic_store_n(ready, 1, __ATOMIC_RELEASE);
+		}
+
+		bzy_mutex_unlock(&g_literal_lock);
+	}
+
+	return bzy_str_new((const char*)bytes, len);
 }
 
 int64_t bzy_str_len(void *s)

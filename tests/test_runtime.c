@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "breezy.h"
 #include "xml_node.h"
+#include "platform.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -166,6 +167,102 @@ static void test_string_new_and_len(void)
 	ASSERT(strcmp(bzy_str_data(s), "hello") == 0);
 	bzy_release(s);
 	ASSERT_INT(bzy_live_count(), before);
+}
+
+typedef struct
+{
+	uint64_t ready;
+	unsigned char key;
+	unsigned char bytes[7];
+} EncodedLiteral;
+
+static void test_string_literal_decode_once(void)
+{
+	int64_t before = bzy_live_count();
+	EncodedLiteral literal = { 0, 0xA5, { 205, 102, 12, 201, 201, 202, 0 } };
+	bzy_shared_lock(&literal);
+	void *first = bzy_str_literal(&literal, 6);
+	bzy_shared_unlock(&literal);
+	ASSERT_STR(bzy_str_data(first), "h\xc3\xa9llo");
+	ASSERT_INT(literal.ready, 1);
+	ASSERT(memcmp(literal.bytes, "h\xc3\xa9llo", 7) == 0);
+	void *second = bzy_str_literal(&literal, 6);
+	ASSERT_STR(bzy_str_data(second), "h\xc3\xa9llo");
+	ASSERT(first != second);
+	bzy_release(first);
+	bzy_release(second);
+	ASSERT_INT(bzy_live_count(), before);
+
+	EncodedLiteral encoded_zero = { 0, 0xA5, { 103, 0, 0 } };
+	void *zero_byte_string = bzy_str_literal(&encoded_zero, 2);
+	ASSERT_INT(bzy_str_len(zero_byte_string), 2);
+	ASSERT_STR(bzy_str_data(zero_byte_string), "\xc2\xa5");
+	bzy_release(zero_byte_string);
+	ASSERT_INT(bzy_live_count(), before);
+
+	EncodedLiteral empty = { 0, 0xA5, { 0 } };
+	void *empty_string = bzy_str_literal(&empty, 0);
+	ASSERT_INT(empty.ready, 1);
+	ASSERT_INT(bzy_str_len(empty_string), 0);
+	ASSERT_STR(bzy_str_data(empty_string), "");
+	bzy_release(empty_string);
+	ASSERT_INT(bzy_live_count(), before);
+}
+
+typedef struct
+{
+	EncodedLiteral literal;
+	int arrived;
+	int start;
+	int completed;
+	bzy_sem finish;
+} LiteralRace;
+
+static LiteralRace g_literal_race = { .literal = { 0, 0xA5, { 205, 102, 12, 201, 201, 202, 0 } } };
+static bzy_thread g_literal_threads[8];
+
+static void *literal_worker(void *arg)
+{
+	LiteralRace *race = arg;
+	__atomic_add_fetch(&race->arrived, 1, __ATOMIC_RELEASE);
+	while (!__atomic_load_n(&race->start, __ATOMIC_ACQUIRE))
+	{
+	}
+
+	for (int i = 0; i < 1000; i++)
+	{
+		void *value = bzy_str_literal(&race->literal, 6);
+		ASSERT_STR(bzy_str_data(value), "h\xc3\xa9llo");
+		bzy_release(value);
+	}
+
+	__atomic_add_fetch(&race->completed, 1, __ATOMIC_RELEASE);
+	bzy_sem_wait(&race->finish);
+
+	return NULL;
+}
+
+static void test_string_literal_concurrent_first_use(void)
+{
+	int64_t before = bzy_live_count();
+	bzy_sem_init(&g_literal_race.finish);
+	for (int i = 0; i < 8; i++)
+	{
+		bzy_thread_start(&g_literal_threads[i], literal_worker, &g_literal_race);
+	}
+
+	while (__atomic_load_n(&g_literal_race.arrived, __ATOMIC_ACQUIRE) != 8)
+	{
+	}
+
+	__atomic_store_n(&g_literal_race.start, 1, __ATOMIC_RELEASE);
+	while (__atomic_load_n(&g_literal_race.completed, __ATOMIC_ACQUIRE) != 8)
+	{
+	}
+
+	// Allocator shards belong to native-thread storage and must stay alive while the count reads them.
+	ASSERT_INT(bzy_live_count(), before);
+	ASSERT_INT(g_literal_race.literal.ready, 1);
 }
 
 static void test_string_concat(void)
@@ -2180,6 +2277,8 @@ int main(void)
 	RUN(test_loop_reuse_is_bounded);
 	RUN(test_unmanaged_object_ignored);
 	RUN(test_string_new_and_len);
+	RUN(test_string_literal_decode_once);
+	RUN(test_string_literal_concurrent_first_use);
 	RUN(test_string_concat);
 	RUN(test_str_concat_n);
 	RUN(test_map_grow_keeps_entries);
@@ -2268,6 +2367,13 @@ int main(void)
 	RUN(test_xml_edited_output);
 	RUN(test_xml_writer);
 	RUN(test_clock_nanos_monotonic);
+	bzy_sem_post(&g_literal_race.finish, 8);
+	for (int i = 0; i < 8; i++)
+	{
+		bzy_thread_join(g_literal_threads[i]);
+	}
+
+	bzy_sem_destroy(&g_literal_race.finish);
 	SUMMARY();
 	return 0;
 }
