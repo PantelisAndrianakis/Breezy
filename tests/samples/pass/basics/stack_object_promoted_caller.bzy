@@ -1,0 +1,66 @@
+class Scratch
+{
+	long first;
+	long second;
+	long third;
+	long fourth;
+}
+
+int touch(int count)
+{
+	Scratch scratch = new Scratch();
+	int index = 0;
+	while (index < count)
+	{
+		scratch.first = index;
+		scratch.second = 31;
+		scratch.third = 137;
+		scratch.fourth = 500;
+		index += 1;
+	}
+	return (int)scratch.third;
+}
+
+int simpleStack()
+{
+	Scratch scratch = new Scratch();
+	scratch.first = 19;
+	return (int)scratch.first;
+}
+
+int multipleStack(int count)
+{
+	Scratch first = new Scratch();
+	Scratch second = new Scratch();
+	int index = 0;
+	while (index < count)
+	{
+		first.third += 7;
+		second.third += 14;
+		index += 1;
+	}
+	return (int)(first.third + second.third);
+}
+
+void main()
+{
+	int counter = 7;
+	int sum = 0;
+	int index = 0;
+	while (index < 2)
+	{
+		int value = touch(1);
+		print(counter);
+		sum += value;
+		counter += 1;
+		index += 1;
+		if (index < 0 || index > 2)
+		{
+			print("corrupt");
+			return;
+		}
+	}
+	print(sum);
+	print(simpleStack());
+	print(multipleStack(2));
+}

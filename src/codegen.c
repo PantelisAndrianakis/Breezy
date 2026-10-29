@@ -5259,9 +5259,15 @@ static void cg_new(Codegen *cg, TypeTable *tt, Expr *e)
 	ClassInfo *c=types_find_class(tt,e->name);
 	if (e->anno_stack)
 	{
-		// The object lives in the frame at rbp - anno_stack_off: no refcount traffic, no free.
+		// Escape analysis runs before register promotion, so its object offsets exclude the promotion save area.
 		// A refcount of zero marks it unmanaged for the runtime.
-		cg_emit(cg,"    lea rax, [rbp - %d]", e->anno_stack_off);
+		int stackOffset = e->anno_stack_off;
+		if (cg->cur_func && cg->cur_func->promo_count > 0)
+		{
+			stackOffset += 32;
+		}
+
+		cg_emit(cg,"    lea rax, [rbp - %d]", stackOffset);
 		cg_emit(cg,"    lea rbx, [rel __vtable_%s]", c->name);
 		cg_emit(cg,"    mov [rax], rbx");
 		cg_emit(cg,"    mov qword [rax + 8], 0");

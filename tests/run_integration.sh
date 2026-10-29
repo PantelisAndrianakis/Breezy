@@ -126,6 +126,7 @@ check simd_f32x8  tests/samples/pass/simd/f32x8.bzy          $'1\n4\n36\n72\n3\n
 check simd_i32x8  tests/samples/pass/simd/i32x8.bzy          $'1\n4\n36\n72\n3\n2\n16\n72'
 check arith       tests/samples/pass/basics/arith.bzy      "14"
 check managed_return_parameter tests/samples/pass/basics/managed_return_parameter.bzy $'original\nreplaced\noverwrite\nreplacement\nreplaced\ntrue'
+check stack_object_promoted_caller tests/samples/pass/basics/stack_object_promoted_caller.bzy $'7\n8\n274\n19\n42'
 check managed_return_unwind tests/samples/pass/exceptions/managed_return_unwind.bzy $'preserved\ntrue'
 check mc_fresh_string tests/samples/pass/concurrency/mc_fresh_string.bzy $'fresh-channel-warmup\n800'
 check switch_string_temporary tests/samples/pass/control-flow/switch_string_temporary.bzy $'switch-warmup\n1'
