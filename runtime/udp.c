@@ -77,7 +77,11 @@ void *bzy_udp_new(int64_t port)
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = htons((unsigned short)port);
-	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 
 	bzy_iocp_associate((void*)fd);
 	return bzy_sock_wrap(fd); // Same managed handle + closesocket finalizer.
@@ -433,7 +437,12 @@ void *bzy_udp_new(int64_t port)
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = htons((unsigned short)port);
-	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0)
+	{
+		close(fd);
+		return NULL;
+	}
+
 	return bzy_sock_wrap(fd);
 }
 

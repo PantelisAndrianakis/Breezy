@@ -1,0 +1,20 @@
+void main()
+{
+	UdpSocket first = Network.udp(0);
+	int port = first.port();
+	UdpSocket duplicate = Network.udp(port);
+	print(duplicate == null);
+	if (duplicate != null)
+	{
+		duplicate.close();
+	}
+
+	first.close();
+	UdpSocket reopened = Network.udp(port);
+	print(reopened != null);
+	if (reopened != null)
+	{
+		print(reopened.port() == port);
+		reopened.close();
+	}
+}

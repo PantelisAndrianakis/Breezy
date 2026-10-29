@@ -499,6 +499,7 @@ else
     else echo "  dynext: FAIL (got '$dyn_out')"; fail=1; fi
 fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
+check udp_bind_failure tests/samples/pass/net/udp_bind_failure.bzy $'true\ntrue\ntrue'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
 # One worker: with no helper thread, that worker must sleep in the network poll itself and still honor socket timeouts.
 check_one_worker() {
