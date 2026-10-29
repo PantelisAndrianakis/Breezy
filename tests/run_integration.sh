@@ -27,6 +27,16 @@ check() {
     if [ "$got" == "$expected" ]; then echo "  $name: OK"
     else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
 }
+check_timeout() {
+    local name="$1" target="$2" expected="$3"
+    bzy_build "$target"
+    if [ $? -ne 0 ]; then echo "  $name: COMPILE FAILED"; fail=1; return; fi
+    local got
+    if ! got="$(timeout 15 ./out.exe)"; then echo "  $name: RUN FAILED OR TIMED OUT"; fail=1; return; fi
+    got="${got//$'\r'/}"
+    if [ "$got" == "$expected" ]; then echo "  $name: OK"
+    else echo "  $name: FAIL (expected '$expected', got '$got')"; fail=1; fi
+}
 check_in() {
     # Like check, but feeds $3 to the program's stdin (for input()).
     local name="$1" target="$2" stdin="$3" expected="$4"
@@ -499,6 +509,9 @@ else
     else echo "  dynext: FAIL (got '$dyn_out')"; fail=1; fi
 fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
+check_timeout tcp_bind_failure tests/samples/pass/net/tcp_bind_failure.bzy $'true\ntrue\ntrue'
+check_timeout tcp_address_bind tests/samples/pass/net/tcp_address_bind.bzy $'true\ntrue\n5\ntrue\ntrue\n5\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue'
+check_fail_msg tcp_address_bind_type tests/samples/fail/net/tcp_address_bind_type.bzy 'Network.listen(host, port) takes a string address and an integer port.'
 check udp_bind_failure tests/samples/pass/net/udp_bind_failure.bzy $'true\ntrue\ntrue'
 check udp_address_bind tests/samples/pass/net/udp_address_bind.bzy $'3\n3\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue'
 check_fail_msg udp_address_bind_type tests/samples/fail/net/udp_address_bind_type.bzy 'Network.udp(host, port) takes a string address and an integer port.'

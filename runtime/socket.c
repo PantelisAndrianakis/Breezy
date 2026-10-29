@@ -4,6 +4,47 @@
 #include <string.h>
 #include <stdio.h> // snprintf.
 
+int bzy_parse_bind_address(void *host, int64_t port, struct sockaddr_storage *address, socklen_t *length)
+{
+	if (host == NULL || port < 0 || port > 65535)
+	{
+		return 0;
+	}
+
+	const char *text = bzy_str_data(host);
+	int64_t textLength = bzy_str_len(host);
+	if (textLength <= 0 || textLength >= INET6_ADDRSTRLEN)
+	{
+		return 0;
+	}
+
+	if (memchr(text, 0, (size_t)textLength) != NULL)
+	{
+		return 0;
+	}
+
+	memset(address, 0, sizeof(*address));
+	struct sockaddr_in *ipv4 = (struct sockaddr_in*)address;
+	if (inet_pton(AF_INET, text, &ipv4->sin_addr) == 1)
+	{
+		ipv4->sin_family = AF_INET;
+		ipv4->sin_port = htons((unsigned short)port);
+		*length = sizeof(*ipv4);
+		return AF_INET;
+	}
+
+	struct sockaddr_in6 *ipv6 = (struct sockaddr_in6*)address;
+	if (inet_pton(AF_INET6, text, &ipv6->sin6_addr) == 1)
+	{
+		ipv6->sin6_family = AF_INET6;
+		ipv6->sin6_port = htons((unsigned short)port);
+		*length = sizeof(*ipv6);
+		return AF_INET6;
+	}
+
+	return 0;
+}
+
 /**
  * Spin-before-park for the request/response read path.
  * On loopback (and any low-latency peer) a co-located breeze typically replies within microseconds, so a blocking recv that parks on the first EAGAIN pays a full reactor round-trip - register + coroutine park + reactor wake + re-dispatch, two context switches - for a response that was about to arrive.
@@ -188,24 +229,94 @@ static VOID CALLBACK cancel_cb(PVOID p, BOOLEAN timed_out)
 	CancelIoEx((HANDLE)c->fd, c->ov);
 }
 
+void *bzy_listener_bind(void *host, int64_t port)
+{
+	struct sockaddr_storage address;
+	socklen_t length;
+	int family = bzy_parse_bind_address(host, port, &address, &length);
+	if (family == 0)
+	{
+		return NULL;
+	}
+
+	bzy_iocp_ensure();
+	SOCKET fd = socket(family, SOCK_STREAM, IPPROTO_TCP);
+	if (fd == INVALID_SOCKET)
+	{
+		return NULL;
+	}
+
+	u_long nonblocking = 1;
+	if (ioctlsocket(fd, FIONBIO, &nonblocking) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
+
+	int enabled = 1;
+	if (setsockopt(fd, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&enabled, sizeof(enabled)) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
+
+	if (family == AF_INET6)
+	{
+		int ipv6Only = 1;
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&ipv6Only, sizeof(ipv6Only)) != 0)
+		{
+			closesocket(fd);
+			return NULL;
+		}
+	}
+
+	if (bind(fd, (struct sockaddr*)&address, length) != 0 || listen(fd, SOMAXCONN) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
+
+	bzy_iocp_associate((void*)fd);
+	return bzy_sock_wrap(fd);
+}
+
 void *bzy_listener_new(int64_t port)
 {
 	bzy_iocp_ensure();
 	SOCKET fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	if (fd == INVALID_SOCKET)
+	{
+		return NULL;
+	}
 	u_long nb = 1;
-	ioctlsocket(fd, FIONBIO, &nb); // Non-blocking: enables the synchronous try-path; harmless to overlapped I/O.
+	if (ioctlsocket(fd, FIONBIO, &nb) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 	int yes = 1;
-	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes)) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 	int v6only = 0; // Dual-stack: accept IPv6 natively + IPv4 as v4-mapped (Windows defaults V6ONLY=1).
-	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
+	if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only)) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 
 	struct sockaddr_in6 addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin6_family = AF_INET6;
 	addr.sin6_addr = in6addr_any;
 	addr.sin6_port = htons((unsigned short)port);
-	bind(fd, (struct sockaddr*)&addr, sizeof(addr));
-	listen(fd, SOMAXCONN);
+	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0 || listen(fd, SOMAXCONN) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 
 	bzy_iocp_associate((void*)fd);
 	return bzy_sock_wrap(fd);
@@ -213,14 +324,14 @@ void *bzy_listener_new(int64_t port)
 
 int64_t bzy_listener_port(void *l)
 {
-	struct sockaddr_in6 addr; // Dual-stack listener is AF_INET6 -> sin6_port.
+	struct sockaddr_storage addr;
 	int len = sizeof(addr);
 	if (getsockname(SK_FD(l), (struct sockaddr*)&addr, &len) != 0)
 	{
 		return -1;
 	}
 
-	return (int64_t)ntohs(addr.sin6_port);
+	return (int64_t)ntohs(((struct sockaddr_in*)&addr)->sin_port);
 }
 
 /* AcceptEx is an extension fn; load its pointer once per process. */
@@ -238,11 +349,48 @@ static LPFN_ACCEPTEX accept_ex(SOCKET s)
 	return fn;
 }
 
+static int listener_family(void *listener)
+{
+	struct sockaddr_storage address;
+	int length = sizeof(address);
+	if (getsockname(SK_FD(listener), (struct sockaddr*)&address, &length) != 0)
+	{
+		return AF_UNSPEC;
+	}
+
+	if (address.ss_family != AF_INET && address.ss_family != AF_INET6)
+	{
+		return AF_UNSPEC;
+	}
+
+	return address.ss_family;
+}
+
 void *bzy_listener_accept(void *l)
 {
-	SOCKET acc = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	int family = listener_family(l);
+	if (family == AF_UNSPEC)
+	{
+		return NULL;
+	}
+
+	LPFN_ACCEPTEX acceptFunction = accept_ex(SK_FD(l));
+	if (acceptFunction == NULL)
+	{
+		return NULL;
+	}
+
+	SOCKET acc = socket(family, SOCK_STREAM, IPPROTO_TCP);
+	if (acc == INVALID_SOCKET)
+	{
+		return NULL;
+	}
 	u_long nb = 1;
-	ioctlsocket(acc, FIONBIO, &nb);
+	if (ioctlsocket(acc, FIONBIO, &nb) != 0)
+	{
+		closesocket(acc);
+		return NULL;
+	}
 	bzy_iocp_associate((void*)acc);
 
 	// AcceptEx writes local+remote addresses into this buffer (16 + sizeof(sockaddr_in6) each, per MSDN).
@@ -253,7 +401,7 @@ void *bzy_listener_accept(void *l)
 	bzy_iocp_op_reset(op);
 
 	DWORD got = 0;
-	BOOL ok = accept_ex(SK_FD(l))(SK_FD(l), acc, addrbuf,
+	BOOL ok = acceptFunction(SK_FD(l), acc, addrbuf,
 								  0, sizeof(struct sockaddr_in6) + 16, sizeof(struct sockaddr_in6) + 16,
 								  &got, (OVERLAPPED*)bzy_iocp_op_overlapped(op));
 	if (!ok && WSAGetLastError() != WSA_IO_PENDING)
@@ -287,17 +435,42 @@ void *bzy_listener_try_accept(void *l)
 		return NULL; // WSAEWOULDBLOCK: no pending connection.
 	}
 
-	bzy_iocp_associate((void*)acc);
 	u_long nb = 1;
-	ioctlsocket(acc, FIONBIO, &nb);
+	if (ioctlsocket(acc, FIONBIO, &nb) != 0)
+	{
+		closesocket(acc);
+		return NULL;
+	}
+
+	bzy_iocp_associate((void*)acc);
 	return bzy_sock_wrap(acc);
 }
 
 void *bzy_listener_accept_timeout(void *l, int64_t ms)
 {
-	SOCKET acc = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	int family = listener_family(l);
+	if (family == AF_UNSPEC)
+	{
+		return NULL;
+	}
+
+	LPFN_ACCEPTEX acceptFunction = accept_ex(SK_FD(l));
+	if (acceptFunction == NULL)
+	{
+		return NULL;
+	}
+
+	SOCKET acc = socket(family, SOCK_STREAM, IPPROTO_TCP);
+	if (acc == INVALID_SOCKET)
+	{
+		return NULL;
+	}
 	u_long nb = 1;
-	ioctlsocket(acc, FIONBIO, &nb);
+	if (ioctlsocket(acc, FIONBIO, &nb) != 0)
+	{
+		closesocket(acc);
+		return NULL;
+	}
 	bzy_iocp_associate((void*)acc);
 
 	char addrbuf[2 * (sizeof(struct sockaddr_in6) + 16)];
@@ -307,7 +480,7 @@ void *bzy_listener_accept_timeout(void *l, int64_t ms)
 	OVERLAPPED *ov = (OVERLAPPED*)bzy_iocp_op_overlapped(op);
 
 	DWORD got = 0;
-	BOOL ok = accept_ex(SK_FD(l))(SK_FD(l), acc, addrbuf,
+	BOOL ok = acceptFunction(SK_FD(l), acc, addrbuf,
 								  0, sizeof(struct sockaddr_in6) + 16, sizeof(struct sockaddr_in6) + 16,
 								  &got, ov);
 	if (!ok && WSAGetLastError() != WSA_IO_PENDING)
@@ -371,15 +544,34 @@ void *bzy_socket_connect(void *host, int64_t port)
 	}
 
 	SOCKET fd = socket(fam, SOCK_STREAM, IPPROTO_TCP);
+	if (fd == INVALID_SOCKET)
+	{
+		return NULL;
+	}
 	u_long nb = 1;
-	ioctlsocket(fd, FIONBIO, &nb);
+	if (ioctlsocket(fd, FIONBIO, &nb) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 
 	// ConnectEx requires an explicitly bound socket of the same address family.
 	struct sockaddr_storage local;
 	memset(&local, 0, sizeof(local));
 	local.ss_family = (ADDRESS_FAMILY)fam;
 	int locallen = (fam == AF_INET6) ? (int)sizeof(struct sockaddr_in6) : (int)sizeof(struct sockaddr_in);
-	bind(fd, (struct sockaddr*)&local, locallen);
+	if (bind(fd, (struct sockaddr*)&local, locallen) != 0)
+	{
+		closesocket(fd);
+		return NULL;
+	}
+
+	LPFN_CONNECTEX connectFunction = connect_ex(fd);
+	if (connectFunction == NULL)
+	{
+		closesocket(fd);
+		return NULL;
+	}
 	bzy_iocp_associate((void*)fd);
 
 	char opbuf[BZY_IOCP_OP_SIZE];
@@ -387,7 +579,7 @@ void *bzy_socket_connect(void *host, int64_t port)
 	bzy_iocp_op_reset(op);
 
 	DWORD got = 0;
-	BOOL ok = connect_ex(fd)(fd, (struct sockaddr*)&dst, dstlen, NULL, 0, &got,
+	BOOL ok = connectFunction(fd, (struct sockaddr*)&dst, dstlen, NULL, 0, &got,
 							 (OVERLAPPED*)bzy_iocp_op_overlapped(op));
 	if (!ok && WSAGetLastError() != WSA_IO_PENDING)
 	{
@@ -774,6 +966,49 @@ int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
 	return 0;
 }
 
+void *bzy_listener_bind(void *host, int64_t port)
+{
+	struct sockaddr_storage address;
+	socklen_t length;
+	int family = bzy_parse_bind_address(host, port, &address, &length);
+	if (family == 0)
+	{
+		return NULL;
+	}
+
+	bzy_reactor_ensure();
+	int fd = socket(family, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	if (fd < 0)
+	{
+		return NULL;
+	}
+
+	int enabled = 1;
+	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&enabled, sizeof(enabled)) != 0)
+	{
+		close(fd);
+		return NULL;
+	}
+
+	if (family == AF_INET6)
+	{
+		int ipv6Only = 1;
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&ipv6Only, sizeof(ipv6Only)) != 0)
+		{
+			close(fd);
+			return NULL;
+		}
+	}
+
+	if (bind(fd, (struct sockaddr*)&address, length) != 0 || listen(fd, SOMAXCONN) != 0)
+	{
+		close(fd);
+		return NULL;
+	}
+
+	return bzy_sock_wrap(fd);
+}
+
 void *bzy_listener_new(int64_t port)
 {
 	bzy_reactor_ensure();
@@ -804,14 +1039,14 @@ void *bzy_listener_new(int64_t port)
 
 int64_t bzy_listener_port(void *l)
 {
-	struct sockaddr_in6 addr; // Dual-stack listener is AF_INET6 -> sin6_port.
+	struct sockaddr_storage addr;
 	socklen_t len = sizeof(addr);
 	if (getsockname((int)SK_FD(l), (struct sockaddr*)&addr, &len) != 0)
 	{
 		return -1;
 	}
 
-	return (int64_t)ntohs(addr.sin6_port);
+	return (int64_t)ntohs(((struct sockaddr_in*)&addr)->sin_port);
 }
 
 void *bzy_listener_accept(void *l)

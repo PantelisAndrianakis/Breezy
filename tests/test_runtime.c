@@ -9,6 +9,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #endif
 
@@ -1624,6 +1625,36 @@ static void test_tcp_accept_timeout_and_try(void)
 	net_shutdown();
 }
 
+#ifdef _WIN32
+static void test_tcp_exclusive_bind_failure(void)
+{
+	bzy_iocp_ensure();
+	SOCKET owner = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	ASSERT(owner != INVALID_SOCKET);
+	int exclusive = 1;
+	ASSERT_INT(setsockopt(owner, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&exclusive, sizeof(exclusive)), 0);
+	int ipv6Only = 0;
+	ASSERT_INT(setsockopt(owner, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&ipv6Only, sizeof(ipv6Only)), 0);
+	struct sockaddr_in6 address;
+	memset(&address, 0, sizeof(address));
+	address.sin6_family = AF_INET6;
+	ASSERT_INT(bind(owner, (struct sockaddr*)&address, sizeof(address)), 0);
+	ASSERT_INT(listen(owner, SOMAXCONN), 0);
+	int length = sizeof(address);
+	ASSERT_INT(getsockname(owner, (struct sockaddr*)&address, &length), 0);
+	void *listener = bzy_listener_new(ntohs(address.sin6_port));
+	if (listener != NULL)
+	{
+		bzy_listener_close(listener);
+		bzy_release(listener);
+	}
+
+	ASSERT_INT(closesocket(owner), 0);
+	net_shutdown();
+	ASSERT(listener == NULL);
+}
+#endif
+
 static int g_udp_ok;
 static void *g_udp_server; // Shared UdpSocket handle.
 static int64_t g_udp_server_port;
@@ -2354,6 +2385,9 @@ int main(void)
 #endif
 	RUN(test_tcp_loopback_echo);
 	RUN(test_tcp_accept_timeout_and_try);
+#ifdef _WIN32
+	RUN(test_tcp_exclusive_bind_failure);
+#endif
 	RUN(test_udp_loopback_echo);
 	RUN(test_filechannel_positioned_io);
 	RUN(test_filechannel_read_into);

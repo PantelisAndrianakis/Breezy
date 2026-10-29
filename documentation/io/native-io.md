@@ -41,6 +41,8 @@ void handle(Socket c)
 
 `Network.listen(port)` returns a `Listener`; `accept()` yields a `Socket` per client. Pair this with one [breeze](../concurrency/breezes.md) per connection and the [zone model](../concurrency/zone-model.md) for a service that scales across cores.
 
+`Network.listen(host, port)` binds a numeric local IPv4 or IPv6 address, such as `Network.listen("127.0.0.1", 8080)` for a loopback TCP listener. Port zero selects an ephemeral port. An explicit IPv4 listener accepts IPv4; an explicit IPv6 listener is IPv6-only. The one-argument form retains its dual-stack wildcard binding. The address overload performs no DNS lookup and returns `null` for a null, empty or invalid numeric address, embedded NUL bytes, scoped IPv6 addresses, a port outside 0..65535 or native socket setup/bind/listen failure. Explicit Windows listeners reserve their address with `SO_EXCLUSIVEADDRUSE`; the one-argument listener retains its reuse policy. Windows listener and connection setup close unsuccessful sockets and return `null`. Existing IOCP initialization/association behavior is unchanged.
+
 > **Speaking HTTP?** Wrap the same `Socket` with the [`Http`](../stdlib/http.md) codec - `Http.readRequest(c)` / `Http.respond(c, status, body)` on the server, `Http.request(...).send(s)` / `Http.readResponse(s)` on the client - to parse and build HTTP/1.1 messages over this transport.
 
 ---

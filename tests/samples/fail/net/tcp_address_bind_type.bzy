@@ -1,0 +1,4 @@
+void main()
+{
+	Listener listener = Network.listen("127.0.0.1", "port");
+}

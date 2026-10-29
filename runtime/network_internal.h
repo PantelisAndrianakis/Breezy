@@ -23,6 +23,8 @@ void *bzy_sock_wrap(SOCKET fd); // Managed handle (object_size 40).
 void *bzy_sock_wrap(int fd); // Managed handle (object_size 40).
 #endif
 
+int bzy_parse_bind_address(void *host, int64_t port, struct sockaddr_storage *address, socklen_t *length); // Numeric local address; AF_INET, AF_INET6 or zero on invalid input.
+
 int bzy_resolve_any(const char *host, int port, struct sockaddr_storage *out,
 					socklen_t *outlen, int *fam); // 0 on success; AF_UNSPEC (v4/v6).
 

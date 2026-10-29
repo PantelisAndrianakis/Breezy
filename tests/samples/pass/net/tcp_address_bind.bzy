@@ -1,0 +1,153 @@
+void client(string host, int port, channel<int> done)
+{
+	Socket socket = Network.connect(host, port);
+	if (socket == null)
+	{
+		done.send(0);
+		return;
+	}
+
+	byte[] payload = "tXp".toBytes();
+	payload[1] = (byte)0;
+	payload[2] = (byte)255;
+	socket.write(payload);
+	byte[] reply = socket.read(3, 1000);
+	if (reply == null)
+	{
+		done.send(0);
+	}
+	else
+	{
+		if (reply.length == 3)
+		{
+			bool equal = true;
+			int index = 0;
+			while (index < 3)
+			{
+				if (reply[index] != payload[index])
+				{
+					equal = false;
+				}
+
+				index += 1;
+			}
+
+			if (equal)
+			{
+				done.send(1);
+			}
+			else
+			{
+				done.send(0);
+			}
+		}
+		else
+		{
+			done.send(0);
+		}
+	}
+
+	socket.close();
+}
+
+int checkAddress(string host)
+{
+	Listener listener = Network.listen(host, 0);
+	if (listener == null)
+	{
+		return 0;
+	}
+
+	int checks = 0;
+	int port = listener.port();
+	Listener duplicate = Network.listen(host, port);
+	if (duplicate == null)
+	{
+		checks += 1;
+	}
+	else
+	{
+		duplicate.close();
+	}
+
+	listener.close();
+	listener = Network.listen(host, port);
+	if (listener == null)
+	{
+		return checks;
+	}
+
+	checks += 1;
+	channel<int> done = new channel<int>(1);
+	int mode = 0;
+	while (mode < 2)
+	{
+		spawn client(host, port, done);
+		Socket accepted;
+		if (mode == 0)
+		{
+			accepted = listener.accept();
+		}
+		else
+		{
+			accepted = listener.accept(1000);
+		}
+
+		if (accepted != null)
+		{
+			byte[] data = accepted.read(3, 1000);
+			if (data != null)
+			{
+				accepted.write(data);
+			}
+
+			accepted.close();
+		}
+
+		checks += done.recv();
+		mode += 1;
+	}
+
+	Socket pending = Network.connect(host, port);
+	if (pending != null)
+	{
+		Socket accepted = listener.tryAccept();
+		if (accepted != null)
+		{
+			pending.writeText("try");
+			string text = accepted.readText(3, 1000);
+			if (text != null)
+			{
+				if (text.equals("try"))
+				{
+					checks += 1;
+				}
+			}
+
+			accepted.close();
+		}
+
+		pending.close();
+	}
+
+	print(listener.accept(20) == null);
+	print(listener.tryAccept() == null);
+	listener.close();
+	return checks;
+}
+
+void main()
+{
+	print(checkAddress("127.0.0.1"));
+	print(checkAddress("::1"));
+	print(Network.listen("localhost", 0) == null);
+	print(Network.listen("", 0) == null);
+	print(Network.listen("999.0.0.1", 0) == null);
+	print(Network.listen("127.0.0.1", -1) == null);
+	print(Network.listen("127.0.0.1", 65536) == null);
+	string missing = null;
+	print(Network.listen(missing, 0) == null);
+	byte[] invalid = "127.0.0.1Xjunk".toBytes();
+	invalid[9] = (byte)0;
+	print(Network.listen(fromBytes(invalid), 0) == null);
+}

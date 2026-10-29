@@ -17,47 +17,6 @@ static void udp_v4mapped(struct sockaddr_storage *ss, socklen_t *len)
 	*len = sizeof(struct sockaddr_in6);
 }
 
-static int udp_bind_address(void *host, int64_t port, struct sockaddr_storage *address, socklen_t *length)
-{
-	if (host == NULL || port < 0 || port > 65535)
-	{
-		return 0;
-	}
-
-	const char *text = bzy_str_data(host);
-	int64_t textLength = bzy_str_len(host);
-	if (textLength <= 0 || textLength >= INET6_ADDRSTRLEN)
-	{
-		return 0;
-	}
-
-	if (memchr(text, 0, (size_t)textLength) != NULL)
-	{
-		return 0;
-	}
-
-	memset(address, 0, sizeof(*address));
-	struct sockaddr_in *ipv4 = (struct sockaddr_in*)address;
-	if (inet_pton(AF_INET, text, &ipv4->sin_addr) == 1)
-	{
-		ipv4->sin_family = AF_INET;
-		ipv4->sin_port = htons((unsigned short)port);
-		*length = sizeof(*ipv4);
-		return AF_INET;
-	}
-
-	struct sockaddr_in6 *ipv6 = (struct sockaddr_in6*)address;
-	if (inet_pton(AF_INET6, text, &ipv6->sin6_addr) == 1)
-	{
-		ipv6->sin6_family = AF_INET6;
-		ipv6->sin6_port = htons((unsigned short)port);
-		*length = sizeof(*ipv6);
-		return AF_INET6;
-	}
-
-	return 0;
-}
-
 #ifdef _WIN32
 #define U_FD(o)     (*(SOCKET*)((char*)(o) + 24)) // UdpSocket reuses the socket-handle layout.
 #define U_CLOSED(o) (*(int64_t*)((char*)(o) + 32))
@@ -66,7 +25,7 @@ void *bzy_udp_bind(void *host, int64_t port)
 {
 	struct sockaddr_storage address;
 	socklen_t length;
-	int family = udp_bind_address(host, port, &address, &length);
+	int family = bzy_parse_bind_address(host, port, &address, &length);
 	if (family == 0)
 	{
 		return NULL;
@@ -486,7 +445,7 @@ void *bzy_udp_bind(void *host, int64_t port)
 {
 	struct sockaddr_storage address;
 	socklen_t length;
-	int family = udp_bind_address(host, port, &address, &length);
+	int family = bzy_parse_bind_address(host, port, &address, &length);
 	if (family == 0)
 	{
 		return NULL;

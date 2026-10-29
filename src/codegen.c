@@ -5916,7 +5916,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 	const char *fn;
 	if (strcmp(m,"listen")==0)
 	{
-		fn = "bzy_listener_new";
+		fn = e->arg_count==2 ? "bzy_listener_bind" : "bzy_listener_new";
 	}
 	else if (strcmp(m,"connect")==0)
 	{
@@ -13482,6 +13482,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_timer_every");
 	cg_emit(cg,"extern bzy_timer_cancel");
 	cg_emit(cg,"extern bzy_listener_new");
+	cg_emit(cg,"extern bzy_listener_bind");
 	cg_emit(cg,"extern bzy_listener_accept");
 	cg_emit(cg,"extern bzy_listener_accept_timeout");
 	cg_emit(cg,"extern bzy_listener_try_accept");

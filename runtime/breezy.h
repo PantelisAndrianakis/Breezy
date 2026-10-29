@@ -280,6 +280,7 @@ void  bzy_reactor_shutdown(void); // Stop the reactor threads (no-op if unused).
 
 /* TCP sockets (6b-2): managed leaf objects holding a SOCKET fd; the finalizer closesocket()s. accept/connect/read park the calling breeze on the IOCP. */
 void   *bzy_listener_new(int64_t port); // Bind+listen on 0.0.0.0:port (0 = ephemeral); owned (+1).
+void   *bzy_listener_bind(void *host, int64_t port); // Bind+listen on a numeric local address; NULL on invalid input or native socket setup/bind/listen failure.
 void   *bzy_listener_accept(void *l); // Parks; returns an owned Socket for the next connection.
 void   *bzy_listener_accept_timeout(void *l, int64_t ms); // Parks up to ms; NULL on timeout.
 void   *bzy_listener_try_accept(void *l); // NULL if no connection pending; never parks.

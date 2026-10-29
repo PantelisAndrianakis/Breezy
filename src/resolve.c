@@ -898,6 +898,17 @@ static void resolve_network(Expr *e)
 	const char *m = e->name + 8; // After "Network.".
 	if (strcmp(m,"listen")==0)
 	{
+		if (e->arg_count==2)
+		{
+			if (e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind))
+			{
+				die(e->line,"Network.listen(host, port) takes a string address and an integer port.",NULL);
+			}
+
+			e->type.kind=TY_LISTENER;
+			return;
+		}
+
 		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
 		{
 			die(e->line,"Network.listen(port) takes one integer port.",NULL);

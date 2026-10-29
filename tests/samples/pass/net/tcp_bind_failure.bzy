@@ -1,0 +1,20 @@
+void main()
+{
+	Listener first = Network.listen("::", 0);
+	int port = first.port();
+	Listener duplicate = Network.listen("::", port);
+	print(duplicate == null);
+	if (duplicate != null)
+	{
+		duplicate.close();
+	}
+
+	first.close();
+	Listener reopened = Network.listen(port);
+	print(reopened != null);
+	if (reopened != null)
+	{
+		print(reopened.port() == port);
+		reopened.close();
+	}
+}
