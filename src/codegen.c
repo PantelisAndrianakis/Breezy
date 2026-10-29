@@ -5924,7 +5924,7 @@ static void cg_network(Codegen *cg, TypeTable *tt, Expr *e)
 	}
 	else if (strcmp(m,"udp")==0)
 	{
-		fn = "bzy_udp_new";
+		fn = e->arg_count==2 ? "bzy_udp_bind" : "bzy_udp_new";
 	}
 	else if (strcmp(m,"udpBroadcast")==0)
 	{
@@ -13532,6 +13532,7 @@ void cg_program(Codegen *cg, TypeTable *tt, Unit **units, int unit_count)
 	cg_emit(cg,"extern bzy_socket_write_text");
 	cg_emit(cg,"extern bzy_socket_close");
 	cg_emit(cg,"extern bzy_udp_new");
+	cg_emit(cg,"extern bzy_udp_bind");
 	cg_emit(cg,"extern bzy_udp_broadcast_new");
 	cg_emit(cg,"extern bzy_udp_port");
 	cg_emit(cg,"extern bzy_udp_send_to");

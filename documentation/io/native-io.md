@@ -57,6 +57,8 @@ Socket c = Network.connect("example.com", port);  // Hostname (either family).
 
 There is no IPv4-only or IPv6-only mode and no API change - existing code gains IPv6 for free, on both platforms. UDP (`Network.udp`) is dual-stack the same way.
 
+`Network.udp(host, port)` binds a numeric local IPv4 or IPv6 address, such as `Network.udp("127.0.0.1", 7777)` for a loopback listener. Port zero selects an ephemeral port. An explicit IPv4 address creates an IPv4 socket; an explicit IPv6 address creates an IPv6-only socket. The one-argument `Network.udp(port)` retains its dual-stack wildcard binding. The address overload performs no DNS lookup and returns `null` for a null, empty or invalid address, a port outside 0..65535 or a native socket setup/bind failure. Embedded NUL bytes and scoped IPv6 addresses are rejected. Windows IOCP association retains the runtime's existing initialization and failure behavior.
+
 ---
 
 ## LAN discovery with UDP broadcast

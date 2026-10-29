@@ -500,6 +500,8 @@ else
 fi
 check udp_echo      tests/samples/pass/net/udp_echo.bzy       $'2'
 check udp_bind_failure tests/samples/pass/net/udp_bind_failure.bzy $'true\ntrue\ntrue'
+check udp_address_bind tests/samples/pass/net/udp_address_bind.bzy $'3\n3\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue'
+check_fail_msg udp_address_bind_type tests/samples/fail/net/udp_address_bind_type.bzy 'Network.udp(host, port) takes a string address and an integer port.'
 check socket_timeout tests/samples/pass/net/socket_timeout.bzy $'2'
 # One worker: with no helper thread, that worker must sleep in the network poll itself and still honor socket timeouts.
 check_one_worker() {

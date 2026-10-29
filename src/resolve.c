@@ -931,6 +931,17 @@ static void resolve_network(Expr *e)
 
 	if (strcmp(m,"udp")==0)
 	{
+		if (e->arg_count==2)
+		{
+			if (e->args[0]->type.kind!=TY_STRING || !ty_is_int(e->args[1]->type.kind))
+			{
+				die(e->line,"Network.udp(host, port) takes a string address and an integer port.",NULL);
+			}
+
+			e->type.kind=TY_UDPSOCKET;
+			return;
+		}
+
 		if (e->arg_count!=1 || !ty_is_int(e->args[0]->type.kind))
 		{
 			die(e->line,"Network.udp(port) takes one integer port.",NULL);

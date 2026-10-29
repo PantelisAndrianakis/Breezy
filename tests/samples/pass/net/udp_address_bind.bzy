@@ -1,0 +1,59 @@
+int checkAddress(string host)
+{
+	UdpSocket socket = Network.udp(host, 0);
+	if (socket == null)
+	{
+		return 0;
+	}
+
+	int checks = 0;
+	int port = socket.port();
+	UdpSocket duplicate = Network.udp(host, port);
+	if (duplicate == null)
+	{
+		checks += 1;
+	}
+	else
+	{
+		duplicate.close();
+	}
+
+	socket.sendTextTo(host, port, "bound");
+	Datagram packet = socket.receive(1000);
+	if (packet != null)
+	{
+		if (packet.text().equals("bound"))
+		{
+			checks += 1;
+		}
+	}
+
+	socket.close();
+	UdpSocket rebound = Network.udp(host, port);
+	if (rebound != null)
+	{
+		if (rebound.port() == port)
+		{
+			checks += 1;
+		}
+
+		rebound.close();
+	}
+	return checks;
+}
+
+void main()
+{
+	print(checkAddress("127.0.0.1"));
+	print(checkAddress("::1"));
+	print(Network.udp("localhost", 0) == null);
+	print(Network.udp("", 0) == null);
+	print(Network.udp("999.0.0.1", 0) == null);
+	print(Network.udp("127.0.0.1", -1) == null);
+	print(Network.udp("127.0.0.1", 65536) == null);
+	string missing = null;
+	print(Network.udp(missing, 0) == null);
+	byte[] invalid = "127.0.0.1Xjunk".toBytes();
+	invalid[9] = (byte)0;
+	print(Network.udp(fromBytes(invalid), 0) == null);
+}
