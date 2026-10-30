@@ -434,9 +434,10 @@ int main(int argc, char *argv[])
 
 	printf("Wrote out.asm\n");
 
+	// -O1 skips NASM's multipass jump shrinking: a 5 MB out.asm assembled in 2.5 s instead of 10+ min, for slightly larger code.
 	const char *nasm_cmd = (target == TARGET_LINUX)
-						   ? "nasm -f elf64 out.asm -o out.obj"
-						   : "nasm -f win64 out.asm -o out.obj";
+						   ? "nasm -O1 -f elf64 out.asm -o out.obj"
+						   : "nasm -O1 -f win64 out.asm -o out.obj";
 	if (system(nasm_cmd)!=0)
 	{
 		fprintf(stderr,"Nasm failed.\n");
