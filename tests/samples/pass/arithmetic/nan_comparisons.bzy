@@ -1,0 +1,420 @@
+extern long memcpy(float[] destination, byte[] source, long length);
+extern long memmove(double[] destination, byte[] source, long length);
+
+int valuesFloat(float a, float b)
+{
+	bool comparison0 = a == b;
+	bool comparison1 = a != b;
+	bool comparison2 = a < b;
+	bool comparison3 = a > b;
+	bool comparison4 = a <= b;
+	bool comparison5 = a >= b;
+	int result = 0;
+	if (comparison0)
+	{
+		result |= 1;
+	}
+	if (comparison1)
+	{
+		result |= 2;
+	}
+	if (comparison2)
+	{
+		result |= 4;
+	}
+	if (comparison3)
+	{
+		result |= 8;
+	}
+	if (comparison4)
+	{
+		result |= 16;
+	}
+	if (comparison5)
+	{
+		result |= 32;
+	}
+	return result;
+}
+
+int branchesFloat(float a, float b)
+{
+	int result = 0;
+	if (a == b)
+	{
+		result |= 1;
+	}
+	if (a != b)
+	{
+		result |= 2;
+	}
+	if (a < b)
+	{
+		result |= 4;
+	}
+	if (a > b)
+	{
+		result |= 8;
+	}
+	if (a <= b)
+	{
+		result |= 16;
+	}
+	if (a >= b)
+	{
+		result |= 32;
+	}
+	return result;
+}
+
+int loopsFloat(float a, float b)
+{
+	int result = 0;
+	while (a == b)
+	{
+		result |= 1;
+		break;
+	}
+	while (a != b)
+	{
+		result |= 2;
+		break;
+	}
+	while (a < b)
+	{
+		result |= 4;
+		break;
+	}
+	while (a > b)
+	{
+		result |= 8;
+		break;
+	}
+	while (a <= b)
+	{
+		result |= 16;
+		break;
+	}
+	while (a >= b)
+	{
+		result |= 32;
+		break;
+	}
+	return result;
+}
+
+int valuesDouble(double a, double b)
+{
+	bool comparison0 = a == b;
+	bool comparison1 = a != b;
+	bool comparison2 = a < b;
+	bool comparison3 = a > b;
+	bool comparison4 = a <= b;
+	bool comparison5 = a >= b;
+	int result = 0;
+	if (comparison0)
+	{
+		result |= 1;
+	}
+	if (comparison1)
+	{
+		result |= 2;
+	}
+	if (comparison2)
+	{
+		result |= 4;
+	}
+	if (comparison3)
+	{
+		result |= 8;
+	}
+	if (comparison4)
+	{
+		result |= 16;
+	}
+	if (comparison5)
+	{
+		result |= 32;
+	}
+	return result;
+}
+
+int branchesDouble(double a, double b)
+{
+	int result = 0;
+	if (a == b)
+	{
+		result |= 1;
+	}
+	if (a != b)
+	{
+		result |= 2;
+	}
+	if (a < b)
+	{
+		result |= 4;
+	}
+	if (a > b)
+	{
+		result |= 8;
+	}
+	if (a <= b)
+	{
+		result |= 16;
+	}
+	if (a >= b)
+	{
+		result |= 32;
+	}
+	return result;
+}
+
+int loopsDouble(double a, double b)
+{
+	int result = 0;
+	while (a == b)
+	{
+		result |= 1;
+		break;
+	}
+	while (a != b)
+	{
+		result |= 2;
+		break;
+	}
+	while (a < b)
+	{
+		result |= 4;
+		break;
+	}
+	while (a > b)
+	{
+		result |= 8;
+		break;
+	}
+	while (a <= b)
+	{
+		result |= 16;
+		break;
+	}
+	while (a >= b)
+	{
+		result |= 32;
+		break;
+	}
+	return result;
+}
+
+int mixed(double b)
+{
+	int result = 0;
+	if (1 == b)
+	{
+		result |= 1;
+	}
+	if (1 != b)
+	{
+		result |= 2;
+	}
+	if (1 < b)
+	{
+		result |= 4;
+	}
+	if (1 > b)
+	{
+		result |= 8;
+	}
+	if (1 <= b)
+	{
+		result |= 16;
+	}
+	if (1 >= b)
+	{
+		result |= 32;
+	}
+	return result;
+}
+
+int mixedFloat(float b)
+{
+	int result = 0;
+	if (1 == b)
+	{
+		result |= 1;
+	}
+	if (1 != b)
+	{
+		result |= 2;
+	}
+	if (1 < b)
+	{
+		result |= 4;
+	}
+	if (1 > b)
+	{
+		result |= 8;
+	}
+	if (1 <= b)
+	{
+		result |= 16;
+	}
+	if (1 >= b)
+	{
+		result |= 32;
+	}
+	return result;
+}
+int mixedReverseFloat(float b)
+{
+	int result = 0;
+	if (b == 1)
+	{
+		result |= 1;
+	}
+	if (b != 1)
+	{
+		result |= 2;
+	}
+	if (b < 1)
+	{
+		result |= 4;
+	}
+	if (b > 1)
+	{
+		result |= 8;
+	}
+	if (b <= 1)
+	{
+		result |= 16;
+	}
+	if (b >= 1)
+	{
+		result |= 32;
+	}
+	return result;
+}
+int mixedReverseDouble(double b)
+{
+	int result = 0;
+	if (b == 1)
+	{
+		result |= 1;
+	}
+	if (b != 1)
+	{
+		result |= 2;
+	}
+	if (b < 1)
+	{
+		result |= 4;
+	}
+	if (b > 1)
+	{
+		result |= 8;
+	}
+	if (b <= 1)
+	{
+		result |= 16;
+	}
+	if (b >= 1)
+	{
+		result |= 32;
+	}
+	return result;
+}
+
+void main()
+{
+	byte[] rawFloat = new byte[4];
+	rawFloat[2] = (byte)192;
+	rawFloat[3] = (byte)127;
+	float[] floats = new float[1];
+	memcpy(floats, rawFloat, 4);
+	float floatNan = floats[0];
+	rawFloat[2] = (byte)128;
+	memcpy(floats, rawFloat, 4);
+	float floatInfinity = floats[0];
+	byte[] rawDouble = new byte[8];
+	rawDouble[6] = (byte)248;
+	rawDouble[7] = (byte)127;
+	double[] doubles = new double[1];
+	memmove(doubles, rawDouble, 8);
+	double doubleNan = doubles[0];
+	rawDouble[6] = (byte)240;
+	memmove(doubles, rawDouble, 8);
+	double doubleInfinity = doubles[0];
+	print(valuesFloat(floatNan, (float)1.0));
+	print(branchesFloat(floatNan, (float)1.0));
+	print(loopsFloat(floatNan, (float)1.0));
+	print(valuesFloat((float)1.0, floatNan));
+	print(branchesFloat((float)1.0, floatNan));
+	print(loopsFloat((float)1.0, floatNan));
+	print(valuesFloat(floatNan, floatNan));
+	print(branchesFloat(floatNan, floatNan));
+	print(loopsFloat(floatNan, floatNan));
+	print(valuesFloat((float)1.0, (float)2.0));
+	print(branchesFloat((float)1.0, (float)2.0));
+	print(loopsFloat((float)1.0, (float)2.0));
+	print(valuesFloat((float)2.0, (float)1.0));
+	print(branchesFloat((float)2.0, (float)1.0));
+	print(loopsFloat((float)2.0, (float)1.0));
+	print(valuesFloat((float)0.0, -(float)0.0));
+	print(branchesFloat((float)0.0, -(float)0.0));
+	print(loopsFloat((float)0.0, -(float)0.0));
+	print(valuesFloat(floatInfinity, floatInfinity));
+	print(branchesFloat(floatInfinity, floatInfinity));
+	print(loopsFloat(floatInfinity, floatInfinity));
+	print(valuesFloat(-floatInfinity, floatInfinity));
+	print(branchesFloat(-floatInfinity, floatInfinity));
+	print(loopsFloat(-floatInfinity, floatInfinity));
+	Box<float> boxFloat = new Box<float>();
+	boxFloat.set(floatNan);
+	print(boxFloat.contains((float)1.0));
+	print(boxFloat.contains(floatNan));
+	boxFloat.set((float)0.0);
+	print(boxFloat.contains(floatNan));
+	print(boxFloat.contains(-(float)0.0));
+	print(valuesDouble(doubleNan, 1.0));
+	print(branchesDouble(doubleNan, 1.0));
+	print(loopsDouble(doubleNan, 1.0));
+	print(valuesDouble(1.0, doubleNan));
+	print(branchesDouble(1.0, doubleNan));
+	print(loopsDouble(1.0, doubleNan));
+	print(valuesDouble(doubleNan, doubleNan));
+	print(branchesDouble(doubleNan, doubleNan));
+	print(loopsDouble(doubleNan, doubleNan));
+	print(valuesDouble(1.0, 2.0));
+	print(branchesDouble(1.0, 2.0));
+	print(loopsDouble(1.0, 2.0));
+	print(valuesDouble(2.0, 1.0));
+	print(branchesDouble(2.0, 1.0));
+	print(loopsDouble(2.0, 1.0));
+	print(valuesDouble(0.0, -0.0));
+	print(branchesDouble(0.0, -0.0));
+	print(loopsDouble(0.0, -0.0));
+	print(valuesDouble(doubleInfinity, doubleInfinity));
+	print(branchesDouble(doubleInfinity, doubleInfinity));
+	print(loopsDouble(doubleInfinity, doubleInfinity));
+	print(valuesDouble(-doubleInfinity, doubleInfinity));
+	print(branchesDouble(-doubleInfinity, doubleInfinity));
+	print(loopsDouble(-doubleInfinity, doubleInfinity));
+	Box<double> boxDouble = new Box<double>();
+	boxDouble.set(doubleNan);
+	print(boxDouble.contains(1.0));
+	print(boxDouble.contains(doubleNan));
+	boxDouble.set(0.0);
+	print(boxDouble.contains(doubleNan));
+	print(boxDouble.contains(-0.0));
+	print(mixed(doubleNan));
+	print(mixed(doubleInfinity));
+	print(mixed(1.0));
+	print(mixedFloat(floatNan));
+	print(mixedFloat(floatInfinity));
+	print(mixedFloat((float)1.0));
+	print(mixedReverseFloat(floatNan));
+	print(mixedReverseFloat(floatInfinity));
+	print(mixedReverseFloat((float)1.0));
+	print(mixedReverseDouble(doubleNan));
+	print(mixedReverseDouble(doubleInfinity));
+	print(mixedReverseDouble(1.0));
+}

@@ -1417,6 +1417,38 @@ static void test_cemit_rejects_call(void)
 	ASSERT(cemit_source() == NULL);
 }
 
+static void test_mixed_float_condition_stays_branched(void)
+{
+	const Func *function = parse_one_func("int f(double value) { int result = 0; if (1 != value) { result = 1; } return result; }");
+	IRFunc *lowered = ir_lower_func(function, 0);
+	ASSERT(lowered != NULL);
+	int comparisons = 0;
+	int branches = 0;
+	for (int blockIndex = 0; blockIndex < lowered->block_count; blockIndex++)
+	{
+		IRBlock *block = &lowered->blocks[blockIndex];
+		for (int instructionIndex = 0; instructionIndex < block->count; instructionIndex++)
+		{
+			IRInstr *instruction = &block->instrs[instructionIndex];
+			ASSERT(instruction->op != IR_SEL);
+			if (instruction->op==IR_CMP)
+			{
+				ASSERT_INT(instruction->type, TY_DOUBLE);
+				comparisons++;
+			}
+
+			if (instruction->op==IR_BRCOND)
+			{
+				branches++;
+			}
+		}
+	}
+
+	ASSERT_INT(comparisons, 1);
+	ASSERT_INT(branches, 1);
+	ir_func_free(lowered);
+}
+
 int main(void)
 {
 	setvbuf(stdout, NULL, _IONBF, 0); // Keep per-test progress visible if a test crashes under redirection.
@@ -1441,6 +1473,7 @@ int main(void)
 	RUN(test_bce_downward_underflow_stays_checked);
 	RUN(test_bce_downward_reassigned_stays_checked);
 	RUN(test_lower_max_pattern_becomes_select);
+	RUN(test_mixed_float_condition_stays_branched);
 	RUN(test_lower_div_body_stays_branched);
 	RUN(test_region_select_emits_cmov);
 	RUN(test_region_bounds_check_cold_out_of_line);

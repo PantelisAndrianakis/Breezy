@@ -2338,6 +2338,17 @@ static void cg_binary_fp(Codegen *cg, TypeTable *tt, Expr *e)
 
 		cg_emit(cg,"    ucomi%s xmm0, %s", sfx, rhs);
 		cg_emit(cg,"    %s al", set);
+		if (e->op==TOKEN_NEQ)
+		{
+			cg_emit(cg,"    setp ah");
+			cg_emit(cg,"    or al, ah");
+		}
+		else if (e->op==TOKEN_EQ || e->op==TOKEN_LT || e->op==TOKEN_LTE)
+		{
+			cg_emit(cg,"    setnp ah");
+			cg_emit(cg,"    and al, ah");
+		}
+
 		cg_emit(cg,"    movzx rax, al");
 		break;
 	}
@@ -3976,6 +3987,8 @@ static void cg_box_method(Codegen *cg, TypeTable *tt, Expr *e)
 		cg_emit(cg, tk==TY_FLOAT ? "    movss xmm1, dword [rax + 32]" : "    movsd xmm1, qword [rax + 32]");
 		cg_emit(cg, tk==TY_FLOAT ? "    ucomiss xmm0, xmm1" : "    ucomisd xmm0, xmm1");
 		cg_emit(cg,"    sete al");
+		cg_emit(cg,"    setnp ah");
+		cg_emit(cg,"    and al, ah");
 		cg_emit(cg,"    movzx rax, al");
 	}
 	else if (tk==TY_STRING)

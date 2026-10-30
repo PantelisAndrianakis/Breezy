@@ -1983,6 +1983,17 @@ static void test_c_route_off_with_zero(void)
 	c_route_off();
 }
 
+static void test_fp_unordered_comparisons(void)
+{
+	emit("bool different(double a, double b) { return a != b; } bool equal(float a, float b) { return a == b; } bool below(double a, double b) { return a < b; } bool atMost(float a, float b) { return a <= b; } void main() { Box<double> value = new Box<double>(); print(value.contains(1.0)); }", TARGET_WINDOWS);
+	ASSERT_INT(count_in_func("bzy_different:", "setp ah"), 1);
+	ASSERT_INT(count_in_func("bzy_different:", "or al, ah"), 1);
+	ASSERT_INT(count_in_func("bzy_equal:", "setnp ah"), 1);
+	ASSERT_INT(count_in_func("bzy_below:", "setnp ah"), 1);
+	ASSERT_INT(count_in_func("bzy_atMost:", "setnp ah"), 1);
+	ASSERT(strstr(g_asm, "sete al\n    setnp ah\n    and al, ah") != NULL);
+}
+
 int main(void)
 {
 	// These assertions check the EMITTER's output specifically; force it on even now that the IR backend and the C route are the defaults.
@@ -2020,6 +2031,7 @@ int main(void)
 	RUN(test_logical_emission);
 	RUN(test_mul_strength_reduction);
 	RUN(test_fp_leaf_fusion);
+	RUN(test_fp_unordered_comparisons);
 	RUN(test_inplace_mac);
 	RUN(test_register_index_addr);
 	RUN(test_boundscheck_cse_repeated_index);

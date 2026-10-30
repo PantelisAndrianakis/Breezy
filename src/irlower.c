@@ -1534,7 +1534,7 @@ static void low_stmt(Low *L, const Stmt *s)
 		// Kills the data-dependent misprediction the max/min/clamp patterns otherwise pay.
 		if (!s->else_blk && s->then_blk && s->then_blk->count == 1
 				&& s->cond->kind == EX_BINARY && tok_is_cmp(s->cond->op)
-				&& ty_is_int(s->cond->lhs->type.kind))
+				&& ty_is_int(s->cond->lhs->type.kind) && !ty_is_float(s->cond->rhs->type.kind))
 		{
 			const Stmt *as = s->then_blk->stmts[0];
 			if (as->kind == ST_ASSIGN && as->target->kind == EX_IDENT

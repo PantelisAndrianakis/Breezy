@@ -933,6 +933,12 @@ static int emit_cmp_flags(Emit *e, TypeKind type, IRReg a, IRReg b, const char *
 static void emit_fused_branch(Emit *e, const IRInstr *cmp, const IRInstr *br, int next)
 {
 	int uns = emit_cmp_flags(e, cmp->type, cmp->a, cmp->b, "rax", "rcx");
+	if (ty_is_float(cmp->type))
+	{
+		int unorderedBlock = cmp->cmp_op==TOKEN_NEQ ? br->blk_true : br->blk_false;
+		cg_emit(e->cg, "    jp .L%d", e->blabel[unorderedBlock]);
+	}
+
 	emit_two_way(e, jcc_op(cmp->cmp_op, uns), cmp->cmp_op, uns, br->blk_true, br->blk_false, next);
 }
 
@@ -1314,6 +1320,20 @@ static void emit_instr(Emit *e, const IRInstr *in, int next)
 	{
 		int uns = emit_cmp_flags(e, in->type, in->a, in->b, "rax", "rcx");
 		cg_emit(cg, "    %s al", setcc_op(in->cmp_op, uns));
+		if (ty_is_float(in->type))
+		{
+			if (in->cmp_op==TOKEN_NEQ)
+			{
+				cg_emit(cg, "    setp ah");
+				cg_emit(cg, "    or al, ah");
+			}
+			else if (in->cmp_op==TOKEN_EQ || in->cmp_op==TOKEN_LT || in->cmp_op==TOKEN_LTE)
+			{
+				cg_emit(cg, "    setnp ah");
+				cg_emit(cg, "    and al, ah");
+			}
+		}
+
 		cg_emit(cg, "    movzx rax, al");
 		const char *Rd = dst_reg(e, in->dst);
 		if (strcmp(Rd, "rax"))

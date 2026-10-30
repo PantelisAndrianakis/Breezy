@@ -149,6 +149,7 @@ check else_if     tests/samples/pass/control-flow/else_if.bzy    "20"
 check while       tests/samples/pass/control-flow/while.bzy      "10"
 check multi_fn    tests/samples/pass/basics/multi_fn.bzy   "42"
 check recursive_project tests/samples/pass/basics/recursive_project "42"
+check nan_comparisons tests/samples/pass/arithmetic/nan_comparisons.bzy $'2\n2\n2\n2\n2\n2\n2\n2\n2\n22\n22\n22\n42\n42\n42\n49\n49\n49\n49\n49\n49\n22\n22\n22\nfalse\nfalse\nfalse\ntrue\n2\n2\n2\n2\n2\n2\n2\n2\n2\n22\n22\n22\n42\n42\n42\n49\n49\n49\n49\n49\n49\n22\n22\n22\nfalse\nfalse\nfalse\ntrue\n2\n22\n49\n2\n22\n49\n2\n42\n49\n2\n42\n49'
 check inheritance tests/samples/pass/oop/proj_inherit  "2"
 check inherit_order tests/samples/pass/oop/proj_inherit_order  "2"
 check ctor        tests/samples/pass/oop/proj_ctor      $'3
