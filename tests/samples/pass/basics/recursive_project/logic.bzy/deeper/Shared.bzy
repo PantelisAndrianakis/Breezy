@@ -1,0 +1,4 @@
+int recursiveValue()
+{
+	return 42;
+}

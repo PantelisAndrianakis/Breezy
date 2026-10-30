@@ -1,0 +1,6 @@
+void main()
+{
+	RecursiveValue value = new RecursiveValue();
+	value.amount = recursiveValue();
+	print(value.amount);
+}

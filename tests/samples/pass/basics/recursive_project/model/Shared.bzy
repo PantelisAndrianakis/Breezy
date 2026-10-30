@@ -1,0 +1,4 @@
+class RecursiveValue
+{
+	int amount;
+}

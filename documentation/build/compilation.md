@@ -72,6 +72,16 @@ binary is written to `out.exe` in the current directory:
 breezy app.bzy   # → out.exe
 ```
 
+A source argument can also name a project directory. The compiler includes `.bzy` files in that directory and all its subdirectories, so related classes can live in separate folders:
+
+```sh
+breezy src app.exe --target windows
+breezy --check src
+breezy --symbols src
+```
+
+Directories share one project scope; folders do not create namespaces. Only regular files with the case-sensitive `.bzy` extension are source inputs. Symbolic links and Windows reparse points discovered inside the tree are skipped to avoid directory cycles. An explicitly named source file still compiles on its own. Path lengths follow the host operating system's limits.
+
 The target backend is selectable with `--target`; see [Building the compiler](building.md) for the full target details.
 
 ---

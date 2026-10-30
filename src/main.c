@@ -3,6 +3,16 @@
 #include <string.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
+#ifdef _WIN32
+// Windows also declares TokenType, which is the lexer token type in this driver.
+#define TokenType WindowsTokenType
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#undef TokenType
+#else
+#include <sys/stat.h>
+#endif
 #include "parser.h"
 #include "enums.h"
 #include "generics.h"
@@ -48,45 +58,129 @@ static int has_suffix(const char *s, const char *suf)
 }
 
 /**
- * Collect .bzy file paths under `path` into a freshly grown array of strings, returned through `out_paths`; returns the count.
- * No fixed file cap.
+ * Linked entries are skipped so directory cycles cannot revisit a project.
+ */
+static void collect_directory(const char *path, DIR *directory, char ***out_paths, int *count, int *capacity)
+{
+	while (1)
+	{
+		errno=0;
+		struct dirent *entry=readdir(directory);
+		if (!entry)
+		{
+			if (errno!=0)
+			{
+				perror(path);
+				exit(1);
+			}
+
+			break;
+		}
+
+		if (strcmp(entry->d_name,".")==0 || strcmp(entry->d_name,"..")==0)
+		{
+			continue;
+		}
+
+		size_t pathLength=strlen(path)+strlen(entry->d_name)+2;
+		char *entryPath=malloc(pathLength);
+		if (!entryPath)
+		{
+			fprintf(stderr,"Out of memory collecting source paths.\n");
+			exit(1);
+		}
+
+		snprintf(entryPath,pathLength,"%s/%s",path,entry->d_name);
+		int isDirectory=0;
+		int isFile=0;
+#ifdef _WIN32
+		DWORD attributes=GetFileAttributesA(entryPath);
+		if (attributes==INVALID_FILE_ATTRIBUTES)
+		{
+			fprintf(stderr,"Cannot inspect %s (Windows error %lu).\n",entryPath,(unsigned long)GetLastError());
+			exit(1);
+		}
+
+		if ((attributes&FILE_ATTRIBUTE_REPARSE_POINT)!=0)
+		{
+			free(entryPath);
+			continue;
+		}
+
+		isDirectory=(attributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
+		isFile=!isDirectory;
+#else
+		struct stat attributes;
+		if (lstat(entryPath,&attributes)!=0)
+		{
+			perror(entryPath);
+			exit(1);
+		}
+
+		isDirectory=S_ISDIR(attributes.st_mode);
+		isFile=S_ISREG(attributes.st_mode);
+#endif
+		if (isDirectory)
+		{
+			DIR *child=opendir(entryPath);
+			if (!child)
+			{
+				perror(entryPath);
+				exit(1);
+			}
+
+			collect_directory(entryPath,child,out_paths,count,capacity);
+			closedir(child);
+		}
+		else if (isFile)
+		{
+			if (has_suffix(entry->d_name,".bzy"))
+			{
+				*out_paths=grow_ensure(*out_paths,*count,capacity,sizeof(**out_paths));
+				(*out_paths)[*count]=entryPath;
+				(*count)++;
+				continue;
+			}
+		}
+
+		free(entryPath);
+	}
+}
+
+/**
+ * Collect .bzy files recursively, or preserve an explicitly supplied source file.
  */
 static int collect_files(const char *path, char ***out_paths)
 {
-	int n=0, cap=0;
+	int count=0;
+	int capacity=0;
 	char **paths=NULL;
-	DIR *d=opendir(path);
-	if (!d)
+	DIR *directory=opendir(path);
+	if (!directory)
 	{
-		paths=grow_ensure(paths,0,&cap,sizeof(*paths));
-		paths[0]=malloc(512);
-		strncpy(paths[0],path,511);
-		paths[0][511]='\0';
+		paths=grow_ensure(paths,0,&capacity,sizeof(*paths));
+		paths[0]=malloc(strlen(path)+1);
+		if (!paths[0])
+		{
+			fprintf(stderr,"Out of memory collecting source paths.\n");
+			exit(1);
+		}
+
+		strcpy(paths[0],path);
 		*out_paths=paths;
 		return 1;
 	}
 
-	struct dirent *e;
-	while ((e=readdir(d))!=NULL)
-	{
-		if (has_suffix(e->d_name,".bzy"))
-		{
-			paths=grow_ensure(paths,n,&cap,sizeof(*paths));
-			paths[n]=malloc(512);
-			snprintf(paths[n],512,"%s/%s",path,e->d_name);
-			n++;
-		}
-	}
-
-	closedir(d);
+	collect_directory(path,directory,&paths,&count,&capacity);
+	closedir(directory);
 	*out_paths=paths;
-	if (n==0)
+	if (count==0)
 	{
 		fprintf(stderr,"No .bzy files in %s\n",path);
 		exit(1);
 	}
 
-	return n;
+	return count;
 }
 
 int main(int argc, char *argv[])
